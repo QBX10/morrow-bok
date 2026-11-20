@@ -1,0 +1,140 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-main: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-header: #0f172a;
+  --bg-table-header: #f1f5f9;
+  --bg-nav-active: #eff6ff;
+  --bg-zebra: rgba(241, 245, 249, 0.6);
+  --bg-numeric: rgba(29, 78, 216, 0.035);
+  --row-hover-bg: rgba(29, 78, 216, 0.07);
+  --text-primary: #0f172a;
+  --text-muted: #475569;
+  --border-color: #dbe3ee;
+  --grid-color: #e2e8f0;
+  --accent: #1d4ed8;
+  --accent-fg: #ffffff;
+  --success: #15803d;
+  --success-fg: #ffffff;
+  --success-bg: #f0fdf4;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --danger: #b91c1c;
+  --danger-fg: #ffffff;
+  --danger-bg: #fef2f2;
+
+  --app-font-family: 'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --app-font-size: 15px;
+  --app-font-weight: 500;
+  --table-cell-py: 10px;
+  --table-line-height: 1.6;
+}
+
+html,
+body {
+  font-family: var(--app-font-family);
+  font-size: var(--app-font-size);
+  font-weight: var(--app-font-weight);
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+textarea {
+  color: var(--text-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.78;
+}
+
+option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.font-data {
+  font-family: 'IBM Plex Mono', var(--app-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dynamic Table Theme & Typography System */
+.agency-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  line-height: var(--table-line-height);
+  color: var(--text-primary);
+}
+
+.agency-table th,
+.agency-table td {
+  padding-top: var(--table-cell-py);
+  padding-bottom: var(--table-cell-py);
+  border-bottom: 1px solid var(--grid-color);
+  border-color: var(--grid-color);
+}
+
+.agency-table.theme-classic-quota tbody tr:nth-child(even):not(.row-blocked) {
+  background-color: var(--bg-zebra);
+}
+
+.agency-table.theme-financial-audit th,
+.agency-table.theme-financial-audit td {
+  border-left: 1px solid var(--grid-color);
+}
+
+.agency-table.theme-pdf-reader {
+  background-color: var(--bg-surface);
+}
+.agency-table.theme-pdf-reader thead tr {
+  background-color: var(--bg-surface) !important;
+}
+.agency-table.theme-pdf-reader th {
+  background-color: var(--bg-surface) !important;
+  border-bottom: 2px solid var(--text-primary);
+}
+
+.agency-table.theme-high-contrast th,
+.agency-table.theme-high-contrast td {
+  border: 1px solid var(--text-muted);
+  font-weight: 700;
+}
+
+.agency-table.theme-compact-modern th,
+.agency-table.theme-compact-modern td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: 0.875em;
+}
+
+.agency-table.hover-highlight tbody tr:hover td {
+  background-color: var(--row-hover-bg);
+}
+
+.agency-table tbody tr.row-focused td {
+  background-color: var(--bg-nav-active) !important;
+}
+
+.agency-table.has-focused-row tbody tr:not(.row-focused) {
+  opacity: 0.52;
+  transition: opacity 150ms ease;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

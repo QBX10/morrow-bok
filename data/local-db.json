@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "uid": "phn_7ca77529ad584ac0",
+      "authProvider": "phone",
+      "displayName": "+9647701234567",
+      "email": null,
+      "username": null,
+      "phone": "+9647701234567",
+      "passwordHash": null,
+      "role": "manager",
+      "createdAt": "2026-11-19T19:18:56.820Z"
+    }
+  ],
+  "snapshots": []
+}
