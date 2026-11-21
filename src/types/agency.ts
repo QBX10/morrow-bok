@@ -13,6 +13,7 @@ export type AppView =
   | 'finance'
   | 'quick_extract'
   | 'data_archives'
+  | 'google_workspace'
   | 'settings';
 
 export type FreeformHeaderAlign = 'right' | 'center' | 'left';
@@ -100,6 +101,7 @@ export interface AuthUser {
   email?: string;
   username?: string;
   phone?: string;
+  avatarUrl?: string;
   role: 'manager' | 'viewer';
 }
 
@@ -107,6 +109,7 @@ export interface Agency {
   id: number;
   name: string;
   icon: string;
+  logoDataUrl?: string;
   isLocked: boolean;
 }
 
@@ -288,6 +291,7 @@ export interface QuickExtractRawRow {
   rawSnippet: string;
   suspectSpans?: QuickExtractSuspectSpan[];
   suspectBox?: NormalizedBox;
+  notes?: string;
 }
 
 export interface QuickExtractEvaluatedRow extends QuickExtractRawRow {
@@ -322,6 +326,190 @@ export interface QuickExtractAnalysisResult {
   documentSummary: string;
   rows: QuickExtractEvaluatedRow[];
   sourceImageUrls?: Record<number, string>;
+}
+
+// --- Universal Cognitive Reading & Progressive Comprehension System (UCRS) ---
+
+export type UcrsSourceKind =
+  | 'pdf'
+  | 'image'
+  | 'image_batch'
+  | 'camera_burst'
+  | 'word'
+  | 'excel'
+  | 'csv'
+  | 'text';
+
+export type UcrsContentType =
+  | 'جدول مستفيدين'
+  | 'قائمة أسماء'
+  | 'دفتر يدوي'
+  | 'كتاب / مقال'
+  | 'فاتورة'
+  | 'وثيقة رسمية'
+  | 'صفحة ويب / لقطة شاشة'
+  | 'بيانات عامة';
+
+export type UcrsRelevanceLevel =
+  | 'important'
+  | 'useful'
+  | 'neutral'
+  | 'irrelevant';
+
+export type UcrsIntentMode =
+  | 'discover'
+  | 'extract_all'
+  | 'extract_useful'
+  | 'semantic_search'
+  | 'understand_book'
+  | 'focus_notes'
+  | 'custom';
+
+export interface UcrsHypothesis {
+  label: string;
+  probability: number; // 0..100
+  suggestedFix: string;
+}
+
+export interface UcrsDiagnosticEntry {
+  id: string;
+  targetId: string;
+  targetLabel: string;
+  layer: 'intake' | 'classification' | 'extraction' | 'coverage' | 'math';
+  severity: 'info' | 'warning' | 'critical';
+  whyMessage: string;
+  reasoningChain: string[];
+  hypotheses: UcrsHypothesis[];
+}
+
+export interface UcrsCoverageRegion {
+  id: string;
+  pageNumber: number;
+  label: string;
+  state: 'confident' | 'doubtful' | 'unreadable' | 'skipped';
+  box: NormalizedBox;
+  extractedText?: string;
+  reason?: string;
+}
+
+export interface UcrsSmartCoverage {
+  overallPercent: number;
+  contentCoveragePercent: number;
+  itemsCoveragePercent: number;
+  fieldsCoverage: {
+    namePercent: number;
+    individualsPercent: number;
+    decreasePercent: number;
+    addOrDeletePercent: number;
+    notesPercent: number;
+  };
+  qualityCoveragePercent: number;
+  totalEstimatedItems: number;
+  confidentCount: number;
+  doubtfulCount: number;
+  unreadableCount: number;
+  missingHint: string;
+}
+
+export interface UcrsContentIdentity {
+  contentType: UcrsContentType;
+  topic: string;
+  qualityLabel: 'واضح' | 'متوسط' | 'صعب' | 'غير مقروء';
+  qualityScore: number; // 0..100
+  relevanceLevel: UcrsRelevanceLevel;
+  relevanceReasons: string[];
+  languageSummary: string;
+  estimatedTotalRows: number;
+  estimatedColumns: number;
+  estimatedConfidentCount: number;
+  estimatedDoubtfulCount: number;
+  estimatedUnreadableCount: number;
+  wordCount: number;
+  detectedNamesCount: number;
+  detectedDates: string[];
+  detectedLocations: string[];
+  opinionAndRecommendation: string;
+  suggestedActions: Array<{
+    id: string;
+    label: string;
+    intent: UcrsIntentMode;
+  }>;
+}
+
+export interface UcrsReadingPlan {
+  intent: UcrsIntentMode;
+  customCommand?: string;
+  willExtract: string[];
+  willIgnore: string[];
+  minCoverageThreshold: number; // e.g. 90
+  autoApplyLearningRules: boolean;
+  approved: boolean;
+}
+
+export interface UcrsExtractedTextEntity {
+  id: string;
+  kind: 'name' | 'number' | 'date' | 'location' | 'note' | 'paragraph';
+  text: string;
+  context: string;
+  pageNumber: number;
+  rowOrLineIndex: number;
+  confidence: number; // 0..1
+  relevance: UcrsRelevanceLevel;
+  relevanceReason: string;
+  box?: NormalizedBox;
+}
+
+export interface UcrsSourceRecord {
+  id: string;
+  label: string;
+  kind: UcrsSourceKind;
+  addedAt: string;
+  clarityScore: number;
+  pageCount: number;
+  previewDataUrl?: string;
+  rawTextExcerpt?: string;
+}
+
+export interface UcrsLearningRule {
+  id: string;
+  wrongToken: string;
+  correctedToken: string;
+  sourceContext: string;
+  usageCount: number;
+  createdAt: string;
+  enabled: boolean;
+}
+
+export interface UcrsFusionDiff {
+  addedAt: string;
+  sourceLabel: string;
+  newlyRecoveredCount: number;
+  upgradedFromDoubtCount: number;
+  duplicatesSkippedCount: number;
+  previousCoveragePercent: number;
+  newCoveragePercent: number;
+  remainingUnreadableCount: number;
+  summaryMessage: string;
+}
+
+export interface UcrsSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  status: 'scanning' | 'in_progress' | 'needs_completion' | 'ready' | 'committed' | 'rejected';
+  sources: UcrsSourceRecord[];
+  identity: UcrsContentIdentity | null;
+  plan: UcrsReadingPlan;
+  rows: QuickExtractEvaluatedRow[];
+  entities: UcrsExtractedTextEntity[];
+  coverage: UcrsSmartCoverage;
+  coverageRegions: UcrsCoverageRegion[];
+  diagnostics: UcrsDiagnosticEntry[];
+  documentSummary: string;
+  lastFusionDiff?: UcrsFusionDiff | null;
+  coverageOverrideNote?: string;
+  committedAt?: string;
 }
 
 export type QuickExtractMergeStrategy =
@@ -416,29 +604,63 @@ export interface AuditIssue {
 }
 
 export type AppThemeId =
-  | 'midnight-slate'
-  | 'warm-paper'
-  | 'crisp-daylight'
-  | 'charcoal-emerald'
-  | 'nordic-navy'
-  | 'soft-mint';
+  | 'obsidian-gold'
+  | 'aurora'
+  | 'cyberpunk'
+  | 'desert-mirage'
+  | 'arctic-snow'
+  | 'emerald-forest'
+  | 'royal-crimson'
+  | 'zen-minimal';
 
 export type TableThemeId =
-  | 'classic-quota'
-  | 'financial-audit'
-  | 'pdf-reader'
-  | 'high-contrast'
-  | 'compact-modern';
+  | 'glass'
+  | 'paper-ledger'
+  | 'data-grid'
+  | 'royal-executive'
+  | 'pastel-blocks'
+  | 'minimalist-lines'
+  | 'neon-matrix'
+  | 'card-based';
 
 export type ArabicFontId =
-  | 'ibm-plex'
   | 'cairo'
   | 'tajawal'
-  | 'noto-sans';
+  | 'almarai'
+  | 'changa'
+  | 'el-messiri'
+  | 'ibm-plex';
 
 export type FontSizeStep = 'sm' | 'md' | 'lg' | 'xl';
 export type FontWeightStep = 'light' | 'normal' | 'bold';
 export type RowDensityStep = 'compact' | 'comfortable' | 'spacious';
+export type CardShadowLevel = 'none' | 'soft' | 'elevated';
+
+export interface ConditionalFormattingPrefs {
+  highlightBlockedRows: boolean;
+  highlightDuplicateNames: boolean;
+  highlightZeroIndividuals: boolean;
+}
+
+export interface AppearanceProfile {
+  id: string;
+  name: string;
+  appTheme: AppThemeId;
+  tableTheme: TableThemeId;
+  fontFamily: ArabicFontId;
+  fontSizePx: number;
+  rowHeightPx: number;
+  colWidthScale: number;
+  borderRadiusPx: number;
+  cardShadowLevel: CardShadowLevel;
+  glassEffect: boolean;
+  customBgColor?: string;
+  customSurfaceColor?: string;
+  customTextColor?: string;
+  customAccentColor?: string;
+  conditionalFormatting?: ConditionalFormattingPrefs;
+  createdAt?: string;
+}
 
 export interface ThemePreferences {
   appTheme: AppThemeId;
@@ -447,6 +669,19 @@ export interface ThemePreferences {
   fontSize: FontSizeStep;
   fontWeight: FontWeightStep;
   rowDensity: RowDensityStep;
+  fontSizePx?: number;
+  rowHeightPx?: number;
+  colWidthScale?: number;
+  borderRadiusPx?: number;
+  cardShadowLevel?: CardShadowLevel;
+  glassEffect?: boolean;
+  customBgColor?: string;
+  customSurfaceColor?: string;
+  customTextColor?: string;
+  customAccentColor?: string;
+  conditionalFormatting?: ConditionalFormattingPrefs;
+  savedProfiles?: AppearanceProfile[];
+  activeProfileId?: string | null;
   tabularNumerals: boolean;
   rowHoverHighlight: boolean;
   stickyHeaderAndName: boolean;
@@ -486,6 +721,7 @@ export interface SecurityPrefs {
   privacyPin: string;
   privacyLocked: boolean;
   offlineCacheEnabled: boolean;
+  allowCloudBeneficiaryNames?: boolean;
 }
 
 export type RecycleBinItemKind =
@@ -560,4 +796,6 @@ export interface AppDatabaseState {
   generalPrefs?: GeneralAppPrefs;
   securityPrefs?: SecurityPrefs;
   recycleBin?: RecycleBinEntry[];
+  ucrsSessions?: UcrsSession[];
+  ucrsLearningRules?: UcrsLearningRule[];
 }

@@ -7,10 +7,21 @@ import {
   DEFAULT_SECURITY_PREFS,
   INITIAL_DATABASE_STATE,
 } from '../data/seedData';
-import { getStoredSession } from '../lib/authClient';
+import {
+  deleteServerAppearanceProfile,
+  getActiveBearerToken,
+  getStoredSession,
+  saveServerAppearanceProfile,
+} from '../lib/authClient';
+import {
+  deleteAppearanceProfileFromFirestore,
+  saveAppearanceProfileToFirestore,
+  syncWorkspaceSummaryToFirestore,
+} from '../lib/firestoreSync';
 import type {
   Agency,
   AgencyExpense,
+  AppearanceProfile,
   AppDatabaseState,
   AppModeTier,
   BlockScope,
@@ -38,8 +49,11 @@ import type {
   SecurityPrefs,
   ThemePreferences,
   TopBarConfig,
+  UcrsLearningRule,
+  UcrsSession,
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic';
+import { applyDiagnosticAutoFixes } from '../utils/assistantDiagnostics';
 import {
   createMonthlyArchiveSnapshot,
   prepareNextMonthRollover,
@@ -56,8 +70,12 @@ import {
 } from '../utils/recycleBin';
 import {
   applyThemePreferencesToDocument,
+  DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
   getAppThemeById,
+  resolveAppThemeId,
+  resolveArabicFontId,
+  resolveTableThemeId,
 } from '../utils/themes';
 
 const DB_STORAGE_KEY = 'flour_agency_db_v2';
@@ -154,6 +172,18 @@ function loadInitialState(): AppDatabaseState {
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         ...(parsed.themePrefs || {}),
+        appTheme: resolveAppThemeId(parsed.themePrefs?.appTheme),
+        tableTheme: resolveTableThemeId(parsed.themePrefs?.tableTheme),
+        fontFamily: resolveArabicFontId(parsed.themePrefs?.fontFamily),
+        savedProfiles:
+          Array.isArray(parsed.themePrefs?.savedProfiles) &&
+          parsed.themePrefs!.savedProfiles!.length > 0
+            ? parsed.themePrefs!.savedProfiles!
+            : DEFAULT_APPEARANCE_PROFILES,
+        conditionalFormatting: {
+          ...DEFAULT_THEME_PREFERENCES.conditionalFormatting!,
+          ...(parsed.themePrefs?.conditionalFormatting || {}),
+        },
       },
       expertTableConfig: {
         ...DEFAULT_EXPERT_TABLE_CONFIG,
@@ -183,6 +213,12 @@ function loadInitialState(): AppDatabaseState {
       monthlyArchives: Array.isArray(parsed.monthlyArchives)
         ? parsed.monthlyArchives
         : INITIAL_DATABASE_STATE.monthlyArchives || [],
+      ucrsSessions: Array.isArray(parsed.ucrsSessions)
+        ? parsed.ucrsSessions
+        : [],
+      ucrsLearningRules: Array.isArray(parsed.ucrsLearningRules)
+        ? parsed.ucrsLearningRules
+        : [],
     };
   } catch {
     return INITIAL_DATABASE_STATE;
@@ -218,6 +254,16 @@ export function useAgencyStore() {
     activeThemePrefs.fontSize,
     activeThemePrefs.fontWeight,
     activeThemePrefs.rowDensity,
+    activeThemePrefs.fontSizePx,
+    activeThemePrefs.rowHeightPx,
+    activeThemePrefs.colWidthScale,
+    activeThemePrefs.borderRadiusPx,
+    activeThemePrefs.cardShadowLevel,
+    activeThemePrefs.glassEffect,
+    activeThemePrefs.customBgColor,
+    activeThemePrefs.customSurfaceColor,
+    activeThemePrefs.customTextColor,
+    activeThemePrefs.customAccentColor,
   ]);
 
   const maxUndo = Math.max(
@@ -293,7 +339,7 @@ export function useAgencyStore() {
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
-        appTheme: darkTheme ? 'midnight-slate' : 'crisp-daylight',
+        appTheme: darkTheme ? 'obsidian-gold' : 'arctic-snow',
       },
     }));
   }, []);
@@ -304,6 +350,10 @@ export function useAgencyStore() {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
         ...patch,
+        activeProfileId:
+          patch.activeProfileId !== undefined
+            ? patch.activeProfileId
+            : prev.themePrefs?.activeProfileId ?? null,
       };
       const themeMeta = getAppThemeById(merged.appTheme);
       return {
@@ -318,8 +368,123 @@ export function useAgencyStore() {
     setState((prev) => ({
       ...prev,
       darkTheme: false,
-      themePrefs: { ...DEFAULT_THEME_PREFERENCES },
+      themePrefs: {
+        ...DEFAULT_THEME_PREFERENCES,
+        savedProfiles:
+          prev.themePrefs?.savedProfiles && prev.themePrefs.savedProfiles.length > 0
+            ? prev.themePrefs.savedProfiles
+            : DEFAULT_APPEARANCE_PROFILES,
+      },
     }));
+  }, []);
+
+  const saveAppearanceProfile = useCallback((name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    const id = `prof_${Date.now().toString(36)}`;
+    let createdProfile: AppearanceProfile | null = null;
+    setState((prev) => {
+      const cur = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      const profile: AppearanceProfile = {
+        id,
+        name: cleanName.slice(0, 80),
+        appTheme: resolveAppThemeId(cur.appTheme),
+        tableTheme: resolveTableThemeId(cur.tableTheme),
+        fontFamily: resolveArabicFontId(cur.fontFamily),
+        fontSizePx: cur.fontSizePx ?? 15,
+        rowHeightPx: cur.rowHeightPx ?? 42,
+        colWidthScale: cur.colWidthScale ?? 100,
+        borderRadiusPx: cur.borderRadiusPx ?? 12,
+        cardShadowLevel: cur.cardShadowLevel ?? 'soft',
+        glassEffect: Boolean(cur.glassEffect),
+        customBgColor: cur.customBgColor || '',
+        customSurfaceColor: cur.customSurfaceColor || '',
+        customTextColor: cur.customTextColor || '',
+        customAccentColor: cur.customAccentColor || '',
+        conditionalFormatting: cur.conditionalFormatting,
+        createdAt: new Date().toISOString().slice(0, 10),
+      };
+      createdProfile = profile;
+      const existing = cur.savedProfiles || DEFAULT_APPEARANCE_PROFILES;
+      return {
+        ...prev,
+        themePrefs: {
+          ...cur,
+          savedProfiles: [profile, ...existing].slice(0, 16),
+          activeProfileId: profile.id,
+        },
+      };
+    });
+    if (createdProfile) {
+      const sess = getStoredSession();
+      void saveServerAppearanceProfile(createdProfile).catch(() => {});
+      if (sess?.user?.uid) {
+        void saveAppearanceProfileToFirestore(sess.user.uid, createdProfile).catch(() => {});
+      }
+    }
+  }, []);
+
+  const applyAppearanceProfile = useCallback((profileId: string) => {
+    setState((prev) => {
+      const cur = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      const list = cur.savedProfiles || DEFAULT_APPEARANCE_PROFILES;
+      const found = list.find((p) => p.id === profileId);
+      if (!found) return prev;
+      const themeMeta = getAppThemeById(found.appTheme);
+      return {
+        ...prev,
+        darkTheme: themeMeta.isDark,
+        themePrefs: {
+          ...cur,
+          appTheme: resolveAppThemeId(found.appTheme),
+          tableTheme: resolveTableThemeId(found.tableTheme),
+          fontFamily: resolveArabicFontId(found.fontFamily),
+          fontSizePx: found.fontSizePx,
+          rowHeightPx: found.rowHeightPx,
+          colWidthScale: found.colWidthScale,
+          borderRadiusPx: found.borderRadiusPx,
+          cardShadowLevel: found.cardShadowLevel,
+          glassEffect: found.glassEffect,
+          customBgColor: found.customBgColor || '',
+          customSurfaceColor: found.customSurfaceColor || '',
+          customTextColor: found.customTextColor || '',
+          customAccentColor: found.customAccentColor || '',
+          conditionalFormatting:
+            found.conditionalFormatting || cur.conditionalFormatting,
+          activeProfileId: found.id,
+        },
+      };
+    });
+  }, []);
+
+  const deleteAppearanceProfile = useCallback((profileId: string) => {
+    setState((prev) => {
+      const cur = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      const existing = cur.savedProfiles || DEFAULT_APPEARANCE_PROFILES;
+      return {
+        ...prev,
+        themePrefs: {
+          ...cur,
+          savedProfiles: existing.filter((p) => p.id !== profileId),
+          activeProfileId:
+            cur.activeProfileId === profileId ? null : cur.activeProfileId,
+        },
+      };
+    });
+    const sess = getStoredSession();
+    void deleteServerAppearanceProfile(profileId).catch(() => {});
+    if (sess?.user?.uid) {
+      void deleteAppearanceProfileFromFirestore(sess.user.uid, profileId).catch(() => {});
+    }
   }, []);
 
   const setRequireLoginOnStart = useCallback((requireLoginOnStart: boolean) => {
@@ -1570,7 +1735,10 @@ export function useAgencyStore() {
   );
 
   const updateAgencyDetails = useCallback(
-    (agencyId: number, patch: Partial<Pick<Agency, 'name' | 'icon' | 'isLocked'>>) => {
+    (
+      agencyId: number,
+      patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
+    ) => {
       commitDataMutation((prev) => ({
         ...prev,
         agencies: prev.agencies.map((a) =>
@@ -1582,30 +1750,40 @@ export function useAgencyStore() {
   );
 
   const syncWorkspaceToServer = useCallback(async () => {
+    const token = await getActiveBearerToken();
     const sess = getStoredSession();
-    if (!sess) {
+    if (!token || !sess) {
       throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
     }
     const res = await fetch('/api/workspace', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${sess.token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ snapshot: state }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || 'تعذرت المزامنة.');
+
+    void syncWorkspaceSummaryToFirestore({
+      uid: sess.user.uid,
+      title: state.activePeriod?.quotaName || 'مساحة عمل تابريكس',
+      agencyCount: state.agencies.length,
+      recordCount: state.persons.length,
+      themePrefs: state.themePrefs,
+    }).catch(() => {});
+
     return data;
   }, [state]);
 
   const restoreWorkspaceFromServer = useCallback(async () => {
-    const sess = getStoredSession();
-    if (!sess) {
+    const token = await getActiveBearerToken();
+    if (!token) {
       throw new Error('يرجى تسجيل الدخول أولًا.');
     }
     const res = await fetch('/api/workspace', {
-      headers: { Authorization: `Bearer ${sess.token}` },
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
@@ -1770,10 +1948,99 @@ export function useAgencyStore() {
     }));
   }, []);
 
+  const upsertUcrsSession = useCallback((session: UcrsSession) => {
+    // Strip oversized image previews on older sessions to keep localStorage well within quota
+    const compactSources = session.sources.map((s) => ({
+      ...s,
+      previewDataUrl:
+        s.previewDataUrl && s.previewDataUrl.length > 260000
+          ? undefined
+          : s.previewDataUrl,
+    }));
+    const compactSession: UcrsSession = {
+      ...session,
+      sources: compactSources,
+    };
+    setState((prev) => {
+      const existing = prev.ucrsSessions || [];
+      const idx = existing.findIndex((s) => s.id === compactSession.id);
+      const nextList =
+        idx === -1
+          ? [compactSession, ...existing].slice(0, 25)
+          : existing.map((s, i) => (i === idx ? compactSession : s));
+      return {
+        ...prev,
+        ucrsSessions: nextList,
+      };
+    });
+  }, []);
+
+  const deleteUcrsSession = useCallback((sessionId: string) => {
+    setState((prev) => ({
+      ...prev,
+      ucrsSessions: (prev.ucrsSessions || []).filter((s) => s.id !== sessionId),
+    }));
+  }, []);
+
+  const upsertUcrsLearningRule = useCallback((rule: UcrsLearningRule) => {
+    setState((prev) => {
+      const existing = prev.ucrsLearningRules || [];
+      const idx = existing.findIndex(
+        (r) =>
+          r.wrongToken === rule.wrongToken &&
+          r.correctedToken === rule.correctedToken
+      );
+      if (idx !== -1) {
+        const next = existing.map((r, i) =>
+          i === idx ? { ...r, usageCount: r.usageCount + 1, enabled: true } : r
+        );
+        return { ...prev, ucrsLearningRules: next };
+      }
+      return {
+        ...prev,
+        ucrsLearningRules: [rule, ...existing].slice(0, 80),
+      };
+    });
+  }, []);
+
+  const toggleUcrsLearningRule = useCallback((ruleId: string) => {
+    setState((prev) => ({
+      ...prev,
+      ucrsLearningRules: (prev.ucrsLearningRules || []).map((r) =>
+        r.id === ruleId ? { ...r, enabled: !r.enabled } : r
+      ),
+    }));
+  }, []);
+
+  const deleteUcrsLearningRule = useCallback((ruleId: string) => {
+    setState((prev) => ({
+      ...prev,
+      ucrsLearningRules: (prev.ucrsLearningRules || []).filter(
+        (r) => r.id !== ruleId
+      ),
+    }));
+  }, []);
+
+  const applyAssistantAutoFixes = useCallback(
+    (issueIds?: string[]) => {
+      const outcome = applyDiagnosticAutoFixes(state, issueIds);
+      if (outcome.fixedCount > 0) {
+        commitDataMutation((prev) => applyDiagnosticAutoFixes(prev, issueIds).nextState);
+      }
+      return {
+        fixedCount: outcome.fixedCount,
+        summaryLines: outcome.summaryLines,
+      };
+    },
+    [state, commitDataMutation]
+  );
+
   return {
     state,
     activePeriod,
     monthlyArchives: state.monthlyArchives || [],
+    ucrsSessions: state.ucrsSessions || [],
+    ucrsLearningRules: state.ucrsLearningRules || [],
     themePrefs: activeThemePrefs,
     expertTableConfig: {
       ...DEFAULT_EXPERT_TABLE_CONFIG,
@@ -1805,6 +2072,9 @@ export function useAgencyStore() {
     setDarkTheme,
     setThemePrefs,
     resetThemePrefs,
+    saveAppearanceProfile,
+    applyAppearanceProfile,
+    deleteAppearanceProfile,
     setRequireLoginOnStart,
     setCalculationSettings,
     setTopBarConfig,
@@ -1828,6 +2098,11 @@ export function useAgencyStore() {
     startNextMonthRollover,
     markArchiveCloudSynced,
     deleteMonthlyArchive,
+    upsertUcrsSession,
+    deleteUcrsSession,
+    upsertUcrsLearningRule,
+    toggleUcrsLearningRule,
+    deleteUcrsLearningRule,
     addPersonDirect,
     updatePersonConfirmed,
     bulkUpdatePersonsCategory,
@@ -1849,6 +2124,7 @@ export function useAgencyStore() {
     removeRelationEntryConfirmed,
     addAgencyDirect,
     updateAgencyDetails,
+    applyAssistantAutoFixes,
     syncWorkspaceToServer,
     restoreWorkspaceFromServer,
   };

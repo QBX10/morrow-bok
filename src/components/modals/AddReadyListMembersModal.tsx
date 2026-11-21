@@ -424,7 +424,7 @@ export const AddReadyListMembersModal: React.FC<
                               color: 'var(--accent)',
                             }}
                           >
-                            {eff.eligibleIndividuals ?? 0} أنفار · {eff.quotaText}
+                            {eff.eligibleIndividuals ?? 0} أفراد · {eff.quotaText}
                           </span>
                           {eff.summary.scope !== 'none' && (
                             <span
@@ -525,7 +525,7 @@ export const AddReadyListMembersModal: React.FC<
                           {catMeta.label}
                         </span>
                         <span className="tabular-nums" style={{ color: 'var(--accent)' }}>
-                          {eff.eligibleIndividuals ?? 0} أنفار
+                          {eff.eligibleIndividuals ?? 0} أفراد
                         </span>
                       </div>
                       <div style={{ color: 'var(--text-muted)' }}>

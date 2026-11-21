@@ -1,4 +1,10 @@
-import type { AuthUser } from '../types/agency';
+import type { AppearanceProfile, AuthUser } from '../types/agency';
+import {
+  getFirebaseIdToken,
+  googleSignIn,
+  logoutFirebase,
+} from './firebase';
+import { syncUserProfileToFirestore } from './firestoreSync';
 
 const LOCAL_AUTH_STORAGE_KEY = 'flour_agency_session_v2';
 
@@ -28,6 +34,142 @@ export function saveSession(token: string, user: AuthUser): void {
 
 export function clearSession(): void {
   localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+  void logoutFirebase().catch(() => {});
+}
+
+export async function getActiveBearerToken(): Promise<string | null> {
+  const firebaseToken = await getFirebaseIdToken();
+  if (firebaseToken) return firebaseToken;
+  return getStoredSession()?.token || null;
+}
+
+export async function signInWithFirebaseGoogle(): Promise<StoredSession> {
+  const { user: fbUser, idToken } = await googleSignIn();
+
+  let resolvedUser: AuthUser = {
+    uid: fbUser.uid,
+    provider: 'google',
+    displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم Google',
+    email: fbUser.email || undefined,
+    avatarUrl: fbUser.photoURL || undefined,
+    role: 'manager',
+  };
+
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.user) {
+        resolvedUser = {
+          ...resolvedUser,
+          ...data.user,
+          avatarUrl: data.user.avatarUrl || resolvedUser.avatarUrl,
+        };
+      }
+    }
+  } catch {
+    // Cloud SQL sync is optional if offline
+  }
+
+  void syncUserProfileToFirestore({
+    uid: fbUser.uid,
+    displayName: resolvedUser.displayName,
+    email: resolvedUser.email,
+    provider: 'google',
+    avatarUrl: resolvedUser.avatarUrl,
+  }).catch(() => {});
+
+  saveSession(idToken, resolvedUser);
+  return { token: idToken, user: resolvedUser };
+}
+
+export async function updateUserProfileApi(patch: {
+  displayName?: string;
+  avatarUrl?: string;
+}): Promise<AuthUser> {
+  const token = await getActiveBearerToken();
+  const current = getStoredSession();
+  if (!token || !current) {
+    throw new Error('يرجى تسجيل الدخول أولاً لتحديث الملف الشخصي.');
+  }
+
+  const nextUser: AuthUser = {
+    ...current.user,
+    displayName: patch.displayName?.trim() || current.user.displayName,
+    avatarUrl:
+      patch.avatarUrl !== undefined ? patch.avatarUrl : current.user.avatarUrl,
+  };
+
+  try {
+    const res = await fetch('/api/user/profile', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.error || 'تعذر حفظ بيانات الملف الشخصي.');
+    }
+    if (data?.user) {
+      Object.assign(nextUser, data.user);
+    }
+  } catch (err) {
+    if (token !== 'firebase') {
+      saveSession(token, nextUser);
+    }
+    throw err;
+  }
+
+  void syncUserProfileToFirestore({
+    uid: nextUser.uid,
+    displayName: nextUser.displayName,
+    email: nextUser.email,
+    provider: nextUser.provider,
+    avatarUrl: nextUser.avatarUrl,
+  }).catch(() => {});
+
+  saveSession(token, nextUser);
+  return nextUser;
+}
+
+export async function fetchServerAppearanceProfiles(): Promise<AppearanceProfile[]> {
+  const token = await getActiveBearerToken();
+  if (!token) return [];
+  const res = await fetch('/api/appearance-profiles', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data?.profiles) ? data.profiles : [];
+}
+
+export async function saveServerAppearanceProfile(
+  profile: AppearanceProfile
+): Promise<void> {
+  const token = await getActiveBearerToken();
+  if (!token) return;
+  await fetch('/api/appearance-profiles', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ profile }),
+  });
+}
+
+export async function deleteServerAppearanceProfile(id: string): Promise<void> {
+  const token = await getActiveBearerToken();
+  if (!token) return;
+  await fetch(`/api/appearance-profiles/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
 }
 
 export async function loginWithPasswordApi(params: {

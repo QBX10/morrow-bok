@@ -189,20 +189,22 @@ import {
 } from './excelExport';
 import type { ReadyList, ReadyListItem } from '../types/agency';
 
-test('themes registry defines 6 app themes, 5 table themes, and 4 Arabic fonts with fg tokens', () => {
-  assert.equal(APP_THEMES.length, 6);
-  assert.equal(TABLE_THEMES.length, 5);
-  assert.equal(ARABIC_FONTS.length, 4);
+test('themes registry defines 8 app themes, 8 table themes, and 6 Arabic fonts with fg tokens', () => {
+  assert.equal(APP_THEMES.length, 8);
+  assert.equal(TABLE_THEMES.length, 8);
+  assert.equal(ARABIC_FONTS.length, 6);
   for (const theme of APP_THEMES) {
     assert.ok(theme.vars['--accent-fg']);
     assert.ok(theme.vars['--success-fg']);
     assert.ok(theme.vars['--danger-fg']);
   }
-  assert.equal(getAppThemeById('midnight-slate').isDark, true);
-  assert.equal(getAppThemeById('warm-paper').isDark, false);
-  assert.equal(getAppThemeById('charcoal-emerald').isDark, true);
-  assert.equal(getAppThemeById('nordic-navy').isDark, true);
-  assert.equal(getAppThemeById('soft-mint').isDark, false);
+  assert.equal(getAppThemeById('obsidian-gold').isDark, true);
+  assert.equal(getAppThemeById('desert-mirage').isDark, false);
+  assert.equal(getAppThemeById('emerald-forest').isDark, true);
+  assert.equal(getAppThemeById('aurora').isDark, true);
+  assert.equal(getAppThemeById('zen-minimal').isDark, false);
+  // Legacy aliases migrate transparently
+  assert.equal(getAppThemeById('midnight-slate').id, 'obsidian-gold');
   assert.equal(DEFAULT_THEME_PREFERENCES.tabularNumerals, true);
 });
 
@@ -280,7 +282,7 @@ test('buildReadyListShareText formats header, subtitles, date, rows, and totals'
   assert.ok(text.includes('الوكالة: منذر الحلو'));
   assert.ok(text.includes('السائق: عباس فاضل'));
   assert.ok(text.includes('جاسم محمد'));
-  assert.ok(text.includes('الإجمالي: 1 عائلة | 5 أنفار'));
+  assert.ok(text.includes('الإجمالي: 1 عائلة | 5 أفراد'));
 });
 
 import {
@@ -358,8 +360,8 @@ test('buildSelectedRecordsCopyText formats single detailed card and multi-select
     ],
     settings: DEFAULT_CALCULATION_SETTINGS,
   });
-  assert.ok(multi.includes('1. حسين علي — 6 أنفار'));
-  assert.ok(multi.includes('2. زهراء محمد — 5 أنفار'));
+  assert.ok(multi.includes('1. حسين علي — 6 أفراد'));
+  assert.ok(multi.includes('2. زهراء محمد — 5 أفراد'));
 });
 
 import {

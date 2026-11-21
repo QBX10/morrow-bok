@@ -425,7 +425,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             }}
           >
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              إجمالي الأنفار المستحقة
+              إجمالي الأفراد المستحقة
             </div>
             <div
               className="mt-1 text-lg font-bold tabular-nums"
@@ -1274,7 +1274,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                     </div>
                   </div>
                   <div>
-                    <div style={{ color: 'var(--text-muted)' }}>الأنفار</div>
+                    <div style={{ color: 'var(--text-muted)' }}>الأفراد</div>
                     <div
                       className="font-bold"
                       style={{ color: 'var(--accent)' }}

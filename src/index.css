@@ -2,17 +2,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-main: #f8fafc;
+  --bg-main: #f4f7fb;
   --bg-surface: #ffffff;
   --bg-header: #0f172a;
-  --bg-table-header: #f1f5f9;
-  --bg-nav-active: #eff6ff;
-  --bg-zebra: rgba(241, 245, 249, 0.6);
+  --bg-table-header: #eef3f9;
+  --bg-nav-active: #e8f1ff;
+  --bg-zebra: rgba(241, 245, 249, 0.65);
   --bg-numeric: rgba(29, 78, 216, 0.035);
-  --row-hover-bg: rgba(29, 78, 216, 0.07);
+  --row-hover-bg: rgba(29, 78, 216, 0.075);
   --text-primary: #0f172a;
   --text-muted: #475569;
-  --border-color: #dbe3ee;
+  --border-color: #d9e2ec;
   --grid-color: #e2e8f0;
   --accent: #1d4ed8;
   --accent-fg: #ffffff;
@@ -30,6 +30,9 @@
   --app-font-weight: 500;
   --table-cell-py: 10px;
   --table-line-height: 1.6;
+  --table-col-scale: 1;
+  --card-radius: 12px;
+  --card-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.08);
 }
 
 html,
@@ -42,6 +45,24 @@ body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-duration: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 input,
@@ -70,7 +91,68 @@ option {
   font-variant-numeric: tabular-nums;
 }
 
-/* Dynamic Table Theme & Typography System */
+.tabrix-card {
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+html[data-glass="1"] .tabrix-card,
+html[data-glass="1"] .glass-surface {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Official Google Sign-In Material Button */
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  background-color: #ffffff;
+  border: 1px solid #747775;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #1f1f1f;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  height: 42px;
+  padding: 0 16px;
+  position: relative;
+  text-align: center;
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gsi-material-button:hover:not(:disabled) {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  background-color: #f8fafc;
+}
+
+.gsi-material-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.gsi-material-button .gsi-material-button-content-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.gsi-material-button .gsi-material-button-icon {
+  height: 20px;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* 8 Dynamic Table Design Engines */
 .agency-table {
   width: 100%;
   border-collapse: separate;
@@ -83,41 +165,83 @@ option {
 .agency-table td {
   padding-top: var(--table-cell-py);
   padding-bottom: var(--table-cell-py);
+  padding-inline: calc(10px * var(--table-col-scale));
   border-bottom: 1px solid var(--grid-color);
   border-color: var(--grid-color);
 }
 
-.agency-table.theme-classic-quota tbody tr:nth-child(even):not(.row-blocked) {
+/* 1. Glass Table */
+.agency-table.theme-glass {
+  background-color: transparent;
+}
+.agency-table.theme-glass thead tr th {
+  backdrop-filter: blur(8px);
+}
+.agency-table.theme-glass tbody tr:nth-child(even):not(.row-blocked):not(.row-warning-cond) {
   background-color: var(--bg-zebra);
 }
 
-.agency-table.theme-financial-audit th,
-.agency-table.theme-financial-audit td {
+/* 2. Paper Ledger */
+.agency-table.theme-paper-ledger tbody tr:nth-child(even):not(.row-blocked):not(.row-warning-cond) {
+  background-color: var(--bg-zebra);
+}
+.agency-table.theme-paper-ledger th {
+  border-bottom: 2px solid var(--border-color);
+}
+
+/* 3. Data Grid Pro */
+.agency-table.theme-data-grid th,
+.agency-table.theme-data-grid td {
   border-left: 1px solid var(--grid-color);
 }
 
-.agency-table.theme-pdf-reader {
-  background-color: var(--bg-surface);
+/* 4. Royal Executive */
+.agency-table.theme-royal-executive thead tr th {
+  background-color: var(--accent) !important;
+  color: var(--accent-fg) !important;
+  border-color: transparent !important;
 }
-.agency-table.theme-pdf-reader thead tr {
-  background-color: var(--bg-surface) !important;
+.agency-table.theme-royal-executive tbody tr td {
+  border-bottom: 1px solid var(--border-color);
 }
-.agency-table.theme-pdf-reader th {
+
+/* 5. Pastel Blocks */
+.agency-table.theme-pastel-blocks {
+  border-spacing: 0 4px;
+}
+.agency-table.theme-pastel-blocks tbody tr:not(.row-blocked):not(.row-warning-cond) td {
+  background-color: var(--bg-zebra);
+}
+
+/* 6. Minimalist Lines */
+.agency-table.theme-minimalist-lines th,
+.agency-table.theme-minimalist-lines td {
+  border-left: none !important;
+  border-right: none !important;
+}
+.agency-table.theme-minimalist-lines thead tr th {
   background-color: var(--bg-surface) !important;
   border-bottom: 2px solid var(--text-primary);
 }
 
-.agency-table.theme-high-contrast th,
-.agency-table.theme-high-contrast td {
-  border: 1px solid var(--text-muted);
-  font-weight: 700;
+/* 7. Neon Matrix */
+.agency-table.theme-neon-matrix th,
+.agency-table.theme-neon-matrix td {
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border-color);
+}
+.agency-table.theme-neon-matrix thead tr th {
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
 }
 
-.agency-table.theme-compact-modern th,
-.agency-table.theme-compact-modern td {
-  padding-top: 5px;
-  padding-bottom: 5px;
-  font-size: 0.875em;
+/* Legacy Fallback Classes (for seamless transition) */
+.agency-table.theme-classic-quota tbody tr:nth-child(even):not(.row-blocked) {
+  background-color: var(--bg-zebra);
+}
+.agency-table.theme-financial-audit th,
+.agency-table.theme-financial-audit td {
+  border-left: 1px solid var(--grid-color);
 }
 
 .agency-table.hover-highlight tbody tr:hover td {
@@ -130,7 +254,25 @@ option {
 
 .agency-table.has-focused-row tbody tr:not(.row-focused) {
   opacity: 0.52;
-  transition: opacity 150ms ease;
+  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.assistant-glow-btn {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 6px 22px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.assistant-glow-btn:hover {
+  box-shadow: 0 0 0 2px var(--accent),
+    0 8px 28px color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+.assistant-spotlight-active {
+  outline: 3px solid var(--accent) !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 22%, transparent) !important;
+  border-radius: var(--card-radius);
+  scroll-margin-top: 90px;
 }
 
 @media print {

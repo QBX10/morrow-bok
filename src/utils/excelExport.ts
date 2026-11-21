@@ -65,7 +65,7 @@ export function exportRosterToExcel(params: {
       الحرف: initialLetter(person.name),
       الاسم: person.name,
       الوكالة: agencyMap.get(person.agencyId) || '',
-      'الأنفار المستحقون':
+      'الأفراد المستحقون':
         eff.summary.scope === 'partial'
           ? `${eff.eligibleIndividuals} من ${person.individuals ?? 0}`
           : eff.summary.scope === 'full'
@@ -98,7 +98,7 @@ export function exportFinancialReportToExcel(params: {
     { البند: 'الوكالة', القيمة: agencyName },
     { البند: 'تاريخ التقرير', القيمة: new Date().toLocaleDateString('ar-IQ') },
     { البند: 'العائلات النشطة', القيمة: m.activeHouseholds },
-    { البند: 'عدد الأفراد (الأنفار)', القيمة: m.activeIndividuals },
+    { البند: 'عدد الأفراد', القيمة: m.activeIndividuals },
     { البند: 'عدد الأكياس الكاملة', القيمة: m.fullBags },
     { البند: 'إجمالي الحصة', القيمة: formatTotalQuota(m.totalKg, settings) },
     { البند: 'الإيرادات', القيمة: formatIqd(m.revenue) },
@@ -181,7 +181,7 @@ export function buildReadyListShareText(params: {
     totalKg += elig * settings.kgPerIndividual;
     totalIqd += eff.priceIqd ?? 0;
     const notePart = rec.notes ? ` (${rec.notes})` : '';
-    return `${idx + 1}. ${rec.name} — ${elig} أنفار — ${eff.quotaText} — ${eff.priceText} [${eff.summary.shortLabel}]${notePart}`;
+    return `${idx + 1}. ${rec.name} — ${elig} أفراد — ${eff.quotaText} — ${eff.priceText} [${eff.summary.shortLabel}]${notePart}`;
   });
 
   const headerLines = [
@@ -194,7 +194,7 @@ export function buildReadyListShareText(params: {
 
   const footerLines = [
     '────────────────────────',
-    `الإجمالي: ${items.length} عائلة | ${totalInd} أنفار | ${formatTotalQuota(totalKg, settings)} | ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${items.length} عائلة | ${totalInd} أفراد | ${formatTotalQuota(totalKg, settings)} | ${formatIqd(totalIqd)}`,
   ];
 
   return [...headerLines, ...lines, ...footerLines].join('\n');
@@ -280,7 +280,7 @@ export async function exportReadyListToImage(params: {
   const cols = [
     { label: '#', x: width - 32, w: 48, align: 'center' as const },
     { label: 'الاسم', x: width - 88, w: 280, align: 'right' as const },
-    { label: 'الأنفار', x: width - 380, w: 110, align: 'center' as const },
+    { label: 'الأفراد', x: width - 380, w: 110, align: 'center' as const },
     { label: 'الحصة', x: width - 500, w: 170, align: 'center' as const },
     { label: 'المبلغ', x: width - 680, w: 140, align: 'center' as const },
     { label: 'الحالة', x: width - 830, w: 110, align: 'center' as const },
@@ -363,7 +363,7 @@ export async function exportReadyListToImage(params: {
   ctx.textAlign = 'right';
   ctx.font = 'bold 15px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `الإجمالي: ${items.length} عائلة  |  ${totalInd} أنفار  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${items.length} عائلة  |  ${totalInd} أفراد  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
     width - 32,
     footerY + 26
   );
@@ -475,7 +475,7 @@ export async function exportSelectedRecordsToImage(params: {
 
     const rows: Array<[string, string]> = [
       [
-        'عدد الأفراد (الأنفار)',
+        'عدد الأفراد',
         eff.summary.scope === 'partial'
           ? `${eff.eligibleIndividuals ?? 0} مستحق من أصل ${rec.individuals ?? 0}`
           : String(eff.eligibleIndividuals ?? 0),
@@ -560,7 +560,7 @@ export async function exportSelectedRecordsToImage(params: {
   const cols = [
     { label: '#', x: width - 32, w: 48, align: 'center' as const },
     { label: 'الاسم', x: width - 88, w: 300, align: 'right' as const },
-    { label: 'الأنفار', x: width - 400, w: 110, align: 'center' as const },
+    { label: 'الأفراد', x: width - 400, w: 110, align: 'center' as const },
     { label: 'الحصة', x: width - 520, w: 170, align: 'center' as const },
     { label: 'المبلغ', x: width - 700, w: 140, align: 'center' as const },
     { label: 'الحالة', x: width - 850, w: 110, align: 'center' as const },
@@ -625,7 +625,7 @@ export async function exportSelectedRecordsToImage(params: {
   ctx.textAlign = 'right';
   ctx.font = 'bold 15px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `الإجمالي: ${records.length} سجل  |  ${totalInd} أنفار  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${records.length} سجل  |  ${totalInd} أفراد  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
     width - 32,
     footerY + 24
   );

@@ -389,7 +389,7 @@ export function buildSnippetCardDetails(params: {
       eff.summary.scope === 'partial'
         ? `${eff.eligibleIndividuals ?? 0} مستحق من أصل ${record.individuals ?? 0}`
         : String(eff.eligibleIndividuals ?? record.individuals ?? 0),
-    decreaseLabel: decreaseCount > 0 ? `${decreaseCount} أنفار` : '0',
+    decreaseLabel: decreaseCount > 0 ? `${decreaseCount} أفراد` : '0',
     addOrDeleteLabel,
     quotaLabel: eff.quotaText,
     priceLabel: eff.priceText,

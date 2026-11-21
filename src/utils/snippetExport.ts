@@ -230,7 +230,7 @@ export async function generateSmartSnippetBlob(params: {
       ['الوكالة / القائمة', details.agencyName],
       ['رقم البطاقة التموينية', details.nationalId],
       ['اسم المستفيد', details.name],
-      ['عدد الأفراد (الأنفار)', details.individualsLabel],
+      ['عدد الأفراد', details.individualsLabel],
       ['النزول / النقصان', details.decreaseLabel],
       ['الإضافة / الحذف', details.addOrDeleteLabel],
       ['الحصة المقررة والمبلغ', `${details.quotaLabel}  ·  ${details.priceLabel}`],
@@ -302,7 +302,7 @@ export async function generateSmartSnippetBlob(params: {
   ctx.textAlign = 'right';
   ctx.font = 'bold 14px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `قصاصة رسمية للتدقيق — تابريكس  |  السجلات: ${records.length}  |  الأنفار: ${totalInd}  |  ${formatTotalQuota(
+    `قصاصة رسمية للتدقيق — تابريكس  |  السجلات: ${records.length}  |  الأفراد: ${totalInd}  |  ${formatTotalQuota(
       totalKg,
       settings
     )}  |  ${formatIqd(totalIqd)}`,
@@ -431,7 +431,7 @@ export function printSmartSnippetPdf(params: {
     </table>
     <div class="footer">قصاصة تدقيق — تابريكس | السجلات: ${
       records.length
-    } | الأنفار: ${totalInd} | ${formatTotalQuota(
+    } | الأفراد: ${totalInd} | ${formatTotalQuota(
       totalKg,
       settings
     )} | ${formatIqd(totalIqd)}</div>
@@ -509,7 +509,7 @@ export function printArchiveRecordPdf(archive: MonthlyArchiveRecord): void {
   </table>
   <div class="footer">الإجمالي المؤرشف: ${
     archive.summary.totalHouseholds
-  } عائلة | ${archive.summary.totalIndividuals} أنفار | ${formatTotalQuota(
+  } عائلة | ${archive.summary.totalIndividuals} أفراد | ${formatTotalQuota(
     archive.summary.totalKg,
     archive.calculationSettings
   )} | الإيرادات: ${formatIqd(archive.summary.totalRevenueIqd)}</div>

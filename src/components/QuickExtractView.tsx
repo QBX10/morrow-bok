@@ -1,37 +1,44 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
+  BarChart3,
   Camera,
   Check,
   CheckCircle2,
+  Compass,
   FileSearch,
   FileText,
   FileWarning,
   Filter,
+  FolderClock,
+  Layers,
   Loader2,
   Lock,
   MousePointerSquareDashed,
   Redo2,
   RotateCcw,
+  Search,
   ShieldAlert,
   Sparkles,
   Undo2,
   Upload,
+  Volume2,
   Zap,
 } from 'lucide-react';
 import type {
   Agency,
   AppView,
   CalculationSettings,
+  NormalizedBox,
   Person,
   QuickExtractAnalysisResult,
-  QuickExtractCaptureMode,
   QuickExtractCommitSummary,
   QuickExtractDestinationSpec,
   QuickExtractEvaluatedRow,
   QuickExtractFocusField,
   QuickExtractPrefs,
+  QuickExtractRawRow,
   QuickExtractReferenceTemplate,
   QuickExtractRoutingConfig,
   QuickExtractScanMode,
@@ -40,6 +47,14 @@ import type {
   RelationCategory,
   RelationEntry,
   ThemePreferences,
+  UcrsContentIdentity,
+  UcrsCoverageRegion,
+  UcrsExtractedTextEntity,
+  UcrsIntentMode,
+  UcrsLearningRule,
+  UcrsReadingPlan,
+  UcrsSession,
+  UcrsSourceRecord,
 } from '../types/agency';
 import { normalizeArabic } from '../utils/agencyLogic';
 import type { BurstFusionSummary } from '../utils/ledgerImageProcessor';
@@ -53,6 +68,17 @@ import {
   recomputeRowValidation,
   resolveFocusedFields,
 } from '../utils/quickExtractEngine';
+import { parseLocalStructuredDocument } from '../utils/ucrsDocParser';
+import {
+  applyLearningRulesToName,
+  buildCoverageRegionsFromRows,
+  buildDefaultReadingPlan,
+  buildDiagnosticsForSession,
+  classifyIntakeSource,
+  computeSmartCoverage,
+  extractLearningRuleFromCorrection,
+  mergeSupplementaryExtraction,
+} from '../utils/ucrsEngine';
 import { CoreRosterTable, type CoreRosterRow } from './CoreRosterTable';
 import {
   SelectionActionBar,
@@ -62,6 +88,10 @@ import { BurstCameraCapture } from './quickExtract/BurstCameraCapture';
 import { RedFlagDoubtSegment } from './quickExtract/RedFlagDoubtSegment';
 import { ReferenceTemplateModal } from './quickExtract/ReferenceTemplateModal';
 import { RoutingPanel } from './quickExtract/RoutingPanel';
+import { UcrsCoverageAndSessionsPanel } from './quickExtract/UcrsCoverageAndSessionsPanel';
+import { UcrsIdentityAndPlanCard } from './quickExtract/UcrsIdentityAndPlanCard';
+import { UcrsReportsAndStatsModal } from './quickExtract/UcrsReportsAndStatsModal';
+import { UcrsSemanticSearchPanel } from './quickExtract/UcrsSemanticSearchPanel';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -73,6 +103,8 @@ interface QuickExtractViewProps {
   themePrefs: ThemePreferences;
   quickExtractPrefs: QuickExtractPrefs;
   defaultAgencyId: number;
+  ucrsSessions?: UcrsSession[];
+  ucrsLearningRules?: UcrsLearningRule[];
   onUpdateQuickExtractPrefs: (patch: Partial<QuickExtractPrefs>) => void;
   onSaveQuickExtractTemplate: (template: QuickExtractReferenceTemplate) => void;
   onCommitQuickExtractPlan: (params: {
@@ -90,8 +122,24 @@ interface QuickExtractViewProps {
     deliveryPhone?: string;
     deliveryTime?: string;
   }) => void;
+  onUpsertUcrsSession?: (session: UcrsSession) => void;
+  onDeleteUcrsSession?: (sessionId: string) => void;
+  onUpsertUcrsLearningRule?: (rule: UcrsLearningRule) => void;
+  onToggleUcrsLearningRule?: (ruleId: string) => void;
+  onDeleteUcrsLearningRule?: (ruleId: string) => void;
   onDoneNavigateToAgency: (agencyId: number) => void;
   onNavigateToView: (view: AppView) => void;
+}
+
+type IntakeTabMode = 'pdf' | 'camera_burst' | 'universal_files';
+type UcrsWorkspaceTab = 'pipeline' | 'identity_plan' | 'coverage_sessions' | 'semantic_search';
+
+interface StoredSourcePayload {
+  kind: 'pdf' | 'frames' | 'text';
+  filename: string;
+  base64Pdf?: string;
+  frames?: Array<{ mimeType: string; data: string; label?: string }>;
+  rawText?: string;
 }
 
 function createDefaultDestSpec(
@@ -114,6 +162,50 @@ function createDefaultDestSpec(
   };
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`تعذر قراءة الملف: ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageDataUrl(rawUrl: string): Promise<{ dataUrl: string; mimeType: string }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(120, Math.round(img.width * scale));
+      canvas.height = Math.max(120, Math.round(img.height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ dataUrl: rawUrl, mimeType: 'image/jpeg' });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve({
+        dataUrl: canvas.toDataURL('image/jpeg', 0.9),
+        mimeType: 'image/jpeg',
+      });
+    };
+    img.onerror = () => resolve({ dataUrl: rawUrl, mimeType: 'image/jpeg' });
+    img.src = rawUrl;
+  });
+}
+
+const INTENT_OPTIONS: Array<{ id: UcrsIntentMode; label: string }> = [
+  { id: 'extract_all', label: 'استخراج كامل' },
+  { id: 'discover', label: 'اكتشاف وفهم المحتوى' },
+  { id: 'extract_useful', label: 'استخراج ما يفيدني فقط' },
+  { id: 'semantic_search', label: 'بحث دلالي' },
+  { id: 'understand_book', label: 'فهم كتاب / وثيقة' },
+  { id: 'focus_notes', label: 'الملاحظات والتوصيل فقط' },
+  { id: 'custom', label: 'أمر مخصص' },
+];
+
 export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   agencies,
   persons,
@@ -124,12 +216,19 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   themePrefs,
   quickExtractPrefs,
   defaultAgencyId,
+  ucrsSessions = [],
+  ucrsLearningRules = [],
   onUpdateQuickExtractPrefs,
   onSaveQuickExtractTemplate,
   onCommitQuickExtractPlan,
   onMovePersonsToAgency,
   onAddPersonsToReadyList,
   onUpsertRelation,
+  onUpsertUcrsSession,
+  onDeleteUcrsSession,
+  onUpsertUcrsLearningRule,
+  onToggleUcrsLearningRule,
+  onDeleteUcrsLearningRule,
   onDoneNavigateToAgency,
   onNavigateToView,
 }) => {
@@ -138,7 +237,12 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     ? defaultAgencyId
     : fallbackAgencyId;
 
-  const [captureMode, setCaptureMode] = useState<QuickExtractCaptureMode>('pdf');
+  const [captureMode, setCaptureMode] = useState<IntakeTabMode>('pdf');
+  const [ucrsTab, setUcrsTab] = useState<UcrsWorkspaceTab>('pipeline');
+  const [intentMode, setIntentMode] = useState<UcrsIntentMode>('extract_all');
+  const [customCommand, setCustomCommand] = useState('');
+  const [pastedText, setPastedText] = useState('');
+
   const [scanMode, setScanMode] = useState<QuickExtractScanMode>(
     quickExtractPrefs.defaultScanMode || 'audit'
   );
@@ -146,12 +250,20 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     resolveFocusedFields(quickExtractPrefs.focusedFields)
   );
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [ttsStatus, setTtsStatus] = useState('');
   const [analysis, setAnalysis] =
     useState<QuickExtractAnalysisResult | null>(null);
+  const [activeSession, setActiveSession] = useState<UcrsSession | null>(null);
+  const [allParsedRowsBackup, setAllParsedRowsBackup] = useState<
+    QuickExtractEvaluatedRow[] | null
+  >(null);
+  const lastPayloadRef = useRef<StoredSourcePayload | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Local Undo / Redo history for inline edits inside Quick Extract
   const [pastRows, setPastRows] = useState<QuickExtractEvaluatedRow[][]>([]);
@@ -164,6 +276,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [showConfirmUpdates, setShowConfirmUpdates] = useState(false);
+  const [coverageOverrideConfirmed, setCoverageOverrideConfirmed] =
+    useState(false);
   const [commitSummary, setCommitSummary] =
     useState<QuickExtractCommitSummary | null>(null);
 
@@ -214,52 +328,266 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     [quickExtractPrefs]
   );
 
-  const applyNewAnalysisResult = (result: QuickExtractAnalysisResult) => {
-    const activeScanMode = result.scanMode || scanMode;
+  const persistSession = (session: UcrsSession) => {
+    setActiveSession(session);
+    onUpsertUcrsSession?.(session);
+  };
+
+  const buildAnalysisWithLearning = (params: {
+    rawResult: QuickExtractAnalysisResult & {
+      identity?: UcrsContentIdentity | null;
+      missingHint?: string;
+      entities?: UcrsExtractedTextEntity[];
+      unreadableRegions?: Array<{
+        pageNumber: number;
+        label: string;
+        reason: string;
+        box: NormalizedBox;
+      }>;
+    };
+    sourceRecord: UcrsSourceRecord;
+    plan: UcrsReadingPlan;
+    entities?: UcrsExtractedTextEntity[];
+  }) => {
+    const { rawResult, sourceRecord, plan } = params;
+    const activeScanMode = rawResult.scanMode || scanMode;
     const activeFocused = resolveFocusedFields(
-      result.focusedFields || focusedFields
+      rawResult.focusedFields || focusedFields
     );
-    // Re-evaluate rows locally with full Arabic Name & Prefix Tree from live persons[]
-    const enrichedRows = result.rows.map((r, idx) =>
-      evaluateExtractedRow(r, idx, {
-        sourceMode: result.sourceMode || captureMode,
+
+    const enrichedRows = rawResult.rows.map((r, idx) => {
+      const learned =
+        plan.autoApplyLearningRules && r.name
+          ? applyLearningRulesToName(r.name, ucrsLearningRules)
+          : null;
+      const adjustedRaw: QuickExtractRawRow =
+        learned && learned.appliedRules.length > 0
+          ? {
+              ...r,
+              name: learned.updatedName,
+              notes: r.notes
+                ? `${r.notes} · مصحح بالتعلم الذاتي`
+                : 'مصحح بالتعلم الذاتي',
+            }
+          : r;
+
+      return evaluateExtractedRow(adjustedRaw, idx, {
+        sourceMode: rawResult.sourceMode || 'pdf',
         scanMode: activeScanMode,
         focusedFields: activeFocused,
         tree: nameTree,
         persons,
-      })
-    );
+      });
+    });
+
     const hasAnyDoubt = enrichedRows.some(
       (r) => r.hasDoubt || !r.isComplete || r.mathIssues.length > 0
     );
-    setAnalysis({
-      ...result,
+
+    const normalizedResult: QuickExtractAnalysisResult = {
+      ...rawResult,
       scanMode: activeScanMode,
       focusedFields: activeFocused,
       status:
-        result.status === 'rejected'
+        rawResult.status === 'rejected'
           ? 'rejected'
           : hasAnyDoubt
           ? 'needs_review'
           : 'clear',
       rows: enrichedRows,
+    };
+
+    const extraRegions: UcrsCoverageRegion[] = (
+      rawResult.unreadableRegions || []
+    ).map((u, idx) => ({
+      id: `unr_${idx}`,
+      pageNumber: u.pageNumber || 1,
+      label: u.label || 'منطقة غير مقروءة',
+      state: 'unreadable',
+      box: u.box,
+      reason: u.reason,
+    }));
+
+    const identity: UcrsContentIdentity = rawResult.identity
+      ? {
+          ...rawResult.identity,
+          suggestedActions: rawResult.identity.suggestedActions || [
+            { id: 'act_all', label: 'استخراج كامل الجدول', intent: 'extract_all' },
+            {
+              id: 'act_useful',
+              label: 'استخراج ما يفيدني فقط',
+              intent: 'extract_useful',
+            },
+            {
+              id: 'act_search',
+              label: 'بحث دلالي في المحتوى',
+              intent: 'semantic_search',
+            },
+          ],
+        }
+      : {
+          contentType:
+            sourceRecord.kind === 'camera_burst'
+              ? 'دفتر يدوي'
+              : 'جدول مستفيدين',
+          topic: sourceRecord.label,
+          qualityLabel:
+            rawResult.clarityScore >= 80
+              ? 'واضح'
+              : rawResult.clarityScore >= 55
+              ? 'متوسط'
+              : 'صعب',
+          qualityScore: rawResult.clarityScore,
+          relevanceLevel: enrichedRows.length > 0 ? 'important' : 'useful',
+          relevanceReasons: [
+            `تم استخراج ${enrichedRows.length} صفًا من «${sourceRecord.label}».`,
+          ],
+          languageSummary: 'عربي وأرقام',
+          estimatedTotalRows:
+            enrichedRows.length + (rawResult.unreadableRegions?.length ?? 0),
+          estimatedColumns: 4,
+          estimatedConfidentCount: enrichedRows.filter(
+            (r) => !r.hasDoubt && r.isComplete
+          ).length,
+          estimatedDoubtfulCount: enrichedRows.filter(
+            (r) => r.hasDoubt || !r.isComplete
+          ).length,
+          estimatedUnreadableCount: rawResult.unreadableRegions?.length ?? 0,
+          wordCount: enrichedRows.reduce(
+            (s, r) => s + r.resolvedName.split(/\s+/).filter(Boolean).length,
+            0
+          ),
+          detectedNamesCount: enrichedRows.length,
+          detectedDates: [],
+          detectedLocations: [],
+          opinionAndRecommendation:
+            rawResult.documentSummary ||
+            'تم تحليل المحتوى وتجهيزه للمراجعة والتدقيق.',
+          suggestedActions: [
+            { id: 'act_all', label: 'استخراج كامل', intent: 'extract_all' },
+            {
+              id: 'act_useful',
+              label: 'ما يفيدني فقط',
+              intent: 'extract_useful',
+            },
+            { id: 'act_search', label: 'بحث دلالي', intent: 'semantic_search' },
+          ],
+        };
+
+    const coverage = computeSmartCoverage({
+      rows: enrichedRows,
+      estimatedTotalItems: Math.max(
+        identity.estimatedTotalRows,
+        enrichedRows.length + extraRegions.length
+      ),
+      unreadableCount: extraRegions.length,
+      pageCount: rawResult.pageCount || 1,
+      coveredPages: rawResult.pageCount || 1,
+      missingHint: rawResult.missingHint,
     });
+
+    const coverageRegions = buildCoverageRegionsFromRows(
+      enrichedRows,
+      extraRegions
+    );
+    const diagnostics = buildDiagnosticsForSession({
+      rows: enrichedRows,
+      identity,
+      coverage,
+    });
+
+    const session: UcrsSession = {
+      id: `ucrs_${Date.now().toString(36)}`,
+      title: sourceRecord.label,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status:
+        rawResult.status === 'rejected'
+          ? 'rejected'
+          : coverage.overallPercent >= plan.minCoverageThreshold &&
+            coverage.doubtfulCount === 0 &&
+            coverage.unreadableCount === 0
+          ? 'ready'
+          : 'needs_completion',
+      sources: [sourceRecord],
+      identity,
+      plan,
+      rows: enrichedRows,
+      entities: params.entities || rawResult.entities || [],
+      coverage,
+      coverageRegions,
+      diagnostics,
+      documentSummary: rawResult.documentSummary || identity.topic,
+      lastFusionDiff: null,
+    };
+
+    setAllParsedRowsBackup(enrichedRows);
+    setAnalysis(normalizedResult);
+    persistSession(session);
     setPastRows([]);
     setFutureRows([]);
     setSelectedRowIds(enrichedRows.map((r) => r.id));
     setFocusedRowKey(null);
+    setCoverageOverrideConfirmed(false);
+  };
+
+  // Sync activeSession whenever rows in `analysis` are edited by user
+  const syncSessionFromRows = (
+    nextRows: QuickExtractEvaluatedRow[],
+    nextPlan?: UcrsReadingPlan
+  ) => {
+    if (!activeSession) return;
+    const plan = nextPlan || activeSession.plan;
+    const unreadableCount = activeSession.coverageRegions.filter(
+      (r) => r.state === 'unreadable'
+    ).length;
+    const coverage = computeSmartCoverage({
+      rows: nextRows,
+      estimatedTotalItems: Math.max(
+        activeSession.identity?.estimatedTotalRows ?? 0,
+        nextRows.length + unreadableCount
+      ),
+      unreadableCount,
+      pageCount: Math.max(1, activeSession.sources.length),
+    });
+    const extraUnreadable = activeSession.coverageRegions.filter(
+      (r) => r.state === 'unreadable'
+    );
+    const coverageRegions = buildCoverageRegionsFromRows(
+      nextRows,
+      extraUnreadable
+    );
+    const diagnostics = buildDiagnosticsForSession({
+      rows: nextRows,
+      identity: activeSession.identity,
+      coverage,
+    });
+    const nextSession: UcrsSession = {
+      ...activeSession,
+      updatedAt: new Date().toISOString(),
+      plan,
+      rows: nextRows,
+      coverage,
+      coverageRegions,
+      diagnostics,
+      status:
+        coverage.overallPercent >= plan.minCoverageThreshold &&
+        coverage.doubtfulCount === 0 &&
+        coverage.unreadableCount === 0
+          ? 'ready'
+          : 'needs_completion',
+    };
+    persistSession(nextSession);
   };
 
   const handleToggleFocusField = (field: QuickExtractFocusField) => {
-    setFocusedFields((prev) => {
-      const exists = prev.includes(field);
-      if (exists && prev.length <= 1) return prev;
-      const next = exists
-        ? prev.filter((f) => f !== field)
-        : [...prev, field];
-      onUpdateQuickExtractPrefs({ focusedFields: next });
-      return next;
-    });
+    const exists = focusedFields.includes(field);
+    if (exists && focusedFields.length <= 1) return;
+    const next = exists
+      ? focusedFields.filter((f) => f !== field)
+      : [...focusedFields, field];
+    setFocusedFields(next);
+    onUpdateQuickExtractPrefs({ focusedFields: next });
   };
 
   const applyFocusPreset = (preset: QuickExtractFocusField[]) => {
@@ -267,19 +595,113 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     onUpdateQuickExtractPrefs({ focusedFields: preset });
   };
 
+  const speakArabicText = async (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setTtsStatus('جارٍ تحضير القراءة الصوتية...');
+    try {
+      const res = await fetch('/api/ucrs/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          audioBase64?: string;
+          mimeType?: string;
+        };
+        if (data.audioBase64) {
+          if (audioRef.current) {
+            audioRef.current.pause();
+          }
+          const audio = new Audio(
+            `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`
+          );
+          audioRef.current = audio;
+          await audio.play();
+          setTtsStatus('يتم تشغيل القراءة الصوتية الآن.');
+          return;
+        }
+      }
+    } catch {
+      // Fallback gracefully to browser SpeechSynthesis
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = 'ar-IQ';
+      utter.rate = 0.95;
+      window.speechSynthesis.speak(utter);
+      setTtsStatus('يتم تشغيل القراءة الصوتية عبر المتصفح.');
+    } else {
+      setTtsStatus('القراءة الصوتية غير مدعومة في هذا المتصفح.');
+    }
+  };
+
+  const callUcrsAnalyzeEndpoint = async (payload: {
+    phase: 'classify_only' | 'progressive_extract' | 'fusion_complete';
+    sourceKind: string;
+    intent: UcrsIntentMode;
+    filename: string;
+    base64Pdf?: string;
+    frames?: Array<{ mimeType: string; data: string; label?: string }>;
+    rawText?: string;
+    enhancementReport?: string;
+    existingSummary?: {
+      extractedNames: string[];
+      doubtfulCount: number;
+      unreadableCount: number;
+      missingHint: string;
+    };
+  }) => {
+    const res = await fetch('/api/ucrs/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        customCommand: customCommand.trim() || undefined,
+        scanMode,
+        focusedFields,
+        clarityThreshold: quickExtractPrefs.clarityThreshold,
+        learningRules: ucrsLearningRules
+          .filter((r) => r.enabled)
+          .map((r) => ({
+            wrongToken: r.wrongToken,
+            correctedToken: r.correctedToken,
+          })),
+        referenceTemplate: activeReferenceTemplate
+          ? {
+              name: activeReferenceTemplate.name,
+              notes: activeReferenceTemplate.notes,
+              imageBase64: activeReferenceTemplate.imageDataUrl,
+              mimeType: activeReferenceTemplate.mimeType,
+              regions: activeReferenceTemplate.regions,
+            }
+          : undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok && data?.status !== 'rejected' && data?.legibilityStatus !== 'rejected') {
+      throw new Error(data?.error || 'فشل تحليل المحتوى عبر منظومة القراءة الكونية.');
+    }
+    return data;
+  };
+
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     setUploadError('');
-    setAnalysis(null);
     setCommitSummary(null);
 
     if (
       file.type !== 'application/pdf' &&
       !file.name.toLowerCase().endsWith('.pdf')
     ) {
-      setUploadError('يرجى رفع ملف بصيغة PDF حصرًا.');
+      setUploadError('يرجى رفع ملف بصيغة PDF حصرًا من هذا التبويب، أو استخدم تبويب "الاستيعاب الشامل" لملفات Word و Excel والصور.');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -291,97 +713,90 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setLoading(true);
 
     try {
-      const base64Pdf = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('تعذر قراءة الملف من المتصفح.'));
-        reader.readAsDataURL(file);
+      const base64Pdf = await fileToDataUrl(file);
+      lastPayloadRef.current = {
+        kind: 'pdf',
+        filename: file.name,
+        base64Pdf,
+      };
+      const plan = buildDefaultReadingPlan(intentMode, customCommand);
+      const data = await callUcrsAnalyzeEndpoint({
+        phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
+        sourceKind: 'pdf',
+        intent: intentMode,
+        filename: file.name,
+        base64Pdf,
       });
 
-      const res = await fetch('/api/quick-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'pdf',
-          filename: file.name,
-          base64Pdf,
-          scanMode,
-          focusedFields,
-          clarityThreshold: quickExtractPrefs.clarityThreshold,
-          referenceTemplate: activeReferenceTemplate
-            ? {
-                name: activeReferenceTemplate.name,
-                notes: activeReferenceTemplate.notes,
-                imageDataUrl: activeReferenceTemplate.imageDataUrl,
-                mimeType: activeReferenceTemplate.mimeType,
-                regions: activeReferenceTemplate.regions,
-              }
-            : undefined,
-        }),
+      buildAnalysisWithLearning({
+        rawResult: data,
+        sourceRecord: {
+          id: `src_${Date.now()}`,
+          label: file.name,
+          kind: 'pdf',
+          addedAt: new Date().toISOString(),
+          clarityScore: data.clarityScore ?? 0,
+          pageCount: data.pageCount ?? 1,
+        },
+        plan,
       });
-
-      const data = await res.json();
-      if (!res.ok && data?.status !== 'rejected') {
-        throw new Error(data?.error || 'فشل تحليل ملف PDF.');
-      }
-
-      applyNewAnalysisResult(data as QuickExtractAnalysisResult);
     } catch (err) {
       setUploadError(
         err instanceof Error ? err.message : 'حدث خطأ أثناء معالجة الملف.'
       );
     } finally {
       setLoading(false);
-      e.target.value = '';
     }
   };
 
   const handleCameraBurstAnalyze = async (summary: BurstFusionSummary) => {
     setUploadError('');
-    setAnalysis(null);
     setCommitSummary(null);
-    setFileName(`لقطة الدفتر اليدوي (${summary.acceptedFrames.length} إطارات)`);
+    const label = `لقطة الدفتر اليدوي (${summary.acceptedFrames.length} إطارات)`;
+    setFileName(label);
     setLoading(true);
 
     try {
-      const res = await fetch('/api/quick-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'camera_burst',
-          scanMode,
-          focusedFields,
-          clarityThreshold: quickExtractPrefs.clarityThreshold,
-          referenceTemplate: activeReferenceTemplate
-            ? {
-                name: activeReferenceTemplate.name,
-                notes: activeReferenceTemplate.notes,
-                imageDataUrl: activeReferenceTemplate.imageDataUrl,
-                mimeType: activeReferenceTemplate.mimeType,
-                regions: activeReferenceTemplate.regions,
-              }
-            : undefined,
-          enhancementReport: summary.enhancementReport,
-          frames: summary.acceptedFrames.map((f) => ({
-            mimeType: f.mimeType,
-            data: f.enhancedBase64,
-            label: f.label,
-          })),
-        }),
+      const framesPayload = summary.acceptedFrames.map((f) => ({
+        mimeType: f.mimeType,
+        data: f.enhancedBase64,
+        label: f.label,
+      }));
+      lastPayloadRef.current = {
+        kind: 'frames',
+        filename: label,
+        frames: framesPayload,
+      };
+
+      const plan = buildDefaultReadingPlan(intentMode, customCommand);
+      const data = await callUcrsAnalyzeEndpoint({
+        phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
+        sourceKind: 'camera_burst',
+        intent: intentMode,
+        filename: label,
+        enhancementReport: summary.enhancementReport,
+        frames: framesPayload,
       });
 
-      const data = await res.json();
-      if (!res.ok && data?.status !== 'rejected') {
-        throw new Error(data?.error || 'فشل تحليل لقطات الدفتر اليدوي.');
-      }
-
-      const resultObj = data as QuickExtractAnalysisResult;
       if (summary.acceptedFrames[0]?.enhancedPreviewUrl) {
-        resultObj.sourceImageUrls = {
+        data.sourceImageUrls = {
           1: summary.acceptedFrames[0].enhancedPreviewUrl,
         };
       }
-      applyNewAnalysisResult(resultObj);
+
+      buildAnalysisWithLearning({
+        rawResult: data,
+        sourceRecord: {
+          id: `src_${Date.now()}`,
+          label,
+          kind: 'camera_burst',
+          addedAt: new Date().toISOString(),
+          clarityScore: data.clarityScore ?? 0,
+          pageCount: 1,
+          previewDataUrl: summary.acceptedFrames[0]?.enhancedPreviewUrl,
+        },
+        plan,
+      });
     } catch (err) {
       setUploadError(
         err instanceof Error ? err.message : 'حدث خطأ أثناء معالجة لقطات الكاميرا.'
@@ -391,34 +806,521 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     }
   };
 
+  const handleUniversalFilesUpload = async (
+    fileList: FileList | File[],
+    mode: 'new' | 'append_fusion' = 'new'
+  ) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    setUploadError('');
+    if (mode === 'new') setCommitSummary(null);
+    setLoading(true);
+
+    try {
+      const first = files[0];
+      const intake = classifyIntakeSource({
+        fileName: first.name,
+        mimeType: first.type,
+        fileCount: files.length,
+      });
+
+      const plan = buildDefaultReadingPlan(intentMode, customCommand);
+
+      if (intake.supportsOfflineLocalParse) {
+        const parsed = await parseLocalStructuredDocument({
+          file: first,
+          knownPersons: persons,
+          learningRules: ucrsLearningRules.filter((r) => r.enabled),
+          focusedFields,
+          customCommand,
+        });
+
+        lastPayloadRef.current = {
+          kind: 'text',
+          filename: first.name,
+          rawText: parsed.rawText,
+        };
+
+        if (mode === 'append_fusion' && activeSession) {
+          const { updatedSession } = mergeSupplementaryExtraction({
+            session: activeSession,
+            sourceLabel: first.name,
+            incomingRows: parsed.rows,
+            incomingEntities: parsed.entities,
+            knownPersons: persons,
+            learningRules: ucrsLearningRules,
+            focusedFields,
+          });
+          updatedSession.sources = [
+            ...updatedSession.sources,
+            {
+              id: `src_${Date.now()}`,
+              label: first.name,
+              kind: intake.kind,
+              addedAt: new Date().toISOString(),
+              clarityScore: 98,
+              pageCount: 1,
+            },
+          ];
+          setAnalysis((prev) =>
+            prev ? { ...prev, rows: updatedSession.rows } : prev
+          );
+          persistSession(updatedSession);
+          setSelectedRowIds(updatedSession.rows.map((r) => r.id));
+        } else {
+          setFileName(first.name);
+          buildAnalysisWithLearning({
+            rawResult: {
+              status: 'clear',
+              sourceMode: 'pdf',
+              scanMode,
+              focusedFields,
+              clarityScore: 98,
+              pageCount: 1,
+              rejectionReasons: [],
+              documentSummary: parsed.documentSummary,
+              rows: parsed.rows,
+              identity: parsed.identity,
+              entities: parsed.entities,
+            },
+            sourceRecord: {
+              id: `src_${Date.now()}`,
+              label: first.name,
+              kind: intake.kind,
+              addedAt: new Date().toISOString(),
+              clarityScore: 98,
+              pageCount: 1,
+              rawTextExcerpt: parsed.rawText.slice(0, 300),
+            },
+            plan,
+            entities: parsed.entities,
+          });
+        }
+        return;
+      }
+
+      // Visual intake (Single/Batch Images or PDF supplementary)
+      if (intake.kind === 'pdf') {
+        const base64Pdf = await fileToDataUrl(first);
+        const data = await callUcrsAnalyzeEndpoint({
+          phase: mode === 'append_fusion' ? 'fusion_complete' : 'progressive_extract',
+          sourceKind: 'pdf',
+          intent: intentMode,
+          filename: first.name,
+          base64Pdf,
+          existingSummary:
+            mode === 'append_fusion' && activeSession
+              ? {
+                  extractedNames: activeSession.rows.map((r) => r.resolvedName),
+                  doubtfulCount: activeSession.coverage.doubtfulCount,
+                  unreadableCount: activeSession.coverage.unreadableCount,
+                  missingHint: activeSession.coverage.missingHint,
+                }
+              : undefined,
+        });
+
+        if (mode === 'append_fusion' && activeSession) {
+          const incomingRows = (data.rows || []).map(
+            (r: QuickExtractRawRow, idx: number) =>
+              evaluateExtractedRow(r, idx, {
+                sourceMode: 'pdf',
+                scanMode,
+                focusedFields,
+                tree: nameTree,
+                persons,
+              })
+          );
+          const { updatedSession } = mergeSupplementaryExtraction({
+            session: activeSession,
+            sourceLabel: first.name,
+            incomingRows,
+            incomingEntities: data.entities,
+            knownPersons: persons,
+            learningRules: ucrsLearningRules,
+            focusedFields,
+          });
+          setAnalysis((prev) =>
+            prev ? { ...prev, rows: updatedSession.rows } : prev
+          );
+          persistSession(updatedSession);
+          setSelectedRowIds(updatedSession.rows.map((r) => r.id));
+        } else {
+          lastPayloadRef.current = {
+            kind: 'pdf',
+            filename: first.name,
+            base64Pdf,
+          };
+          setFileName(first.name);
+          buildAnalysisWithLearning({
+            rawResult: data,
+            sourceRecord: {
+              id: `src_${Date.now()}`,
+              label: first.name,
+              kind: 'pdf',
+              addedAt: new Date().toISOString(),
+              clarityScore: data.clarityScore ?? 0,
+              pageCount: data.pageCount ?? 1,
+            },
+            plan,
+          });
+        }
+        return;
+      }
+
+      // Image batch (up to 8 images)
+      const selectedImages = files.slice(0, 8);
+      const frames: Array<{ mimeType: string; data: string; label: string }> = [];
+      let firstPreviewUrl = '';
+      for (const imgFile of selectedImages) {
+        const rawUrl = await fileToDataUrl(imgFile);
+        const compressed = await compressImageDataUrl(rawUrl);
+        if (!firstPreviewUrl) firstPreviewUrl = compressed.dataUrl;
+        frames.push({
+          mimeType: compressed.mimeType,
+          data: compressed.dataUrl.replace(/^data:image\/[a-zA-Z+]+;base64,/, ''),
+          label: imgFile.name,
+        });
+      }
+
+      const label =
+        selectedImages.length === 1
+          ? selectedImages[0].name
+          : `حزمة صور (${selectedImages.length})`;
+
+      const data = await callUcrsAnalyzeEndpoint({
+        phase:
+          mode === 'append_fusion'
+            ? 'fusion_complete'
+            : intentMode === 'discover'
+            ? 'classify_only'
+            : 'progressive_extract',
+        sourceKind: intake.kind,
+        intent: intentMode,
+        filename: label,
+        frames,
+        existingSummary:
+          mode === 'append_fusion' && activeSession
+            ? {
+                extractedNames: activeSession.rows.map((r) => r.resolvedName),
+                doubtfulCount: activeSession.coverage.doubtfulCount,
+                unreadableCount: activeSession.coverage.unreadableCount,
+                missingHint: activeSession.coverage.missingHint,
+              }
+            : undefined,
+      });
+
+      if (firstPreviewUrl) {
+        data.sourceImageUrls = {
+          ...(analysis?.sourceImageUrls || {}),
+          1: firstPreviewUrl,
+        };
+      }
+
+      if (mode === 'append_fusion' && activeSession) {
+        const incomingRows = (data.rows || []).map(
+          (r: QuickExtractRawRow, idx: number) =>
+            evaluateExtractedRow(r, idx, {
+              sourceMode: 'camera_burst',
+              scanMode,
+              focusedFields,
+              tree: nameTree,
+              persons,
+            })
+        );
+        const { updatedSession } = mergeSupplementaryExtraction({
+          session: activeSession,
+          sourceLabel: label,
+          incomingRows,
+          incomingEntities: data.entities,
+          knownPersons: persons,
+          learningRules: ucrsLearningRules,
+          focusedFields,
+        });
+        updatedSession.sources = [
+          ...updatedSession.sources,
+          {
+            id: `src_${Date.now()}`,
+            label,
+            kind: intake.kind,
+            addedAt: new Date().toISOString(),
+            clarityScore: data.clarityScore ?? 80,
+            pageCount: selectedImages.length,
+            previewDataUrl: firstPreviewUrl,
+          },
+        ];
+        setAnalysis((prev) =>
+          prev
+            ? {
+                ...prev,
+                rows: updatedSession.rows,
+                sourceImageUrls: data.sourceImageUrls,
+              }
+            : prev
+        );
+        persistSession(updatedSession);
+        setSelectedRowIds(updatedSession.rows.map((r) => r.id));
+      } else {
+        lastPayloadRef.current = {
+          kind: 'frames',
+          filename: label,
+          frames,
+        };
+        setFileName(label);
+        buildAnalysisWithLearning({
+          rawResult: data,
+          sourceRecord: {
+            id: `src_${Date.now()}`,
+            label,
+            kind: intake.kind,
+            addedAt: new Date().toISOString(),
+            clarityScore: data.clarityScore ?? 0,
+            pageCount: selectedImages.length,
+            previewDataUrl: firstPreviewUrl,
+          },
+          plan,
+        });
+      }
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'حدث خطأ أثناء استيعاب الملف.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAnalyzePastedText = async () => {
+    if (!pastedText.trim()) return;
+    setUploadError('');
+    setCommitSummary(null);
+    setLoading(true);
+    try {
+      const parsed = await parseLocalStructuredDocument({
+        rawTextInput: pastedText,
+        knownPersons: persons,
+        learningRules: ucrsLearningRules.filter((r) => r.enabled),
+        focusedFields,
+        customCommand,
+      });
+      lastPayloadRef.current = {
+        kind: 'text',
+        filename: 'نص مباشر',
+        rawText: parsed.rawText,
+      };
+      setFileName('محتوى نصي مباشر');
+      const plan = buildDefaultReadingPlan(intentMode, customCommand);
+      buildAnalysisWithLearning({
+        rawResult: {
+          status: 'clear',
+          sourceMode: 'pdf',
+          scanMode,
+          focusedFields,
+          clarityScore: 100,
+          pageCount: 1,
+          rejectionReasons: [],
+          documentSummary: parsed.documentSummary,
+          rows: parsed.rows,
+          identity: parsed.identity,
+          entities: parsed.entities,
+        },
+        sourceRecord: {
+          id: `src_${Date.now()}`,
+          label: 'محتوى نصي مباشر',
+          kind: 'text',
+          addedAt: new Date().toISOString(),
+          clarityScore: 100,
+          pageCount: 1,
+          rawTextExcerpt: pastedText.slice(0, 300),
+        },
+        plan,
+        entities: parsed.entities,
+      });
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'تعذر تحليل النص المدخل.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAnalyzeCroppedRegion = async (
+    croppedDataUrl: string,
+    _box: NormalizedBox
+  ) => {
+    if (!activeSession) return;
+    setUploadError('');
+    setLoading(true);
+    try {
+      const cleanB64 = croppedDataUrl.replace(
+        /^data:image\/[a-zA-Z+]+;base64,/,
+        ''
+      );
+      const data = await callUcrsAnalyzeEndpoint({
+        phase: 'fusion_complete',
+        sourceKind: 'image',
+        intent: 'extract_all',
+        filename: 'منطقة مقصوصة يدويًا',
+        frames: [
+          {
+            mimeType: 'image/jpeg',
+            data: cleanB64,
+            label: 'قص يدوي لجزء غير مقروء',
+          },
+        ],
+        existingSummary: {
+          extractedNames: activeSession.rows.map((r) => r.resolvedName),
+          doubtfulCount: activeSession.coverage.doubtfulCount,
+          unreadableCount: activeSession.coverage.unreadableCount,
+          missingHint: 'اقرأ هذه المنطقة المقصوصة المكبّرة بدقة واستخرج الصفوف المفقودة.',
+        },
+      });
+      const incomingRows = (data.rows || []).map(
+        (r: QuickExtractRawRow, idx: number) =>
+          evaluateExtractedRow(r, idx, {
+            sourceMode: 'camera_burst',
+            scanMode,
+            focusedFields,
+            tree: nameTree,
+            persons,
+          })
+      );
+      const { updatedSession } = mergeSupplementaryExtraction({
+        session: activeSession,
+        sourceLabel: 'قص يدوي مكبّر',
+        incomingRows,
+        incomingEntities: data.entities,
+        knownPersons: persons,
+        learningRules: ucrsLearningRules,
+        focusedFields,
+      });
+      setAnalysis((prev) =>
+        prev ? { ...prev, rows: updatedSession.rows } : prev
+      );
+      persistSession(updatedSession);
+      setSelectedRowIds(updatedSession.rows.map((r) => r.id));
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'تعذر قراءة الجزء المقصوص.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveAndExecutePlan = async (overrideIntent?: UcrsIntentMode) => {
+    if (!activeSession) return;
+    const chosenIntent = overrideIntent || activeSession.plan.intent;
+    const nextPlan: UcrsReadingPlan = {
+      ...activeSession.plan,
+      intent: chosenIntent,
+      approved: true,
+    };
+    setIntentMode(chosenIntent);
+
+    if (chosenIntent === 'semantic_search') {
+      persistSession({ ...activeSession, plan: nextPlan });
+      setUcrsTab('semantic_search');
+      return;
+    }
+
+    const baseRows = allParsedRowsBackup || activeSession.rows;
+    let filtered = baseRows;
+    if (chosenIntent === 'extract_useful') {
+      filtered = baseRows.filter(
+        (r) =>
+          Boolean(findExistingMatchInAgency(r.resolvedName, persons)) ||
+          r.resolvedAddOrDeleteAction !== 'لا يوجد' ||
+          (r.resolvedDecreaseCount ?? 0) > 0 ||
+          (r.notes || '').trim().length > 0
+      );
+      if (filtered.length === 0) filtered = baseRows;
+    } else if (chosenIntent === 'focus_notes') {
+      const noted = baseRows.filter((r) => (r.notes || '').trim().length > 0);
+      if (noted.length > 0) filtered = noted;
+    }
+
+    if (
+      activeSession.rows.length === 0 &&
+      lastPayloadRef.current &&
+      lastPayloadRef.current.kind !== 'text'
+    ) {
+      setLoading(true);
+      try {
+        const p = lastPayloadRef.current;
+        const data = await callUcrsAnalyzeEndpoint({
+          phase: 'progressive_extract',
+          sourceKind: p.kind === 'pdf' ? 'pdf' : 'image_batch',
+          intent: chosenIntent,
+          filename: p.filename,
+          base64Pdf: p.base64Pdf,
+          frames: p.frames,
+        });
+        buildAnalysisWithLearning({
+          rawResult: data,
+          sourceRecord: activeSession.sources[0],
+          plan: nextPlan,
+        });
+      } catch (err) {
+        setUploadError(
+          err instanceof Error ? err.message : 'تعذر تنفيذ الخطة.'
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    setAnalysis((prev) => (prev ? { ...prev, rows: filtered } : prev));
+    setSelectedRowIds(filtered.map((r) => r.id));
+    syncSessionFromRows(filtered, nextPlan);
+    setUcrsTab('pipeline');
+  };
+
   const updateRow = (
     rowId: string,
     patch: Partial<QuickExtractEvaluatedRow>,
     options?: { resetConfirmOnNameEdit?: boolean }
   ) => {
-    setAnalysis((prev) => {
-      if (!prev) return prev;
-      setPastRows((p) => [...p.slice(-24), prev.rows]);
-      setFutureRows([]);
-      const activeFocused = resolveFocusedFields(
-        prev.focusedFields || focusedFields
-      );
-      const activeScanMode = prev.scanMode || scanMode;
-      const nextRows = prev.rows.map((row) => {
-        if (row.id !== rowId) return row;
-        return recomputeRowValidation(
-          { ...row, ...patch },
-          {
-            tree: nameTree,
-            persons,
-            resetConfirmOnNameEdit: options?.resetConfirmOnNameEdit,
-            focusedFields: activeFocused,
-            scanMode: activeScanMode,
-          }
-        );
+    if (!analysis) return;
+    const existingRow = analysis.rows.find((r) => r.id === rowId);
+    if (
+      existingRow &&
+      patch.resolvedName !== undefined &&
+      patch.resolvedName.trim() !== existingRow.resolvedName.trim()
+    ) {
+      const rule = extractLearningRuleFromCorrection({
+        originalName: existingRow.resolvedName,
+        correctedName: patch.resolvedName,
+        sourceContext: activeSession?.title || fileName || 'تصحيح يدوي',
       });
-      return { ...prev, rows: nextRows };
+      if (rule) {
+        onUpsertUcrsLearningRule?.(rule);
+      }
+    }
+
+    setPastRows((p) => [...p.slice(-24), analysis.rows]);
+    setFutureRows([]);
+    const activeFocused = resolveFocusedFields(
+      analysis.focusedFields || focusedFields
+    );
+    const activeScanMode = analysis.scanMode || scanMode;
+    const nextRows = analysis.rows.map((row) => {
+      if (row.id !== rowId) return row;
+      return recomputeRowValidation(
+        { ...row, ...patch },
+        {
+          tree: nameTree,
+          persons,
+          resetConfirmOnNameEdit: options?.resetConfirmOnNameEdit,
+          focusedFields: activeFocused,
+          scanMode: activeScanMode,
+        }
+      );
     });
+    setAnalysis({ ...analysis, rows: nextRows });
+    syncSessionFromRows(nextRows);
   };
 
   const handleLocalUndo = () => {
@@ -427,6 +1329,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setFutureRows((f) => [analysis.rows, ...f.slice(0, 24)]);
     setPastRows((p) => p.slice(0, -1));
     setAnalysis({ ...analysis, rows: prevSnapshot });
+    syncSessionFromRows(prevSnapshot);
   };
 
   const handleLocalRedo = () => {
@@ -435,6 +1338,70 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setPastRows((p) => [...p.slice(-24), analysis.rows]);
     setFutureRows(rest);
     setAnalysis({ ...analysis, rows: nextSnapshot });
+    syncSessionFromRows(nextSnapshot);
+  };
+
+  const handleLoadSession = (sess: UcrsSession) => {
+    const previewImg = sess.sources.find((s) => s.previewDataUrl)?.previewDataUrl;
+    setActiveSession(sess);
+    setAllParsedRowsBackup(sess.rows);
+    setFileName(sess.title);
+    setUploadError('');
+    setAnalysis({
+      status:
+        sess.status === 'rejected'
+          ? 'rejected'
+          : sess.rows.some(
+              (r) =>
+                (r.hasDoubt && !r.doubtConfirmed) ||
+                !r.isComplete ||
+                r.mathIssues.length > 0
+            )
+          ? 'needs_review'
+          : 'clear',
+      sourceMode: sess.sources[0]?.kind === 'camera_burst' ? 'camera_burst' : 'pdf',
+      scanMode,
+      focusedFields,
+      clarityScore: sess.identity?.qualityScore ?? 90,
+      pageCount: sess.sources.length || 1,
+      rejectionReasons: [],
+      documentSummary: sess.documentSummary,
+      rows: sess.rows,
+      sourceImageUrls: previewImg ? { 1: previewImg } : undefined,
+    });
+    setSelectedRowIds(sess.rows.map((r) => r.id));
+    setPastRows([]);
+    setFutureRows([]);
+    setUcrsTab('pipeline');
+  };
+
+  const handleDuplicateSession = (sess: UcrsSession) => {
+    const copy: UcrsSession = {
+      ...sess,
+      id: `ucrs_${Date.now().toString(36)}`,
+      title: `${sess.title} (نسخة)`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    onUpsertUcrsSession?.(copy);
+  };
+
+  const handleMergeWithSession = (other: UcrsSession) => {
+    if (!activeSession) return;
+    const { updatedSession } = mergeSupplementaryExtraction({
+      session: activeSession,
+      sourceLabel: other.title,
+      incomingRows: other.rows,
+      incomingEntities: other.entities,
+      knownPersons: persons,
+      learningRules: ucrsLearningRules,
+      focusedFields,
+    });
+    setAnalysis((prev) =>
+      prev ? { ...prev, rows: updatedSession.rows } : prev
+    );
+    persistSession(updatedSession);
+    setSelectedRowIds(updatedSession.rows.map((r) => r.id));
   };
 
   const rows = analysis?.rows || [];
@@ -624,6 +1591,10 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     selectedPlanCounts.add +
     selectedPlanCounts.update +
     selectedPlanCounts.replace;
+  const belowMinCoverage =
+    Boolean(activeSession) &&
+    (activeSession?.coverage.overallPercent ?? 100) <
+      (activeSession?.plan.minCoverageThreshold ?? 90);
   const canProceedToCommit =
     gateUnlocked && rowsChosenForCommit.length > 0 && activeCommitCount > 0;
 
@@ -632,12 +1603,26 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       rows: rowsChosenForCommit,
       routing: routingConfig,
     });
+    if (activeSession) {
+      persistSession({
+        ...activeSession,
+        status: 'committed',
+        committedAt: new Date().toISOString(),
+        coverageOverrideNote:
+          belowMinCoverage && coverageOverrideConfirmed
+            ? `تم الترحيل بتجاوز المستخدم لحد التغطية (${activeSession.coverage.overallPercent}% < ${activeSession.plan.minCoverageThreshold}%)`
+            : undefined,
+      });
+    }
     setCommitSummary(summary);
     setShowConfirmUpdates(false);
   };
 
   const resetAll = () => {
     setAnalysis(null);
+    setActiveSession(null);
+    setAllParsedRowsBackup(null);
+    lastPayloadRef.current = null;
     setFileName('');
     setUploadError('');
     setCommitSummary(null);
@@ -646,54 +1631,73 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setSelectedRowIds([]);
   };
 
+  const handleJumpToRow = (rowId: string) => {
+    setUcrsTab('pipeline');
+    setFocusedRowKey(rowId);
+  };
+
   const stage2Active =
     analysis !== null && analysis.status !== 'rejected' && !gateUnlocked;
   const stage3Active = gateUnlocked;
+  const activeSourceImageUrl =
+    analysis?.sourceImageUrls?.[1] ||
+    activeSession?.sources.find((s) => s.previewDataUrl)?.previewDataUrl;
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 sm:p-6">
-      {/* Top Pipeline Header + Capture Mode Switcher */}
+      {/* Top Pipeline Header + Universal Intake Switcher */}
       <section
-        className="rounded-xl border p-5"
+        className="rounded-xl border p-4 sm:p-5"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-color)',
         }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 sm:flex-1">
+            <div className="flex items-start gap-2">
               <FileSearch
-                className="h-5 w-5"
+                className="mt-0.5 h-5 w-5 shrink-0"
                 style={{ color: 'var(--accent)' }}
               />
-              <h1 className="text-lg font-bold">
-                السحب السريع الذكي (PDF وكاميرا الدفتر اليدوي)
+              <h1 className="text-base font-bold leading-snug sm:text-lg">
+                السحب السريع — منظومة القراءة الكونية والإدراك التدريجي
               </h1>
             </div>
             <p
-              className="mt-1 text-xs leading-relaxed"
+              className="mt-1.5 text-xs leading-relaxed"
               style={{ color: 'var(--text-muted)' }}
             >
-              نطاق الاستخراج الحصري: <strong>الاسم</strong> ·{' '}
-              <strong>عدد الأفراد (الأنفار)</strong> ·{' '}
-              <strong>النزول/النقصان</strong> ·{' '}
-              <strong>الإضافة/الحذف</strong> فقط — مع بوابة الرفض الآمن، كشف
-              الحروف المشكوك فيها باللون الأحمر، وتوجيه الوجهة الذكي قبل الترحيل.
+              قراءة وفهم شامل لملفات PDF، كاميرا الدفتر اليدوي، حزم الصور، Word،
+              Excel، CSV، والنصوص — مع تحديد هوية المحتوى، التغطية التفاعلية،
+              البحث الدلالي، والتوجيه الذكي قبل الترحيل.
             </p>
           </div>
 
-          {analysis && (
-            <button
-              type="button"
-              onClick={resetAll}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>بدء عملية سحب جديدة</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {activeSession && (
+              <button
+                type="button"
+                onClick={() => setReportsModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+                <span>التقارير والإحصاء</span>
+              </button>
+            )}
+            {(analysis || activeSession) && (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>بدء عملية جديدة</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 3-Stage Stepper Strip */}
@@ -711,7 +1715,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   : 'var(--border-color)',
             }}
           >
-            01. الالتقاط وبوابة الفحص والرفض الآمن
+            01. الاستيعاب الشامل وفهم المحتوى وخطة القراءة
           </div>
           <div
             className="rounded-lg border px-3 py-2 text-xs font-bold"
@@ -725,7 +1729,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               color: stage2Active ? 'var(--danger)' : 'var(--text-primary)',
             }}
           >
-            02. كشف الشك باللون الأحمر وتقرير النواقص
+            02. كشف الشك باللون الأحمر والتغطية والدمج التدريجي
           </div>
           <div
             className="rounded-lg border px-3 py-2 text-xs font-bold"
@@ -739,13 +1743,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               color: stage3Active ? 'var(--success)' : 'var(--text-muted)',
             }}
           >
-            03. التحضير والفلترة النهائية والتوجيه
+            03. التحضير والفلترة النهائية والتوجيه والترحيل
           </div>
         </div>
 
-        {/* Capture Mode Segmented Tabs */}
+        {/* Universal Intake Segmented Tabs */}
         <div
-          className="mt-4 inline-flex flex-wrap items-center gap-1 rounded-xl border p-1"
+          className="mt-4 flex w-full flex-wrap items-center gap-1 rounded-xl border p-1 sm:inline-flex sm:w-auto"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -757,7 +1761,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('pdf');
               setUploadError('');
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
             style={{
               backgroundColor:
                 captureMode === 'pdf' ? 'var(--accent)' : 'transparent',
@@ -767,8 +1771,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   : 'var(--text-primary)',
             }}
           >
-            <FileText className="h-4 w-4" />
-            <span>السحب الذكي من ملفات PDF</span>
+            <FileText className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span>ملفات PDF</span>
           </button>
 
           <button
@@ -777,7 +1781,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('camera_burst');
               setUploadError('');
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
             style={{
               backgroundColor:
                 captureMode === 'camera_burst'
@@ -789,14 +1793,93 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   : 'var(--text-primary)',
             }}
           >
-            <Camera className="h-4 w-4" />
-            <span>كاميرا الدفتر اليدوي (Burst Fusion)</span>
+            <Camera className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span>كاميرا الدفتر اليدوي (Burst)</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCaptureMode('universal_files');
+              setUploadError('');
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-start text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            style={{
+              backgroundColor:
+                captureMode === 'universal_files'
+                  ? 'var(--accent)'
+                  : 'transparent',
+              color:
+                captureMode === 'universal_files'
+                  ? 'var(--accent-fg)'
+                  : 'var(--text-primary)',
+            }}
+          >
+            <Layers className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span>استيعاب شامل (صور / Word / Excel / نص)</span>
+          </button>
+        </div>
+
+        {/* Intent & Custom Command Bar */}
+        <div
+          className="mt-4 grid grid-cols-1 gap-3 rounded-xl border p-3.5 text-xs lg:grid-cols-2"
+          style={{
+            backgroundColor: 'var(--bg-main)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          <div className="space-y-1.5">
+            <label
+              htmlFor="ucrs-intent-select"
+              className="block font-bold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              هدف القراءة (النية قبل الاستخراج):
+            </label>
+            <select
+              id="ucrs-intent-select"
+              value={intentMode}
+              onChange={(e) => setIntentMode(e.target.value as UcrsIntentMode)}
+              className="w-full rounded-lg border px-3 py-2 text-xs font-semibold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              {INTENT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label
+              htmlFor="ucrs-custom-cmd"
+              className="block font-bold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              أمرك أو سؤالك المخصص للمحتوى (اختياري):
+            </label>
+            <input
+              id="ucrs-custom-cmd"
+              type="text"
+              value={customCommand}
+              onChange={(e) => setCustomCommand(e.target.value)}
+              placeholder='مثلاً: "استخرج أسماء المحجوبين فقط" أو "احسب تغييرات شهر 11"'
+              className="w-full rounded-lg border px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            />
+          </div>
         </div>
 
         {/* Custom Field Focus + Scan Mode + Reference Template Config Strip */}
         <div
-          className="mt-4 grid grid-cols-1 gap-3 rounded-xl border p-3.5 text-xs lg:grid-cols-3"
+          className="mt-3 grid grid-cols-1 gap-3 rounded-xl border p-3.5 text-xs lg:grid-cols-3"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -840,9 +1923,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 className="inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-2 font-bold"
                 style={{
                   backgroundColor:
-                    scanMode === 'audit'
-                      ? 'var(--accent)'
-                      : 'var(--bg-surface)',
+                    scanMode === 'audit' ? 'var(--accent)' : 'var(--bg-surface)',
                   borderColor:
                     scanMode === 'audit'
                       ? 'var(--accent)'
@@ -885,7 +1966,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   className="rounded border px-1.5 py-0.5 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
-                  الأسماء + الأنفار
+                  الأسماء + الأفراد
                 </button>
                 <button
                   type="button"
@@ -987,8 +2068,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
         </div>
 
-        {/* Mode 1: PDF Upload Dropzone */}
-        {captureMode === 'pdf' ? (
+        {/* Intake Dropzones */}
+        {captureMode === 'pdf' && (
           <label
             className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors hover:opacity-90"
             style={{
@@ -1009,7 +2090,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   className="mt-1 text-xs"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  بوابة الفحص الآمن · تفكيك الحروف · تقرير النواقص
+                  تحديد الهوية · القراءة التدريجية · تقرير النواقص
                 </div>
               </>
             ) : (
@@ -1027,8 +2108,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   className="mt-1 text-xs"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  صيغة PDF فقط (بحد أقصى 20 ميجابايت) · رفض فوري لأي ملف مشوش
-                  أو تالف
+                  صيغة PDF (بحد أقصى 20 ميجابايت) · يدعم القراءة التدريجية والرفض الآمن
                 </div>
               </>
             )}
@@ -1040,12 +2120,93 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               className="hidden"
             />
           </label>
-        ) : (
+        )}
+
+        {captureMode === 'camera_burst' && (
           <BurstCameraCapture
             analyzing={loading}
             scanMode={scanMode}
             onBurstReadyAndAnalyze={handleCameraBurstAnalyze}
           />
+        )}
+
+        {captureMode === 'universal_files' && (
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <label
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-5 py-6 text-center transition-colors hover:opacity-90"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--accent)',
+              }}
+            >
+              {loading ? (
+                <Loader2
+                  className="h-7 w-7 animate-spin"
+                  style={{ color: 'var(--accent)' }}
+                />
+              ) : (
+                <Upload className="h-7 w-7" style={{ color: 'var(--accent)' }} />
+              )}
+              <div className="mt-2 text-xs font-bold sm:text-sm">
+                ارفع صورًا (حتى 8)، أو ملف Excel / CSV / Word (.docx) / TXT
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                يتعرف النظام تلقائيًا على صيغة الملف ويستخرج الجداول والكيانات بدقة
+              </div>
+              <input
+                type="file"
+                multiple
+                accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv,.docx,.txt,.md"
+                disabled={loading}
+                onChange={(e) => {
+                  if (e.target.files) {
+                    void handleUniversalFilesUpload(e.target.files, 'new');
+                  }
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+            </label>
+
+            <div
+              className="flex flex-col justify-between gap-2 rounded-xl border p-3.5"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <label htmlFor="ucrs-paste-text" className="text-xs font-bold">
+                أو الصق نصًا / كشفًا جاهزًا (مثل رسالة واتساب أو جدول منسوخ):
+              </label>
+              <textarea
+                id="ucrs-paste-text"
+                rows={3}
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="مثال:&#10;الاسم,الأفراد,الملاحظات&#10;أحمد علي حسن,5,توصيل الكرادة&#10;سالم محمد جاسم,3,محجوب مؤقت"
+                className="w-full rounded-lg border p-2 text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={loading || !pastedText.trim()}
+                  onClick={handleAnalyzePastedText}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold disabled:opacity-40"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>قراءة وفهم النص مباشرة</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {uploadError && (
@@ -1062,7 +2223,130 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             <span>{uploadError}</span>
           </div>
         )}
+
+        {ttsStatus && (
+          <div
+            className="mt-2 flex items-center gap-2 text-xs font-semibold"
+            style={{ color: 'var(--accent)' }}
+          >
+            <Volume2 className="h-3.5 w-3.5 shrink-0" />
+            <span>{ttsStatus}</span>
+          </div>
+        )}
       </section>
+
+      {/* UCRS Workspace Sub-Navigation */}
+      <nav
+        aria-label="أقسام منظومة القراءة الكونية"
+        className="flex flex-wrap items-center gap-1.5 rounded-xl border p-1.5 text-xs"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--border-color)',
+        }}
+      >
+        {(
+          [
+            {
+              id: 'pipeline',
+              label: 'المراجعة والترحيل',
+              icon: Sparkles,
+            },
+            {
+              id: 'identity_plan',
+              label: 'هوية المحتوى وخطة القراءة',
+              icon: Compass,
+            },
+            {
+              id: 'coverage_sessions',
+              label: `التغطية والخريطة وجلساتي (${ucrsSessions.length})`,
+              icon: FolderClock,
+            },
+            {
+              id: 'semantic_search',
+              label: 'البحث الدلالي والضبابي',
+              icon: Search,
+            },
+          ] as const
+        ).map((tab) => {
+          const Icon = tab.icon;
+          const active = ucrsTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setUcrsTab(tab.id)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 font-bold whitespace-nowrap"
+              style={{
+                backgroundColor: active ? 'var(--accent)' : 'transparent',
+                color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Always show Identity & Plan card inside identity_plan tab, OR right after extraction when not yet approved */}
+      {(ucrsTab === 'identity_plan' ||
+        (activeSession?.identity && ucrsTab === 'pipeline' && !activeSession.plan.approved)) &&
+        activeSession?.identity && (
+          <UcrsIdentityAndPlanCard
+            identity={activeSession.identity}
+            plan={activeSession.plan}
+            onUpdatePlan={(nextPlan) =>
+              persistSession({ ...activeSession, plan: nextPlan })
+            }
+            onApproveAndExecute={handleApproveAndExecutePlan}
+            onDiscardSession={resetAll}
+          />
+        )}
+
+      {/* Semantic Search Panel */}
+      {ucrsTab === 'semantic_search' && (
+        <UcrsSemanticSearchPanel
+          activeSession={activeSession}
+          allSessions={ucrsSessions}
+          onJumpToRow={handleJumpToRow}
+          onSpeakText={speakArabicText}
+        />
+      )}
+
+      {/* Coverage, Visual Map, Diagnostics, Fusion, Sessions & Learning Rules */}
+      {ucrsTab === 'coverage_sessions' && (
+        <UcrsCoverageAndSessionsPanel
+          activeSession={activeSession}
+          allSessions={ucrsSessions}
+          learningRules={ucrsLearningRules}
+          sourceImageUrl={activeSourceImageUrl}
+          loading={loading}
+          onAppendSupplementaryFiles={(fl) =>
+            void handleUniversalFilesUpload(fl, 'append_fusion')
+          }
+          onAnalyzeCroppedRegion={handleAnalyzeCroppedRegion}
+          onLoadSession={handleLoadSession}
+          onDuplicateSession={handleDuplicateSession}
+          onMergeWithSession={handleMergeWithSession}
+          onDeleteSession={(id) => onDeleteUcrsSession?.(id)}
+          onAddLearningRule={(wrongToken, correctedToken) =>
+            onUpsertUcrsLearningRule?.({
+              id: `lr_${Date.now().toString(36)}`,
+              wrongToken,
+              correctedToken,
+              sourceContext: 'إضافة يدوية من المستخدم',
+              usageCount: 1,
+              createdAt: new Date().toISOString().slice(0, 10),
+              enabled: true,
+            })
+          }
+          onToggleLearningRule={(id) => onToggleUcrsLearningRule?.(id)}
+          onDeleteLearningRule={(id) => onDeleteUcrsLearningRule?.(id)}
+          onJumpToRow={handleJumpToRow}
+          onSpeakText={speakArabicText}
+          onOpenReportsModal={() => setReportsModalOpen(true)}
+        />
+      )}
 
       {/* Safe Rejection Gate Banner */}
       {analysis?.status === 'rejected' && (
@@ -1144,8 +2428,68 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       )}
 
       {/* Post-Extraction Pipeline */}
-      {analysis && analysis.status !== 'rejected' && (
+      {ucrsTab === 'pipeline' && analysis && analysis.status !== 'rejected' && (
         <>
+          {/* Honest Progressive Summary Strip */}
+          {activeSession && (
+            <section
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="space-y-0.5">
+                <div className="font-bold tabular-nums">
+                  التغطية التدريجية: {activeSession.coverage.overallPercent}% ·{' '}
+                  <span style={{ color: 'var(--success)' }}>
+                    {activeSession.coverage.confidentCount} واضح
+                  </span>{' '}
+                  ·{' '}
+                  <span style={{ color: 'var(--warning)' }}>
+                    {activeSession.coverage.doubtfulCount} مشكوك
+                  </span>{' '}
+                  ·{' '}
+                  <span style={{ color: 'var(--danger)' }}>
+                    {activeSession.coverage.unreadableCount} غير مقروء
+                  </span>
+                </div>
+                {activeSession.coverage.missingHint && (
+                  <div style={{ color: 'var(--text-muted)' }}>
+                    {activeSession.coverage.missingHint}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUcrsTab('coverage_sessions')}
+                  className="rounded-lg border px-3 py-1.5 font-bold"
+                  style={{
+                    borderColor: 'var(--accent)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  خريطة التغطية و«لماذا؟» والدمج
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    speakArabicText(
+                      `تم استخراج ${rows.length} صف. الواضحة ${verifiedRows.length}، وتوجد ${doubtedRows.length} ملاحظات شك و${missingRows.length} نواقص.`
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <Volume2 className="h-3.5 w-3.5" />
+                  <span>قراءة صوتية</span>
+                </button>
+              </div>
+            </section>
+          )}
+
           {/* 4-Metric Audit Bar */}
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div
@@ -1474,6 +2818,35 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 onChange={setRoutingConfig}
               />
 
+              {/* Minimum Coverage Safety Warning */}
+              {belowMinCoverage && activeSession && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-xs"
+                  style={{
+                    backgroundColor: 'var(--warning-bg)',
+                    borderColor: 'var(--warning)',
+                    color: 'var(--warning)',
+                  }}
+                >
+                  <div className="font-bold">
+                    تنبيه أمان التغطية: التغطية الحالية (
+                    {activeSession.coverage.overallPercent}%) أقل من الحد
+                    الأدنى المطلوب ({activeSession.plan.minCoverageThreshold}%).
+                    {activeSession.coverage.missingHint}
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 font-bold">
+                    <input
+                      type="checkbox"
+                      checked={coverageOverrideConfirmed}
+                      onChange={(e) =>
+                        setCoverageOverrideConfirmed(e.target.checked)
+                      }
+                    />
+                    <span>أقر بمتابعة الترحيل رغم نقص التغطية</span>
+                  </label>
+                </div>
+              )}
+
               <div
                 className="space-y-3 rounded-xl border p-4"
                 style={{
@@ -1664,7 +3037,10 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
                   <button
                     type="button"
-                    disabled={!canProceedToCommit}
+                    disabled={
+                      !canProceedToCommit ||
+                      (belowMinCoverage && !coverageOverrideConfirmed)
+                    }
                     onClick={() => {
                       if (
                         selectedPlanCounts.update > 0 ||
@@ -1747,10 +3123,20 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
         </div>
       )}
+
       <ReferenceTemplateModal
         open={templateModalOpen}
         onClose={() => setTemplateModalOpen(false)}
         onSaveTemplate={onSaveQuickExtractTemplate}
+      />
+
+      <UcrsReportsAndStatsModal
+        open={reportsModalOpen}
+        session={activeSession}
+        agencies={agencies}
+        persons={persons}
+        onClose={() => setReportsModalOpen(false)}
+        onSpeakText={speakArabicText}
       />
     </main>
   );

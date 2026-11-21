@@ -426,7 +426,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
                 className="border-l px-3 font-bold whitespace-nowrap"
                 style={{ borderColor: 'var(--grid-color)' }}
               >
-                الوكالة والأنفار
+                الوكالة والأفراد
               </th>
               <th
                 className="border-l px-3 font-bold"
@@ -519,7 +519,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
                       <div>{agencyMap.get(person?.agencyId ?? rel.agencyId) || '—'}</div>
                       {eff && (
                         <div className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                          {eff.eligibleIndividuals ?? 0} أنفار · {eff.quotaText}
+                          {eff.eligibleIndividuals ?? 0} أفراد · {eff.quotaText}
                         </div>
                       )}
                     </td>

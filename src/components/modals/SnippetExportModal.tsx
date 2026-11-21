@@ -123,7 +123,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
           periodMeta: resolvedPeriod,
           settings,
         });
-        return `${idx + 1}. ${d.name} | الأنفار: ${d.individualsLabel} | النزول: ${d.decreaseLabel} | ${d.addOrDeleteLabel} | الحصة: ${d.quotaLabel} | ${d.priceLabel} | ${d.notesLabel}`;
+        return `${idx + 1}. ${d.name} | الأفراد: ${d.individualsLabel} | النزول: ${d.decreaseLabel} | ${d.addOrDeleteLabel} | الحصة: ${d.quotaLabel} | ${d.priceLabel} | ${d.notesLabel}`;
       });
       const textPayload = [
         topTitle || tableTitle,
@@ -372,7 +372,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
 
             {/* Footer Totals */}
             <div className="border-t border-slate-300 bg-slate-100 px-5 py-2.5 text-xs font-bold text-slate-800 tabular-nums">
-              قصاصة تدقيق رسمية — تابريكس · السجلات: {records.length} · الأنفار:{' '}
+              قصاصة تدقيق رسمية — تابريكس · السجلات: {records.length} · الأفراد:{' '}
               {totals.individuals} · {formatTotalQuota(totals.totalKg, settings)} ·{' '}
               {formatIqd(totals.totalIqd)}
             </div>

@@ -363,7 +363,7 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
         {focusSet.has('individuals') && (
           <div>
             <label className="mb-1 block text-[11px] font-semibold">
-              الأفراد (الأنفار)
+              الأفراد
             </label>
             <input
               type="number"

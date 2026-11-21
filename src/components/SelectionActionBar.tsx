@@ -404,9 +404,9 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 </div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-muted)' }}>الأنفار والحصة</div>
+                <div style={{ color: 'var(--text-muted)' }}>الأفراد والحصة</div>
                 <div className="font-bold tabular-nums">
-                  {primaryEff.eligibleIndividuals ?? 0} أنفار · {primaryEff.quotaText}
+                  {primaryEff.eligibleIndividuals ?? 0} أفراد · {primaryEff.quotaText}
                 </div>
               </div>
               <div>
@@ -432,9 +432,9 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 </div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-muted)' }}>مجموع الأنفار المستحقة</div>
+                <div style={{ color: 'var(--text-muted)' }}>مجموع الأفراد المستحقة</div>
                 <div className="font-bold tabular-nums">
-                  {summaryTotals.individuals} أنفار
+                  {summaryTotals.individuals} أفراد
                 </div>
               </div>
               <div>
@@ -526,7 +526,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span style={{ color: 'var(--text-muted)' }}>إجمالي الأنفار: </span>
+                        <span style={{ color: 'var(--text-muted)' }}>إجمالي الأفراد: </span>
                         <span className="font-bold tabular-nums">
                           {rec.individuals ?? '—'}
                         </span>
@@ -914,7 +914,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   type="text"
                   value={relNote}
                   onChange={(e) => setRelNote(e.target.value)}
-                  placeholder="مثال: مراجعة عدد الأنفار أو توصيل للباب"
+                  placeholder="مثال: مراجعة عدد الأفراد أو توصيل للباب"
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   style={{
                     backgroundColor: 'var(--bg-main)',

@@ -115,7 +115,7 @@ export function buildSelectedRecordsCopyText(params: {
       `الاسم: ${p.name}`,
       p.agencyName ? `الوكالة: ${p.agencyName}` : '',
       p.nationalId ? `رقم البطاقة: ${p.nationalId}` : '',
-      `الأنفار المستحقون: ${indStr}`,
+      `الأفراد المستحقون: ${indStr}`,
       `الحصة: ${eff.quotaText}`,
       `المبلغ: ${eff.priceText}`,
       `الحالة: ${eff.summary.shortLabel}`,
@@ -130,7 +130,7 @@ export function buildSelectedRecordsCopyText(params: {
     .map((p, i) => {
       const eff = getEffectiveAllocationForPerson(p, settings);
       const note = p.notes ? ` (${p.notes})` : '';
-      return `${i + 1}. ${p.name} — ${eff.eligibleIndividuals ?? 0} أنفار — ${eff.quotaText} — ${eff.priceText} [${eff.summary.shortLabel}]${note}`;
+      return `${i + 1}. ${p.name} — ${eff.eligibleIndividuals ?? 0} أفراد — ${eff.quotaText} — ${eff.priceText} [${eff.summary.shortLabel}]${note}`;
     })
     .join('\n');
 }

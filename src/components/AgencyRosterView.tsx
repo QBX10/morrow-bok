@@ -96,6 +96,8 @@ interface AgencyRosterViewProps {
   onRemoveExpertCustomColumn: (colId: string) => void;
   onResetExpertTableConfig: () => void;
   onOpenSettings: () => void;
+  externalTableCommand?: import('../types/assistant').AssistantExternalTableCommand | null;
+  onFocusedPersonChange?: (personId: number | null) => void;
 }
 
 const CORE_COLUMN_DEFS: Array<{ id: string; defaultLabel: string }> = [
@@ -104,7 +106,7 @@ const CORE_COLUMN_DEFS: Array<{ id: string; defaultLabel: string }> = [
   { id: 'name', defaultLabel: 'الاسم' },
   { id: 'agency', defaultLabel: 'الوكالة' },
   { id: 'category', defaultLabel: 'الفئة' },
-  { id: 'individuals', defaultLabel: 'الأنفار' },
+  { id: 'individuals', defaultLabel: 'الأفراد' },
   { id: 'quantity', defaultLabel: 'الحصة' },
   { id: 'price', defaultLabel: 'المبلغ' },
   { id: 'status', defaultLabel: 'الحالة' },
@@ -143,6 +145,8 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
   onRemoveExpertCustomColumn,
   onResetExpertTableConfig,
   onOpenSettings,
+  externalTableCommand,
+  onFocusedPersonChange,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<
@@ -167,6 +171,51 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
     setSelectedPersonIds([]);
     setFocusedRowId(null);
   }, [agencyId]);
+
+  useEffect(() => {
+    if (!externalTableCommand) return;
+    if (
+      externalTableCommand.agencyId !== null &&
+      externalTableCommand.agencyId !== agencyId
+    ) {
+      return;
+    }
+    if (externalTableCommand.searchQuery !== undefined) {
+      setSearchQuery(externalTableCommand.searchQuery);
+    }
+    if (externalTableCommand.statusFilter !== undefined) {
+      setStatusFilter(externalTableCommand.statusFilter);
+    }
+    if (externalTableCommand.sortBy !== undefined) {
+      setSortBy(externalTableCommand.sortBy);
+    }
+    if (externalTableCommand.hideColumns && externalTableCommand.hideColumns.length > 0) {
+      const hideSet = new Set(externalTableCommand.hideColumns);
+      onUpdateExpertTableConfig({
+        visibleColumns: expertTableConfig.visibleColumns.filter((c) => !hideSet.has(c)),
+      });
+    }
+    if (externalTableCommand.showColumns && externalTableCommand.showColumns.length > 0) {
+      onUpdateExpertTableConfig({
+        visibleColumns: Array.from(
+          new Set([...expertTableConfig.visibleColumns, ...externalTableCommand.showColumns])
+        ),
+      });
+    }
+    if (externalTableCommand.focusPersonId !== undefined) {
+      const pid = externalTableCommand.focusPersonId;
+      setFocusedRowId(pid);
+      onFocusedPersonChange?.(pid);
+      if (pid !== null) {
+        window.setTimeout(() => {
+          const rowEl = document.querySelector(`[data-row-key="${pid}"]`);
+          if (rowEl instanceof HTMLElement) {
+            rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 120);
+      }
+    }
+  }, [externalTableCommand]);
 
   // Disable Expert inline/panel controls immediately when leaving Expert mode
   useEffect(() => {
@@ -345,7 +394,7 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
       <tr>
         <th>#</th><th>الحرف</th><th>الاسم</th>
         ${agencyId === null ? '<th>الوكالة</th>' : ''}
-        <th>الأنفار</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th>
+        <th>الأفراد</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
@@ -982,6 +1031,7 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
       {/* Intermediate+ Search, Filter, Sort Toolbar */}
       {capabilities.canSortAndFilter && (
         <div
+          data-assistant-target="agency-roster-toolbar"
           className="flex flex-wrap items-center gap-3 rounded-xl border p-3"
           style={{
             backgroundColor: 'var(--bg-surface)',
@@ -1144,7 +1194,11 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         onToggleSelectAll={(checked) =>
           setSelectedPersonIds(checked ? visiblePersons.map((p) => p.id) : [])
         }
-        onFocusRow={(key) => setFocusedRowId(key ? Number(key) : null)}
+        onFocusRow={(key) => {
+          const nextId = key ? Number(key) : null;
+          setFocusedRowId(nextId);
+          onFocusedPersonChange?.(nextId);
+        }}
         onEditRowModal={(row) => {
           const person = personByIdMap.get(row.rowKey);
           if (person) onOpenEditPerson(person);

@@ -66,6 +66,7 @@ export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
   privacyPin: '',
   privacyLocked: false,
   offlineCacheEnabled: true,
+  allowCloudBeneficiaryNames: false,
 };
 
 export const INITIAL_DATABASE_STATE: AppDatabaseState = {

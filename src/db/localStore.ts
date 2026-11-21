@@ -11,6 +11,7 @@ export interface StoredUserRecord {
   email: string | null;
   username: string | null;
   phone: string | null;
+  avatarUrl?: string | null;
   passwordHash: string | null;
   role: 'manager' | 'viewer';
   createdAt: string;
@@ -100,6 +101,7 @@ export function createUserRecord(params: {
   email?: string | null;
   username?: string | null;
   phone?: string | null;
+  avatarUrl?: string | null;
   passwordHash?: string | null;
 }): StoredUserRecord {
   const db = readDb();
@@ -112,6 +114,7 @@ export function createUserRecord(params: {
     email: params.email ? params.email.trim().toLowerCase() : null,
     username: params.username ? params.username.trim().toLowerCase() : null,
     phone: params.phone ? params.phone.trim() : null,
+    avatarUrl: params.avatarUrl ?? null,
     passwordHash: params.passwordHash ?? null,
     role: 'manager',
     createdAt: new Date().toISOString(),
@@ -119,6 +122,28 @@ export function createUserRecord(params: {
   db.users.push(created);
   writeDb(db);
   return created;
+}
+
+export function upsertLocalProfile(params: {
+  uid: string;
+  authProvider: AuthProviderType;
+  displayName: string;
+  email?: string | null;
+  avatarUrl?: string | null;
+}): StoredUserRecord {
+  const db = readDb();
+  const idx = db.users.findIndex((u) => u.uid === params.uid);
+  if (idx !== -1) {
+    db.users[idx] = {
+      ...db.users[idx],
+      displayName: params.displayName || db.users[idx].displayName,
+      email: params.email ?? db.users[idx].email,
+      ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+    };
+    writeDb(db);
+    return db.users[idx];
+  }
+  return createUserRecord(params);
 }
 
 export function getWorkspaceSnapshot(

@@ -19,7 +19,7 @@ const FIELD_OPTIONS: Array<{
   color: string;
 }> = [
   { field: 'name', label: 'عمود / منطقة الاسم', color: '#2563eb' },
-  { field: 'individuals', label: 'عمود عدد الأفراد (الأنفار)', color: '#059669' },
+  { field: 'individuals', label: 'عمود عدد الأفراد', color: '#059669' },
   { field: 'decreaseCount', label: 'عمود النزول / النقصان', color: '#d97706' },
   { field: 'addOrDelete', label: 'عمود الإضافة / الحذف', color: '#dc2626' },
 ];

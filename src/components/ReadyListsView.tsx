@@ -460,11 +460,11 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   </div>
   <table>
     <thead>
-      <tr><th>#</th><th>الحرف</th><th>الاسم</th><th>الأنفار</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th></tr>
+      <tr><th>#</th><th>الحرف</th><th>الاسم</th><th>الأفراد</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th></tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <div class="footer">الإجمالي: ${activeListTotals.count} عائلة | ${activeListTotals.activeInd} أنفار | ${formatTotalQuota(activeListTotals.totalKg, calculationSettings)} | ${formatIqd(activeListTotals.totalIqd)}</div>
+  <div class="footer">الإجمالي: ${activeListTotals.count} عائلة | ${activeListTotals.activeInd} أفراد | ${formatTotalQuota(activeListTotals.totalKg, calculationSettings)} | ${formatIqd(activeListTotals.totalIqd)}</div>
 </body></html>`);
   };
 
@@ -836,7 +836,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   borderColor: 'var(--border-color)',
                 }}
               >
-                الأنفار: {activeListTotals.activeInd}
+                الأفراد: {activeListTotals.activeInd}
               </span>
               <span
                 className="rounded-lg border px-3 py-1.5 font-bold"
@@ -1148,7 +1148,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                       backgroundColor: 'var(--bg-table-header)',
                     }}
                   >
-                    الأنفار
+                    الأفراد
                   </th>
                   <th
                     className={`border-l px-3 text-center font-bold whitespace-nowrap ${
@@ -1788,7 +1788,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block font-medium">عدد الأنفار</label>
+                    <label className="mb-1 block font-medium">عدد الأفراد</label>
                     <input
                       type="number"
                       min={0}
@@ -2231,7 +2231,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   >
                     <span>{listItems.length} عائلة</span>
                     <span>·</span>
-                    <span>{totalInd} أنفار</span>
+                    <span>{totalInd} أفراد</span>
                     <span>·</span>
                     <span style={{ color: 'var(--accent)' }}>
                       {fullBags} كيس

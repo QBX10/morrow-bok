@@ -10,6 +10,8 @@ import {
   EditPersonModal,
 } from './components/modals/PersonEditorModals';
 import { QuickExtractView } from './components/QuickExtractView';
+import { DataArchivesView } from './components/DataArchivesView';
+import { GoogleWorkspaceView } from './components/GoogleWorkspaceView';
 import { ReadyListsView } from './components/ReadyListsView';
 import { RelationshipsView } from './components/RelationshipsView';
 import { SettingsView } from './components/SettingsView';
@@ -41,6 +43,8 @@ type DeleteTarget =
 export default function App() {
   const {
     state,
+    activePeriod,
+    monthlyArchives,
     themePrefs,
     expertTableConfig,
     quickExtractPrefs,
@@ -57,6 +61,9 @@ export default function App() {
     setDarkTheme,
     setThemePrefs,
     resetThemePrefs,
+    saveAppearanceProfile,
+    applyAppearanceProfile,
+    deleteAppearanceProfile,
     setRequireLoginOnStart,
     setCalculationSettings,
     setTopBarConfig,
@@ -75,6 +82,11 @@ export default function App() {
     clearRecycleBin,
     importWorkspaceJson,
     updateTableHeaderMeta,
+    updateActivePeriod,
+    archiveCurrentPeriod,
+    startNextMonthRollover,
+    markArchiveCloudSynced,
+    deleteMonthlyArchive,
     addPersonDirect,
     updatePersonConfirmed,
     bulkUpdatePersonsCategory,
@@ -95,6 +107,13 @@ export default function App() {
     removeRelationEntryConfirmed,
     addAgencyDirect,
     updateAgencyDetails,
+    ucrsSessions,
+    ucrsLearningRules,
+    upsertUcrsSession,
+    deleteUcrsSession,
+    upsertUcrsLearningRule,
+    toggleUcrsLearningRule,
+    deleteUcrsLearningRule,
     syncWorkspaceToServer,
     restoreWorkspaceFromServer,
   } = useAgencyStore();
@@ -306,6 +325,8 @@ export default function App() {
     if (activeView === 'relationships') return 'قسم العلاقات';
     if (activeView === 'finance') return 'الحسابات والمالية';
     if (activeView === 'quick_extract') return 'السحب السريع';
+    if (activeView === 'data_archives') return 'البيانات والأرشفة الشهرية';
+    if (activeView === 'google_workspace') return 'التقويم والمهام (Google)';
     return 'إعدادات التطبيق';
   }, [activeView, currentAgency]);
 
@@ -409,6 +430,7 @@ export default function App() {
           readyLists={state.readyLists}
           relations={state.relations}
           tableHeaders={state.tableHeaders}
+          activePeriod={activePeriod}
           calculationSettings={state.calculationSettings}
           capabilities={capabilities}
           themePrefs={themePrefs}
@@ -451,6 +473,7 @@ export default function App() {
           readyLists={state.readyLists}
           relations={state.relations}
           tableHeaders={state.tableHeaders}
+          activePeriod={activePeriod}
           calculationSettings={state.calculationSettings}
           capabilities={capabilities}
           themePrefs={themePrefs}
@@ -491,6 +514,7 @@ export default function App() {
           readyLists={state.readyLists}
           readyListItems={state.readyListItems}
           relations={state.relations}
+          activePeriod={activePeriod}
           calculationSettings={state.calculationSettings}
           capabilities={capabilities}
           themePrefs={themePrefs}
@@ -563,6 +587,8 @@ export default function App() {
           themePrefs={themePrefs}
           quickExtractPrefs={quickExtractPrefs}
           defaultAgencyId={selectedAgencyId}
+          ucrsSessions={ucrsSessions}
+          ucrsLearningRules={ucrsLearningRules}
           onUpdateQuickExtractPrefs={setQuickExtractPrefs}
           onSaveQuickExtractTemplate={saveQuickExtractTemplate}
           onCommitQuickExtractPlan={commitQuickExtractPlan}
@@ -571,11 +597,40 @@ export default function App() {
             addPersonsToReadyList(listId, pids)
           }
           onUpsertRelation={upsertRelationEntry}
+          onUpsertUcrsSession={upsertUcrsSession}
+          onDeleteUcrsSession={deleteUcrsSession}
+          onUpsertUcrsLearningRule={upsertUcrsLearningRule}
+          onToggleUcrsLearningRule={toggleUcrsLearningRule}
+          onDeleteUcrsLearningRule={deleteUcrsLearningRule}
           onDoneNavigateToAgency={(agId) => {
             setSelectedAgencyId(agId);
             setActiveView('agency_roster');
           }}
           onNavigateToView={(view) => setActiveView(view)}
+        />
+      )}
+
+      {activeView === 'data_archives' && (
+        <DataArchivesView
+          activePeriod={activePeriod}
+          archives={monthlyArchives}
+          capabilities={capabilities}
+          authUser={authUser}
+          onUpdateActivePeriod={updateActivePeriod}
+          onArchiveCurrentPeriod={archiveCurrentPeriod}
+          onStartNextMonthRollover={startNextMonthRollover}
+          onMarkArchiveCloudSynced={markArchiveCloudSynced}
+          onDeleteArchive={deleteMonthlyArchive}
+          onSyncServer={syncWorkspaceToServer}
+          onOpenAuth={() => setAuthModalOpen(true)}
+        />
+      )}
+
+      {activeView === 'google_workspace' && (
+        <GoogleWorkspaceView
+          activePeriod={activePeriod}
+          relations={state.relations}
+          onAuthenticatedUser={(user) => setAuthUser(user)}
         />
       )}
 
@@ -608,6 +663,9 @@ export default function App() {
           onSaveCalculationSettings={setCalculationSettings}
           onUpdateThemePrefs={setThemePrefs}
           onResetThemePrefs={resetThemePrefs}
+          onSaveAppearanceProfile={saveAppearanceProfile}
+          onApplyAppearanceProfile={applyAppearanceProfile}
+          onDeleteAppearanceProfile={deleteAppearanceProfile}
           onChangeTopBarConfig={setTopBarConfig}
           onUpdateExpertTableConfig={setExpertTableConfig}
           onResetExpertTableConfig={resetExpertTableConfig}

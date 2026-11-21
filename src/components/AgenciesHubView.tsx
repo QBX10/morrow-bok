@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Edit3, Plus, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, Edit3, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { compressImageFileToDataUrl } from '../lib/imageUpload';
 import type {
   Agency,
   AgencyExpense,
@@ -23,7 +24,7 @@ interface AgenciesHubViewProps {
   onAddAgency: (name: string, icon: string) => void;
   onUpdateAgencyDetails?: (
     agencyId: number,
-    patch: Partial<Pick<Agency, 'name' | 'icon' | 'isLocked'>>
+    patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
   ) => void;
 }
 
@@ -43,6 +44,11 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editingAgencyId, setEditingAgencyId] = useState<number | null>(null);
   const [editAgencyName, setEditAgencyName] = useState('');
   const [editAgencyIcon, setEditAgencyIcon] = useState('');
+  const [editAgencyLogo, setEditAgencyLogo] = useState<string | undefined>(
+    undefined
+  );
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   const allMetrics = useMemo(
     () => computeAgencyMetrics(persons, expenses, calculationSettings),
@@ -52,6 +58,27 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   // Strict 4-card startup layout: Card 1 = All Agencies, Cards 2-4 = First 3 agencies
   const primaryThreeAgencies = useMemo(() => agencies.slice(0, 3), [agencies]);
   const extraAgencies = useMemo(() => agencies.slice(3), [agencies]);
+
+  const handleAgencyLogoUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setLogoError('');
+      const dataUrl = await compressImageFileToDataUrl(file, {
+        maxDim: 200,
+        maxChars: 140000,
+        quality: 0.8,
+      });
+      setEditAgencyLogo(dataUrl);
+    } catch (err) {
+      setLogoError(
+        err instanceof Error ? err.message : 'تعذر معالجة شعار الوكالة.'
+      );
+    }
+  };
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 sm:p-6">
@@ -96,7 +123,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             setNewAgencyName('');
             setShowAddAgency(false);
           }}
-          className="flex flex-wrap items-center gap-2 rounded-xl border p-4"
+          className="tabrix-card flex flex-wrap items-center gap-2 border p-4"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--border-color)',
@@ -137,58 +164,116 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               onUpdateAgencyDetails(editingAgencyId, {
                 name: editAgencyName.trim(),
                 icon: editAgencyIcon.trim() || '🏢',
+                logoDataUrl: editAgencyLogo || '',
               });
               setEditingAgencyId(null);
+              setLogoError('');
             }}
-            className="flex flex-wrap items-center gap-2 rounded-xl border p-4"
+            className="tabrix-card space-y-2 border p-4"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--accent)',
             }}
           >
-            <input
-              type="text"
-              value={editAgencyIcon}
-              onChange={(e) => setEditAgencyIcon(e.target.value)}
-              aria-label="أيقونة الوكالة"
-              className="w-14 rounded-lg border px-2 py-2 text-center text-sm"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            />
-            <input
-              type="text"
-              required
-              value={editAgencyName}
-              onChange={(e) => setEditAgencyName(e.target.value)}
-              aria-label="تعديل اسم الوكالة"
-              className="min-w-[200px] flex-1 rounded-lg border px-3 py-2 text-sm"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1 rounded-lg px-3.5 py-2 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <Check className="h-3.5 w-3.5" />
-              <span>حفظ</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditingAgencyId(null)}
-              className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <X className="h-3.5 w-3.5" />
-              <span>إلغاء</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {editAgencyLogo ? (
+                <img
+                  src={editAgencyLogo}
+                  alt="شعار الوكالة"
+                  referrerPolicy="no-referrer"
+                  className="h-9 w-9 rounded-lg border object-cover"
+                  style={{ borderColor: 'var(--border-color)' }}
+                />
+              ) : null}
+
+              <input
+                type="text"
+                value={editAgencyIcon}
+                onChange={(e) => setEditAgencyIcon(e.target.value)}
+                aria-label="أيقونة الوكالة"
+                className="w-14 rounded-lg border px-2 py-2 text-center text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+              <input
+                type="text"
+                required
+                value={editAgencyName}
+                onChange={(e) => setEditAgencyName(e.target.value)}
+                aria-label="تعديل اسم الوكالة"
+                className="min-w-[200px] flex-1 rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <ImagePlus className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>رفع شعار</span>
+              </button>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAgencyLogoUpload}
+                className="hidden"
+              />
+
+              {editAgencyLogo && (
+                <button
+                  type="button"
+                  onClick={() => setEditAgencyLogo(undefined)}
+                  aria-label="حذف شعار الوكالة"
+                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-xs font-semibold"
+                  style={{
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1 rounded-lg px-3.5 py-2 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>حفظ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAgencyId(null);
+                  setLogoError('');
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>إلغاء</span>
+              </button>
+            </div>
+            {logoError && (
+              <div className="text-xs font-bold" style={{ color: 'var(--danger)' }}>
+                {logoError}
+              </div>
+            )}
           </form>
         )}
 
@@ -202,14 +287,17 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         <button
           type="button"
           onClick={onOpenMasterRoster}
-          className="flex flex-col justify-between rounded-xl border p-5 text-right transition-colors hover:border-blue-500"
+          className="tabrix-card flex flex-col justify-between border p-5 text-right transition-colors hover:border-blue-500"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--accent)',
           }}
         >
           <div>
-            <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
+            <div
+              className="flex items-center justify-between text-xs"
+              style={{ color: 'var(--text-muted)' }}
+            >
               <span>البطاقة الأولى</span>
               <span>السجل الشامل</span>
             </div>
@@ -219,7 +307,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               style={{ color: 'var(--text-muted)' }}
             >
               <div>
-                العائلات: {allMetrics.activeHouseholds} · الأنفار:{' '}
+                العائلات: {allMetrics.activeHouseholds} · الأفراد:{' '}
                 {allMetrics.activeIndividuals}
               </div>
               <div>
@@ -250,11 +338,15 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             expenses.filter((e) => e.agencyId === agency.id),
             calculationSettings
           );
-          const cardOrderLabels = ['الوكالة الثانية', 'الوكالة الثالثة', 'الوكالة الرابعة'];
+          const cardOrderLabels = [
+            'الوكالة الثانية',
+            'الوكالة الثالثة',
+            'الوكالة الرابعة',
+          ];
           return (
             <div
               key={agency.id}
-              className="flex flex-col justify-between rounded-xl border p-5 text-right transition-colors hover:border-blue-500"
+              className="tabrix-card flex flex-col justify-between border p-5 text-right transition-colors hover:border-blue-500"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -275,6 +367,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           setEditingAgencyId(agency.id);
                           setEditAgencyName(agency.name);
                           setEditAgencyIcon(agency.icon);
+                          setEditAgencyLogo(agency.logoDataUrl || undefined);
+                          setLogoError('');
                         }}
                         className="rounded border p-1 hover:opacity-80"
                         style={{ borderColor: 'var(--border-color)' }}
@@ -282,7 +376,17 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         <Edit3 className="h-3 w-3" />
                       </button>
                     )}
-                    <span aria-hidden="true">{agency.icon}</span>
+                    {agency.logoDataUrl ? (
+                      <img
+                        src={agency.logoDataUrl}
+                        alt={agency.name}
+                        referrerPolicy="no-referrer"
+                        className="h-6 w-6 rounded-md border object-cover"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      />
+                    ) : (
+                      <span aria-hidden="true">{agency.icon}</span>
+                    )}
                   </div>
                 </div>
                 <h2 className="mt-2 truncate text-lg font-bold">
@@ -293,7 +397,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <div>
-                    العائلات: {m.activeHouseholds} · الأنفار:{' '}
+                    العائلات: {m.activeHouseholds} · الأفراد:{' '}
                     {m.activeIndividuals}
                   </div>
                   <div>
@@ -340,16 +444,34 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   key={agency.id}
                   type="button"
                   onClick={() => onOpenAgencyRoster(agency.id)}
-                  className="flex items-center justify-between rounded-xl border p-4 text-right hover:border-blue-500"
+                  className="tabrix-card flex items-center justify-between border p-4 text-right hover:border-blue-500"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
-                  <div>
-                    <div className="font-bold">{agency.name}</div>
-                    <div className="mt-1 text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                      الأنفار: {m.activeIndividuals} · الأكياس: {m.fullBags}
+                  <div className="flex items-center gap-2.5">
+                    {agency.logoDataUrl ? (
+                      <img
+                        src={agency.logoDataUrl}
+                        alt={agency.name}
+                        referrerPolicy="no-referrer"
+                        className="h-8 w-8 rounded-lg border object-cover"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      />
+                    ) : (
+                      <span className="text-base" aria-hidden="true">
+                        {agency.icon}
+                      </span>
+                    )}
+                    <div>
+                      <div className="font-bold">{agency.name}</div>
+                      <div
+                        className="mt-1 text-xs tabular-nums"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        الأفراد: {m.activeIndividuals} · الأكياس: {m.fullBags}
+                      </div>
                     </div>
                   </div>
                   <ArrowLeft className="h-4 w-4" style={{ color: 'var(--accent)' }} />

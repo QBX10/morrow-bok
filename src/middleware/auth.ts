@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
+import type { DecodedIdToken } from 'firebase-admin/auth';
+import { getOrCreateUser, isSqlDatabaseConfigured } from '../db/users.ts';
+import { adminAuth } from '../lib/firebase-admin.ts';
 import type { AuthProviderType } from '../types/agency.ts';
 
 const AUTH_SECRET =
@@ -14,10 +17,12 @@ export interface AuthenticatedPrincipal {
   email?: string;
   username?: string;
   phone?: string;
+  avatarUrl?: string;
 }
 
 export interface AuthRequest extends Request {
   principal?: AuthenticatedPrincipal;
+  user?: DecodedIdToken;
 }
 
 export function signSessionToken(payload: AuthenticatedPrincipal): string {
@@ -67,13 +72,14 @@ export function verifySessionToken(
       email: parsed.email,
       username: parsed.username,
       phone: parsed.phone,
+      avatarUrl: parsed.avatarUrl,
     };
   } catch {
     return null;
   }
 }
 
-export const requireAuth = (
+export const requireAuth = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
@@ -85,14 +91,70 @@ export const requireAuth = (
   }
 
   const token = authHeader.slice(7).trim();
-  const principal = verifySessionToken(token);
-  if (!principal) {
-    res
-      .status(401)
-      .json({ error: 'انتهت صلاحية الجلسة، يرجى إعادة تسجيل الدخول.' });
+
+  // 1. Check local multi-auth HMAC session tokens first if prefixed with "sess."
+  if (token.startsWith('sess.')) {
+    const principal = verifySessionToken(token);
+    if (!principal) {
+      res
+        .status(401)
+        .json({ error: 'انتهت صلاحية الجلسة، يرجى إعادة تسجيل الدخول.' });
+      return;
+    }
+    req.principal = principal;
+    if (isSqlDatabaseConfigured()) {
+      try {
+        await getOrCreateUser({
+          uid: principal.uid,
+          email: principal.email || `${principal.uid}@tabrex.local`,
+          displayName: principal.displayName,
+          avatarUrl: principal.avatarUrl ?? null,
+          authProvider: principal.provider,
+        });
+      } catch (err) {
+        console.error('Failed to sync local session user to Cloud SQL:', err);
+      }
+    }
+    next();
     return;
   }
 
-  req.principal = principal;
-  next();
+  // 2. Verify Firebase ID Token via Firebase Admin SDK
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    req.user = decodedToken;
+    const email = (decodedToken.email || `${decodedToken.uid}@firebase.local`).toLowerCase();
+    const displayName =
+      decodedToken.name || email.split('@')[0] || 'مستخدم Google';
+    const avatarUrl =
+      typeof decodedToken.picture === 'string' ? decodedToken.picture : undefined;
+
+    req.principal = {
+      uid: decodedToken.uid,
+      provider: 'google',
+      displayName,
+      email,
+      avatarUrl,
+    };
+
+    if (isSqlDatabaseConfigured()) {
+      try {
+        await getOrCreateUser({
+          uid: decodedToken.uid,
+          email,
+          displayName,
+          avatarUrl: avatarUrl ?? null,
+          authProvider: 'google',
+        });
+      } catch (err) {
+        console.error('Failed to upsert Firebase user to Cloud SQL:', err);
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Error verifying Firebase ID token:', error);
+    res
+      .status(401)
+      .json({ error: 'تعذر التحقق من جلسة الدخول، يرجى إعادة التسجيل.' });
+  }
 };

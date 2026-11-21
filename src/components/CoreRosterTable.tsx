@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Edit3, Trash2 } from 'lucide-react';
 import type {
   BlockScope,
@@ -10,7 +10,9 @@ import type {
 import {
   getEffectiveAllocationForPerson,
   initialLetter,
+  normalizeArabic,
 } from '../utils/agencyLogic';
+import { resolveTableThemeId } from '../utils/themes';
 
 export interface CoreRosterRow {
   rowKey: string;
@@ -80,7 +82,7 @@ const DEFAULT_COLUMN_LABELS: Record<string, string> = {
   name: 'الاسم',
   agency: 'الوكالة',
   category: 'الفئة',
-  individuals: 'الأنفار',
+  individuals: 'الأفراد',
   quantity: 'الحصة',
   price: 'المبلغ',
   status: 'الحالة',
@@ -180,9 +182,30 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
     return active.length > 0 ? active : ['serial', 'name', 'individuals'];
   })();
 
+  const resolvedTableTheme = resolveTableThemeId(themePrefs.tableTheme);
+  const condRules = themePrefs.conditionalFormatting || {
+    highlightBlockedRows: true,
+    highlightDuplicateNames: true,
+    highlightZeroIndividuals: true,
+  };
+
+  const duplicateNameSet = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const key = normalizeArabic(r.name);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const dups = new Set<string>();
+    counts.forEach((count, key) => {
+      if (count > 1) dups.add(key);
+    });
+    return dups;
+  }, [rows]);
+
   const getHeaderLabel = (colId: string): string => {
     if (colId === 'individuals' && showExtractColumns) {
-      return 'الصافي (الأنفار)';
+      return 'الصافي (الأفراد)';
     }
     if (colId === 'extract_decrease') return 'النزول / النقصان';
     if (colId === 'extract_add_delete') return 'الإضافة / الحذف';
@@ -198,9 +221,303 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   const totalColSpan =
     1 + orderedColumns.length + (showEditActions ? 1 : 0);
 
+  if (resolvedTableTheme === 'card-based') {
+    return (
+      <div className="space-y-3">
+        <div
+          className="tabrix-card flex items-center justify-between border px-4 py-2.5 text-xs"
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          <label className="flex cursor-pointer items-center gap-2 font-bold">
+            <input
+              type="checkbox"
+              aria-label="تحديد جميع الأسماء الظاهرة"
+              checked={allVisibleSelected}
+              onChange={(e) => onToggleSelectAll(e.target.checked)}
+            />
+            <span>تحديد الكل ({rows.length})</span>
+          </label>
+          <span style={{ color: 'var(--text-muted)' }}>وضع العرض البطاقي المرن</span>
+        </div>
+
+        {rows.length === 0 ? (
+          <div
+            className="tabrix-card border py-10 text-center text-xs"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            {emptyMessage}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {rows.map((row, index) => {
+              const eff = getEffectiveAllocationForPerson(
+                {
+                  individuals: row.individuals,
+                  legacyQuantity: row.legacyQuantity,
+                  status: row.status,
+                  blockType: row.blockType,
+                  blockedIndividuals: row.blockedIndividuals,
+                },
+                calculationSettings
+              );
+              const isBlocked =
+                eff.summary.scope === 'full' ||
+                eff.summary.scope === 'archived';
+              const isDup =
+                condRules.highlightDuplicateNames &&
+                duplicateNameSet.has(normalizeArabic(row.name));
+              const isZeroInd =
+                condRules.highlightZeroIndividuals &&
+                !isBlocked &&
+                (eff.eligibleIndividuals === 0 || row.individuals === 0);
+              const highlightBlocked =
+                condRules.highlightBlockedRows && isBlocked;
+              const isRowSelected = selectedSet.has(row.selectionId);
+              const isFocused =
+                themePrefs.activeRowFocusMode && focusedRowKey === row.rowKey;
+
+              const statusColor =
+                eff.summary.scope === 'none'
+                  ? 'var(--success)'
+                  : eff.summary.scope === 'partial'
+                  ? 'var(--warning)'
+                  : 'var(--danger)';
+
+              return (
+                <div
+                  key={row.rowKey}
+                  data-row-key={row.rowKey}
+                  onClick={() => {
+                    if (themePrefs.activeRowFocusMode && onFocusRow) {
+                      onFocusRow(
+                        focusedRowKey === row.rowKey ? null : row.rowKey
+                      );
+                    }
+                  }}
+                  className="tabrix-card flex flex-col justify-between gap-3 border p-4 text-xs"
+                  style={{
+                    backgroundColor: isRowSelected || isFocused
+                      ? 'var(--bg-nav-active)'
+                      : highlightBlocked
+                      ? 'var(--danger-bg)'
+                      : isZeroInd
+                      ? 'var(--warning-bg)'
+                      : 'var(--bg-surface)',
+                    borderColor: isRowSelected || isFocused
+                      ? 'var(--accent)'
+                      : isDup || highlightBlocked
+                      ? 'var(--danger)'
+                      : isZeroInd
+                      ? 'var(--warning)'
+                      : 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                      <input
+                        type="checkbox"
+                        aria-label={`تحديد ${row.name}`}
+                        checked={isRowSelected}
+                        onChange={() => onToggleSelectRow(row.selectionId)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className={numClass}>#{index + 1}</span>
+                          {showAgencyColumn && row.agencyName && (
+                            <span>· {row.agencyName}</span>
+                          )}
+                          {isDup && (
+                            <span className="font-bold" style={{ color: 'var(--danger)' }}>
+                              · اسم مكرر
+                            </span>
+                          )}
+                          {isZeroInd && (
+                            <span className="font-bold" style={{ color: 'var(--warning)' }}>
+                              · 0 أفراد
+                            </span>
+                          )}
+                        </div>
+
+                        {editableInline && onInlinePatchRow ? (
+                          <input
+                            type="text"
+                            value={row.name}
+                            aria-label={`تعديل اسم ${row.name}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              onInlinePatchRow(row.rowKey, {
+                                name: e.target.value,
+                              })
+                            }
+                            className="w-full rounded border px-2 py-1 text-sm font-bold"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: isDup
+                                ? 'var(--danger)'
+                                : 'var(--border-color)',
+                              color: isDup
+                                ? 'var(--danger)'
+                                : 'var(--text-primary)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="text-sm font-bold"
+                            style={{
+                              color: isDup
+                                ? 'var(--danger)'
+                                : 'var(--text-primary)',
+                            }}
+                          >
+                            {row.name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <span
+                      className="shrink-0 font-bold"
+                      style={{ color: statusColor }}
+                    >
+                      {eff.summary.shortLabel}
+                    </span>
+                  </div>
+
+                  <div
+                    className={`grid grid-cols-3 gap-2 rounded-lg border p-2.5 text-center ${numClass}`}
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        الأفراد
+                      </div>
+                      {editableInline && onInlinePatchRow && !showExtractColumns ? (
+                        <input
+                          type="number"
+                          min={0}
+                          aria-label={`أفراد ${row.name}`}
+                          value={row.individuals ?? 0}
+                          onChange={(e) =>
+                            onInlinePatchRow(row.rowKey, {
+                              individuals:
+                                e.target.value === ''
+                                  ? 0
+                                  : Math.max(0, Number(e.target.value)),
+                            })
+                          }
+                          className="mt-0.5 w-14 rounded border px-1 py-0.5 text-center text-xs font-bold tabular-nums"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                      ) : (
+                        <div className="font-bold">
+                          {eff.eligibleIndividuals ?? '—'}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        الحصة
+                      </div>
+                      <div className="font-bold">{eff.quotaText}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        المبلغ
+                      </div>
+                      <div className="font-bold">{eff.priceText}</div>
+                    </div>
+                  </div>
+
+                  {(row.notes || (editableInline && onInlinePatchRow) || showEditActions) && (
+                    <div
+                      className="flex items-center justify-between gap-2 pt-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {editableInline && onInlinePatchRow ? (
+                        <input
+                          type="text"
+                          value={row.notes}
+                          aria-label={`ملاحظات ${row.name}`}
+                          placeholder="أضف ملاحظة..."
+                          onChange={(e) =>
+                            onInlinePatchRow(row.rowKey, {
+                              notes: e.target.value,
+                            })
+                          }
+                          className="min-w-0 flex-1 rounded border px-2 py-1 text-xs"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="truncate"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {row.notes || '—'}
+                        </span>
+                      )}
+
+                      {showEditActions && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {onEditRowModal && (
+                            <button
+                              type="button"
+                              onClick={() => onEditRowModal(row)}
+                              aria-label={`تعديل ${row.name}`}
+                              className="rounded border p-1.5 hover:opacity-80"
+                              style={{ borderColor: 'var(--border-color)' }}
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {onDeleteRowModal && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteRowModal(row)}
+                              aria-label={`حذف ${row.name}`}
+                              className="rounded border p-1.5 hover:opacity-80"
+                              style={{
+                                borderColor: 'var(--danger)',
+                                color: 'var(--danger)',
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`overflow-auto rounded-xl border ${
+      className={`tabrix-card overflow-auto border ${
         themePrefs.stickyHeaderAndName ? 'max-h-[70vh]' : ''
       }`}
       style={{
@@ -209,7 +526,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
       }}
     >
       <table
-        className={`agency-table theme-${themePrefs.tableTheme} ${
+        className={`agency-table theme-${resolvedTableTheme} ${
           themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
         } ${focusActive ? 'has-focused-row' : ''} text-right text-xs sm:text-sm`}
       >
@@ -309,6 +626,15 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
               const isBlocked =
                 eff.summary.scope === 'full' ||
                 eff.summary.scope === 'archived';
+              const highlightBlocked =
+                condRules.highlightBlockedRows && isBlocked;
+              const isDuplicateName =
+                condRules.highlightDuplicateNames &&
+                duplicateNameSet.has(normalizeArabic(row.name));
+              const isZeroInd =
+                condRules.highlightZeroIndividuals &&
+                !isBlocked &&
+                (eff.eligibleIndividuals === 0 || row.individuals === 0);
               const isFocused =
                 themePrefs.activeRowFocusMode && focusedRowKey === row.rowKey;
               const prevRow = index > 0 ? rows[index - 1] : null;
@@ -360,6 +686,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
               return (
                 <tr
                   key={row.rowKey}
+                  data-row-key={row.rowKey}
                   onClick={() => {
                     if (!themePrefs.activeRowFocusMode || !onFocusRow) return;
                     onFocusRow(
@@ -367,15 +694,17 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     );
                   }}
                   className={`transition-colors ${
-                    isBlocked ? 'row-blocked' : ''
-                  } ${isFocused ? 'row-focused' : ''} ${
-                    themePrefs.activeRowFocusMode ? 'cursor-pointer' : ''
-                  }`}
+                    highlightBlocked ? 'row-blocked' : ''
+                  } ${isZeroInd ? 'row-warning-cond' : ''} ${
+                    isFocused ? 'row-focused' : ''
+                  } ${themePrefs.activeRowFocusMode ? 'cursor-pointer' : ''}`}
                   style={{
                     backgroundColor: isRowSelected
                       ? 'var(--bg-nav-active)'
-                      : isBlocked
+                      : highlightBlocked
                       ? 'var(--danger-bg)'
+                      : isZeroInd
+                      ? 'var(--warning-bg)'
                       : undefined,
                   }}
                 >
@@ -430,6 +759,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
+                          title={isDuplicateName ? 'اسم مكرر في هذا الجدول' : undefined}
                           className={`border-l px-3 font-semibold whitespace-nowrap ${
                             themePrefs.stickyHeaderAndName
                               ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
@@ -440,9 +770,12 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             backgroundColor:
                               isRowSelected || isFocused
                                 ? 'var(--bg-nav-active)'
-                                : isBlocked
+                                : isDuplicateName || highlightBlocked
                                 ? 'var(--danger-bg)'
+                                : isZeroInd
+                                ? 'var(--warning-bg)'
                                 : 'var(--bg-surface)',
+                            color: isDuplicateName ? 'var(--danger)' : undefined,
                             borderTop: groupTopBorder,
                           }}
                           onClick={(e) => {
@@ -456,28 +789,53 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           }}
                         >
                           {editableInline && onInlinePatchRow ? (
-                            <input
-                              type="text"
-                              value={row.name}
-                              aria-label={`تعديل اسم ${row.name}`}
-                              onChange={(e) =>
-                                onInlinePatchRow(row.rowKey, {
-                                  name: e.target.value,
-                                })
-                              }
-                              className="w-44 rounded border px-2 py-1 text-xs font-semibold sm:w-52"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                              }}
-                            />
+                            <div className="inline-flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={row.name}
+                                aria-label={`تعديل اسم ${row.name}`}
+                                onChange={(e) =>
+                                  onInlinePatchRow(row.rowKey, {
+                                    name: e.target.value,
+                                  })
+                                }
+                                className="w-44 rounded border px-2 py-1 text-xs font-semibold sm:w-52"
+                                style={{
+                                  backgroundColor: 'var(--bg-main)',
+                                  borderColor: isDuplicateName
+                                    ? 'var(--danger)'
+                                    : 'var(--border-color)',
+                                  color: isDuplicateName
+                                    ? 'var(--danger)'
+                                    : undefined,
+                                }}
+                              />
+                              {isDuplicateName && (
+                                <span
+                                  className="text-[10px] font-bold"
+                                  style={{ color: 'var(--danger)' }}
+                                >
+                                  مكرر
+                                </span>
+                              )}
+                            </div>
                           ) : (
-                            <button
-                              type="button"
-                              className="text-right font-semibold hover:underline"
-                            >
-                              {row.name}
-                            </button>
+                            <span className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="text-right font-semibold hover:underline"
+                              >
+                                {row.name}
+                              </button>
+                              {isDuplicateName && (
+                                <span
+                                  className="text-[10px] font-bold"
+                                  style={{ color: 'var(--danger)' }}
+                                >
+                                  (مكرر)
+                                </span>
+                              )}
+                            </span>
                           )}
                         </td>
                       );
@@ -597,10 +955,10 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                                 </span>
                               </div>
                             ) : (
-                              <input
+                                <input
                                 type="number"
                                 min={0}
-                                aria-label={`أنفار ${row.name}`}
+                                aria-label={`أفراد ${row.name}`}
                                 value={row.individuals ?? 0}
                                 onChange={(e) =>
                                   onInlinePatchRow(row.rowKey, {
@@ -620,7 +978,13 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           ) : eff.summary.scope === 'partial' ? (
                             `${eff.eligibleIndividuals} من ${row.individuals ?? 0}`
                           ) : (
-                            eff.eligibleIndividuals ?? '—'
+                            <span
+                              style={{
+                                color: isZeroInd ? 'var(--warning)' : undefined,
+                              }}
+                            >
+                              {eff.eligibleIndividuals ?? '—'}
+                            </span>
                           )}
                         </td>
                       );

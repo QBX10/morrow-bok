@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
   Calculator,
+  CalendarCheck2,
+  Database,
   FileSearch,
   FileSpreadsheet,
   HeartHandshake,
@@ -303,6 +305,56 @@ export const SideMenuDrawer: React.FC<SideMenuDrawerProps> = ({
                     <span>الاحترافي+</span>
                   </span>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => go('data_archives')}
+                className="flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-xs font-bold transition-colors"
+                style={{
+                  backgroundColor:
+                    activeView === 'data_archives'
+                      ? 'var(--bg-nav-active)'
+                      : 'var(--bg-main)',
+                  borderColor:
+                    activeView === 'data_archives'
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                  color:
+                    activeView === 'data_archives'
+                      ? 'var(--accent)'
+                      : 'var(--text-primary)',
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  <span>البيانات والأرشفة الشهرية</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => go('google_workspace')}
+                className="flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-xs font-bold transition-colors"
+                style={{
+                  backgroundColor:
+                    activeView === 'google_workspace'
+                      ? 'var(--bg-nav-active)'
+                      : 'var(--bg-main)',
+                  borderColor:
+                    activeView === 'google_workspace'
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                  color:
+                    activeView === 'google_workspace'
+                      ? 'var(--accent)'
+                      : 'var(--text-primary)',
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <CalendarCheck2 className="h-4 w-4" />
+                  <span>التقويم والمهام (Google)</span>
+                </span>
               </button>
             </div>
           </section>

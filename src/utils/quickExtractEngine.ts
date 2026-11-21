@@ -637,7 +637,7 @@ export function auditExtractedRowMath(
     const diff = Math.abs(net - matchedPerson.individuals);
     if (diff >= 6) {
       issues.push(
-        `فارق رقمي كبير عن المسجل حاليًا في النظام (${matchedPerson.individuals} ← ${net}، بفارق ${diff} أنفار)`
+        `فارق رقمي كبير عن المسجل حاليًا في النظام (${matchedPerson.individuals} ← ${net}، بفارق ${diff} أفراد)`
       );
     }
   }
@@ -778,7 +778,7 @@ export function evaluateExtractedRow(
     missingFields,
     isComplete: missingFields.length === 0,
     ...resolvedRowBase,
-    notes: '',
+    notes: raw.notes ? String(raw.notes).trim() : '',
   };
 }
 

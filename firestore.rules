@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'shemmry9@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // --- Validation Blueprints (Synchronized with firebase-blueprint.json) ---
+    function isValidUserPublicCard(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'avatarUrl', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 450000))
+        && data.updatedAt == request.time;
+    }
+
+    function isValidUserPrivateInfo(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'provider', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'provider', 'role', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.provider in ['google', 'username', 'phone']
+        && data.role in ['manager', 'viewer']
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidWorkspaceSync(data, userId) {
+      return data.keys().hasAll(['ownerUid', 'title', 'agencyCount', 'recordCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerUid', 'title', 'agencyCount', 'recordCount', 'snapshotVersion', 'themePrefs', 'createdAt', 'updatedAt'])
+        && data.ownerUid is string && data.ownerUid == userId && isValidId(data.ownerUid)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.agencyCount is int && data.agencyCount >= 0 && data.agencyCount <= 500
+        && data.recordCount is int && data.recordCount >= 0 && data.recordCount <= 50000
+        && (!('snapshotVersion' in data) || (data.snapshotVersion is int && data.snapshotVersion >= 1 && data.snapshotVersion <= 1000000))
+        && (!('themePrefs' in data) || (data.themePrefs is map && data.themePrefs.size() <= 30))
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidAppearanceProfile(data, userId) {
+      return data.keys().hasAll(['ownerUid', 'name', 'appTheme', 'tableTheme', 'fontFamily', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerUid', 'name', 'appTheme', 'tableTheme', 'fontFamily', 'fontSizePx', 'rowHeightPx', 'glassEffect', 'createdAt', 'updatedAt'])
+        && data.ownerUid is string && data.ownerUid == userId && isValidId(data.ownerUid)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.appTheme is string && data.appTheme.size() >= 1 && data.appTheme.size() <= 40
+        && data.tableTheme is string && data.tableTheme.size() >= 1 && data.tableTheme.size() <= 40
+        && data.fontFamily is string && data.fontFamily.size() >= 1 && data.fontFamily.size() <= 40
+        && (!('fontSizePx' in data) || (data.fontSizePx is int && data.fontSizePx >= 11 && data.fontSizePx <= 26))
+        && (!('rowHeightPx' in data) || (data.rowHeightPx is int && data.rowHeightPx >= 24 && data.rowHeightPx <= 84))
+        && (!('glassEffect' in data) || data.glassEffect is bool)
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    // Admin registry is strictly read-only from client SDK
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow list, write: if false;
+    }
+
+    // Connection validation probe path
+    match /test/connection {
+      allow get: if isSignedIn();
+      allow list, write: if false;
+    }
+
+    // --- User Split Collections ---
+    match /users/{userId}/public/{cardId} {
+      allow get: if isValidId(userId) && isValidId(cardId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(userId) && isValidId(cardId) && isVerifiedOwner(userId)
+        && isValidUserPublicCard(incoming(), userId);
+      allow update: if isValidId(userId) && isValidId(cardId)
+        && isValidUserPublicCard(incoming(), userId)
+        && (isAdmin() || (
+          isVerifiedOwner(userId)
+          && incoming().uid == existing().uid
+          && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'updatedAt'])
+        ));
+      allow delete: if isValidId(userId) && isValidId(cardId) && (isVerifiedOwner(userId) || isAdmin());
+    }
+
+    match /users/{userId}/private/{docId} {
+      allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(userId) && isValidId(docId) && isVerifiedOwner(userId)
+        && isValidUserPrivateInfo(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().role == 'manager';
+      allow update: if isValidId(userId) && isValidId(docId)
+        && isValidUserPrivateInfo(incoming(), userId)
+        && (isAdmin() || (
+          isVerifiedOwner(userId)
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().role == existing().role
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt'])
+        ));
+      allow delete: if isValidId(userId) && isValidId(docId) && isAdmin();
+    }
+
+    match /users/{userId}/workspaces/{workspaceId} {
+      allow get: if isValidId(userId) && isValidId(workspaceId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(userId) && isValidId(workspaceId) && isVerifiedOwner(userId)
+        && isValidWorkspaceSync(incoming(), userId)
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId) && isValidId(workspaceId)
+        && isValidWorkspaceSync(incoming(), userId)
+        && (isAdmin() || (
+          isVerifiedOwner(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'agencyCount', 'recordCount', 'snapshotVersion', 'themePrefs', 'updatedAt'])
+        ));
+      allow delete: if isValidId(userId) && isValidId(workspaceId) && (isVerifiedOwner(userId) || isAdmin());
+    }
+
+    match /users/{userId}/appearanceProfiles/{profileId} {
+      allow get: if isValidId(userId) && isValidId(profileId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(userId) && isValidId(profileId) && isVerifiedOwner(userId)
+        && isValidAppearanceProfile(incoming(), userId)
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId) && isValidId(profileId)
+        && isValidAppearanceProfile(incoming(), userId)
+        && (isAdmin() || (
+          isVerifiedOwner(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'appTheme', 'tableTheme', 'fontFamily', 'fontSizePx', 'rowHeightPx', 'glassEffect', 'updatedAt'])
+        ));
+      allow delete: if isValidId(userId) && isValidId(profileId) && (isVerifiedOwner(userId) || isAdmin());
+    }
+  }
+}

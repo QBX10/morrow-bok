@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
+  Camera,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -17,8 +18,11 @@ import {
   loginWithPasswordApi,
   registerWithPasswordApi,
   requestPhoneOtpApi,
+  signInWithFirebaseGoogle,
+  updateUserProfileApi,
   verifyPhoneOtpApi,
 } from '../../lib/authClient';
+import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
 
 interface AuthModalProps {
@@ -56,9 +60,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [demoOtpHint, setDemoOtpHint] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarNotice, setAvatarNotice] = useState('');
   const [error, setError] = useState('');
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!open) return null;
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !currentUser) return;
+    try {
+      setAvatarBusy(true);
+      setError('');
+      setAvatarNotice('');
+      const compressed = await compressImageFileToDataUrl(file, {
+        maxDim: 240,
+        maxChars: 220000,
+        quality: 0.82,
+      });
+      const updated = await updateUserProfileApi({ avatarUrl: compressed });
+      onAuthenticated(updated);
+      setAvatarNotice('تم تحديث الصورة الشخصية وحفظها بنجاح.');
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر رفع الصورة الشخصية.'
+      );
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleFirebaseGoogleLogin = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const session = await signInWithFirebaseGoogle();
+      onAuthenticated(session.user);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر إتمام تسجيل الدخول بحساب Google.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,43 +241,94 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="space-y-4 p-5">
           {currentUser && (
             <div
-              className="flex items-center justify-between gap-3 rounded-lg border p-3 text-xs"
+              className="space-y-2.5 rounded-lg border p-3 text-xs"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--success)',
               }}
             >
-              <div className="flex items-center gap-2">
-                <CheckCircle2
-                  className="h-4 w-4 shrink-0"
-                  style={{ color: 'var(--success)' }}
-                />
-                <div>
-                  <div className="font-bold">{currentUser.displayName}</div>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    {currentUser.provider === 'google'
-                      ? `Gmail: ${currentUser.email}`
-                      : currentUser.provider === 'phone'
-                      ? `الهاتف: ${currentUser.phone}`
-                      : `اليوزر: ${currentUser.username}`}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {currentUser.avatarUrl ? (
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={currentUser.displayName}
+                      referrerPolicy="no-referrer"
+                      className="h-10 w-10 shrink-0 rounded-full border object-cover"
+                      style={{ borderColor: 'var(--accent)' }}
+                    />
+                  ) : (
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <User className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-bold truncate">
+                      <span>{currentUser.displayName}</span>
+                      <CheckCircle2
+                        className="h-3.5 w-3.5 shrink-0"
+                        style={{ color: 'var(--success)' }}
+                      />
+                    </div>
+                    <div className="truncate" style={{ color: 'var(--text-muted)' }}>
+                      {currentUser.provider === 'google'
+                        ? `Gmail: ${currentUser.email}`
+                        : currentUser.provider === 'phone'
+                        ? `الهاتف: ${currentUser.phone}`
+                        : `اليوزر: ${currentUser.username}`}
+                    </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearSession();
+                    onLoggedOut();
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold whitespace-nowrap"
+                  style={{
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>تسجيل خروج</span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  clearSession();
-                  onLoggedOut();
-                }}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold whitespace-nowrap"
-                style={{
-                  borderColor: 'var(--danger)',
-                  color: 'var(--danger)',
-                }}
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>تسجيل خروج</span>
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold hover:opacity-85 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <Camera className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>{avatarBusy ? 'جارٍ رفع الصورة...' : 'رفع صورة شخصية'}</span>
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+                {avatarNotice && (
+                  <span className="text-[11px] font-bold" style={{ color: 'var(--success)' }}>
+                    {avatarNotice}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -274,66 +373,113 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           {tab === 'google' && (
-            <form onSubmit={handleGoogleSubmit} className="space-y-3">
-              <div>
-                <label
-                  htmlFor="auth-gmail-email"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  حساب Gmail / البريد الإلكتروني
-                </label>
-                <input
-                  id="auth-gmail-email"
-                  type="email"
-                  dir="ltr"
-                  required
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="name@gmail.com"
-                  className="w-full rounded-lg border px-3 py-2 text-left text-sm"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="auth-gmail-name"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  الاسم الظاهر (اختياري)
-                </label>
-                <input
-                  id="auth-gmail-name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="مثال: منذر الحلو"
-                  className="w-full rounded-lg border px-3 py-2 text-sm"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-              </div>
-
+            <div className="space-y-3.5">
               <button
-                type="submit"
+                type="button"
                 disabled={loading}
-                className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
+                onClick={() => void handleFirebaseGoogleLogin()}
+                className="gsi-material-button w-full"
               >
-                {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Gmail'}
+                <span className="gsi-material-button-content-wrapper">
+                  <svg
+                    version="1.1"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 48 48"
+                    className="gsi-material-button-icon"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill="#EA4335"
+                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                    />
+                  </svg>
+                  <span>
+                    {loading
+                      ? 'جارٍ الاتصال بـ Google...'
+                      : 'تسجيل الدخول السريع بحساب Google + التقويم والمهام'}
+                  </span>
+                </span>
               </button>
-            </form>
+
+              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+                <span>أو الدخول السريع بالبريد</span>
+                <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+              </div>
+
+              <form onSubmit={handleGoogleSubmit} className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="auth-gmail-email"
+                    className="mb-1 block text-xs font-medium"
+                  >
+                    حساب Gmail / البريد الإلكتروني
+                  </label>
+                  <input
+                    id="auth-gmail-email"
+                    type="email"
+                    dir="ltr"
+                    required
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="name@gmail.com"
+                    className="w-full rounded-lg border px-3 py-2 text-left text-sm"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="auth-gmail-name"
+                    className="mb-1 block text-xs font-medium"
+                  >
+                    الاسم الظاهر (اختياري)
+                  </label>
+                  <input
+                    id="auth-gmail-name"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="مثال: منذر الحلو"
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Gmail'}
+                </button>
+              </form>
+            </div>
           )}
 
           {tab === 'username' && (

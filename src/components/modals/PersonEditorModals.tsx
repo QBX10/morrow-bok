@@ -127,7 +127,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="add-person-ind" className="mb-1 block font-medium">
-                عدد الأفراد (الأنفار)
+                عدد الأفراد
               </label>
               <input
                 id="add-person-ind"

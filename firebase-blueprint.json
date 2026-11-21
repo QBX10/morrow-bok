@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "UserPublicCard": {
+      "title": "UserPublicCard",
+      "description": "Public non-PII display profile card for a Tabrix user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 450000
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Strictly private PII user record isolated to owner or verified admin.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["google", "username", "phone"]
+        },
+        "role": {
+          "type": "string",
+          "enum": ["manager", "viewer"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "provider", "role", "createdAt", "updatedAt"]
+    },
+    "WorkspaceSync": {
+      "title": "WorkspaceSync",
+      "description": "Per-user structured Tabrix workspace snapshot stored as native maps and counts.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "agencyCount": {
+          "type": "integer"
+        },
+        "recordCount": {
+          "type": "integer"
+        },
+        "snapshotVersion": {
+          "type": "integer"
+        },
+        "themePrefs": {
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerUid", "title", "agencyCount", "recordCount", "createdAt", "updatedAt"]
+    },
+    "AppearanceProfileDoc": {
+      "title": "AppearanceProfileDoc",
+      "description": "Saved Appearance Studio preset per user.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "appTheme": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "tableTheme": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "fontFamily": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "fontSizePx": {
+          "type": "integer"
+        },
+        "rowHeightPx": {
+          "type": "integer"
+        },
+        "glassEffect": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerUid", "name", "appTheme", "tableTheme", "fontFamily", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/public/{cardId}": {
+      "schema": { "$ref": "#/entities/UserPublicCard" },
+      "description": "Public display name & avatar card isolated from PII."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Private PII user info restricted strictly to owner or verified admin."
+    },
+    "/users/{userId}/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/WorkspaceSync" },
+      "description": "User-owned Tabrix workspace synchronization metadata and appearance settings."
+    },
+    "/users/{userId}/appearanceProfiles/{profileId}": {
+      "schema": { "$ref": "#/entities/AppearanceProfileDoc" },
+      "description": "User-owned Appearance Studio saved profiles."
+    }
+  }
+}

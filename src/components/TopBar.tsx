@@ -287,7 +287,16 @@ export const TopBar: React.FC<TopBarProps> = ({
                 color: 'var(--accent-fg)',
               }}
             >
-              <UserCircle2 className="h-3.5 w-3.5" />
+              {authUser?.avatarUrl ? (
+                <img
+                  src={authUser.avatarUrl}
+                  alt={authUser.displayName}
+                  referrerPolicy="no-referrer"
+                  className="h-5 w-5 rounded-full object-cover border border-white/40"
+                />
+              ) : (
+                <UserCircle2 className="h-3.5 w-3.5" />
+              )}
               <span>
                 {authUser ? (
                   <span dir="auto">{authUser.displayName}</span>

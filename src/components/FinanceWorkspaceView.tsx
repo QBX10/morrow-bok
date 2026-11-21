@@ -89,7 +89,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
         <div>
           <h1 className="text-xl font-bold">الحسابات والمالية</h1>
           <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-            تفاصيل الأكياس، الأنفار، الإيرادات، أجور العمال، الصرفيات، وصافي الأرباح لكل وكالة
+            تفاصيل الأكياس، الأفراد، الإيرادات، أجور العمال، الصرفيات، وصافي الأرباح لكل وكالة
           </p>
         </div>
 
@@ -167,7 +167,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
           }}
         >
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            عدد الأفراد (الأنفار)
+            عدد الأفراد
           </div>
           <div className="mt-1.5 text-xl font-bold tabular-nums">
             {metrics.activeIndividuals} فرد

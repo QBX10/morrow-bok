@@ -22,8 +22,8 @@ const CONDITION_LABELS: Array<{ id: QuickExtractRuleCondition; label: string }> 
   { id: 'has_decrease', label: 'يحتوي على «نزول / نقصان» (> 0)' },
   { id: 'has_deletion', label: 'يحتوي على «حذف» (حذف > 0)' },
   { id: 'name_contains', label: 'الاسم يحتوي على نص محدد' },
-  { id: 'individuals_gte', label: 'صافي الأنفار أكبر أو يساوي (≥)' },
-  { id: 'individuals_lte', label: 'صافي الأنفار أصغر أو يساوي (≤)' },
+  { id: 'individuals_gte', label: 'صافي الأفراد أكبر أو يساوي (≥)' },
+  { id: 'individuals_lte', label: 'صافي الأفراد أصغر أو يساوي (≤)' },
   { id: 'matched_existing', label: 'مطابق لسجل موجود في النظام' },
   { id: 'unmatched_new', label: 'سجل جديد غير موجود في النظام' },
 ];
@@ -691,7 +691,7 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
                     rule.condition === 'individuals_lte') && (
                     <div>
                       <label className="mb-1 block font-semibold">
-                        العدد المرجعي (الأنفار)
+                        العدد المرجعي (الأفراد)
                       </label>
                       <input
                         type="number"
