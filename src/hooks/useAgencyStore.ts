@@ -870,6 +870,63 @@ export function useAgencyStore() {
     [commitDataMutation]
   );
 
+  const bulkUpdatePersonsStatusAndCategory = useCallback(
+    (
+      personIds: number[],
+      patch: {
+        blockType?: BlockScope;
+        blockedIndividuals?: number;
+        blockReason?: string;
+        customCategory?: string;
+      }
+    ) => {
+      if (personIds.length === 0) return;
+      const today = new Date().toISOString().slice(0, 10);
+      const idSet = new Set(personIds);
+      commitDataMutation((prev) => ({
+        ...prev,
+        persons: prev.persons.map((p) => {
+          if (!idSet.has(p.id)) return p;
+          const nextBlockType = patch.blockType ?? p.blockType;
+          const nextStatus: Person['status'] =
+            nextBlockType === 'full'
+              ? 'محجوب'
+              : nextBlockType === 'archived'
+              ? 'مؤرشف'
+              : '';
+          const total = p.individuals ?? 0;
+          const nextBlocked =
+            nextBlockType === 'partial'
+              ? Math.min(
+                  total,
+                  Math.max(0, patch.blockedIndividuals ?? p.blockedIndividuals ?? 1)
+                )
+              : nextBlockType === 'full'
+              ? total
+              : 0;
+          return {
+            ...p,
+            blockType: nextBlockType,
+            status: nextStatus,
+            blockedIndividuals: nextBlocked,
+            blockReason:
+              patch.blockReason !== undefined
+                ? patch.blockReason
+                : nextBlockType === 'none'
+                ? ''
+                : p.blockReason,
+            customCategory:
+              patch.customCategory !== undefined
+                ? patch.customCategory
+                : p.customCategory,
+            updatedAt: today,
+          };
+        }),
+      }));
+    },
+    [commitDataMutation]
+  );
+
   // Delete Person — Invoked after confirmation modal (and pushed to Safe Recycle Bin)
   const deletePersonConfirmed = useCallback(
     (personId: number) => {
@@ -890,6 +947,38 @@ export function useAgencyStore() {
             : prev.recycleBin,
         };
       });
+    },
+    [commitDataMutation]
+  );
+
+  const deletePersonsBulkConfirmed = useCallback(
+    (personIds: number[]) => {
+      if (personIds.length === 0) return 0;
+      const idSet = new Set(personIds);
+      let deletedCount = 0;
+      commitDataMutation((prev) => {
+        const targets = prev.persons.filter((p) => idSet.has(p.id));
+        deletedCount = targets.length;
+        if (targets.length === 0) return prev;
+        let nextBin = prev.recycleBin;
+        for (const target of targets) {
+          nextBin = pushRecycleBinEntry(nextBin, {
+            kind: 'person',
+            label: target.name,
+            payload: { kind: 'person', person: target },
+          });
+        }
+        return {
+          ...prev,
+          persons: prev.persons.filter((p) => !idSet.has(p.id)),
+          readyListItems: prev.readyListItems.filter(
+            (item) =>
+              item.sourcePersonId === null || !idSet.has(item.sourcePersonId)
+          ),
+          recycleBin: nextBin,
+        };
+      });
+      return deletedCount;
     },
     [commitDataMutation]
   );
@@ -1306,11 +1395,13 @@ export function useAgencyStore() {
       populateFromAgency?: boolean;
     }) => {
       const today = new Date().toISOString().slice(0, 10);
-      let createdListId = 0;
+      const createdListId =
+        state.readyLists.reduce((m, l) => Math.max(m, l.id), 0) + 1;
       commitDataMutation((prev) => {
-        const nextListId =
-          prev.readyLists.reduce((m, l) => Math.max(m, l.id), 0) + 1;
-        createdListId = nextListId;
+        const nextListId = Math.max(
+          createdListId,
+          prev.readyLists.reduce((m, l) => Math.max(m, l.id), 0) + 1
+        );
         const agencyName =
           prev.agencies.find((a) => a.id === input.agencyId)?.name || '';
         const shouldPopulate = input.populateFromAgency !== false;
@@ -1365,7 +1456,7 @@ export function useAgencyStore() {
       });
       return createdListId;
     },
-    [commitDataMutation]
+    [commitDataMutation, state.readyLists]
   );
 
   const updateReadyListMetaConfirmed = useCallback(
@@ -1530,6 +1621,102 @@ export function useAgencyStore() {
       }));
     },
     [commitDataMutation]
+  );
+
+  const deleteReadyListItemsBulkConfirmed = useCallback(
+    (itemIds: number[]) => {
+      if (itemIds.length === 0) return;
+      const idSet = new Set(itemIds);
+      commitDataMutation((prev) => ({
+        ...prev,
+        readyListItems: prev.readyListItems.filter((it) => !idSet.has(it.id)),
+      }));
+    },
+    [commitDataMutation]
+  );
+
+  const createReadyListFromSelection = useCallback(
+    (input: {
+      name: string;
+      agencyId?: number;
+      personIds: number[];
+      note?: string;
+    }) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const createdListId =
+        state.readyLists.reduce((m, l) => Math.max(m, l.id), 0) + 1;
+      let addedCount = 0;
+
+      commitDataMutation((prev) => {
+        const nextListId = Math.max(
+          createdListId,
+          prev.readyLists.reduce((m, l) => Math.max(m, l.id), 0) + 1
+        );
+        const firstPerson = prev.persons.find((p) =>
+          input.personIds.includes(p.id)
+        );
+        const resolvedAgencyId =
+          input.agencyId ??
+          firstPerson?.agencyId ??
+          prev.agencies[0]?.id ??
+          1;
+        const agencyName =
+          prev.agencies.find((a) => a.id === resolvedAgencyId)?.name || '';
+        let nextItemId =
+          prev.readyListItems.reduce((m, it) => Math.max(m, it.id), 0) + 1;
+
+        const idOrder = input.personIds;
+        const personMap = new Map(prev.persons.map((p) => [p.id, p]));
+        const newItems: ReadyListItem[] = [];
+
+        for (const pid of idOrder) {
+          const p = personMap.get(pid);
+          if (!p) continue;
+          addedCount += 1;
+          newItems.push({
+            id: nextItemId++,
+            listId: nextListId,
+            position: newItems.length + 1,
+            sourcePersonId: p.id,
+            name: p.name,
+            nationalId: p.nationalId,
+            individuals: p.individuals,
+            blockType: p.blockType,
+            blockedIndividuals: p.blockedIndividuals,
+            blockReason: p.blockReason,
+            status: p.status,
+            notes: p.notes,
+          });
+        }
+
+        const listName =
+          input.name.trim() || `قائمة توزيع (${newItems.length} مستفيد)`;
+        const subtitle2 = input.note?.trim() || `مجموعة منتقاة (${newItems.length} مستفيد)`;
+
+        return {
+          ...prev,
+          readyLists: [
+            ...prev.readyLists,
+            {
+              id: nextListId,
+              agencyId: resolvedAgencyId,
+              name: listName,
+              listDate: today,
+              subtitle1: agencyName ? `الوكالة: ${agencyName}` : 'قائمة مخصصة',
+              subtitle2,
+              autoUpdateDate: true,
+              lastUpdatedAt: today,
+              createdAt: today,
+              note: subtitle2,
+            },
+          ],
+          readyListItems: [...prev.readyListItems, ...newItems],
+        };
+      });
+
+      return { listId: createdListId, addedCount };
+    },
+    [commitDataMutation, state.readyLists]
   );
 
   const addPersonsToReadyList = useCallback(
@@ -1768,7 +1955,7 @@ export function useAgencyStore() {
 
     void syncWorkspaceSummaryToFirestore({
       uid: sess.user.uid,
-      title: state.activePeriod?.quotaName || 'مساحة عمل تابريكس',
+      title: state.activePeriod?.quotaName || 'مساحة عمل Morrow',
       agencyCount: state.agencies.length,
       recordCount: state.persons.length,
       themePrefs: state.themePrefs,
@@ -2106,17 +2293,21 @@ export function useAgencyStore() {
     addPersonDirect,
     updatePersonConfirmed,
     bulkUpdatePersonsCategory,
+    bulkUpdatePersonsStatusAndCategory,
     deletePersonConfirmed,
+    deletePersonsBulkConfirmed,
     commitQuickExtractRows,
     commitQuickExtractPlan,
     addExpense,
     deleteExpenseConfirmed,
     createReadyList,
+    createReadyListFromSelection,
     updateReadyListMetaConfirmed,
     deleteReadyListConfirmed,
     addReadyListItemDirect,
     updateReadyListItemConfirmed,
     removeReadyListItemConfirmed,
+    deleteReadyListItemsBulkConfirmed,
     addPersonsToReadyList,
     moveReadyListItemOrder,
     movePersonsToAgencyConfirmed,

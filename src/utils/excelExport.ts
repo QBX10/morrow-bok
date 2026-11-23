@@ -2,18 +2,27 @@ import * as XLSX from 'xlsx';
 import type {
   Agency,
   AgencyExpense,
+  AppThemeId,
   CalculationSettings,
   Person,
   ReadyList,
   ReadyListItem,
-} from '../types/agency';
+} from '../types/agency.ts';
+import type { AssistantUserPref } from '../types/assistant.ts';
 import {
   computeAgencyMetrics,
   formatIqd,
   formatTotalQuota,
   getEffectiveAllocationForPerson,
   initialLetter,
-} from './agencyLogic';
+} from './agencyLogic.ts';
+import {
+  escapeHtml,
+  getExportMemoryFlags,
+  normalizeExportFilename,
+  resolveThemePrintPalette,
+  sanitizeExcelCellText,
+} from './exportFormatting.ts';
 
 export function resolveReadyListItemRecord(
   item: ReadyListItem,
@@ -29,10 +38,16 @@ export function resolveReadyListItemRecord(
   const notes = linked ? linked.notes : item.notes;
   const blockType = linked
     ? linked.blockType
-    : item.blockType ?? (item.status === 'محجوب' ? 'full' : item.status === 'مؤرشف' ? 'archived' : 'none');
+    : item.blockType ??
+      (item.status === 'محجوب'
+        ? 'full'
+        : item.status === 'مؤرشف'
+        ? 'archived'
+        : 'none');
   const blockedIndividuals = linked
     ? linked.blockedIndividuals
-    : item.blockedIndividuals ?? (item.status === 'محجوب' ? item.individuals ?? 0 : 0);
+    : item.blockedIndividuals ??
+      (item.status === 'محجوب' ? item.individuals ?? 0 : 0);
   const status = linked ? linked.status : item.status;
   const individuals = linked ? linked.individuals : item.individuals;
   const blockReason = linked ? linked.blockReason : item.blockReason || '';
@@ -49,81 +64,212 @@ export function resolveReadyListItemRecord(
   };
 }
 
+/**
+ * Builds an RTL-configured SheetJS worksheet from header banner + structured rows
+ * with explicit column widths and UTF-8 / formula-injection protection.
+ */
+export function buildRtlArabicWorksheet(params: {
+  title: string;
+  subtitle?: string;
+  headers: string[];
+  rows: Array<Array<string | number | null | undefined>>;
+  columnWidths?: number[];
+}): XLSX.WorkSheet {
+  const { title, subtitle, headers, rows, columnWidths } = params;
+  const dateLabel = new Date().toLocaleDateString('ar-IQ');
+
+  const safeRows = rows.map((row) =>
+    row.map((cell) => {
+      if (typeof cell === 'number' && Number.isFinite(cell)) {
+        return cell;
+      }
+      if (cell === null || cell === undefined) return '';
+      return sanitizeExcelCellText(cell);
+    })
+  );
+
+  const aoa: Array<Array<string | number>> = [
+    [sanitizeExcelCellText(`Morrow — ${title}`)],
+    [
+      sanitizeExcelCellText(
+        subtitle
+          ? `${subtitle} | تاريخ التصدير: ${dateLabel}`
+          : `تاريخ التصدير: ${dateLabel}`
+      ),
+    ],
+    [],
+    headers.map((h) => sanitizeExcelCellText(h)),
+    ...safeRows,
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!views'] = [{ rightToLeft: true }];
+
+  if (headers.length > 1) {
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+    ];
+  }
+
+  ws['!cols'] = headers.map((h, idx) => {
+    const customW = columnWidths?.[idx];
+    if (customW) return { wch: customW };
+    const maxDataLen = safeRows.reduce((max, r) => {
+      const len = String(r[idx] ?? '').length;
+      return Math.max(max, len);
+    }, h.length);
+    return { wch: Math.min(42, Math.max(10, maxDataLen + 4)) };
+  });
+
+  return ws;
+}
+
+export function createRtlWorkbook(): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  return wb;
+}
+
 export function exportRosterToExcel(params: {
   filename: string;
-  persons: Person[];
-  agencies: Agency[];
-  settings: CalculationSettings;
+  persons: ReadonlyArray<Person>;
+  agencies: ReadonlyArray<Agency>;
+  settings: Readonly<CalculationSettings>;
+  preferences?: ReadonlyArray<AssistantUserPref>;
+  hideStatusColumn?: boolean;
+  hideAmountColumn?: boolean;
+  sheetName?: string;
 }) {
-  const { filename, persons, agencies, settings } = params;
+  const {
+    filename,
+    persons,
+    agencies,
+    settings,
+    preferences,
+    hideStatusColumn,
+    hideAmountColumn,
+    sheetName = 'سجل المستفيدين',
+  } = params;
+
+  const memFlags = getExportMemoryFlags(preferences);
+  const hideAmount = Boolean(hideAmountColumn || memFlags.hideAmountColumn);
+  const hideStatus = Boolean(hideStatusColumn || memFlags.hideStatusColumn);
+  const hideNotes = memFlags.hideNotesColumn;
+
   const agencyMap = new Map(agencies.map((a) => [a.id, a.name]));
+
+  const headers: string[] = [
+    '#',
+    'الحرف',
+    'الاسم',
+    'الوكالة',
+    'الأفراد المستحقون',
+    'الحصة',
+    ...(hideAmount ? [] : ['المبلغ (د.ع)']),
+    ...(hideStatus ? [] : ['الحالة']),
+    ...(hideNotes ? [] : ['الملاحظات']),
+  ];
 
   const rows = persons.map((person, idx) => {
     const eff = getEffectiveAllocationForPerson(person, settings);
-    return {
-      '#': idx + 1,
-      الحرف: initialLetter(person.name),
-      الاسم: person.name,
-      الوكالة: agencyMap.get(person.agencyId) || '',
-      'الأفراد المستحقون':
-        eff.summary.scope === 'partial'
-          ? `${eff.eligibleIndividuals} من ${person.individuals ?? 0}`
-          : eff.summary.scope === 'full'
-          ? 0
-          : person.individuals ?? '',
-      الحصة: eff.quotaText,
-      'المبلغ (د.ع)': eff.priceIqd ?? 0,
-      الحالة: eff.summary.shortLabel,
-      الملاحظات: person.notes || '',
-    };
+    const indCell =
+      eff.summary.scope === 'partial'
+        ? `${eff.eligibleIndividuals} من ${person.individuals ?? 0}`
+        : eff.summary.scope === 'full'
+        ? 0
+        : person.individuals ?? 0;
+
+    return [
+      idx + 1,
+      initialLetter(person.name),
+      person.name,
+      agencyMap.get(person.agencyId) || '',
+      indCell,
+      eff.quotaText,
+      ...(hideAmount ? [] : [eff.priceIqd ?? 0]),
+      ...(hideStatus ? [] : [eff.summary.shortLabel]),
+      ...(hideNotes ? [] : [person.notes || '']),
+    ];
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(wb, ws, 'سجل المستفيدين');
-  XLSX.writeFile(wb, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
+  const ws = buildRtlArabicWorksheet({
+    title: filename.replace(/\.xlsx$/i, ''),
+    subtitle:
+      memFlags.activeRuleLabels.length > 0
+        ? `مُصدّر حسب قواعد الذاكرة (${memFlags.activeRuleLabels.join(' · ')})`
+        : 'كشف السجلات والحصص المعتمد',
+    headers,
+    rows,
+  });
+
+  const wb = createRtlWorkbook();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  XLSX.writeFile(wb, normalizeExportFilename(filename, '.xlsx'), {
+    bookType: 'xlsx',
+    compression: true,
+  });
 }
 
 export function exportFinancialReportToExcel(params: {
   agencyName: string;
-  persons: Person[];
-  expenses: AgencyExpense[];
-  settings: CalculationSettings;
+  persons: ReadonlyArray<Person>;
+  expenses: ReadonlyArray<AgencyExpense>;
+  settings: Readonly<CalculationSettings>;
+  preferences?: ReadonlyArray<AssistantUserPref>;
 }) {
-  const { agencyName, persons, expenses, settings } = params;
-  const m = computeAgencyMetrics(persons, expenses, settings);
+  const { agencyName, persons, expenses, settings, preferences } = params;
+  const memFlags = getExportMemoryFlags(preferences);
+  const hideAmount = memFlags.hideAmountColumn;
+  const m = computeAgencyMetrics([...persons], [...expenses], settings);
 
-  const summaryRows = [
-    { البند: 'الوكالة', القيمة: agencyName },
-    { البند: 'تاريخ التقرير', القيمة: new Date().toLocaleDateString('ar-IQ') },
-    { البند: 'العائلات النشطة', القيمة: m.activeHouseholds },
-    { البند: 'عدد الأفراد', القيمة: m.activeIndividuals },
-    { البند: 'عدد الأكياس الكاملة', القيمة: m.fullBags },
-    { البند: 'إجمالي الحصة', القيمة: formatTotalQuota(m.totalKg, settings) },
-    { البند: 'الإيرادات', القيمة: formatIqd(m.revenue) },
-    { البند: 'أجور العمال', القيمة: formatIqd(m.workerWages) },
-    { البند: 'الصرفيات', القيمة: formatIqd(m.generalExpenses) },
-    { البند: 'صافي الأرباح', القيمة: formatIqd(m.profit) },
+  const summaryRows: Array<[string, string | number]> = [
+    ['الوكالة', agencyName],
+    ['تاريخ التقرير', new Date().toLocaleDateString('ar-IQ')],
+    ['العائلات النشطة', m.activeHouseholds],
+    ['عدد الأفراد', m.activeIndividuals],
+    ['عدد الأكياس الكاملة', m.fullBags],
+    ['إجمالي الحصة', formatTotalQuota(m.totalKg, settings)],
+    ...(hideAmount
+      ? []
+      : ([
+          ['الإيرادات', formatIqd(m.revenue)],
+          ['أجور العمال', formatIqd(m.workerWages)],
+          ['الصرفيات', formatIqd(m.generalExpenses)],
+          ['صافي الأرباح', formatIqd(m.profit)],
+        ] as Array<[string, string | number]>)),
   ];
 
-  const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'الملخص المالي');
+  const wb = createRtlWorkbook();
+  const wsSummary = buildRtlArabicWorksheet({
+    title: `التقرير المالي — ${agencyName}`,
+    headers: ['البند', 'القيمة'],
+    rows: summaryRows,
+    columnWidths: [28, 30],
+  });
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'الملخص المالي');
 
-  if (expenses.length > 0) {
-    const expRows = expenses.map((e, idx) => ({
-      '#': idx + 1,
-      التاريخ: e.occurredAt,
-      التصنيف: e.category === 'worker_wages' ? 'أجور العمال' : 'صرفيات',
-      البيان: e.description,
-      'المبلغ (د.ع)': e.amountIqd,
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expRows), 'سجل المصاريف');
+  if (expenses.length > 0 && !hideAmount) {
+    const expRows = expenses.map((e, idx) => [
+      idx + 1,
+      e.occurredAt,
+      e.category === 'worker_wages' ? 'أجور العمال' : 'صرفيات',
+      e.description,
+      e.amountIqd,
+    ]);
+    const wsExp = buildRtlArabicWorksheet({
+      title: `سجل المصاريف — ${agencyName}`,
+      headers: ['#', 'التاريخ', 'التصنيف', 'البيان', 'المبلغ (د.ع)'],
+      rows: expRows,
+    });
+    XLSX.utils.book_append_sheet(wb, wsExp, 'سجل المصاريف');
   }
 
-  const safe = agencyName.replace(/[<>:"/\\|?*]/g, '').trim() || 'مالية';
-  XLSX.writeFile(wb, `التقرير_المالي_${safe}.xlsx`);
+  XLSX.writeFile(
+    wb,
+    normalizeExportFilename(`التقرير_المالي_${agencyName}`, '.xlsx'),
+    { bookType: 'xlsx', compression: true }
+  );
 }
 
 export function exportReadyListToExcel(params: {
@@ -131,34 +277,61 @@ export function exportReadyListToExcel(params: {
   items: ReadyListItem[];
   persons: Person[];
   settings: CalculationSettings;
+  preferences?: ReadonlyArray<AssistantUserPref>;
 }) {
-  const { list, items, persons, settings } = params;
+  const { list, items, persons, settings, preferences } = params;
+  const memFlags = getExportMemoryFlags(preferences);
+  const hideAmount = memFlags.hideAmountColumn;
+  const hideStatus = memFlags.hideStatusColumn;
+  const hideNotes = memFlags.hideNotesColumn;
   const personMap = new Map(persons.map((p) => [p.id, p]));
+
+  const headers: string[] = [
+    'التسلسل',
+    'الحرف',
+    'الاسم',
+    'الأفراد',
+    'الحصة',
+    ...(hideAmount ? [] : ['المبلغ (د.ع)']),
+    ...(hideStatus ? [] : ['الحالة']),
+    ...(hideNotes ? [] : ['الملاحظات']),
+  ];
 
   const rows = items.map((item, idx) => {
     const rec = resolveReadyListItemRecord(item, personMap);
     const eff = getEffectiveAllocationForPerson(rec, settings);
-    return {
-      التسلسل: idx + 1,
-      الحرف: initialLetter(rec.name),
-      الاسم: rec.name,
-      الأفراد:
-        eff.summary.scope === 'partial'
-          ? `${eff.eligibleIndividuals} من ${rec.individuals ?? 0}`
-          : eff.eligibleIndividuals ?? 0,
-      الحصة: eff.quotaText,
-      'المبلغ (د.ع)': eff.priceIqd ?? 0,
-      الحالة: eff.summary.shortLabel,
-      الملاحظات: rec.notes || '',
-    };
+    const indCell =
+      eff.summary.scope === 'partial'
+        ? `${eff.eligibleIndividuals} من ${rec.individuals ?? 0}`
+        : eff.eligibleIndividuals ?? 0;
+
+    return [
+      idx + 1,
+      initialLetter(rec.name),
+      rec.name,
+      indCell,
+      eff.quotaText,
+      ...(hideAmount ? [] : [eff.priceIqd ?? 0]),
+      ...(hideStatus ? [] : [eff.summary.shortLabel]),
+      ...(hideNotes ? [] : [rec.notes || '']),
+    ];
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
+  const ws = buildRtlArabicWorksheet({
+    title: list.name,
+    subtitle: [list.subtitle1, list.subtitle2, list.listDate]
+      .filter(Boolean)
+      .join(' · '),
+    headers,
+    rows,
+  });
+
+  const wb = createRtlWorkbook();
   XLSX.utils.book_append_sheet(wb, ws, 'القائمة الجاهزة');
-  const safe = list.name.replace(/[<>:"/\\|?*]/g, '').trim() || 'قائمة';
-  XLSX.writeFile(wb, `${safe}.xlsx`);
+  XLSX.writeFile(wb, normalizeExportFilename(list.name, '.xlsx'), {
+    bookType: 'xlsx',
+    compression: true,
+  });
 }
 
 export function buildReadyListShareText(params: {
@@ -166,8 +339,10 @@ export function buildReadyListShareText(params: {
   items: ReadyListItem[];
   persons: Person[];
   settings: CalculationSettings;
+  preferences?: ReadonlyArray<AssistantUserPref>;
 }): string {
-  const { list, items, persons, settings } = params;
+  const { list, items, persons, settings, preferences } = params;
+  const memFlags = getExportMemoryFlags(preferences);
   const personMap = new Map(persons.map((p) => [p.id, p]));
   let totalInd = 0;
   let totalKg = 0;
@@ -180,8 +355,10 @@ export function buildReadyListShareText(params: {
     totalInd += elig;
     totalKg += elig * settings.kgPerIndividual;
     totalIqd += eff.priceIqd ?? 0;
-    const notePart = rec.notes ? ` (${rec.notes})` : '';
-    return `${idx + 1}. ${rec.name} — ${elig} أفراد — ${eff.quotaText} — ${eff.priceText} [${eff.summary.shortLabel}]${notePart}`;
+    const notePart = !memFlags.hideNotesColumn && rec.notes ? ` (${rec.notes})` : '';
+    const pricePart = memFlags.hideAmountColumn ? '' : ` — ${eff.priceText}`;
+    const statusPart = memFlags.hideStatusColumn ? '' : ` [${eff.summary.shortLabel}]`;
+    return `${idx + 1}. ${rec.name} — ${elig} أفراد — ${eff.quotaText}${pricePart}${statusPart}${notePart}`;
   });
 
   const headerLines = [
@@ -194,7 +371,10 @@ export function buildReadyListShareText(params: {
 
   const footerLines = [
     '────────────────────────',
-    `الإجمالي: ${items.length} عائلة | ${totalInd} أفراد | ${formatTotalQuota(totalKg, settings)} | ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${items.length} عائلة | ${totalInd} أفراد | ${formatTotalQuota(
+      totalKg,
+      settings
+    )}${memFlags.hideAmountColumn ? '' : ` | ${formatIqd(totalIqd)}`}`,
   ];
 
   return [...headerLines, ...lines, ...footerLines].join('\n');
@@ -205,6 +385,7 @@ export function exportReadyListToTextFile(params: {
   items: ReadyListItem[];
   persons: Person[];
   settings: CalculationSettings;
+  preferences?: ReadonlyArray<AssistantUserPref>;
 }) {
   const text = buildReadyListShareText(params);
   const blob = new Blob(['\uFEFF' + text], {
@@ -212,13 +393,227 @@ export function exportReadyListToTextFile(params: {
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safe = params.list.name.replace(/[<>:"/\\|?*]/g, '').trim() || 'قائمة';
   a.href = url;
-  a.download = `${safe}.txt`;
+  a.download = normalizeExportFilename(params.list.name, '.txt');
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Generates an official, UTF-8 Arabic RTL PDF print HTML document with embedded
+ * Cairo + Amiri typography, active Theme colors, escaped fields, and Memory column hiding.
+ */
+export function buildFormattedRosterPdfHtml(params: {
+  title: string;
+  subtitle?: string;
+  metaLine?: string;
+  topCustomTitle?: string;
+  align?: 'right' | 'center' | 'left';
+  persons: ReadonlyArray<Person>;
+  agencies: ReadonlyArray<Agency>;
+  settings: Readonly<CalculationSettings>;
+  preferences?: ReadonlyArray<AssistantUserPref>;
+  hideAgencyColumn?: boolean;
+  hideAmountColumn?: boolean;
+  hideStatusColumn?: boolean;
+  themeId?: AppThemeId;
+  sandboxNotice?: string;
+}): string {
+  const {
+    title,
+    subtitle,
+    metaLine,
+    topCustomTitle,
+    align = 'right',
+    persons,
+    agencies,
+    settings,
+    preferences,
+    hideAgencyColumn = false,
+    hideAmountColumn,
+    hideStatusColumn,
+    themeId,
+    sandboxNotice,
+  } = params;
+
+  const memFlags = getExportMemoryFlags(preferences);
+  const hideAmount = Boolean(hideAmountColumn || memFlags.hideAmountColumn);
+  const hideStatus = Boolean(hideStatusColumn || memFlags.hideStatusColumn);
+  const hideNotes = memFlags.hideNotesColumn;
+  const palette = resolveThemePrintPalette(themeId);
+  const agencyMap = new Map(agencies.map((a) => [a.id, a.name]));
+
+  let totalInd = 0;
+  let totalKg = 0;
+  let totalIqd = 0;
+
+  const rowsHtml = persons
+    .map((p, idx) => {
+      const eff = getEffectiveAllocationForPerson(p, settings);
+      const elig = eff.eligibleIndividuals ?? 0;
+      totalInd += elig;
+      totalKg += elig * settings.kgPerIndividual;
+      totalIqd += eff.priceIqd ?? 0;
+
+      const indLabel =
+        eff.summary.scope === 'partial'
+          ? `${eff.eligibleIndividuals} من ${p.individuals ?? 0}`
+          : String(eff.eligibleIndividuals ?? 0);
+
+      return `<tr>
+        <td class="num">${idx + 1}</td>
+        <td>${escapeHtml(initialLetter(p.name))}</td>
+        <td style="text-align:right;font-weight:700">${escapeHtml(p.name)}</td>
+        ${hideAgencyColumn ? '' : `<td>${escapeHtml(agencyMap.get(p.agencyId) || '')}</td>`}
+        <td class="num">${escapeHtml(indLabel)}</td>
+        <td class="num">${escapeHtml(eff.quotaText)}</td>
+        ${hideAmount ? '' : `<td class="num">${escapeHtml(eff.priceText)}</td>`}
+        ${hideStatus ? '' : `<td>${escapeHtml(eff.summary.shortLabel)}</td>`}
+        ${hideNotes ? '' : `<td style="text-align:right">${escapeHtml(p.notes || '')}</td>`}
+      </tr>`;
+    })
+    .join('');
+
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Cairo', 'Amiri', Tahoma, Arial, sans-serif;
+      color: #0f172a;
+      margin: 0;
+      padding: 16px;
+      direction: rtl;
+      background: #ffffff;
+    }
+    .sheet-head {
+      background: ${palette.headerBg};
+      color: ${palette.headerText};
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+      text-align: ${align};
+      border-bottom: 4px solid ${palette.accent};
+    }
+    .sheet-brand {
+      font-size: 11px;
+      font-weight: 700;
+      opacity: 0.85;
+      margin-bottom: 4px;
+    }
+    .sheet-head h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.4;
+    }
+    .sheet-sub {
+      margin-top: 4px;
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    .meta-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      background: ${palette.tableHeadBg};
+      border: 1px solid ${palette.border};
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11.5px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    th, td {
+      border: 1px solid ${palette.border};
+      padding: 6px 8px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    th {
+      background: ${palette.tableHeadBg};
+      color: #0f172a;
+      font-weight: 800;
+    }
+    tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    .num {
+      font-variant-numeric: tabular-nums;
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+    .sheet-foot {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid ${palette.border};
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet-head">
+    ${topCustomTitle ? `<div class="sheet-brand">${escapeHtml(topCustomTitle)}</div>` : '<div class="sheet-brand">تقرير Morrow الرسمي</div>'}
+    <h1>${escapeHtml(title)}</h1>
+    ${subtitle ? `<div class="sheet-sub">${escapeHtml(subtitle)}</div>` : ''}
+  </div>
+  <div class="meta-strip">
+    <span>${escapeHtml(metaLine || `التاريخ: ${new Date().toLocaleDateString('ar-IQ')}`)}</span>
+    ${sandboxNotice ? `<span>${escapeHtml(sandboxNotice)}</span>` : ''}
+    ${memFlags.activeRuleLabels.length > 0 ? `<span>قواعد الذاكرة المطبّقة: ${escapeHtml(memFlags.activeRuleLabels.join(' · '))}</span>` : ''}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>الحرف</th>
+        <th>الاسم</th>
+        ${hideAgencyColumn ? '' : '<th>الوكالة</th>'}
+        <th>الأفراد</th>
+        <th>الحصة</th>
+        ${hideAmount ? '' : '<th>المبلغ</th>'}
+        ${hideStatus ? '' : '<th>الحالة</th>'}
+        ${hideNotes ? '' : '<th>الملاحظات</th>'}
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="sheet-foot">
+    <span>إجمالي السجلات: ${persons.length}</span>
+    <span>الأفراد المستحقون: ${totalInd}</span>
+    <span>إجمالي الحصة: ${escapeHtml(formatTotalQuota(totalKg, settings))}</span>
+    ${hideAmount ? '' : `<span>إجمالي المبلغ: ${escapeHtml(formatIqd(totalIqd))}</span>`}
+  </div>
+</body>
+</html>`;
+}
+
+export function exportFormattedRosterToPdf(params: Parameters<typeof buildFormattedRosterPdfHtml>[0]): void {
+  const html = buildFormattedRosterPdfHtml(params);
+  printViaIframe(html);
 }
 
 export async function exportReadyListToImage(params: {
@@ -253,11 +648,9 @@ export async function exportReadyListToImage(params: {
   ctx.scale(dpr, dpr);
   ctx.direction = 'rtl';
 
-  // Crisp printable white background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-  // Header Banner
   ctx.fillStyle = '#0f172a';
   ctx.fillRect(0, 0, width, 128);
 
@@ -276,7 +669,6 @@ export async function exportReadyListToImage(params: {
   ctx.font = 'bold 16px Cairo, Tahoma, sans-serif';
   ctx.fillText(`التاريخ: ${list.listDate || list.createdAt}`, 32, 42);
 
-  // Columns (RTL right-to-left x coordinates)
   const cols = [
     { label: '#', x: width - 32, w: 48, align: 'center' as const },
     { label: 'الاسم', x: width - 88, w: 280, align: 'right' as const },
@@ -287,7 +679,6 @@ export async function exportReadyListToImage(params: {
     { label: 'الملاحظات', x: width - 950, w: 140, align: 'right' as const },
   ];
 
-  // Table Head
   const tableTop = headerHeight;
   ctx.fillStyle = '#f1f5f9';
   ctx.fillRect(24, tableTop, width - 48, tableHeadHeight);
@@ -311,7 +702,11 @@ export async function exportReadyListToImage(params: {
     ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
     ctx.font = '500 15px Cairo, Tahoma, sans-serif';
-    ctx.fillText('لا توجد أسماء في هذه القائمة', width / 2, tableTop + tableHeadHeight + 26);
+    ctx.fillText(
+      'لا توجد أسماء في هذه القائمة',
+      width / 2,
+      tableTop + tableHeadHeight + 26
+    );
   } else {
     items.forEach((item, idx) => {
       const y = tableTop + tableHeadHeight + idx * rowHeight;
@@ -351,19 +746,23 @@ export async function exportReadyListToImage(params: {
             : '#0f172a';
         ctx.textAlign = col.align;
         const tx = col.align === 'center' ? col.x - col.w / 2 : col.x - 6;
-        const text = vals[cIdx].length > 34 ? vals[cIdx].slice(0, 32) + '…' : vals[cIdx];
+        const text =
+          vals[cIdx].length > 34 ? vals[cIdx].slice(0, 32) + '…' : vals[cIdx];
         ctx.fillText(text, tx, y + 26);
       });
     });
   }
 
-  // Footer Summary
-  const footerY = tableTop + tableHeadHeight + Math.max(1, items.length) * rowHeight + 12;
+  const footerY =
+    tableTop + tableHeadHeight + Math.max(1, items.length) * rowHeight + 12;
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = 'right';
   ctx.font = 'bold 15px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `الإجمالي: ${items.length} عائلة  |  ${totalInd} أفراد  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${items.length} عائلة  |  ${totalInd} أفراد  |  ${formatTotalQuota(
+      totalKg,
+      settings
+    )}  |  ${formatIqd(totalIqd)}`,
     width - 32,
     footerY + 26
   );
@@ -375,9 +774,8 @@ export async function exportReadyListToImage(params: {
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safe = list.name.replace(/[<>:"/\\|?*]/g, '').trim() || 'قائمة';
   a.href = url;
-  a.download = `${safe}.png`;
+  a.download = normalizeExportFilename(list.name, '.png');
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -407,7 +805,7 @@ export function printViaIframe(html: string): void {
     iframe.contentWindow?.focus();
     iframe.contentWindow?.print();
     setTimeout(() => iframe.remove(), 1000);
-  }, 250);
+  }, 300);
 }
 
 export async function exportSelectedRecordsToImage(params: {
@@ -512,9 +910,8 @@ export async function exportSelectedRecordsToImage(params: {
     if (!blob) throw new Error('تعذر توليد ملف الصورة.');
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const safe = rec.name.replace(/[<>:"/\\|?*]/g, '').trim() || 'بطاقة';
     a.href = url;
-    a.download = `${safe}.png`;
+    a.download = normalizeExportFilename(rec.name, '.png');
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -522,7 +919,6 @@ export async function exportSelectedRecordsToImage(params: {
     return;
   }
 
-  // Multi-selection table PNG export reuses clean ReadyList renderer layout
   const width = 1120;
   const rowHeight = 42;
   const headerHeight = 120;
@@ -615,17 +1011,22 @@ export async function exportSelectedRecordsToImage(params: {
       ctx.fillStyle = '#0f172a';
       ctx.textAlign = col.align;
       const tx = col.align === 'center' ? col.x - col.w / 2 : col.x - 6;
-      const txt = vals[cIdx].length > 34 ? vals[cIdx].slice(0, 32) + '…' : vals[cIdx];
+      const txt =
+        vals[cIdx].length > 34 ? vals[cIdx].slice(0, 32) + '…' : vals[cIdx];
       ctx.fillText(txt, tx, y + 26);
     });
   });
 
-  const footerY = tableTop + tableHeadHeight + records.length * rowHeight + 12;
+  const footerY =
+    tableTop + tableHeadHeight + records.length * rowHeight + 12;
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = 'right';
   ctx.font = 'bold 15px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `الإجمالي: ${records.length} سجل  |  ${totalInd} أفراد  |  ${formatTotalQuota(totalKg, settings)}  |  ${formatIqd(totalIqd)}`,
+    `الإجمالي: ${records.length} سجل  |  ${totalInd} أفراد  |  ${formatTotalQuota(
+      totalKg,
+      settings
+    )}  |  ${formatIqd(totalIqd)}`,
     width - 32,
     footerY + 24
   );
@@ -636,9 +1037,8 @@ export async function exportSelectedRecordsToImage(params: {
   if (!blob) throw new Error('تعذر توليد ملف الصورة.');
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safe = title.replace(/[<>:"/\\|?*]/g, '').trim() || 'المحددين';
   a.href = url;
-  a.download = `${safe}_${records.length}.png`;
+  a.download = normalizeExportFilename(`${title}_${records.length}`, '.png');
   document.body.appendChild(a);
   a.click();
   a.remove();

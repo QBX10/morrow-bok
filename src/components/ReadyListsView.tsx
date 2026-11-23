@@ -55,6 +55,8 @@ import {
   printViaIframe,
   resolveReadyListItemRecord,
 } from '../utils/excelExport';
+import { escapeHtml, getExportMemoryFlags } from '../utils/exportFormatting';
+import { runAsyncExportTask } from '../hooks/useToastQueue';
 import type { ModeCapabilities } from '../utils/modePermissions';
 import { AddReadyListMembersModal } from './modals/AddReadyListMembersModal';
 import { PeriodHeaderBanner } from './PeriodHeaderBanner';
@@ -126,6 +128,7 @@ interface ReadyListsViewProps {
     }
   ) => void;
   onRequestDeleteItem: (item: ReadyListItem) => void;
+  onBulkDeleteItems?: (itemIds: number[]) => void;
   onMovePersonsToAgency: (personIds: number[], targetAgencyId: number) => void;
   onUpsertRelation: (input: {
     personId: number;
@@ -161,6 +164,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   onMoveItemOrder,
   onUpdateItemConfirmed,
   onRequestDeleteItem,
+  onBulkDeleteItems,
   onMovePersonsToAgency,
   onUpsertRelation,
 }) => {
@@ -254,10 +258,10 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
 
   useEffect(() => {
     document.title = activeList
-      ? `${activeList.name} — القوائم الجاهزة — تابريكس`
-      : 'القوائم الجاهزة — تابريكس';
+      ? `${activeList.name} — القوائم الجاهزة — Morrow`
+      : 'القوائم الجاهزة — Morrow';
     return () => {
-      document.title = 'تابريكس';
+      document.title = 'Morrow';
     };
   }, [activeList]);
 
@@ -416,31 +420,47 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
 
   const handlePrintList = () => {
     if (!activeList) return;
-    const rowsHtml = visibleRows
-      .map(({ rec }, idx) => {
-        const eff = getEffectiveAllocationForPerson(rec, calculationSettings);
-        const indLabel =
-          eff.summary.scope === 'partial'
-            ? `${eff.eligibleIndividuals} من ${rec.individuals ?? 0}`
-            : String(eff.eligibleIndividuals ?? 0);
-        return `<tr>
-          <td>${idx + 1}</td>
-          <td>${initialLetter(rec.name)}</td>
-          <td style="text-align:right">${rec.name}</td>
-          <td>${indLabel}</td>
-          <td>${eff.quotaText}</td>
-          <td>${eff.priceText}</td>
-          <td>${eff.summary.shortLabel}</td>
-          <td>${rec.notes || ''}</td>
-        </tr>`;
-      })
-      .join('');
+    const memFlags = getExportMemoryFlags();
+    const hideAmount = memFlags.hideAmountColumn;
+    const hideStatus = memFlags.hideStatusColumn;
+    const hideNotes = memFlags.hideNotesColumn;
 
-    printViaIframe(`<!doctype html>
+    runAsyncExportTask(
+      'جاري تجهيز طباعة القائمة / PDF...',
+      'تم تجهيز القائمة للطباعة بنجاح.',
+      () => {
+        const rowsHtml = visibleRows
+          .map(({ rec }, idx) => {
+            const eff = getEffectiveAllocationForPerson(rec, calculationSettings);
+            const indLabel =
+              eff.summary.scope === 'partial'
+                ? `${eff.eligibleIndividuals} من ${rec.individuals ?? 0}`
+                : String(eff.eligibleIndividuals ?? 0);
+            return `<tr>
+              <td>${idx + 1}</td>
+              <td>${escapeHtml(initialLetter(rec.name))}</td>
+              <td style="text-align:right;font-weight:700">${escapeHtml(rec.name)}</td>
+              <td>${escapeHtml(indLabel)}</td>
+              <td>${escapeHtml(eff.quotaText)}</td>
+              ${hideAmount ? '' : `<td>${escapeHtml(eff.priceText)}</td>`}
+              ${hideStatus ? '' : `<td>${escapeHtml(eff.summary.shortLabel)}</td>`}
+              ${hideNotes ? '' : `<td style="text-align:right">${escapeHtml(rec.notes || '')}</td>`}
+            </tr>`;
+          })
+          .join('');
+
+        printViaIframe(`<!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8" /><title>${activeList.name}</title>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>${escapeHtml(activeList.name)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" />
 <style>
-  body { font-family: Cairo, Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; }
+  @page { size: A4; margin: 12mm; }
+  body { font-family: 'Cairo', 'Amiri', Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; direction: rtl; }
   .header { border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
   .header h1 { font-size: 19px; margin: 0 0 6px; }
   .meta { font-size: 12px; color: #334155; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -452,20 +472,26 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
 </head>
 <body>
   <div class="header">
-    <h1>${activeList.name}</h1>
+    <h1>${escapeHtml(activeList.name)}</h1>
     <div class="meta">
-      <div>${activeList.subtitle1 || ''}${activeList.subtitle2 ? ` — ${activeList.subtitle2}` : ''}</div>
-      <div>التاريخ: ${activeList.listDate || activeList.createdAt}</div>
+      <div>${escapeHtml(activeList.subtitle1 || '')}${activeList.subtitle2 ? ` — ${escapeHtml(activeList.subtitle2)}` : ''}</div>
+      <div>التاريخ: ${escapeHtml(activeList.listDate || activeList.createdAt)}</div>
     </div>
   </div>
   <table>
     <thead>
-      <tr><th>#</th><th>الحرف</th><th>الاسم</th><th>الأفراد</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th></tr>
+      <tr><th>#</th><th>الحرف</th><th>الاسم</th><th>الأفراد</th><th>الحصة</th>${
+        hideAmount ? '' : '<th>المبلغ</th>'
+      }${hideStatus ? '' : '<th>الحالة</th>'}${hideNotes ? '' : '<th>الملاحظات</th>'}</tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <div class="footer">الإجمالي: ${activeListTotals.count} عائلة | ${activeListTotals.activeInd} أفراد | ${formatTotalQuota(activeListTotals.totalKg, calculationSettings)} | ${formatIqd(activeListTotals.totalIqd)}</div>
+  <div class="footer">الإجمالي: ${activeListTotals.count} عائلة | ${activeListTotals.activeInd} أفراد | ${escapeHtml(
+          formatTotalQuota(activeListTotals.totalKg, calculationSettings)
+        )}${hideAmount ? '' : ` | ${escapeHtml(formatIqd(activeListTotals.totalIqd))}`}</div>
 </body></html>`);
+      }
+    );
   };
 
   const handleShareListText = async () => {
@@ -540,15 +566,19 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
           color: 'var(--text-primary)',
         }}
       >
-        {/* Standalone Top Header with Back Button, Metadata, Undo/Redo, and Multi-Format Export */}
-        <header
-          className="no-print z-30 border-b px-4 py-3 md:sticky md:top-0 sm:px-6"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-between gap-3">
+        {/* Floating Glassmorphic Top Header with Back Button, Metadata, Undo/Redo, and Multi-Format Export */}
+        <div className="no-print sticky top-0 z-30 w-full px-3 pt-2.5 pb-1.5 sm:px-6 sm:pt-3 pointer-events-none">
+          <header
+            className="pointer-events-auto mx-auto max-w-6xl rounded-2xl border px-3.5 py-3 sm:px-5 transition-all"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--bg-surface) 80%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--border-color) 80%, transparent)',
+              boxShadow: '0 14px 32px -14px rgba(15, 23, 42, 0.14)',
+              backdropFilter: 'blur(18px) saturate(165%)',
+              WebkitBackdropFilter: 'blur(18px) saturate(165%)',
+            }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <button
                 type="button"
@@ -785,10 +815,11 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 <span>{exportingImage ? 'جارٍ التجهيز...' : 'صورة PNG'}</span>
               </button>
             </div>
-          </div>
-        </header>
+            </div>
+          </header>
+        </div>
 
-        <div className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 sm:p-6">
+        <div className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 pb-24 sm:p-6 sm:pb-20">
           {exportNotice && (
             <div
               role="status"
@@ -1051,6 +1082,8 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             tableDate={activeList.listDate}
             periodMeta={activeList.periodMeta || activePeriod}
             freeformHeader={activeList.freeformHeader}
+            canUndo={canUndo}
+            onUndo={onUndo}
             onSelectAll={() =>
               setSelectedItemIds(visibleRows.map((r) => r.item.id))
             }
@@ -1060,6 +1093,19 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
               onAddPersonsToReadyList(listId, pids)
             }
             onUpsertRelation={onUpsertRelation}
+            onBulkDeleteSelected={
+              onBulkDeleteItems
+                ? (records) => {
+                    const itemIds = records
+                      .map((r) => r.readyListItemId)
+                      .filter((id): id is number => typeof id === 'number');
+                    if (itemIds.length > 0) {
+                      onBulkDeleteItems(itemIds);
+                      setSelectedItemIds([]);
+                    }
+                  }
+                : undefined
+            }
           />
 
           {/* Full Excel Spreadsheet Table */}
@@ -1324,6 +1370,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                         >
                           <button
                             type="button"
+                            aria-label={`تحديد ${rec.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelectItem(item.id);
+                              if (themePrefs.activeRowFocusMode) {
+                                setFocusedItemId(item.id);
+                              }
+                            }}
                             className="text-right font-semibold hover:underline"
                           >
                             {rec.name}
@@ -2103,18 +2157,38 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   // CENTERED LIST CARDS HUB (When No List Is Opened Full-Screen)
   // ============================================================================
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold sm:text-2xl">القوائم الجاهزة</h1>
-          <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-            أنشئ قوائم توزيع متعددة لعمال التوصيل وافتح أي قائمة بملء الشاشة مع التصدير والمشاركة
-          </p>
+    <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
+      <div
+        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--border-color)',
+        }}
+      >
+        <div className="flex items-start gap-3.5 min-w-0">
+          <span
+            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
+              color: 'var(--accent)',
+            }}
+            aria-hidden="true"
+          >
+            <ListChecks className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-extrabold sm:text-xl">القوائم الجاهزة</h1>
+            <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+              أنشئ قوائم توزيع متعددة لعمال التوصيل وافتح أي قائمة بملء الشاشة مع التصدير والمشاركة
+            </p>
+          </div>
         </div>
 
         {capabilities.canUseReadyListBuilder && (
           <button
             type="button"
+            data-assistant-target="ready-lists-create-btn"
             onClick={() => {
               setNewListName('');
               setNewListDate(todayStr);
@@ -2124,7 +2198,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
               setNewPopulateFromAgency(true);
               setCreateModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0 transition-opacity hover:opacity-90"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',

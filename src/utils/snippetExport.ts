@@ -16,6 +16,7 @@ import {
   type SnippetRecordInput,
 } from './archiveLogic';
 import { printViaIframe } from './excelExport';
+import { escapeHtml, getExportMemoryFlags } from './exportFormatting';
 
 function sanitizeFilePart(raw: string, fallback: string): string {
   return (
@@ -105,7 +106,7 @@ export async function generateSmartSnippetBlob(params: {
 
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 24px Cairo, Tahoma, sans-serif';
-  ctx.fillText(tableTitle || 'سجل تابريكس الرسمي', anchorX, cursorY);
+  ctx.fillText(tableTitle || 'سجل Morrow الرسمي', anchorX, cursorY);
   cursorY += 26;
 
   if (tableSubtitle) {
@@ -302,7 +303,7 @@ export async function generateSmartSnippetBlob(params: {
   ctx.textAlign = 'right';
   ctx.font = 'bold 14px Cairo, Tahoma, sans-serif';
   ctx.fillText(
-    `قصاصة رسمية للتدقيق — تابريكس  |  السجلات: ${records.length}  |  الأفراد: ${totalInd}  |  ${formatTotalQuota(
+    `قصاصة رسمية للتدقيق — Morrow  |  السجلات: ${records.length}  |  الأفراد: ${totalInd}  |  ${formatTotalQuota(
       totalKg,
       settings
     )}  |  ${formatIqd(totalIqd)}`,
@@ -357,6 +358,11 @@ export function printSmartSnippetPdf(params: {
     s.trim()
   );
 
+  const memFlags = getExportMemoryFlags();
+  const hideAmount = memFlags.hideAmountColumn;
+  const hideStatus = memFlags.hideStatusColumn;
+  const hideNotes = memFlags.hideNotesColumn;
+
   let totalInd = 0;
   let totalKg = 0;
   let totalIqd = 0;
@@ -376,23 +382,30 @@ export function printSmartSnippetPdf(params: {
       totalIqd += eff.priceIqd ?? 0;
       return `<tr>
         <td>${idx + 1}</td>
-        <td style="text-align:right;font-weight:bold">${d.name}</td>
-        <td>${d.individualsLabel}</td>
-        <td>${d.decreaseLabel}</td>
-        <td>${d.addOrDeleteLabel}</td>
-        <td>${d.quotaLabel}</td>
-        <td>${d.priceLabel}</td>
-        <td>${d.statusLabel}</td>
-        <td style="text-align:right">${d.notesLabel}</td>
+        <td style="text-align:right;font-weight:bold">${escapeHtml(d.name)}</td>
+        <td>${escapeHtml(d.individualsLabel)}</td>
+        <td>${escapeHtml(d.decreaseLabel)}</td>
+        <td>${escapeHtml(d.addOrDeleteLabel)}</td>
+        <td>${escapeHtml(d.quotaLabel)}</td>
+        ${hideAmount ? '' : `<td>${escapeHtml(d.priceLabel)}</td>`}
+        ${hideStatus ? '' : `<td>${escapeHtml(d.statusLabel)}</td>`}
+        ${hideNotes ? '' : `<td style="text-align:right">${escapeHtml(d.notesLabel)}</td>`}
       </tr>`;
     })
     .join('');
 
   printViaIframe(`<!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8" /><title>قصاصة — ${tableTitle}</title>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>قصاصة — ${escapeHtml(tableTitle)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" />
 <style>
-  body { font-family: Cairo, Tahoma, Arial, sans-serif; padding: 20px; color: #0f172a; }
+  @page { size: A4; margin: 12mm; }
+  body { font-family: 'Cairo', 'Amiri', Tahoma, Arial, sans-serif; padding: 20px; color: #0f172a; direction: rtl; }
   .snippet-box { border: 2px solid #0f172a; border-radius: 10px; overflow: hidden; }
   .masthead { background: #0f172a; color: #ffffff; padding: 14px 18px; text-align: ${
     freeformHeader?.align || 'right'
@@ -410,37 +423,42 @@ export function printSmartSnippetPdf(params: {
 <body>
   <div class="snippet-box">
     <div class="masthead">
-      ${topTitle ? `<div class="top">${topTitle}</div>` : ''}
-      <h1>${tableTitle}</h1>
-      ${tableSubtitle ? `<div class="sub">${tableSubtitle}</div>` : ''}
-      ${freeSubs.length > 0 ? `<div class="sub">${freeSubs.join(' · ')}</div>` : ''}
+      ${topTitle ? `<div class="top">${escapeHtml(topTitle)}</div>` : ''}
+      <h1>${escapeHtml(tableTitle)}</h1>
+      ${tableSubtitle ? `<div class="sub">${escapeHtml(tableSubtitle)}</div>` : ''}
+      ${freeSubs.length > 0 ? `<div class="sub">${escapeHtml(freeSubs.join(' · '))}</div>` : ''}
     </div>
     <div class="period-bar">
-      <span>التاريخ: ${formatPeriodDateYMD(p.fullDate)}</span>
-      <span>الشهر: ${p.monthName} (شهر ${p.monthNumber})</span>
-      <span>الحصة: ${p.quotaName} (${p.quotaNumber})</span>
-      <span>تاريخ الحصة: ${formatPeriodDateYMD(p.quotaDate)}</span>
+      <span>التاريخ: ${escapeHtml(formatPeriodDateYMD(p.fullDate))}</span>
+      <span>الشهر: ${escapeHtml(p.monthName)} (شهر ${p.monthNumber})</span>
+      <span>الحصة: ${escapeHtml(p.quotaName)} (${escapeHtml(p.quotaNumber)})</span>
+      <span>تاريخ الحصة: ${escapeHtml(formatPeriodDateYMD(p.quotaDate))}</span>
     </div>
     <table>
       <thead>
         <tr>
-          <th>#</th><th>الاسم</th><th>الأفراد</th><th>النزول/النقصان</th><th>الإضافة/الحذف</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th>
+          <th>#</th><th>الاسم</th><th>الأفراد</th><th>النزول/النقصان</th><th>الإضافة/الحذف</th><th>الحصة</th>${
+            hideAmount ? '' : '<th>المبلغ</th>'
+          }${hideStatus ? '' : '<th>الحالة</th>'}${hideNotes ? '' : '<th>الملاحظات</th>'}
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
     </table>
-    <div class="footer">قصاصة تدقيق — تابريكس | السجلات: ${
+    <div class="footer">قصاصة تدقيق — Morrow | السجلات: ${
       records.length
-    } | الأفراد: ${totalInd} | ${formatTotalQuota(
-      totalKg,
-      settings
-    )} | ${formatIqd(totalIqd)}</div>
+    } | الأفراد: ${totalInd} | ${escapeHtml(
+      formatTotalQuota(totalKg, settings)
+    )}${hideAmount ? '' : ` | ${escapeHtml(formatIqd(totalIqd))}`}</div>
   </div>
 </body></html>`);
 }
 
 export function printArchiveRecordPdf(archive: MonthlyArchiveRecord): void {
   const p = resolvePeriodMeta(archive.periodMeta);
+  const memFlags = getExportMemoryFlags();
+  const hideAmount = memFlags.hideAmountColumn;
+  const hideStatus = memFlags.hideStatusColumn;
+  const hideNotes = memFlags.hideNotesColumn;
   const agencyMap = new Map(archive.agencies.map((a) => [a.id, a.name]));
   const rowsHtml = archive.persons
     .map((person, idx) => {
@@ -450,8 +468,8 @@ export function printArchiveRecordPdf(archive: MonthlyArchiveRecord): void {
       );
       return `<tr>
         <td>${idx + 1}</td>
-        <td style="text-align:right;font-weight:bold">${person.name}</td>
-        <td>${agencyMap.get(person.agencyId) || ''}</td>
+        <td style="text-align:right;font-weight:bold">${escapeHtml(person.name)}</td>
+        <td>${escapeHtml(agencyMap.get(person.agencyId) || '')}</td>
         <td>${
           eff.summary.scope === 'partial'
             ? `${eff.eligibleIndividuals} من ${person.individuals ?? 0}`
@@ -460,22 +478,29 @@ export function printArchiveRecordPdf(archive: MonthlyArchiveRecord): void {
         <td>${person.decreaseCount ?? 0}</td>
         <td>${
           person.addOrDeleteAction && person.addOrDeleteAction !== 'لا يوجد'
-            ? `${person.addOrDeleteAction} (${person.addOrDeleteCount ?? 0})`
+            ? escapeHtml(`${person.addOrDeleteAction} (${person.addOrDeleteCount ?? 0})`)
             : '—'
         }</td>
-        <td>${eff.quotaText}</td>
-        <td>${eff.priceText}</td>
-        <td>${eff.summary.shortLabel}</td>
-        <td style="text-align:right">${person.notes || ''}</td>
+        <td>${escapeHtml(eff.quotaText)}</td>
+        ${hideAmount ? '' : `<td>${escapeHtml(eff.priceText)}</td>`}
+        ${hideStatus ? '' : `<td>${escapeHtml(eff.summary.shortLabel)}</td>`}
+        ${hideNotes ? '' : `<td style="text-align:right">${escapeHtml(person.notes || '')}</td>`}
       </tr>`;
     })
     .join('');
 
   printViaIframe(`<!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8" /><title>${archive.label}</title>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>${escapeHtml(archive.label)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" />
 <style>
-  body { font-family: Cairo, Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; }
+  @page { size: A4; margin: 12mm; }
+  body { font-family: 'Cairo', 'Amiri', Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; direction: rtl; }
   .header { border: 2px solid #0f172a; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
   .header h1 { margin: 0 0 6px; font-size: 20px; }
   .meta { font-size: 12px; color: #334155; display: flex; flex-wrap: wrap; gap: 14px; }
@@ -489,36 +514,37 @@ export function printArchiveRecordPdf(archive: MonthlyArchiveRecord): void {
   <div class="header">
     ${
       archive.freeformHeader?.topCustomTitle
-        ? `<div style="font-size:12px;font-weight:bold;color:#1d4ed8">${archive.freeformHeader.topCustomTitle}</div>`
+        ? `<div style="font-size:12px;font-weight:bold;color:#1d4ed8">${escapeHtml(archive.freeformHeader.topCustomTitle)}</div>`
         : ''
     }
-    <h1>${archive.label}</h1>
+    <h1>${escapeHtml(archive.label)}</h1>
     <div class="meta">
-      <span>التاريخ: ${formatPeriodDateYMD(p.fullDate)}</span>
-      <span>الشهر: ${p.monthName} (شهر ${p.monthNumber})</span>
-      <span>الحصة: ${p.quotaName} (${p.quotaNumber})</span>
-      <span>تاريخ الحصة: ${formatPeriodDateYMD(p.quotaDate)}</span>
+      <span>التاريخ: ${escapeHtml(formatPeriodDateYMD(p.fullDate))}</span>
+      <span>الشهر: ${escapeHtml(p.monthName)} (شهر ${p.monthNumber})</span>
+      <span>الحصة: ${escapeHtml(p.quotaName)} (${escapeHtml(p.quotaNumber)})</span>
+      <span>تاريخ الحصة: ${escapeHtml(formatPeriodDateYMD(p.quotaDate))}</span>
       <span>الحالة: ${archive.isClosed ? 'مؤرشف ومغلق' : 'نسخة مفتوحة'}</span>
     </div>
   </div>
   <table>
     <thead>
-      <tr><th>#</th><th>الاسم</th><th>الوكالة</th><th>الأفراد</th><th>النزول</th><th>إضافة/حذف</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th></tr>
+      <tr><th>#</th><th>الاسم</th><th>الوكالة</th><th>الأفراد</th><th>النزول</th><th>إضافة/حذف</th><th>الحصة</th>${
+        hideAmount ? '' : '<th>المبلغ</th>'
+      }${hideStatus ? '' : '<th>الحالة</th>'}${hideNotes ? '' : '<th>الملاحظات</th>'}</tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
   <div class="footer">الإجمالي المؤرشف: ${
     archive.summary.totalHouseholds
-  } عائلة | ${archive.summary.totalIndividuals} أفراد | ${formatTotalQuota(
-    archive.summary.totalKg,
-    archive.calculationSettings
-  )} | الإيرادات: ${formatIqd(archive.summary.totalRevenueIqd)}</div>
+  } عائلة | ${archive.summary.totalIndividuals} أفراد | ${escapeHtml(
+    formatTotalQuota(archive.summary.totalKg, archive.calculationSettings)
+  )}${hideAmount ? '' : ` | الإيرادات: ${escapeHtml(formatIqd(archive.summary.totalRevenueIqd))}`}</div>
 </body></html>`);
 }
 
 export function exportArchiveToCloudJson(archive: MonthlyArchiveRecord): void {
   const payload = {
-    app: 'تابريكس — أرشيف السجلات الشهرية',
+    app: 'Morrow — أرشيف السجلات الشهرية',
     exportedAt: new Date().toISOString(),
     archive,
   };
@@ -527,7 +553,7 @@ export function exportArchiveToCloudJson(archive: MonthlyArchiveRecord): void {
   });
   downloadBlobFile(
     blob,
-    `tabrix_archive_${archive.periodMeta.year}_${String(
+    `morrow_archive_${archive.periodMeta.year}_${String(
       archive.periodMeta.monthNumber
     ).padStart(2, '0')}_q${sanitizeFilePart(
       archive.periodMeta.quotaNumber,

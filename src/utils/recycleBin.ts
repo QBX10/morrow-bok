@@ -1,5 +1,6 @@
 import type {
   AppDatabaseState,
+  ExpertColumnPreset,
   ExpertTableConfig,
   RecycleBinEntry,
 } from '../types/agency.ts';
@@ -86,5 +87,122 @@ export function moveExpertColumnInOrder(
   const tmp = order[idx];
   order[idx] = order[swapIdx];
   order[swapIdx] = tmp;
-  return { ...config, columnOrder: order };
+  return { ...config, columnOrder: order, activePresetId: null };
+}
+
+export function setExpertColumnRank(
+  config: ExpertTableConfig,
+  columnId: string,
+  targetRank1Based: number
+): ExpertTableConfig {
+  const order = [...config.columnOrder];
+  const fromIdx = order.indexOf(columnId);
+  if (fromIdx === -1) return config;
+  const clampedTargetIdx = Math.max(
+    0,
+    Math.min(order.length - 1, Math.round(targetRank1Based) - 1)
+  );
+  if (clampedTargetIdx === fromIdx) return config;
+  const [item] = order.splice(fromIdx, 1);
+  order.splice(clampedTargetIdx, 0, item);
+  return { ...config, columnOrder: order, activePresetId: null };
+}
+
+export function moveExpertColumnToEdge(
+  config: ExpertTableConfig,
+  columnId: string,
+  edge: 'start' | 'end'
+): ExpertTableConfig {
+  const order = [...config.columnOrder];
+  const fromIdx = order.indexOf(columnId);
+  if (fromIdx === -1) return config;
+  const targetIdx = edge === 'start' ? 0 : order.length - 1;
+  if (fromIdx === targetIdx) return config;
+  const [item] = order.splice(fromIdx, 1);
+  if (edge === 'start') {
+    order.unshift(item);
+  } else {
+    order.push(item);
+  }
+  return { ...config, columnOrder: order, activePresetId: null };
+}
+
+export function reorderExpertColumnsByDrag(
+  config: ExpertTableConfig,
+  draggedColId: string,
+  targetColId: string
+): ExpertTableConfig {
+  if (!draggedColId || !targetColId || draggedColId === targetColId) {
+    return config;
+  }
+  const order = [...config.columnOrder];
+  const fromIdx = order.indexOf(draggedColId);
+  const toIdx = order.indexOf(targetColId);
+  if (fromIdx === -1 || toIdx === -1) return config;
+  const [item] = order.splice(fromIdx, 1);
+  order.splice(toIdx, 0, item);
+  return { ...config, columnOrder: order, activePresetId: null };
+}
+
+export function applyExpertColumnPreset(
+  config: ExpertTableConfig,
+  preset: ExpertColumnPreset
+): ExpertTableConfig {
+  const allKnownIds = Array.from(
+    new Set([...preset.columnOrder, ...config.columnOrder])
+  );
+  const presetOrderSet = new Set(preset.columnOrder);
+  const mergedOrder = [
+    ...preset.columnOrder.filter((id) => allKnownIds.includes(id)),
+    ...config.columnOrder.filter((id) => !presetOrderSet.has(id)),
+  ];
+  return {
+    ...config,
+    visibleColumns: preset.visibleColumns.filter((id) =>
+      mergedOrder.includes(id)
+    ),
+    columnOrder: mergedOrder,
+    pinnedColumnId:
+      preset.pinnedColumnId !== undefined
+        ? preset.pinnedColumnId
+        : config.pinnedColumnId ?? 'name',
+    activePresetId: preset.id,
+  };
+}
+
+export function saveCustomExpertColumnPreset(
+  config: ExpertTableConfig,
+  name: string
+): ExpertTableConfig {
+  const cleanName = name.trim();
+  if (!cleanName) return config;
+  const existing = config.columnPresets || [];
+  const preset: ExpertColumnPreset = {
+    id: `custom_preset_${Date.now().toString(36)}`,
+    name: cleanName.slice(0, 60),
+    visibleColumns: [...config.visibleColumns],
+    columnOrder: [...config.columnOrder],
+    pinnedColumnId: config.pinnedColumnId ?? 'name',
+    isBuiltIn: false,
+  };
+  return {
+    ...config,
+    columnPresets: [...existing, preset],
+    activePresetId: preset.id,
+  };
+}
+
+export function deleteCustomExpertColumnPreset(
+  config: ExpertTableConfig,
+  presetId: string
+): ExpertTableConfig {
+  const existing = config.columnPresets || [];
+  const target = existing.find((p) => p.id === presetId);
+  if (!target || target.isBuiltIn) return config;
+  return {
+    ...config,
+    columnPresets: existing.filter((p) => p.id !== presetId),
+    activePresetId:
+      config.activePresetId === presetId ? null : config.activePresetId,
+  };
 }

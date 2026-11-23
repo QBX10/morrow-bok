@@ -29,7 +29,7 @@ export interface LocalParsedDocumentResult {
 }
 
 const NAME_HEADER_HINTS = ['اسم', 'الاسم', 'المستفيد', 'رب الاسرة', 'الاسماء', 'name'];
-const IND_HEADER_HINTS = ['افراد', 'الافراد', 'انفار', 'الأنفار', 'العدد', 'count', 'individuals'];
+const IND_HEADER_HINTS = ['افراد', 'الافراد', 'الأفراد', '\u0627\u0646\u0641\u0627\u0631', '\u0627\u0644\u0623\u0646\u0641\u0627\u0631', 'العدد', 'count', 'individuals'];
 const DEC_HEADER_HINTS = ['نزول', 'نقصان', 'نقص', 'decrease'];
 const ADD_DEL_HEADER_HINTS = ['اضافة', 'إضافة', 'حذف', 'تعديل', 'التغيير'];
 const NOTE_HEADER_HINTS = ['ملاحظة', 'ملاحظات', 'عنوان', 'سبب', 'note', 'notes'];

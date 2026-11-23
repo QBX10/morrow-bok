@@ -1,18 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   Bell,
+  Bot,
   Calculator,
   Camera,
   CheckCircle2,
   CloudUpload,
+  Cpu,
   Download,
   FileJson,
+  LayoutGrid,
   Lock,
   Moon,
   Palette,
   RefreshCw,
   RotateCcw,
+  Search,
   Shield,
   Sliders,
   Sparkles,
@@ -23,6 +28,9 @@ import {
   Type,
   Unlock,
   Upload,
+  UserCircle2,
+  WifiOff,
+  X,
 } from 'lucide-react';
 import type {
   AppDatabaseState,
@@ -47,11 +55,20 @@ import type {
   TopBarConfig,
   TopBarFocusMode,
 } from '../types/agency';
+import type {
+  AssistantConnectivityState,
+  AssistantSettingsConfig,
+} from '../types/assistant';
 import {
   calculateAllocation,
   formatIqd,
   formatQuota,
 } from '../utils/agencyLogic';
+import {
+  DEFAULT_ASSISTANT_SETTINGS,
+  FREE_GEMINI_MODEL_OPTIONS,
+  type QuotaCheckResult,
+} from '../utils/assistantQuota';
 import { MODE_TIER_META } from '../utils/modePermissions';
 import { ALL_QUICK_EXTRACT_FIELDS } from '../utils/quickExtractEngine';
 import {
@@ -68,6 +85,8 @@ import {
 
 interface SettingsViewProps {
   activeSection: SettingsSectionId;
+  screenMode?: 'hub' | 'detail';
+  onChangeScreenMode?: (mode: 'hub' | 'detail') => void;
   onChangeSection: (section: SettingsSectionId) => void;
   onBackToApp: () => void;
   state: AppDatabaseState;
@@ -110,25 +129,85 @@ interface SettingsViewProps {
   onSyncServer: () => Promise<void>;
   onRestoreServer: () => Promise<boolean>;
   onOpenAuth: () => void;
+  assistantSettings?: AssistantSettingsConfig;
+  assistantConnectivity?: AssistantConnectivityState;
+  assistantQuotaInfo?: QuotaCheckResult;
+  assistantCacheCount?: number;
+  onUpdateAssistantSettings?: (patch: Partial<AssistantSettingsConfig>) => void;
+  onResetAssistantQuota?: () => void;
+  onClearAssistantCache?: () => void;
+  hierarchyBar?: React.ReactNode;
 }
 
 const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
   label: string;
+  shortDesc: string;
+  group: 'experience' | 'operations';
   icon: React.FC<{ className?: string }>;
 }> = [
-  { id: 'appearance', label: 'استوديو المظهر', icon: Palette },
-  { id: 'fonts', label: 'الخطوط والتباعد', icon: Type },
-  { id: 'modes', label: 'الأوضاع وتحكم الخبير', icon: Sliders },
-  { id: 'calculator', label: 'ضبط حاسبة الجدول', icon: Calculator },
-  { id: 'general', label: 'إعدادات التطبيق العامة', icon: Sparkles },
-  { id: 'quick_extract_settings', label: 'السحب الذكي والكاميرا', icon: Camera },
-  { id: 'relations_lists', label: 'العلاقات والقوائم الجاهزة', icon: Bell },
-  { id: 'security_data', label: 'الأمان والبيانات', icon: Shield },
+  {
+    id: 'appearance',
+    label: 'استوديو المظهر',
+    shortDesc: 'الألوان الثمانية الفاخرة، تصميم الجداول، وملفات المظهر المحفوظة.',
+    group: 'experience',
+    icon: Palette,
+  },
+  {
+    id: 'fonts',
+    label: 'الخطوط والتباعد',
+    shortDesc: 'الخطوط العربية الاحترافية، مقاسات النصوص، وارتفاع الصفوف.',
+    group: 'experience',
+    icon: Type,
+  },
+  {
+    id: 'general',
+    label: 'إعدادات التطبيق العامة',
+    shortDesc: 'سلوك الشريط العلوي، الإخفاء التلقائي للتركيز، والتنبيهات.',
+    group: 'experience',
+    icon: Sparkles,
+  },
+  {
+    id: 'modes',
+    label: 'الأوضاع وتحكم الخبير',
+    shortDesc: 'تبديل المستويات، تخصيص الأعمدة الحرة، والفئات المتقدمة.',
+    group: 'experience',
+    icon: Sliders,
+  },
+  {
+    id: 'calculator',
+    label: 'ضبط حاسبة الجدول',
+    shortDesc: 'حصة الفرد بالكيلوغرام، وزن الكيس، ومعادلة الرسوم والمصاريف.',
+    group: 'operations',
+    icon: Calculator,
+  },
+  {
+    id: 'quick_extract_settings',
+    label: 'السحب الذكي والكاميرا',
+    shortDesc: 'عتبة الوضوح، الحقول المستهدفة، وقوالب القراءة السريعة.',
+    group: 'operations',
+    icon: Camera,
+  },
+  {
+    id: 'relations_lists',
+    label: 'العلاقات والقوائم الجاهزة',
+    shortDesc: 'إشعارات المتابعة، الربط الحي مع السجلات، وصيغ المشاركة.',
+    group: 'operations',
+    icon: Bell,
+  },
+  {
+    id: 'security_data',
+    label: 'الأمان والبيانات',
+    shortDesc: 'قفل الشاشة، النسخ الاحتياطي، المزامنة السحابية، وسلة المهملات.',
+    group: 'operations',
+    icon: Shield,
+  },
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   activeSection,
+  screenMode,
+  onChangeScreenMode,
   onChangeSection,
   onBackToApp,
   state,
@@ -171,11 +250,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSyncServer,
   onRestoreServer,
   onOpenAuth,
+  assistantSettings = DEFAULT_ASSISTANT_SETTINGS,
+  assistantConnectivity = 'offline',
+  assistantQuotaInfo,
+  assistantCacheCount = 0,
+  onUpdateAssistantSettings,
+  onResetAssistantQuota,
+  onClearAssistantCache,
+  hierarchyBar,
 }) => {
   const [feedback, setFeedback] = useState('');
   const [errorFeedback, setErrorFeedback] = useState('');
   const [newProfileName, setNewProfileName] = useState('');
+  const [localScreenMode, setLocalScreenMode] = useState<'hub' | 'detail'>('hub');
   const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentScreenMode = screenMode ?? localScreenMode;
+  const setScreenMode = onChangeScreenMode ?? setLocalScreenMode;
+
+  const openSubSectionFullScreen = (id: SettingsSectionId) => {
+    onChangeSection(id);
+    setScreenMode('detail');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Calculator settings local draft
   const [kgPerInd, setKgPerInd] = useState(
@@ -215,6 +312,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Security PIN draft
   const [pinDraft, setPinDraft] = useState(securityPrefs.privacyPin || '');
+  const [settingsSearch, setSettingsSearch] = useState('');
 
   useEffect(() => {
     setKgPerInd(String(calculationSettings.kgPerIndividual));
@@ -289,7 +387,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tabrex-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `morrow-backup-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -367,142 +465,700 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     notifySuccess('تم تحديث الحقول الافتراضية للسحب السريع.');
   };
 
+  const activeSectionMeta =
+    SETTINGS_SECTIONS.find((s) => s.id === activeSection) || SETTINGS_SECTIONS[0];
+  const ActiveSectionIcon = activeSectionMeta.icon;
+
+  const activeThemeName =
+    APP_THEMES.find((t) => t.id === resolveAppThemeId(themePrefs.appTheme))
+      ?.name || 'النهار الكلاسيكي';
+  const activeFontName =
+    ARABIC_FONTS.find((f) => f.id === themePrefs.fontFamily)?.name || 'Cairo';
+  const shortModeLabel =
+    modeTier === 'beginner'
+      ? 'الوضع المبتدئ'
+      : modeTier === 'intermediate'
+        ? 'الوضع المتوسط'
+        : modeTier === 'professional'
+          ? 'الوضع المحترف'
+          : 'وضع الخبير';
+
+  const getSectionLiveStatus = (id: SettingsSectionId): string => {
+    if (id === 'appearance') return activeThemeName;
+    if (id === 'fonts') return `${activeFontName} · ${themePrefs.fontSizePx ?? 15}px`;
+    if (id === 'modes') return shortModeLabel;
+    if (id === 'calculator')
+      return `${calculationSettings.kgPerIndividual} كغم · ${formatIqd(
+        calculationSettings.feePerIndividualIqd
+      )}`;
+    if (id === 'general')
+      return topBarConfig.autoFocus ? 'إخفاء تلقائي نشط' : 'شريط قياسي';
+    if (id === 'quick_extract_settings')
+      return `${quickExtractPrefs.focusedFields.length} حقول مركزة`;
+    if (id === 'relations_lists')
+      return relationsPrefs.autoUpdateReadyListDate ? 'تحديث تاريخ تلقائي' : 'تحديث يدوي';
+    return securityPrefs.privacyLocked
+      ? 'القفل مفعّل'
+      : `المهملات: ${recycleBin.length}`;
+  };
+
+  const normalizedSettingsSearch = settingsSearch.trim().toLowerCase();
+  const filteredSettingsSections = SETTINGS_SECTIONS.filter((s) => {
+    if (!normalizedSettingsSearch) return true;
+    return (
+      s.label.toLowerCase().includes(normalizedSettingsSearch) ||
+      s.shortDesc.toLowerCase().includes(normalizedSettingsSearch) ||
+      getSectionLiveStatus(s.id).toLowerCase().includes(normalizedSettingsSearch)
+    );
+  });
+
+  const experienceSections = filteredSettingsSections.filter(
+    (s) => s.group === 'experience'
+  );
+  const operationsSections = filteredSettingsSections.filter(
+    (s) => s.group === 'operations'
+  );
+
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 sm:p-6">
-      {/* Standalone Page Header */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onBackToApp}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:opacity-90"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--accent)',
-              color: 'var(--accent)',
-            }}
-          >
-            <ArrowRight className="h-4 w-4" />
-            <span>العودة للتطبيق</span>
-          </button>
-
-          <div>
-            <h1 className="text-lg font-bold sm:text-xl">
-              إعدادات التطبيق — تابريكس
-            </h1>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              صفحة مستقلة ومتكاملة لإدارة المظهر، الخطوط، تحكم الخبير، حاسبة الجدول، السحب الذكي، والأمان
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            onToggleDarkTheme(!darkTheme);
-            notifySuccess(
-              !darkTheme ? 'تم تفعيل الوضع الليلي.' : 'تم تفعيل الوضع النهاري.'
-            );
-          }}
-          className="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+    <div
+      className="min-h-screen w-full flex flex-col"
+      style={{
+        backgroundColor: 'var(--bg-main)',
+        color: 'var(--text-primary)',
+      }}
+    >
+      {/* Floating Glassmorphic Standalone Settings Header Bar */}
+      <div className="no-print sticky top-0 z-30 w-full px-3 pt-2.5 pb-1.5 sm:px-6 sm:pt-3 pointer-events-none">
+        <header
+          data-testid="settings-floating-topbar"
+          className="pointer-events-auto mx-auto w-full rounded-2xl border px-3.5 py-2.5 sm:px-5 transition-all duration-200"
           style={{
-            backgroundColor: 'var(--bg-main)',
-            borderColor: 'var(--border-color)',
+            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 78%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--border-color) 80%, transparent)',
+            boxShadow: darkTheme
+              ? '0 14px 36px -12px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
+              : '0 14px 32px -14px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.78)',
+            backdropFilter: 'blur(18px) saturate(165%)',
+            WebkitBackdropFilter: 'blur(18px) saturate(165%)',
           }}
         >
-          {darkTheme ? (
-            <>
-              <Sun className="h-4 w-4" />
-              <span>الوضع النهاري</span>
-            </>
-          ) : (
-            <>
-              <Moon className="h-4 w-4" />
-              <span>الوضع الليلي</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {feedback && (
-        <div
-          role="status"
-          className="rounded-lg border px-4 py-2.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--success-bg)',
-            borderColor: 'var(--success)',
-            color: 'var(--success)',
-          }}
-        >
-          {feedback}
-        </div>
-      )}
-
-      {errorFeedback && (
-        <div
-          role="alert"
-          className="rounded-lg border px-4 py-2.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--danger-bg)',
-            borderColor: 'var(--danger)',
-            color: 'var(--danger)',
-          }}
-        >
-          {errorFeedback}
-        </div>
-      )}
-
-      {/* 8-Section Navigation + Content Layout */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <nav
-          aria-label="أقسام صفحة الإعدادات"
-          className="flex flex-row gap-1.5 overflow-x-auto pb-1 lg:col-span-3 lg:flex-col lg:overflow-visible"
-        >
-          {SETTINGS_SECTIONS.map((sec) => {
-            const Icon = sec.icon;
-            const active = activeSection === sec.id;
-            return (
-              <button
-                key={sec.id}
-                type="button"
-                aria-current={active ? 'page' : undefined}
-                onClick={() => onChangeSection(sec.id)}
-                className="flex shrink-0 items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-right text-xs font-bold whitespace-nowrap transition-colors"
-                style={{
-                  backgroundColor: active
-                    ? 'var(--bg-nav-active)'
-                    : 'var(--bg-surface)',
-                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                  color: active ? 'var(--accent)' : 'var(--text-primary)',
-                }}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{sec.label}</span>
-                </span>
-                {sec.id === 'security_data' && recycleBin.length > 0 && (
-                  <span
-                    className="rounded-md px-1.5 py-0.5 text-[10px] tabular-nums"
+          <div className="flex w-full flex-wrap items-center justify-between gap-3 md:grid md:grid-cols-[1fr_minmax(220px,380px)_1fr] md:gap-4">
+            {/* Right Side (RTL Start): Back Navigation + Breadcrumb */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0">
+              {currentScreenMode === 'detail' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setScreenMode('hub')}
+                    className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-90"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-muted)',
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                      boxShadow: '0 4px 12px color-mix(in srgb, var(--accent) 26%, transparent)',
                     }}
                   >
-                    {recycleBin.length}
+                    <LayoutGrid className="h-4 w-4" />
+                    <span>أقسام الإعدادات</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onBackToApp}
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:opacity-85"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--bg-main) 82%, transparent)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <ArrowRight className="h-4 w-4" />
+                    <span>العودة للتطبيق</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onBackToApp}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                    boxShadow: '0 4px 12px color-mix(in srgb, var(--accent) 26%, transparent)',
+                  }}
+                >
+                  <ArrowRight className="h-4 w-4" />
+                  <span>العودة للتطبيق</span>
+                </button>
+              )}
+
+              <div className="hidden sm:flex items-center gap-2 text-xs sm:text-sm min-w-0">
+                <span
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    color: 'var(--accent)',
+                  }}
+                  aria-hidden="true"
+                >
+                  M
+                </span>
+                <span dir="ltr" className="font-extrabold shrink-0">
+                  Morrow
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>/</span>
+                <button
+                  type="button"
+                  onClick={() => setScreenMode('hub')}
+                  className="font-bold whitespace-nowrap hover:underline"
+                  style={{
+                    color:
+                      currentScreenMode === 'hub'
+                        ? 'var(--text-primary)'
+                        : 'var(--text-muted)',
+                  }}
+                >
+                  الإعدادات
+                </button>
+                {currentScreenMode === 'detail' && (
+                  <>
+                    <span style={{ color: 'var(--text-muted)' }}>/</span>
+                    <span className="truncate max-w-[140px] font-extrabold" style={{ color: 'var(--accent)' }}>
+                      {activeSectionMeta.label}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Center Zone: Live Settings Search (Hub) or Prominent Section Selector (Detail) */}
+            <div className="w-full md:w-full md:max-w-[380px] md:justify-self-center order-3 md:order-2">
+              {currentScreenMode === 'hub' ? (
+                <div
+                  className="flex h-10 items-center gap-2 rounded-xl border px-2.5 transition-all"
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, var(--bg-main) 88%, var(--bg-surface))',
+                    borderColor: settingsSearch
+                      ? 'var(--accent)'
+                      : 'color-mix(in srgb, var(--accent) 20%, var(--border-color))',
+                  }}
+                >
+                  <span
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      backgroundColor: 'var(--bg-nav-active)',
+                      color: 'var(--accent)',
+                    }}
+                    aria-hidden="true"
+                  >
+                    <Search className="h-3.5 w-3.5" />
                   </span>
+                  <input
+                    type="search"
+                    value={settingsSearch}
+                    onChange={(e) => setSettingsSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && filteredSettingsSections.length > 0) {
+                        openSubSectionFullScreen(filteredSettingsSections[0].id);
+                      }
+                    }}
+                    placeholder="ابحث داخل أقسام الإعدادات..."
+                    aria-label="بحث في أقسام الإعدادات"
+                    className="min-w-0 w-full bg-transparent text-xs font-medium outline-none"
+                  />
+                  {settingsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSearch('')}
+                      aria-label="مسح بحث الإعدادات"
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-75 hover:opacity-100"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <select
+                  aria-label="الانتقال السريع بين أقسام الإعدادات"
+                  value={activeSection}
+                  onChange={(e) =>
+                    openSubSectionFullScreen(e.target.value as SettingsSectionId)
+                  }
+                  className="h-10 w-full rounded-xl border px-3 text-xs font-bold"
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, var(--bg-main) 88%, var(--bg-surface))',
+                    borderColor: 'color-mix(in srgb, var(--accent) 28%, var(--border-color))',
+                  }}
+                >
+                  {SETTINGS_SECTIONS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label} — {getSectionLiveStatus(s.id)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Left Side (RTL End): Mode Quick Badge + Theme Toggle + Account */}
+            <div className="flex items-center justify-end gap-2 shrink-0 order-2 md:order-3">
+              <button
+                type="button"
+                onClick={() => openSubSectionFullScreen('modes')}
+                title="تغيير مستوى التحكم والأوضاع"
+                className="hidden lg:inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'color-mix(in srgb, var(--accent) 28%, var(--border-color))',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Sliders className="h-3.5 w-3.5" />
+                <span>{shortModeLabel}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleDarkTheme(!darkTheme);
+                  notifySuccess(
+                    !darkTheme ? 'تم تفعيل الوضع الليلي.' : 'تم تفعيل الوضع النهاري.'
+                  );
+                }}
+                aria-label={darkTheme ? 'تفعيل الوضع النهاري' : 'تفعيل الوضع الليلي'}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-85"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--bg-main) 82%, transparent)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                {darkTheme ? (
+                  <>
+                    <Sun className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span className="hidden sm:inline">الوضع النهاري</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span className="hidden sm:inline">الوضع الليلي</span>
+                  </>
                 )}
               </button>
-            );
-          })}
-        </nav>
 
-        <div className="space-y-5 lg:col-span-9">
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                aria-label={authUser ? `حساب ${authUser.displayName}` : 'الحساب'}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border px-2 sm:px-3 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-90"
+                style={{
+                  backgroundColor: authUser
+                    ? 'var(--bg-nav-active)'
+                    : 'var(--accent)',
+                  borderColor: 'var(--accent)',
+                  color: authUser ? 'var(--text-primary)' : 'var(--accent-fg)',
+                }}
+              >
+                {authUser?.avatarUrl ? (
+                  <img
+                    src={authUser.avatarUrl}
+                    alt={authUser.displayName}
+                    referrerPolicy="no-referrer"
+                    className="h-5 w-5 rounded-md object-cover"
+                  />
+                ) : (
+                  <UserCircle2 className="h-4 w-4" />
+                )}
+                <span className="hidden sm:inline max-w-[100px] truncate">
+                  {authUser ? authUser.displayName : 'الحساب'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </header>
+      </div>
+
+      {hierarchyBar && (
+        <div className="w-full px-1 sm:px-4">{hierarchyBar}</div>
+      )}
+
+      {/* Alerts */}
+      {(feedback || errorFeedback) && (
+        <div className="w-full px-4 pt-4 sm:px-8 lg:px-10">
+          {feedback && (
+            <div
+              role="status"
+              className="tabrix-btn border px-4 py-2.5 text-xs font-bold"
+              style={{
+                backgroundColor: 'var(--success-bg)',
+                borderColor: 'var(--success)',
+                color: 'var(--success)',
+              }}
+            >
+              {feedback}
+            </div>
+          )}
+          {errorFeedback && (
+            <div
+              role="alert"
+              className="tabrix-btn border px-4 py-2.5 text-xs font-bold"
+              style={{
+                backgroundColor: 'var(--danger-bg)',
+                borderColor: 'var(--danger)',
+                color: 'var(--danger)',
+              }}
+            >
+              {errorFeedback}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* STAGE 1: FULL-SCREEN SETTINGS DIRECTORY HUB */}
+      {currentScreenMode === 'hub' ? (
+        <main
+          data-testid="settings-hub-view"
+          className="w-full flex-1 space-y-8 px-4 py-6 pb-24 sm:px-8 sm:py-8 sm:pb-20 lg:px-12 tabrix-view-enter"
+        >
+          {/* Executive Full-Width Hero Banner */}
+          <section
+            aria-label="ملخص حالة الإعدادات"
+            className="tabrix-card grid grid-cols-1 gap-6 border p-6 lg:grid-cols-12 lg:items-center"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="space-y-1.5 lg:col-span-6">
+              <div className="text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                صفحة الإعدادات المستقلة بملء الشاشة
+              </div>
+              <h1 className="text-xl font-extrabold sm:text-2xl">
+                إعدادات التطبيق الشاملة — Morrow
+              </h1>
+              <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                تم ترتيب كل الإعدادات داخل أقسام رئيسية واضحة؛ اضغط على أي قسم لفتحه بملء مساحة الجهاز بالكامل.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:col-span-6">
+              <button
+                type="button"
+                onClick={() => openSubSectionFullScreen('appearance')}
+                className="tabrix-btn border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  الثيم النشط
+                </div>
+                <div className="mt-1 truncate text-xs font-extrabold">
+                  {activeThemeName}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openSubSectionFullScreen('modes')}
+                className="tabrix-btn border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  مستوى التحكم
+                </div>
+                <div
+                  className="mt-1 truncate text-xs font-extrabold"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {shortModeLabel}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openSubSectionFullScreen('calculator')}
+                className="tabrix-btn border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  حصة الفرد
+                </div>
+                <div className="mt-1 truncate text-xs font-extrabold tabular-nums">
+                  {calculationSettings.kgPerIndividual} كغم ·{' '}
+                  {formatIqd(calculationSettings.feePerIndividualIqd)}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openSubSectionFullScreen('security_data')}
+                className="tabrix-btn border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  سلة المهملات
+                </div>
+                <div className="mt-1 truncate text-xs font-extrabold tabular-nums">
+                  {recycleBin.length} عنصر محفوظ
+                </div>
+              </button>
+            </div>
+          </section>
+
+          {experienceSections.length === 0 && operationsSections.length === 0 ? (
+            <div
+              className="tabrix-card border p-8 text-center space-y-3"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="text-sm font-bold">
+                لا توجد أقسام إعدادات مطابقة للبحث «{settingsSearch}»
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsSearch('')}
+                className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>عرض جميع الأقسام</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Master Group 1: Experience, Appearance & Workspace Modes */}
+              {experienceSections.length > 0 && (
+                <section aria-label="قسم الشكل والواجهة والتحكم" className="space-y-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="text-base font-extrabold sm:text-lg">
+                      01. المظهر والواجهة والتحكم
+                    </h2>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      تخصيص الألوان، الخطوط، الشريط العلوي، وصلاحيات الخبير
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+                    {experienceSections.map((sec) => {
+                      const Icon = sec.icon;
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => openSubSectionFullScreen(sec.id)}
+                          className="tabrix-card group flex min-h-[186px] flex-col justify-between border p-6 text-right transition-all hover:-translate-y-0.5 hover:border-[var(--accent)]"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-3">
+                              <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+                                style={{
+                                  backgroundColor: 'var(--bg-nav-active)',
+                                  borderColor:
+                                    'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                                  color: 'var(--accent)',
+                                }}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </span>
+                              <span
+                                className="text-[11px] font-bold tabular-nums"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                {getSectionLiveStatus(sec.id)}
+                              </span>
+                            </div>
+
+                            <h3 className="mt-4 text-base font-extrabold">{sec.label}</h3>
+                            <p
+                              className="mt-1.5 text-xs leading-relaxed"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {sec.shortDesc}
+                            </p>
+                          </div>
+
+                          <div
+                            className="mt-5 flex items-center justify-between border-t pt-3 text-xs font-bold"
+                            style={{
+                              borderColor: 'var(--border-color)',
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            <span>فتح القسم بملء الشاشة</span>
+                            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Master Group 2: Operations, Smart Capture & Data Security */}
+              {operationsSections.length > 0 && (
+                <section aria-label="قسم العمليات والحاسبة والأمان" className="space-y-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="text-base font-extrabold sm:text-lg">
+                      02. العمليات والحاسبة والبيانات
+                    </h2>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      ضبط المعادلات الحسابية، السحب الذكي، القوائم، والحماية السحابية
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+                    {operationsSections.map((sec) => {
+                      const Icon = sec.icon;
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => openSubSectionFullScreen(sec.id)}
+                          className="tabrix-card group flex min-h-[186px] flex-col justify-between border p-6 text-right transition-all hover:-translate-y-0.5 hover:border-[var(--accent)]"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-3">
+                              <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+                                style={{
+                                  backgroundColor: 'var(--bg-nav-active)',
+                                  borderColor:
+                                    'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                                  color: 'var(--accent)',
+                                }}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </span>
+                              <span
+                                className="text-[11px] font-bold tabular-nums"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                {getSectionLiveStatus(sec.id)}
+                              </span>
+                            </div>
+
+                            <h3 className="mt-4 text-base font-extrabold">{sec.label}</h3>
+                            <p
+                              className="mt-1.5 text-xs leading-relaxed"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {sec.shortDesc}
+                            </p>
+                          </div>
+
+                          <div
+                            className="mt-5 flex items-center justify-between border-t pt-3 text-xs font-bold"
+                            style={{
+                              borderColor: 'var(--border-color)',
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            <span>فتح القسم بملء الشاشة</span>
+                            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </main>
+      ) : (
+        /* STAGE 2: FULL-SCREEN DEDICATED SUB-SECTION WORKSPACE */
+        <main
+          data-testid="settings-detail-view"
+          className="w-full flex-1 space-y-6 px-4 py-6 pb-24 sm:px-8 sm:py-8 sm:pb-20 lg:px-10 tabrix-view-enter"
+        >
+          {/* Full-Screen Sub-Section Header Strip */}
+          <div
+            className="tabrix-card flex flex-wrap items-center justify-between gap-4 border p-5 sm:p-6"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <span
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <ActiveSectionIcon className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <h1 className="text-lg font-extrabold sm:text-xl">
+                  {activeSectionMeta.label}
+                </h1>
+                <p className="mt-0.5 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {activeSectionMeta.shortDesc}
+                </p>
+              </div>
+            </div>
+
+            {/* Horizontal Section Jump Strip for Instant Switching */}
+            <nav
+              aria-label="التبديل السريع بين أقسام الإعدادات"
+              className="flex w-full items-center gap-1.5 overflow-x-auto border-t pt-3 lg:w-auto lg:border-t-0 lg:pt-0"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              {SETTINGS_SECTIONS.map((sec) => {
+                const Icon = sec.icon;
+                const active = activeSection === sec.id;
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => openSubSectionFullScreen(sec.id)}
+                    className="tabrix-btn inline-flex shrink-0 items-center gap-1.5 border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors"
+                    style={{
+                      backgroundColor: active
+                        ? 'var(--accent)'
+                        : 'var(--bg-main)',
+                      borderColor: active
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                      color: active ? 'var(--accent-fg)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span>{sec.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div
+            data-assistant-target="settings-content-pane"
+            className="w-full space-y-6"
+          >
           {/* 1. APPEARANCE STUDIO */}
           {activeSection === 'appearance' && (() => {
             const activeAppTheme = resolveAppThemeId(themePrefs.appTheme);
@@ -1506,7 +2162,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         {font.description}
                       </p>
                       <div className="mt-2 text-xs font-semibold tabular-nums">
-                        معاينة: تابريكس · 12 فرداً · 108 كغم · 2,650 د.ع
+                        معاينة: Morrow · 12 فرداً · 108 كغم · 2,650 د.ع
                       </div>
                     </button>
                   );
@@ -3083,6 +3739,311 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                   <span>تفعيل الحفظ المحلي التلقائي للعمل دون انترنت (Offline Cache)</span>
                 </label>
+
+                <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityPrefs.allowCloudBeneficiaryNames)}
+                    onChange={(e) =>
+                      onUpdateSecurityPrefs({
+                        allowCloudBeneficiaryNames: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    السماح بإرسال أسماء المستفيدين للمساعد السحابي (اختياري — افتراضياً محجوب للخصوصية)
+                  </span>
+                </label>
+              </section>
+
+              {/* Morrow AI Assistant Settings: Free Flash-Lite Model, Quota, Cache & Offline Control */}
+              <section
+                data-testid="assistant-settings-section"
+                className="rounded-xl border p-5 space-y-4"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Bot className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <div>
+                      <h2 className="text-base font-bold">
+                        إعدادات المساعد الذكي Morrow (النموذج المجاني والحصة)
+                      </h2>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        التسلسل التلقائي المجاني: Flash-Lite ← النموذج الاحتياطي ← المحرك المحلي بدون توقف
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                    style={{
+                      backgroundColor:
+                        assistantConnectivity === 'online'
+                          ? 'var(--success-bg)'
+                          : 'var(--warning-bg)',
+                      borderColor:
+                        assistantConnectivity === 'online'
+                          ? 'var(--success)'
+                          : assistantConnectivity === 'quota_exhausted'
+                          ? 'var(--danger)'
+                          : 'var(--warning)',
+                      color:
+                        assistantConnectivity === 'online'
+                          ? 'var(--success)'
+                          : assistantConnectivity === 'quota_exhausted'
+                          ? 'var(--danger)'
+                          : 'var(--warning)',
+                    }}
+                  >
+                    {assistantConnectivity === 'online'
+                      ? 'متصل (أونلاين)'
+                      : assistantConnectivity === 'quota_exhausted'
+                      ? 'الحصة خلصت — يعمل محلياً'
+                      : 'أوفلاين (محلي)'}
+                  </span>
+                </div>
+
+                {/* Hard Offline Toggle */}
+                <label
+                  className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 text-xs font-bold"
+                  style={{
+                    backgroundColor: assistantSettings.onlineDisabled
+                      ? 'var(--warning-bg)'
+                      : 'var(--bg-main)',
+                    borderColor: assistantSettings.onlineDisabled
+                      ? 'var(--warning)'
+                      : 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <WifiOff
+                      className="h-4 w-4 shrink-0"
+                      style={{
+                        color: assistantSettings.onlineDisabled
+                          ? 'var(--warning)'
+                          : 'var(--text-muted)',
+                      }}
+                    />
+                    <div>
+                      <div>تعطيل الأونلاين كلياً (وضع أوفلاين 100%)</div>
+                      <div
+                        className="text-[11px] font-normal"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        يمنع أي اتصال خارجي للمساعد ويشغّل كل الأوامر والبحث محلياً داخل جهازك فقط.
+                      </div>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={assistantSettings.onlineDisabled}
+                    onChange={(e) =>
+                      onUpdateAssistantSettings?.({
+                        onlineDisabled: e.target.checked,
+                      })
+                    }
+                  />
+                </label>
+
+                {/* Free Model Selector & Custom Model ID */}
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 text-xs">
+                  <div
+                    className="rounded-xl border p-3 space-y-2"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <label
+                      htmlFor="assistant-model-select"
+                      className="flex items-center gap-1.5 font-bold"
+                    >
+                      <Cpu className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                      <span>نموذج السحابة الافتراضي (ضمن الدماغ الثلاثي)</span>
+                    </label>
+                    <select
+                      id="assistant-model-select"
+                      value={assistantSettings.preferredModelId}
+                      onChange={(e) =>
+                        onUpdateAssistantSettings?.({
+                          preferredModelId: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border px-2.5 py-2 text-xs font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      {FREE_GEMINI_MODEL_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p
+                      className="pt-1 text-[11px] leading-relaxed"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      التسلسل الحصري: يبدأ المساعد بمحرك Morrow المحلي، ويصعّد عند الحاجة اللغوية إلى{' '}
+                      <span dir="ltr" className="font-mono font-bold">
+                        gemini-2.5-flash
+                      </span>{' '}
+                      ثم إلى{' '}
+                      <span dir="ltr" className="font-mono font-bold">
+                        gemini-2.5-pro
+                      </span>{' '}
+                      للتحليل العميق.
+                    </p>
+                  </div>
+
+                  {/* Quota Monitor & Limits */}
+                  <div
+                    className="rounded-xl border p-3 space-y-2"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span>عداد الطلبات السحابية اليومي</span>
+                      <span className="tabular-nums" style={{ color: 'var(--accent)' }}>
+                        {assistantQuotaInfo?.dailyUsed ?? 0} / {assistantSettings.dailyRequestLimit}
+                      </span>
+                    </div>
+                    <div
+                      className="h-2 w-full overflow-hidden rounded-full"
+                      style={{ backgroundColor: 'var(--bg-surface)' }}
+                    >
+                      <div
+                        className="h-full transition-all"
+                        style={{
+                          width: `${assistantQuotaInfo?.dailyPercent ?? 0}%`,
+                          backgroundColor:
+                            (assistantQuotaInfo?.dailyPercent ?? 0) >=
+                            assistantSettings.quotaWarningPercent
+                              ? 'var(--warning)'
+                              : 'var(--success)',
+                        }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label
+                          htmlFor="assistant-daily-limit"
+                          className="mb-0.5 block text-[10px] font-semibold"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          الحد اليومي
+                        </label>
+                        <input
+                          id="assistant-daily-limit"
+                          type="number"
+                          min={10}
+                          max={5000}
+                          value={assistantSettings.dailyRequestLimit}
+                          onChange={(e) =>
+                            onUpdateAssistantSettings?.({
+                              dailyRequestLimit: Math.max(10, Number(e.target.value) || 250),
+                            })
+                          }
+                          className="w-full rounded-lg border px-2 py-1 text-xs tabular-nums"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="assistant-warn-pct"
+                          className="mb-0.5 block text-[10px] font-semibold"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          تنبيه الحصة (%)
+                        </label>
+                        <input
+                          id="assistant-warn-pct"
+                          type="number"
+                          min={50}
+                          max={98}
+                          value={assistantSettings.quotaWarningPercent}
+                          onChange={(e) =>
+                            onUpdateAssistantSettings?.({
+                              quotaWarningPercent: Math.max(
+                                50,
+                                Math.min(98, Number(e.target.value) || 80)
+                              ),
+                            })
+                          }
+                          className="w-full rounded-lg border px-2 py-1 text-xs tabular-nums"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {onResetAssistantQuota && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onResetAssistantQuota();
+                            notifySuccess('تم تصفير عداد طلبات المساعد.');
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          <span>تصفير العداد</span>
+                        </button>
+                      )}
+                      {onClearAssistantCache && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClearAssistantCache();
+                            notifySuccess('تم مسح ذاكرة الردود المؤقتة.');
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>مسح الكاش ({assistantCacheCount})</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cache Toggle + Server Secrets Explanation */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <label className="flex cursor-pointer items-center gap-2 font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={assistantSettings.cacheEnabled}
+                      onChange={(e) =>
+                        onUpdateAssistantSettings?.({
+                          cacheEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                    <span>حفظ الردود المتكررة محلياً (Cache) لتوفير الحصة</span>
+                  </label>
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    مفتاح Gemini يُدار بأمان على الخادم عبر Settings &gt; Secrets دون تخزين أي مفتاح في المتصفح.
+                  </span>
+                </div>
               </section>
 
               {/* Privacy Lock */}
@@ -3269,8 +4230,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </section>
             </div>
           )}
-        </div>
-      </div>
-    </main>
+          </div>
+        </main>
+      )}
+    </div>
   );
 };

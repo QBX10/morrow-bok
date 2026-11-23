@@ -550,7 +550,12 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
             </th>
 
             {orderedColumns.map((colId) => {
-              const isName = colId === 'name';
+              const effectivePinnedColId =
+                expertTableConfig?.pinnedColumnId === undefined
+                  ? 'name'
+                  : expertTableConfig.pinnedColumnId;
+              const isPinned =
+                Boolean(effectivePinnedColId) && colId === effectivePinnedColId;
               const isCentered = [
                 'serial',
                 'letter',
@@ -566,13 +571,17 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
               return (
                 <th
                   key={colId}
+                  data-col-id={colId}
+                  data-pinned={isPinned ? 'true' : undefined}
                   className={`border-l px-3 font-bold whitespace-nowrap ${
                     isCentered ? 'text-center' : ''
                   } ${
                     themePrefs.stickyHeaderAndName
-                      ? isName
+                      ? isPinned
                         ? 'sticky right-0 top-0 z-30 shadow-[-2px_0_4px_rgba(0,0,0,0.06)]'
                         : 'sticky top-0 z-20'
+                      : isPinned
+                      ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
                       : ''
                   }`}
                   style={{
@@ -725,14 +734,35 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                   </td>
 
                   {orderedColumns.map((colId) => {
+                    const effectivePinnedColId =
+                      expertTableConfig?.pinnedColumnId === undefined
+                        ? 'name'
+                        : expertTableConfig.pinnedColumnId;
+                    const isPinned =
+                      Boolean(effectivePinnedColId) &&
+                      colId === effectivePinnedColId;
+                    const stickyCellClass = isPinned
+                      ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
+                      : '';
+                    const stickyCellBg = isPinned
+                      ? isRowSelected || isFocused
+                        ? 'var(--bg-nav-active)'
+                        : highlightBlocked
+                        ? 'var(--danger-bg)'
+                        : isZeroInd
+                        ? 'var(--warning-bg)'
+                        : 'var(--bg-surface)'
+                      : undefined;
+
                     if (colId === 'serial') {
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-3 text-center whitespace-nowrap ${numClass}`}
+                          className={`border-l px-3 text-center whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                         >
                           {index + 1}
@@ -744,10 +774,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-2.5 text-center font-bold whitespace-nowrap"
+                          className={`border-l px-2.5 text-center font-bold whitespace-nowrap ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                         >
                           {initialLetter(row.name)}
@@ -760,21 +791,18 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                         <td
                           key={colId}
                           title={isDuplicateName ? 'اسم مكرر في هذا الجدول' : undefined}
-                          className={`border-l px-3 font-semibold whitespace-nowrap ${
-                            themePrefs.stickyHeaderAndName
-                              ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
-                              : ''
-                          }`}
+                          className={`border-l px-3 font-semibold whitespace-nowrap ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
-                            backgroundColor:
-                              isRowSelected || isFocused
+                            backgroundColor: isPinned
+                              ? isRowSelected || isFocused
                                 ? 'var(--bg-nav-active)'
                                 : isDuplicateName || highlightBlocked
                                 ? 'var(--danger-bg)'
                                 : isZeroInd
                                 ? 'var(--warning-bg)'
-                                : 'var(--bg-surface)',
+                                : 'var(--bg-surface)'
+                              : undefined,
                             color: isDuplicateName ? 'var(--danger)' : undefined,
                             borderTop: groupTopBorder,
                           }}
@@ -823,6 +851,14 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             <span className="inline-flex items-center gap-1.5">
                               <button
                                 type="button"
+                                aria-label={`تحديد ${row.name}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleSelectRow(row.selectionId);
+                                  if (themePrefs.activeRowFocusMode && onFocusRow) {
+                                    onFocusRow(row.rowKey);
+                                  }
+                                }}
                                 className="text-right font-semibold hover:underline"
                               >
                                 {row.name}
@@ -845,11 +881,12 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-3 text-xs whitespace-nowrap"
+                          className={`border-l px-3 text-xs whitespace-nowrap ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             color: 'var(--text-muted)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                         >
                           {row.agencyName || '—'}
@@ -863,10 +900,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-2.5 text-xs whitespace-nowrap"
+                          className={`border-l px-2.5 text-xs whitespace-nowrap ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                           onClick={(e) => editableInline && e.stopPropagation()}
                         >
@@ -914,10 +952,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-3 text-center font-bold whitespace-nowrap ${numClass}`}
+                          className={`border-l px-3 text-center font-bold whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             ...(isBlocked ? {} : numericTintStyle),
+                            ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                             borderTop: groupTopBorder,
                           }}
                           onClick={(e) => editableInline && e.stopPropagation()}
@@ -994,10 +1033,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-2.5 text-center whitespace-nowrap ${numClass}`}
+                          className={`border-l px-2.5 text-center whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             ...(isBlocked ? {} : numericTintStyle),
+                            ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -1032,10 +1072,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-2.5 text-center whitespace-nowrap ${numClass}`}
+                          className={`border-l px-2.5 text-center whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             ...(isBlocked ? {} : numericTintStyle),
+                            ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -1095,10 +1136,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-3 text-center whitespace-nowrap ${numClass}`}
+                          className={`border-l px-3 text-center whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             ...(isBlocked ? {} : numericTintStyle),
+                            ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                             borderTop: groupTopBorder,
                           }}
                         >
@@ -1111,10 +1153,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className={`border-l px-3 text-center whitespace-nowrap ${numClass}`}
+                          className={`border-l px-3 text-center whitespace-nowrap ${numClass} ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             ...(isBlocked ? {} : numericTintStyle),
+                            ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                             borderTop: groupTopBorder,
                           }}
                         >
@@ -1127,10 +1170,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-3 text-center text-xs font-semibold whitespace-nowrap"
+                          className={`border-l px-3 text-center text-xs font-semibold whitespace-nowrap ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                         >
                           {themePrefs.compactStatusBadges ? (
@@ -1156,8 +1200,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-2.5 text-center text-xs whitespace-nowrap"
-                          style={{ borderColor: 'var(--grid-color)' }}
+                          className={`border-l px-2.5 text-center text-xs whitespace-nowrap ${stickyCellClass}`}
+                          style={{
+                            borderColor: 'var(--grid-color)',
+                            backgroundColor: stickyCellBg,
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="font-bold" style={{ color: routeColor }}>
@@ -1207,11 +1254,12 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       return (
                         <td
                           key={colId}
-                          className="border-l px-3 text-xs"
+                          className={`border-l px-3 text-xs ${stickyCellClass}`}
                           style={{
                             borderColor: 'var(--grid-color)',
                             color: 'var(--text-muted)',
                             borderTop: groupTopBorder,
+                            backgroundColor: stickyCellBg,
                           }}
                           onClick={(e) => editableInline && e.stopPropagation()}
                         >
@@ -1247,10 +1295,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                         key={colId}
                         className={`border-l px-3 text-xs whitespace-nowrap ${
                           customDef?.type === 'number' ? numClass : ''
-                        }`}
+                        } ${stickyCellClass}`}
                         style={{
                           borderColor: 'var(--grid-color)',
                           borderTop: groupTopBorder,
+                          backgroundColor: stickyCellBg,
                         }}
                         onClick={(e) => editableInline && e.stopPropagation()}
                       >

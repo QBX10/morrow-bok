@@ -1,5 +1,6 @@
 import type {
   AppDatabaseState,
+  ExpertColumnPreset,
   ExpertTableConfig,
   GeneralAppPrefs,
   QuickExtractPrefs,
@@ -7,6 +8,116 @@ import type {
   SecurityPrefs,
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS } from '../utils/agencyLogic';
+
+export const DEFAULT_EXPERT_COLUMN_PRESETS: ExpertColumnPreset[] = [
+  {
+    id: 'preset_default',
+    name: 'القالب الافتراضي المتكامل',
+    visibleColumns: [
+      'serial',
+      'letter',
+      'name',
+      'agency',
+      'individuals',
+      'quantity',
+      'price',
+      'status',
+      'notes',
+    ],
+    columnOrder: [
+      'serial',
+      'letter',
+      'name',
+      'agency',
+      'category',
+      'individuals',
+      'quantity',
+      'price',
+      'status',
+      'notes',
+    ],
+    pinnedColumnId: 'name',
+    isBuiltIn: true,
+  },
+  {
+    id: 'preset_audit',
+    name: 'قالب التدقيق والفحص',
+    visibleColumns: [
+      'serial',
+      'name',
+      'agency',
+      'category',
+      'individuals',
+      'status',
+      'notes',
+    ],
+    columnOrder: [
+      'serial',
+      'name',
+      'status',
+      'individuals',
+      'category',
+      'agency',
+      'notes',
+      'letter',
+      'quantity',
+      'price',
+    ],
+    pinnedColumnId: 'name',
+    isBuiltIn: true,
+  },
+  {
+    id: 'preset_field_dist',
+    name: 'قالب التوزيع الميداني',
+    visibleColumns: [
+      'serial',
+      'name',
+      'individuals',
+      'quantity',
+      'notes',
+    ],
+    columnOrder: [
+      'serial',
+      'name',
+      'individuals',
+      'quantity',
+      'notes',
+      'agency',
+      'status',
+      'price',
+      'category',
+      'letter',
+    ],
+    pinnedColumnId: 'name',
+    isBuiltIn: true,
+  },
+  {
+    id: 'preset_finance',
+    name: 'قالب المالية والتحصيل',
+    visibleColumns: [
+      'serial',
+      'name',
+      'individuals',
+      'quantity',
+      'price',
+      'status',
+    ],
+    columnOrder: [
+      'serial',
+      'name',
+      'individuals',
+      'price',
+      'quantity',
+      'status',
+      'agency',
+      'category',
+      'notes',
+      'letter',
+    ],
+    pinnedColumnId: 'name',
+    isBuiltIn: true,
+  },
+];
 
 export const DEFAULT_EXPERT_TABLE_CONFIG: ExpertTableConfig = {
   visibleColumns: [
@@ -36,6 +147,9 @@ export const DEFAULT_EXPERT_TABLE_CONFIG: ExpertTableConfig = {
   customCategories: ['عام', 'أولوية', 'مراجعة', 'حالة خاصة'],
   customColumns: [],
   allowDirectNoConfirmEdit: false,
+  pinnedColumnId: 'name',
+  columnPresets: DEFAULT_EXPERT_COLUMN_PRESETS,
+  activePresetId: 'preset_default',
 };
 
 export const DEFAULT_QUICK_EXTRACT_PREFS: QuickExtractPrefs = {

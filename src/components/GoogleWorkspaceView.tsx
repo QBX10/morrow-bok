@@ -331,22 +331,36 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
     .slice(0, 4);
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Header */}
       <div
-        className="tabrix-card flex flex-wrap items-center justify-between gap-3 border p-4"
+        data-assistant-target="google-workspace-root"
+        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-color)',
         }}
       >
-        <div>
-          <h1 className="text-lg font-bold sm:text-xl">
-            تقويم ومهام Google — جدولة الحصص والمتابعة
-          </h1>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            مزامنة مباشرة مع Google Calendar و Google Tasks لجدولة مواعيد الحصص الغذائية ومهام التوصيل
-          </p>
+        <div className="flex items-start gap-3.5 min-w-0">
+          <span
+            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
+              color: 'var(--accent)',
+            }}
+            aria-hidden="true"
+          >
+            <Calendar className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-extrabold sm:text-xl">
+              تقويم ومهام Google — جدولة الحصص والمتابعة
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+              مزامنة مباشرة مع Google Calendar و Google Tasks لجدولة مواعيد الحصص الغذائية ومهام التوصيل
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">

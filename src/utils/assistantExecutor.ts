@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import type {
   Agency,
   AppDatabaseState,
@@ -17,14 +16,14 @@ import type {
   AssistantSlotSession,
   AssistantToolCall,
   AssistantUiContext,
+  AssistantUserPref,
   DiagnosticSummary,
 } from '../types/assistant.ts';
+import { runAsyncExportTask } from '../hooks/useToastQueue.ts';
 import {
   computeAgencyMetrics,
   formatIqd,
   formatTotalQuota,
-  getEffectiveAllocationForPerson,
-  initialLetter,
 } from './agencyLogic.ts';
 import { runAppDiagnostics } from './assistantDiagnostics.ts';
 import {
@@ -40,11 +39,13 @@ import {
 } from './assistantTools.ts';
 import {
   exportFinancialReportToExcel,
+  exportFormattedRosterToPdf,
   exportReadyListToExcel,
   exportReadyListToImage,
   exportReadyListToTextFile,
-  printViaIframe,
+  exportRosterToExcel,
 } from './excelExport.ts';
+import { getExportMemoryFlags } from './exportFormatting.ts';
 
 export interface AssistantActionRuntime {
   state: AppDatabaseState;
@@ -63,6 +64,7 @@ export interface AssistantActionRuntime {
   }) => void;
   setModeTier: (tier: AppModeTier) => void;
   setAppTheme: (themeId: AppThemeId) => void;
+  setDarkTheme: (dark: boolean) => void;
   setAllowCloudNames: (allowed: boolean) => void;
   saveUserPref: (key: string, label: string, value: string | boolean | number) => void;
   deleteUserPref: (prefId: string) => void;
@@ -81,6 +83,8 @@ export interface ToolExecutionResolution {
   sandboxNotice?: string;
   diagnosticsReport?: DiagnosticSummary;
   switchedToOffline?: boolean;
+  stealthExecuted?: boolean;
+  autoCloseChat?: boolean;
 }
 
 export function exportSandboxRosterToExcel(params: {
@@ -88,39 +92,14 @@ export function exportSandboxRosterToExcel(params: {
   persons: ReadonlyArray<Person>;
   agencies: ReadonlyArray<Agency>;
   settings: Readonly<CalculationSettings>;
+  preferences?: ReadonlyArray<AssistantUserPref>;
   hideStatusColumn?: boolean;
+  hideAmountColumn?: boolean;
 }) {
-  const { filename, persons, agencies, settings, hideStatusColumn } = params;
-  const agencyMap = new Map(agencies.map((a) => [a.id, a.name]));
-
-  const rows = persons.map((person, idx) => {
-    const eff = getEffectiveAllocationForPerson(person, settings);
-    const base: Record<string, string | number> = {
-      '#': idx + 1,
-      الحرف: initialLetter(person.name),
-      الاسم: person.name,
-      الوكالة: agencyMap.get(person.agencyId) || '',
-      'الأفراد المستحقون':
-        eff.summary.scope === 'partial'
-          ? `${eff.eligibleIndividuals} من ${person.individuals ?? 0}`
-          : eff.summary.scope === 'full'
-          ? 0
-          : person.individuals ?? '',
-      الحصة: eff.quotaText,
-      'المبلغ (د.ع)': eff.priceIqd ?? 0,
-    };
-    if (!hideStatusColumn) {
-      base['الحالة'] = eff.summary.shortLabel;
-    }
-    base['الملاحظات'] = person.notes || '';
-    return base;
+  exportRosterToExcel({
+    ...params,
+    sheetName: 'نسخة معزولة',
   });
-
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(wb, ws, 'نسخة معزولة');
-  XLSX.writeFile(wb, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
 }
 
 export function printSandboxRosterPdf(params: {
@@ -128,47 +107,22 @@ export function printSandboxRosterPdf(params: {
   persons: ReadonlyArray<Person>;
   agencies: ReadonlyArray<Agency>;
   settings: Readonly<CalculationSettings>;
+  preferences?: ReadonlyArray<AssistantUserPref>;
+  themeId?: AppThemeId;
   hideStatusColumn?: boolean;
+  hideAmountColumn?: boolean;
 }) {
-  const { title, persons, agencies, settings, hideStatusColumn } = params;
-  const agencyMap = new Map(agencies.map((a) => [a.id, a.name]));
-  const rowsHtml = persons
-    .map((p, idx) => {
-      const eff = getEffectiveAllocationForPerson(p, settings);
-      return `<tr>
-        <td>${idx + 1}</td>
-        <td>${initialLetter(p.name)}</td>
-        <td style="text-align:right">${p.name}</td>
-        <td>${agencyMap.get(p.agencyId) || ''}</td>
-        <td>${eff.eligibleIndividuals ?? 0}</td>
-        <td>${eff.quotaText}</td>
-        <td>${eff.priceText}</td>
-        ${hideStatusColumn ? '' : `<td>${eff.summary.shortLabel}</td>`}
-        <td>${p.notes || ''}</td>
-      </tr>`;
-    })
-    .join('');
-
-  printViaIframe(`<!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${title}</title>
-<style>
-  body { font-family: Cairo, Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  .note { font-size: 11px; color: #475569; margin-bottom: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border: 1px solid #94a3b8; padding: 6px; text-align: center; }
-  th { background: #e2e8f0; }
-</style></head>
-<body>
-  <h1>${title}</h1>
-  <div class="note">نسخة تقرير معزولة للقراءة فقط (Sandbox)</div>
-  <table>
-    <thead><tr><th>#</th><th>الحرف</th><th>الاسم</th><th>الوكالة</th><th>الأفراد</th><th>الحصة</th><th>المبلغ</th>${
-      hideStatusColumn ? '' : '<th>الحالة</th>'
-    }<th>الملاحظات</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-</body></html>`);
+  exportFormattedRosterToPdf({
+    title: params.title,
+    subtitle: 'نسخة تقرير معزولة للقراءة فقط (Sandbox)',
+    persons: params.persons,
+    agencies: params.agencies,
+    settings: params.settings,
+    preferences: params.preferences,
+    themeId: params.themeId,
+    hideStatusColumn: params.hideStatusColumn,
+    hideAmountColumn: params.hideAmountColumn,
+  });
 }
 
 /**
@@ -381,6 +335,8 @@ export function resolveToolExecution(
 
       return {
         gracefulLevel: 'A',
+        stealthExecuted: true,
+        autoCloseChat: true,
         replyText: cloudText || 'طبّقت الفلترة والترتيب المطلوب على الجدول.',
       };
     }
@@ -502,12 +458,15 @@ export function resolveToolExecution(
         | 'roster'
         | 'finance'
         | 'ready_list';
-      const ag = findAgencyByIdOrFallback(sandboxSnapshot as unknown as AppDatabaseState, toolCall.args.agencyId);
+      const ag = findAgencyByIdOrFallback(
+        sandboxSnapshot as unknown as AppDatabaseState,
+        toolCall.args.agencyId
+      );
+      const memFlags = getExportMemoryFlags(uiContext.preferences);
       const hideStatusPref =
-        Boolean(toolCall.args.hideStatusColumn) ||
-        uiContext.preferences.some(
-          (p) => p.key === 'hide_status_in_reports' && String(p.value) === 'true'
-        );
+        Boolean(toolCall.args.hideStatusColumn) || memFlags.hideStatusColumn;
+      const hideAmountPref =
+        Boolean(toolCall.args.hideAmountColumn) || memFlags.hideAmountColumn;
 
       const scopedPersons = ag
         ? sandboxSnapshot.persons.filter((p) => p.agencyId === ag.id)
@@ -517,14 +476,7 @@ export function resolveToolExecution(
         : sandboxSnapshot.expenses;
       const targetTitle = ag ? ag.name : 'جميع الوكالات';
 
-      if (target === 'finance') {
-        exportFinancialReportToExcel({
-          agencyName: targetTitle,
-          persons: [...scopedPersons],
-          expenses: [...scopedExpenses],
-          settings: { ...sandboxSnapshot.calculationSettings },
-        });
-      } else if (target === 'ready_list') {
+      if (target === 'ready_list') {
         const list =
           sandboxSnapshot.readyLists.find(
             (l) => l.id === Number(toolCall.args.listId)
@@ -538,53 +490,99 @@ export function resolveToolExecution(
         const listItems = sandboxSnapshot.readyListItems.filter(
           (it) => it.listId === list.id
         );
-        if (format === 'image') {
-          void exportReadyListToImage({
-            list: { ...list },
-            items: listItems.map((it) => ({ ...it })),
-            persons: [...sandboxSnapshot.persons],
-            settings: { ...sandboxSnapshot.calculationSettings },
-          });
-        } else if (format === 'text') {
-          exportReadyListToTextFile({
-            list: { ...list },
-            items: listItems.map((it) => ({ ...it })),
-            persons: [...sandboxSnapshot.persons],
-            settings: { ...sandboxSnapshot.calculationSettings },
-          });
-        } else {
-          exportReadyListToExcel({
-            list: { ...list },
-            items: listItems.map((it) => ({ ...it })),
-            persons: [...sandboxSnapshot.persons],
-            settings: { ...sandboxSnapshot.calculationSettings },
-          });
-        }
+        runAsyncExportTask(
+          `جاري تجهيز تصدير «${list.name}»...`,
+          `تم تصدير «${list.name}» (${format.toUpperCase()}) بنجاح`,
+          async () => {
+            if (format === 'image') {
+              await exportReadyListToImage({
+                list: { ...list },
+                items: listItems.map((it) => ({ ...it })),
+                persons: [...sandboxSnapshot.persons],
+                settings: { ...sandboxSnapshot.calculationSettings },
+              });
+            } else if (format === 'text') {
+              exportReadyListToTextFile({
+                list: { ...list },
+                items: listItems.map((it) => ({ ...it })),
+                persons: [...sandboxSnapshot.persons],
+                settings: { ...sandboxSnapshot.calculationSettings },
+                preferences: uiContext.preferences,
+              });
+            } else {
+              exportReadyListToExcel({
+                list: { ...list },
+                items: listItems.map((it) => ({ ...it })),
+                persons: [...sandboxSnapshot.persons],
+                settings: { ...sandboxSnapshot.calculationSettings },
+                preferences: uiContext.preferences,
+              });
+            }
+          }
+        );
+      } else if (target === 'finance') {
+        runAsyncExportTask(
+          `جاري تجهيز التقرير المالي (${targetTitle})...`,
+          `تم تصدير التقرير المالي «${targetTitle}» بنجاح`,
+          () => {
+            exportFinancialReportToExcel({
+              agencyName: targetTitle,
+              persons: [...scopedPersons],
+              expenses: [...scopedExpenses],
+              settings: { ...sandboxSnapshot.calculationSettings },
+              preferences: uiContext.preferences,
+            });
+          }
+        );
       } else if (format === 'pdf') {
-        printSandboxRosterPdf({
-          title: `تقرير ${targetTitle}`,
-          persons: scopedPersons,
-          agencies: sandboxSnapshot.agencies,
-          settings: sandboxSnapshot.calculationSettings,
-          hideStatusColumn: hideStatusPref,
-        });
+        runAsyncExportTask(
+          `جاري تجهيز طباعة PDF (${targetTitle})...`,
+          `تم تجهيز تقرير PDF «${targetTitle}» بنجاح`,
+          () => {
+            printSandboxRosterPdf({
+              title: `تقرير ${targetTitle}`,
+              persons: scopedPersons,
+              agencies: sandboxSnapshot.agencies,
+              settings: sandboxSnapshot.calculationSettings,
+              preferences: uiContext.preferences,
+              themeId: uiContext.themeId,
+              hideStatusColumn: hideStatusPref,
+              hideAmountColumn: hideAmountPref,
+            });
+          }
+        );
       } else {
-        exportSandboxRosterToExcel({
-          filename: `تقرير_${targetTitle}`,
-          persons: scopedPersons,
-          agencies: sandboxSnapshot.agencies,
-          settings: sandboxSnapshot.calculationSettings,
-          hideStatusColumn: hideStatusPref,
-        });
+        runAsyncExportTask(
+          `جاري تجهيز ملف Excel (${targetTitle})...`,
+          `تم تصدير ملف Excel «${targetTitle}» بنجاح`,
+          () => {
+            exportSandboxRosterToExcel({
+              filename: `تقرير_${targetTitle}`,
+              persons: scopedPersons,
+              agencies: sandboxSnapshot.agencies,
+              settings: sandboxSnapshot.calculationSettings,
+              preferences: uiContext.preferences,
+              hideStatusColumn: hideStatusPref,
+              hideAmountColumn: hideAmountPref,
+            });
+          }
+        );
       }
+
+      const appliedRulesNotes = [
+        ...(hideAmountPref ? ['إخفاء المبلغ'] : []),
+        ...(hideStatusPref ? ['إخفاء الحالة'] : []),
+      ];
 
       return {
         gracefulLevel: 'A',
-        replyText: `تم تصدير تقرير «${targetTitle}» (${format.toUpperCase()}) بنجاح${
-          hideStatusPref ? ' مع إخفاء عمود الحالة حسب تفضيلك' : ''
+        stealthExecuted: true,
+        autoCloseChat: true,
+        replyText: `تم بدء تصدير تقرير «${targetTitle}» (${format.toUpperCase()}) في الخلفية${
+          appliedRulesNotes.length > 0 ? ` مع تطبيق (${appliedRulesNotes.join(' و')})` : ''
         }.`,
         sandboxNotice:
-          'نُفّذ التصدير على نسخة معزولة للقراءة فقط (Sandbox) — الجدول الأصلي لم يتأثر إطلاقاً.',
+          'نُفّذ التصدير غير المحجوب على نسخة معزولة للقراءة فقط (Sandbox) — الجدول الأصلي لم يتأثر.',
       };
     }
 
@@ -637,6 +635,8 @@ export function resolveToolExecution(
       }
       return {
         gracefulLevel: 'A',
+        stealthExecuted: true,
+        autoCloseChat: true,
         replyText: cloudText || 'انتقلت لك للشاشة المطلوبة.',
       };
     }
@@ -650,13 +650,26 @@ export function resolveToolExecution(
         runtime.saveUserPref(key, label, value);
         return {
           gracefulLevel: 'A',
-          replyText: `تم حفظ التفضيل: «${label}». سأطبقه تلقائياً في المرات القادمة.`,
+          replyText: `تم حفظ القاعدة في الذاكرة: «${label}». سأطبقها تلقائياً في التقارير القادمة.`,
+        };
+      }
+      if (action === 'set_dark_theme') {
+        const isDark = String(toolCall.args.value) === 'true';
+        runtime.setDarkTheme(isDark);
+        return {
+          gracefulLevel: 'A',
+          stealthExecuted: true,
+          autoCloseChat: true,
+          replyText: isDark
+            ? 'تم تفعيل الوضع الليلي بنجاح.'
+            : 'تم تفعيل الوضع النهاري بنجاح.',
         };
       }
       if (action === 'set_mode' && toolCall.args.value) {
         runtime.setModeTier(toolCall.args.value as AppModeTier);
         return {
           gracefulLevel: 'A',
+          stealthExecuted: true,
           replyText: `تم تبديل وضع التطبيق إلى: ${String(toolCall.args.value)}.`,
         };
       }
@@ -664,6 +677,8 @@ export function resolveToolExecution(
         runtime.setAppTheme(toolCall.args.value as AppThemeId);
         return {
           gracefulLevel: 'A',
+          stealthExecuted: true,
+          autoCloseChat: true,
           replyText: `تم تغيير ثيم التطبيق إلى: ${String(toolCall.args.value)}.`,
         };
       }
@@ -680,6 +695,7 @@ export function resolveToolExecution(
       runtime.navigate('settings', 'general');
       return {
         gracefulLevel: 'A',
+        stealthExecuted: true,
         replyText: 'فتحت لك شاشة الإعدادات.',
       };
     }

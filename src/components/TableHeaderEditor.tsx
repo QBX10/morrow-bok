@@ -31,10 +31,10 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
   useEffect(() => {
     const cleanTitle = meta.title.trim();
     if (cleanTitle) {
-      document.title = `${cleanTitle} — تابريكس`;
+      document.title = `${cleanTitle} — Morrow`;
     }
     return () => {
-      document.title = 'تابريكس';
+      document.title = 'Morrow';
     };
   }, [meta.title]);
 

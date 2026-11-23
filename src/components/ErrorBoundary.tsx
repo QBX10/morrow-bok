@@ -75,7 +75,7 @@ export class ErrorBoundary extends React.Component<
             >
               <AlertTriangle className="h-6 w-6" />
             </div>
-            <h1 className="text-lg font-bold">تابريكس — تنبيه استقرار الواجهة</h1>
+            <h1 className="text-lg font-bold">Morrow — تنبيه استقرار الواجهة</h1>
             <p
               className="text-xs leading-relaxed"
               style={{ color: 'var(--text-muted, #94a3b8)' }}

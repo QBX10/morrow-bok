@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Columns3,
   Download,
@@ -10,16 +9,13 @@ import {
   Plus,
   Printer,
   Redo2,
-  RotateCcw,
   Search,
   ShieldAlert,
-  SlidersHorizontal,
-  Tag,
-  Trash2,
   Undo2,
 } from 'lucide-react';
 import type {
   Agency,
+  BlockScope,
   CalculationSettings,
   ExpertTableConfig,
   PeriodQuotaMeta,
@@ -32,15 +28,17 @@ import type {
 } from '../types/agency';
 import {
   auditAgencyPersons,
-  getEffectiveAllocationForPerson,
-  initialLetter,
   normalizeArabic,
 } from '../utils/agencyLogic';
 import { formatPeriodDateYMD, resolvePeriodMeta } from '../utils/archiveLogic';
-import { exportRosterToExcel, printViaIframe } from '../utils/excelExport';
+import {
+  exportFormattedRosterToPdf,
+  exportRosterToExcel,
+} from '../utils/excelExport';
+import { runAsyncExportTask } from '../hooks/useToastQueue';
 import type { ModeCapabilities } from '../utils/modePermissions';
-import { moveExpertColumnInOrder } from '../utils/recycleBin';
 import { resolveSectionTableHeader } from '../utils/relationMeta';
+import { ColumnCustomizerPanel } from './ColumnCustomizerPanel';
 import {
   CoreRosterTable,
   type CoreRosterInlinePatch,
@@ -96,6 +94,23 @@ interface AgencyRosterViewProps {
   onRemoveExpertCustomColumn: (colId: string) => void;
   onResetExpertTableConfig: () => void;
   onOpenSettings: () => void;
+  onBulkDeletePersons?: (personIds: number[]) => void;
+  onBulkUpdateStatusAndCategory?: (
+    personIds: number[],
+    patch: {
+      blockType?: BlockScope;
+      blockedIndividuals?: number;
+      blockReason?: string;
+      customCategory?: string;
+    }
+  ) => void;
+  onCreateReadyListFromSelection?: (params: {
+    name: string;
+    personIds: number[];
+  }) => { listId: number; addedCount: number } | void;
+  columnCustomizerOpen?: boolean;
+  onColumnCustomizerOpenChange?: (open: boolean) => void;
+  onEnableExpertModeForCustomizer?: () => void;
   externalTableCommand?: import('../types/assistant').AssistantExternalTableCommand | null;
   onFocusedPersonChange?: (personId: number | null) => void;
 }
@@ -145,6 +160,12 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
   onRemoveExpertCustomColumn,
   onResetExpertTableConfig,
   onOpenSettings,
+  onBulkDeletePersons,
+  onBulkUpdateStatusAndCategory,
+  onCreateReadyListFromSelection,
+  columnCustomizerOpen,
+  onColumnCustomizerOpenChange,
+  onEnableExpertModeForCustomizer,
   externalTableCommand,
   onFocusedPersonChange,
 }) => {
@@ -157,12 +178,21 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
     'default' | 'name_asc' | 'individuals_desc'
   >('default');
   const [showAuditPanel, setShowAuditPanel] = useState(false);
-  const [showExpertPanel, setShowExpertPanel] = useState(false);
+  const [localExpertPanelOpen, setLocalExpertPanelOpen] = useState(false);
   const [expertInlineEdit, setExpertInlineEdit] = useState(false);
-  const [newColLabel, setNewColLabel] = useState('');
-  const [newColType, setNewColType] = useState<'text' | 'number'>('text');
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [bulkCategoryValue, setBulkCategoryValue] = useState('');
+
+  const showExpertPanel =
+    columnCustomizerOpen !== undefined
+      ? columnCustomizerOpen
+      : localExpertPanelOpen;
+  const setShowExpertPanel = (
+    updater: boolean | ((prev: boolean) => boolean)
+  ) => {
+    const next =
+      typeof updater === 'function' ? updater(showExpertPanel) : updater;
+    setLocalExpertPanelOpen(next);
+    onColumnCustomizerOpenChange?.(next);
+  };
 
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
@@ -217,10 +247,9 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
     }
   }, [externalTableCommand]);
 
-  // Disable Expert inline/panel controls immediately when leaving Expert mode
+  // Disable Expert inline edit when leaving Expert mode
   useEffect(() => {
     if (!capabilities.isExpertMode) {
-      setShowExpertPanel(false);
       setExpertInlineEdit(false);
     }
   }, [capabilities.isExpertMode]);
@@ -251,50 +280,50 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
   const visiblePersons = useMemo(() => {
     let list = scopedPersons;
 
-    if (capabilities.canSortAndFilter) {
-      const qNorm = normalizeArabic(searchQuery);
-      if (qNorm) {
-        list = list.filter(
-          (p) =>
-            normalizeArabic(p.name).includes(qNorm) ||
-            p.nationalId.includes(searchQuery.trim()) ||
-            normalizeArabic(p.customCategory || '').includes(qNorm)
-        );
-      }
-
-      if (statusFilter === 'active') {
-        list = list.filter(
-          (p) => p.status === '' && p.blockType !== 'full'
-        );
-      } else if (statusFilter === 'blocked') {
-        list = list.filter(
-          (p) =>
-            p.status === 'محجوب' ||
-            p.blockType === 'full' ||
-            p.blockType === 'partial'
-        );
-      } else if (statusFilter === 'archived') {
-        list = list.filter(
-          (p) => p.status === 'مؤرشف' || p.blockType === 'archived'
-        );
-      }
-
-      if (capabilities.isExpertMode && categoryFilter !== 'all') {
-        list = list.filter(
-          (p) => (p.customCategory || '') === categoryFilter
-        );
-      }
-
-      if (sortBy === 'name_asc') {
-        list = [...list].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-      } else if (sortBy === 'individuals_desc') {
-        list = [...list].sort(
-          (a, b) => (b.individuals ?? 0) - (a.individuals ?? 0)
-        );
-      }
-    } else {
-      // Beginner PDF-like view hides archived rows for clean reading
+    if (!capabilities.canSortAndFilter && statusFilter === 'all') {
+      // Beginner PDF-like view hides archived rows by default for clean reading
       list = list.filter((p) => p.status !== 'مؤرشف');
+    }
+
+    const qNorm = normalizeArabic(searchQuery);
+    if (qNorm) {
+      list = list.filter(
+        (p) =>
+          normalizeArabic(p.name).includes(qNorm) ||
+          p.nationalId.includes(searchQuery.trim()) ||
+          normalizeArabic(p.customCategory || '').includes(qNorm)
+      );
+    }
+
+    if (statusFilter === 'active') {
+      list = list.filter(
+        (p) => p.status === '' && p.blockType !== 'full'
+      );
+    } else if (statusFilter === 'blocked') {
+      list = list.filter(
+        (p) =>
+          p.status === 'محجوب' ||
+          p.blockType === 'full' ||
+          p.blockType === 'partial'
+      );
+    } else if (statusFilter === 'archived') {
+      list = list.filter(
+        (p) => p.status === 'مؤرشف' || p.blockType === 'archived'
+      );
+    }
+
+    if (capabilities.isExpertMode && categoryFilter !== 'all') {
+      list = list.filter(
+        (p) => (p.customCategory || '') === categoryFilter
+      );
+    }
+
+    if (sortBy === 'name_asc') {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    } else if (sortBy === 'individuals_desc') {
+      list = [...list].sort(
+        (a, b) => (b.individuals ?? 0) - (a.individuals ?? 0)
+      );
     }
 
     return list;
@@ -325,6 +354,7 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         agencyName: agencyMap.get(p.agencyId) || '',
         nationalId: p.nationalId,
         individuals: p.individuals,
+        legacyQuantity: p.legacyQuantity,
         decreaseCount: p.decreaseCount,
         addOrDeleteCount: p.addOrDeleteCount,
         addOrDeleteAction: p.addOrDeleteAction,
@@ -333,6 +363,7 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         blockReason: p.blockReason,
         status: p.status,
         notes: p.notes,
+        customCategory: p.customCategory,
         updatedAt: p.updatedAt,
       }));
   }, [visiblePersons, selectedPersonIds, agencyMap]);
@@ -346,60 +377,26 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
   };
 
   const handlePrintPdfView = () => {
-    const rowsHtml = visiblePersons
-      .map((p, idx) => {
-        const eff = getEffectiveAllocationForPerson(p, calculationSettings);
-        const indLabel =
-          eff.summary.scope === 'partial'
-            ? `${eff.eligibleIndividuals} من ${p.individuals ?? 0}`
-            : String(eff.eligibleIndividuals ?? 0);
-        return `<tr>
-          <td>${idx + 1}</td>
-          <td>${initialLetter(p.name)}</td>
-          <td style="text-align:right">${p.name}</td>
-          ${agencyId === null ? `<td>${agencyMap.get(p.agencyId) || ''}</td>` : ''}
-          <td>${indLabel}</td>
-          <td>${eff.quotaText}</td>
-          <td>${eff.priceText}</td>
-          <td>${eff.summary.shortLabel}</td>
-          <td>${p.notes || ''}</td>
-        </tr>`;
-      })
-      .join('');
-
     const pMeta = resolvePeriodMeta(headerMeta.periodMeta || activePeriod);
     const ff = headerMeta.freeformHeader;
-    printViaIframe(`<!doctype html>
-<html lang="ar" dir="rtl">
-<head><meta charset="utf-8" /><title>${headerMeta.title}</title>
-<style>
-  body { font-family: Cairo, Tahoma, Arial, sans-serif; padding: 18px; color: #0f172a; }
-  .head { border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px; text-align: ${ff?.align || 'center'}; }
-  .top { font-size: 13px; font-weight: bold; color: #1d4ed8; margin-bottom: 4px; }
-  h1 { font-size: 19px; margin: 0 0 6px; }
-  .meta { font-size: 12px; color: #334155; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border: 1px solid #94a3b8; padding: 6px 8px; text-align: center; }
-  th { background: #e2e8f0; }
-</style>
-</head>
-<body>
-  <div class="head">
-    ${ff?.topCustomTitle ? `<div class="top">${ff.topCustomTitle}</div>` : ''}
-    <h1>${headerMeta.title}</h1>
-    <div class="meta">التاريخ: ${formatPeriodDateYMD(pMeta.fullDate)} · ${pMeta.monthName} (شهر ${pMeta.monthNumber}) · ${pMeta.quotaName} (${pMeta.quotaNumber})</div>
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th>#</th><th>الحرف</th><th>الاسم</th>
-        ${agencyId === null ? '<th>الوكالة</th>' : ''}
-        <th>الأفراد</th><th>الحصة</th><th>المبلغ</th><th>الحالة</th><th>الملاحظات</th>
-      </tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-</body></html>`);
+    runAsyncExportTask(
+      'جاري تجهيز ملف الطباعة / PDF بالعربية...',
+      'تم تجهيز تقرير PDF للطباعة بنجاح.',
+      () => {
+        exportFormattedRosterToPdf({
+          title: headerMeta.title,
+          subtitle: headerMeta.subtitle,
+          topCustomTitle: ff?.topCustomTitle,
+          align: ff?.align || 'center',
+          metaLine: `التاريخ: ${formatPeriodDateYMD(pMeta.fullDate)} · ${pMeta.monthName} (شهر ${pMeta.monthNumber}) · ${pMeta.quotaName} (${pMeta.quotaNumber})`,
+          persons: visiblePersons,
+          agencies,
+          settings: calculationSettings,
+          hideAgencyColumn: agencyId !== null,
+          themeId: themePrefs.appTheme,
+        });
+      }
+    );
   };
 
   const coreTableRows: CoreRosterRow[] = useMemo(
@@ -429,6 +426,32 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
     [visiblePersons]
   );
 
+  const handleInlinePatchRow = (
+    rowKey: string,
+    patch: CoreRosterInlinePatch
+  ) => {
+    const person = personByIdMap.get(rowKey);
+    if (!person) return;
+    onInlineUpdatePerson(person.id, {
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.individuals !== undefined
+        ? { individuals: patch.individuals }
+        : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      ...(patch.customCategory !== undefined
+        ? { customCategory: patch.customCategory }
+        : {}),
+      ...(patch.customFields !== undefined
+        ? {
+            customFields: {
+              ...(person.customFields || {}),
+              ...patch.customFields,
+            },
+          }
+        : {}),
+    });
+  };
+
   const allCustomizableColumns = useMemo(() => {
     const baseMap = new Map(
       CORE_COLUMN_DEFS.map((c) => [c.id, c.defaultLabel])
@@ -446,45 +469,13 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
     }));
   }, [expertTableConfig]);
 
-  const handleToggleColumnVisible = (colId: string) => {
-    const visible = new Set(expertTableConfig.visibleColumns);
-    if (visible.has(colId)) {
-      if (visible.size <= 1) return;
-      visible.delete(colId);
-    } else {
-      visible.add(colId);
-    }
-    onUpdateExpertTableConfig({ visibleColumns: Array.from(visible) });
-  };
-
-  const handleInlinePatchRow = (
-    rowKey: string,
-    patch: CoreRosterInlinePatch
-  ) => {
-    const personId = Number(rowKey);
-    if (!Number.isFinite(personId)) return;
-    onInlineUpdatePerson(personId, {
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.individuals !== undefined
-        ? { individuals: patch.individuals }
-        : {}),
-      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
-      ...(patch.customCategory !== undefined
-        ? { customCategory: patch.customCategory }
-        : {}),
-      ...(patch.customFields !== undefined
-        ? { customFields: patch.customFields }
-        : {}),
-    });
-  };
-
   const focusActive =
     themePrefs.activeRowFocusMode && focusedRowId !== null;
 
   const effectivePeriodMeta = headerMeta.periodMeta || activePeriod;
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Period, Quota & Freeform Designed Header Banner */}
       <PeriodHeaderBanner
         periodMeta={effectivePeriodMeta}
@@ -499,19 +490,25 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         }
       />
 
-      {/* Header Bar */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-[280px] flex-1 flex-wrap items-start gap-3">
+      {/* Section Header Bar */}
+      <div
+        className="tabrix-card flex flex-wrap items-start justify-between gap-3 rounded-2xl border p-4 sm:p-5"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--border-color)',
+        }}
+      >
+        <div className="flex min-w-[260px] flex-1 flex-wrap items-start gap-3">
           <button
             type="button"
             onClick={onBackToHub}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
             style={{
-              backgroundColor: 'var(--bg-surface)',
+              backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
             }}
           >
-            <ArrowRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-4 w-4" style={{ color: 'var(--accent)' }} />
             <span>العودة للوكالات</span>
           </button>
 
@@ -584,12 +581,17 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
             <button
               type="button"
               onClick={() =>
-                exportRosterToExcel({
-                  filename: title,
-                  persons: visiblePersons,
-                  agencies,
-                  settings: calculationSettings,
-                })
+                runAsyncExportTask(
+                  'جاري تصدير ملف Excel...',
+                  'تم تصدير ملف Excel بنجاح.',
+                  () =>
+                    exportRosterToExcel({
+                      filename: title,
+                      persons: visiblePersons,
+                      agencies,
+                      settings: calculationSettings,
+                    })
+                )
               }
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
               style={{
@@ -724,308 +726,60 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
       </div>
 
       {/* Expert Mode Exclusive Customization Panel */}
-      {capabilities.isExpertMode && showExpertPanel && (
-        <section
-          aria-label="أدوات الوضع الخبير لتخصيص الجدول والفئات"
-          className="space-y-4 rounded-xl border p-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--accent)',
-          }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-              <div>
-                <h2 className="text-sm font-bold">
-                  أدوات الوضع الخبير — حرية مطلقة في تخصيص الجدول والفئات
-                </h2>
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  إظهار وإخفاء الأعمدة، إعادة ترتيبها، تغيير مسمياتها، وإضافة أعمدة وفئات مخصصة.
-                </p>
+      {showExpertPanel && (
+        capabilities.isExpertMode ? (
+          <ColumnCustomizerPanel
+            expertTableConfig={expertTableConfig}
+            allColumns={allCustomizableColumns}
+            selectedPersonIds={selectedPersonIds}
+            onUpdateExpertTableConfig={onUpdateExpertTableConfig}
+            onAddExpertCustomColumn={onAddExpertCustomColumn}
+            onRemoveExpertCustomColumn={onRemoveExpertCustomColumn}
+            onResetExpertTableConfig={onResetExpertTableConfig}
+            onBulkUpdateCategory={onBulkUpdateCategory}
+          />
+        ) : (
+          <section
+            aria-label="تخصيص الأعمدة يتطلب وضع الخبير"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--accent)',
+            }}
+          >
+            <div>
+              <div className="text-sm font-bold">
+                استوديو تخصيص الأعمدة والترتيب الحر متاح في «وضع الخبير»
+              </div>
+              <div className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                قم بالتبديل إلى وضع الخبير لفتح السحب والإفلات، الترتيب بالأرقام (1..N)، تثبيت الأعمدة، والقوالب الجاهزة.
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <label
-                className="flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={expertTableConfig.allowDirectNoConfirmEdit}
-                  onChange={(e) =>
-                    onUpdateExpertTableConfig({
-                      allowDirectNoConfirmEdit: e.target.checked,
-                    })
-                  }
-                />
-                <span>حفظ التعديلات مباشرة بدون نافذة تأكيد</span>
-              </label>
-
+            <div className="flex items-center gap-2">
+              {onEnableExpertModeForCustomizer && (
+                <button
+                  type="button"
+                  onClick={onEnableExpertModeForCustomizer}
+                  className="min-h-[38px] rounded-xl px-4 py-2 font-bold whitespace-nowrap"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  تفعيل وضع الخبير الآن
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onResetExpertTableConfig}
-                className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold"
+                onClick={() => setShowExpertPanel(false)}
+                className="min-h-[38px] rounded-xl border px-3 py-2 font-semibold"
                 style={{ borderColor: 'var(--border-color)' }}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>إعادة ضبط الأعمدة</span>
+                إغلاق
               </button>
             </div>
-          </div>
-
-          {/* Columns Visibility, Ordering & Label Editing */}
-          <div className="space-y-2">
-            <div className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
-              إدارة الأعمدة (الظهور · الترتيب · التسمية):
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {allCustomizableColumns.map((col, idx) => {
-                const isVisible = expertTableConfig.visibleColumns.includes(col.id);
-                const labelVal =
-                  expertTableConfig.columnLabels[col.id] ?? col.defaultLabel;
-                return (
-                  <div
-                    key={col.id}
-                    className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: isVisible
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isVisible}
-                      aria-label={`إظهار عمود ${col.defaultLabel}`}
-                      onChange={() => handleToggleColumnVisible(col.id)}
-                    />
-                    <input
-                      type="text"
-                      value={labelVal}
-                      aria-label={`تسمية عمود ${col.defaultLabel}`}
-                      onChange={(e) =>
-                        onUpdateExpertTableConfig({
-                          columnLabels: {
-                            ...expertTableConfig.columnLabels,
-                            [col.id]: e.target.value,
-                          },
-                        })
-                      }
-                      className="min-w-0 flex-1 rounded border px-2 py-0.5 text-xs font-semibold"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      disabled={idx === 0}
-                      aria-label={`نقل عمود ${col.defaultLabel} لليمين`}
-                      onClick={() =>
-                        onUpdateExpertTableConfig(
-                          moveExpertColumnInOrder(
-                            {
-                              ...expertTableConfig,
-                              columnOrder: allCustomizableColumns.map(
-                                (c) => c.id
-                              ),
-                            },
-                            col.id,
-                            'right'
-                          )
-                        )
-                      }
-                      className="rounded border p-1 disabled:opacity-30"
-                      style={{ borderColor: 'var(--border-color)' }}
-                    >
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={idx === allCustomizableColumns.length - 1}
-                      aria-label={`نقل عمود ${col.defaultLabel} لليسار`}
-                      onClick={() =>
-                        onUpdateExpertTableConfig(
-                          moveExpertColumnInOrder(
-                            {
-                              ...expertTableConfig,
-                              columnOrder: allCustomizableColumns.map(
-                                (c) => c.id
-                              ),
-                            },
-                            col.id,
-                            'left'
-                          )
-                        )
-                      }
-                      className="rounded border p-1 disabled:opacity-30"
-                      style={{ borderColor: 'var(--border-color)' }}
-                    >
-                      <ArrowLeft className="h-3 w-3" />
-                    </button>
-                    {col.isCustom && (
-                      <button
-                        type="button"
-                        aria-label={`حذف عمود ${col.defaultLabel}`}
-                        onClick={() => onRemoveExpertCustomColumn(col.id)}
-                        className="rounded border p-1"
-                        style={{
-                          borderColor: 'var(--danger)',
-                          color: 'var(--danger)',
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Add Custom Column + Manage Custom Categories */}
-          <div className="grid grid-cols-1 gap-4 border-t pt-3 lg:grid-cols-2" style={{ borderColor: 'var(--border-color)' }}>
-            {/* Add Custom Column */}
-            <div className="space-y-2 text-xs">
-              <div className="font-bold">إضافة عمود مخصص جديد للجدول:</div>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="text"
-                  value={newColLabel}
-                  onChange={(e) => setNewColLabel(e.target.value)}
-                  placeholder="اسم العمود (مثال: المنطقة / الهاتف)"
-                  className="min-w-[170px] flex-1 rounded-lg border px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-                <select
-                  value={newColType}
-                  onChange={(e) =>
-                    setNewColType(e.target.value as 'text' | 'number')
-                  }
-                  className="rounded-lg border px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <option value="text">نص</option>
-                  <option value="number">رقم</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!newColLabel.trim()) return;
-                    onAddExpertCustomColumn({
-                      label: newColLabel.trim(),
-                      type: newColType,
-                    });
-                    setNewColLabel('');
-                  }}
-                  className="rounded-lg px-3 py-1.5 font-bold"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
-                >
-                  + إضافة عمود
-                </button>
-              </div>
-            </div>
-
-            {/* Manage Categories & Bulk Category Assignment */}
-            <div className="space-y-2 text-xs">
-              <div className="font-bold">إدارة الفئات المخصصة وتطبيقها:</div>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="text"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="اسم فئة جديدة (مثال: خط أ، مستعجل)..."
-                  className="min-w-[170px] flex-1 rounded-lg border px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const clean = newCategoryName.trim();
-                    if (!clean) return;
-                    if (!expertTableConfig.customCategories.includes(clean)) {
-                      onUpdateExpertTableConfig({
-                        customCategories: [
-                          ...expertTableConfig.customCategories,
-                          clean,
-                        ],
-                        visibleColumns: expertTableConfig.visibleColumns.includes(
-                          'category'
-                        )
-                          ? expertTableConfig.visibleColumns
-                          : [...expertTableConfig.visibleColumns, 'category'],
-                      });
-                    }
-                    setNewCategoryName('');
-                  }}
-                  className="rounded-lg px-3 py-1.5 font-bold"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
-                >
-                  + إضافة فئة
-                </button>
-              </div>
-
-              {selectedPersonIds.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <Tag className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                  <span className="font-semibold">
-                    تعيين فئة للمحدد ({selectedPersonIds.length}):
-                  </span>
-                  <select
-                    value={bulkCategoryValue}
-                    onChange={(e) => setBulkCategoryValue(e.target.value)}
-                    className="rounded border px-2 py-1"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <option value="">بدون فئة</option>
-                    {expertTableConfig.customCategories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onBulkUpdateCategory(selectedPersonIds, bulkCategoryValue)
-                    }
-                    className="rounded-lg px-3 py-1 font-bold"
-                    style={{
-                      backgroundColor: 'var(--success)',
-                      color: 'var(--success-fg)',
-                    }}
-                  >
-                    تطبيق على المحدد
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+          </section>
+        )
       )}
 
       {/* Intermediate+ Search, Filter, Sort Toolbar */}
@@ -1168,6 +922,9 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         tableDate={headerMeta.date}
         periodMeta={effectivePeriodMeta}
         freeformHeader={headerMeta.freeformHeader}
+        customCategories={expertTableConfig.customCategories}
+        canUndo={canUndo}
+        onUndo={onUndo}
         onSelectAll={() =>
           setSelectedPersonIds(visiblePersons.map((p) => p.id))
         }
@@ -1175,6 +932,18 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         onMoveToAgency={onMovePersonsToAgency}
         onAddToReadyList={onAddPersonsToReadyList}
         onUpsertRelation={onUpsertRelation}
+        onBulkDeleteSelected={
+          onBulkDeletePersons
+            ? (records) => {
+                const ids = records
+                  .map((r) => r.personId)
+                  .filter((id): id is number => id !== null);
+                if (ids.length > 0) onBulkDeletePersons(ids);
+              }
+            : undefined
+        }
+        onBulkUpdateStatusAndCategory={onBulkUpdateStatusAndCategory}
+        onCreateReadyListFromSelection={onCreateReadyListFromSelection}
       />
 
       {/* Shared Core Spreadsheet Table */}

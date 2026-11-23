@@ -278,7 +278,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
       : [];
 
     return (
-      <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 sm:p-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 pb-24 sm:p-6 sm:pb-20">
         {/* Top Action Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -1010,21 +1010,42 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
   // MAIN DATA & MONTHLY ARCHIVES OVERVIEW
   // ============================================================================
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
-            <Database className="h-5 w-5" style={{ color: 'var(--accent)' }} />
-            <span>البيانات — الأرشفة الشهرية والسجلات التاريخية</span>
-          </h1>
-          <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-            احفظ وأغلق سجلات كل شهر وحصة بشكل مستقل، وانتقل لأشهر جديدة دون فقدان
-            أو تداخل مع السجلات السابقة.
-          </p>
+      <div
+        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--border-color)',
+        }}
+      >
+        <div className="flex items-start gap-3.5 min-w-0">
+          <span
+            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
+              color: 'var(--accent)',
+            }}
+            aria-hidden="true"
+          >
+            <Database className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-extrabold sm:text-xl">
+              البيانات — الأرشفة الشهرية والسجلات التاريخية
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+              احفظ وأغلق سجلات كل شهر وحصة بشكل مستقل، وانتقل لأشهر جديدة دون فقدان
+              أو تداخل مع السجلات السابقة.
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          data-assistant-target="data-archives-actions"
+          className="flex flex-wrap items-center gap-2 shrink-0"
+        >
           <button
             type="button"
             disabled={syncingCloud}

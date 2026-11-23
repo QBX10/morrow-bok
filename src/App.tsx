@@ -15,10 +15,18 @@ import { GoogleWorkspaceView } from './components/GoogleWorkspaceView';
 import { ReadyListsView } from './components/ReadyListsView';
 import { RelationshipsView } from './components/RelationshipsView';
 import { SettingsView } from './components/SettingsView';
-import { SideMenuDrawer } from './components/SideMenuDrawer';
+import { AppSidebar } from './components/AppSidebar';
 import { TopBar } from './components/TopBar';
+import { AssistantWidget } from './components/AssistantWidget';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
+import { HierarchyBreadcrumbBar } from './components/HierarchyBreadcrumbBar';
+import { ToastHost } from './components/ToastHost';
 import { useAgencyStore } from './hooks/useAgencyStore';
+import { useAssistantEngine } from './hooks/useAssistantEngine';
+import { useToastQueue } from './hooks/useToastQueue';
 import { getStoredSession } from './lib/authClient';
+import type { AssistantExternalTableCommand } from './types/assistant';
 import type {
   AgencyExpense,
   AppView,
@@ -31,7 +39,15 @@ import type {
   TopBarAutoFocusAction,
   TopBarFocusMode,
 } from './types/agency';
+import { auditAgencyPersons } from './utils/agencyLogic';
+import {
+  buildMorrowHierarchyTree,
+  resolveActiveHierarchyNodeId,
+  type HierarchyBadgeContext,
+  type HierarchyTarget,
+} from './utils/hierarchyRegistry';
 import { getModeCapabilities } from './utils/modePermissions';
+import { APP_THEMES, resolveAppThemeId } from './utils/themes';
 
 type DeleteTarget =
   | { kind: 'person'; item: Person }
@@ -90,16 +106,20 @@ export default function App() {
     addPersonDirect,
     updatePersonConfirmed,
     bulkUpdatePersonsCategory,
+    bulkUpdatePersonsStatusAndCategory,
     deletePersonConfirmed,
+    deletePersonsBulkConfirmed,
     commitQuickExtractPlan,
     addExpense,
     deleteExpenseConfirmed,
     createReadyList,
+    createReadyListFromSelection,
     updateReadyListMetaConfirmed,
     deleteReadyListConfirmed,
     addReadyListItemDirect,
     updateReadyListItemConfirmed,
     removeReadyListItemConfirmed,
+    deleteReadyListItemsBulkConfirmed,
     addPersonsToReadyList,
     moveReadyListItemOrder,
     movePersonsToAgencyConfirmed,
@@ -114,6 +134,7 @@ export default function App() {
     upsertUcrsLearningRule,
     toggleUcrsLearningRule,
     deleteUcrsLearningRule,
+    applyAssistantAutoFixes,
     syncWorkspaceToServer,
     restoreWorkspaceFromServer,
   } = useAgencyStore();
@@ -122,7 +143,28 @@ export default function App() {
   const [previousView, setPreviousView] = useState<AppView>('hub');
   const [settingsSection, setSettingsSection] =
     useState<SettingsSectionId>('appearance');
+  const [settingsScreenMode, setSettingsScreenMode] = useState<'hub' | 'detail'>(
+    'hub'
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('tabrix_sidebar_collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('tabrix_sidebar_collapsed', next ? '1' : '0');
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
   const [scrolledDown, setScrolledDown] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [manualReveal, setManualReveal] = useState(false);
@@ -145,6 +187,12 @@ export default function App() {
   const [addDefaultAgencyId, setAddDefaultAgencyId] = useState<number>(1);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
+  // Copilot focus & table control bridge
+  const [focusedPersonId, setFocusedPersonId] = useState<number | null>(null);
+  const [externalTableCommand, setExternalTableCommand] =
+    useState<AssistantExternalTableCommand | null>(null);
+  const [columnCustomizerOpen, setColumnCustomizerOpen] = useState(false);
 
   const capabilities = useMemo(
     () =>
@@ -325,6 +373,7 @@ export default function App() {
     if (activeView === 'relationships') return 'قسم العلاقات';
     if (activeView === 'finance') return 'الحسابات والمالية';
     if (activeView === 'quick_extract') return 'السحب السريع';
+    if (activeView === 'morrow_center') return 'مركز Morrow';
     if (activeView === 'data_archives') return 'البيانات والأرشفة الشهرية';
     if (activeView === 'google_workspace') return 'التقويم والمهام (Google)';
     return 'إعدادات التطبيق';
@@ -336,15 +385,68 @@ export default function App() {
     view: AppView,
     nextSettingsSection?: SettingsSectionId
   ) => {
+    if (view !== 'agency_roster' && view !== 'master_roster') {
+      setColumnCustomizerOpen(false);
+    }
     if (view === 'settings') {
       if (activeView !== 'settings') {
         setPreviousView(activeView);
       }
       if (nextSettingsSection) {
         setSettingsSection(nextSettingsSection);
+        setSettingsScreenMode('detail');
+      } else {
+        setSettingsScreenMode('hub');
       }
     }
     setActiveView(view);
+  };
+
+  const hierarchyTree = useMemo(
+    () => buildMorrowHierarchyTree(state.agencies),
+    [state.agencies]
+  );
+
+  const auditIssuesCount = useMemo(
+    () => auditAgencyPersons(state.persons).length,
+    [state.persons]
+  );
+
+  const activeThemeLabel = useMemo(() => {
+    const resolvedId = resolveAppThemeId(themePrefs.appTheme);
+    return APP_THEMES.find((t) => t.id === resolvedId)?.name || 'كلاسيكي';
+  }, [themePrefs.appTheme]);
+
+  const handleNavigateHierarchyTarget = (target: HierarchyTarget) => {
+    if (typeof target.agencyId === 'number') {
+      setSelectedAgencyId(target.agencyId);
+    }
+    if (target.view === 'settings') {
+      if (activeView !== 'settings') {
+        setPreviousView(activeView);
+      }
+      if (target.settingsSection) {
+        setSettingsSection(target.settingsSection);
+        setSettingsScreenMode(target.settingsScreenMode || 'detail');
+      } else {
+        setSettingsScreenMode(target.settingsScreenMode || 'hub');
+      }
+      setColumnCustomizerOpen(false);
+      setActiveView('settings');
+      return;
+    }
+
+    if (target.view === 'morrow_center' && target.morrowTab) {
+      assistant.setActiveCommandCenterTab(target.morrowTab);
+    }
+
+    if (target.openColumnCustomizer) {
+      setColumnCustomizerOpen(true);
+    } else {
+      setColumnCustomizerOpen(false);
+    }
+
+    setActiveView(target.view);
   };
 
   const executeDeleteTarget = (target: DeleteTarget) => {
@@ -381,45 +483,253 @@ export default function App() {
     }
   };
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <TopBar
-        capabilities={capabilities}
-        authUser={authUser}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        topBarConfig={state.topBarConfig}
-        effectiveMode={effectiveTopBarMode}
-        isAutoHidden={isAutoHidden}
-        activeViewLabel={activeViewLabel}
-        onChangeTopBarConfig={(patch) => {
-          setManualReveal(false);
-          setTopBarConfig(patch);
-        }}
-        onNavigateHome={() => handleNavigate('hub')}
-        onUndo={undo}
-        onRedo={redo}
-        onOpenAuth={() => setAuthModalOpen(true)}
-        onOpenDrawer={() => setDrawerOpen(true)}
-        onRequestReveal={() => setManualReveal(true)}
-      />
+  const handleDownloadBackupJson = (silentAuto = false) => {
+    const payload = JSON.stringify(state, null, 2);
+    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${silentAuto ? 'morrow-auto-backup' : 'morrow-backup'}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
-      {activeView === 'hub' && (
-        <AgenciesHubView
+  const focusedPersonName = useMemo(
+    () =>
+      focusedPersonId !== null
+        ? state.persons.find((p) => p.id === focusedPersonId)?.name
+        : undefined,
+    [focusedPersonId, state.persons]
+  );
+
+  const { toasts, dismissToast } = useToastQueue();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, []);
+
+  const assistant = useAssistantEngine({
+    runtime: {
+      state,
+      uiContext: {
+        activeView,
+        selectedAgencyId:
+          activeView === 'agency_roster' ? selectedAgencyId : null,
+        focusedPersonId,
+        focusedPersonName,
+        modeTier: state.modeTier,
+        themeId: themePrefs.appTheme,
+        agencies: state.agencies.map((a) => ({ id: a.id, name: a.name })),
+        readyLists: state.readyLists.map((l) => ({
+          id: l.id,
+          name: l.name,
+          agencyId: l.agencyId,
+        })),
+        preferences: [],
+        totalPersonsCount: state.persons.length,
+      },
+      mutations: {
+        addPersonDirect,
+        updatePersonConfirmed,
+        createReadyList,
+        addPersonsToReadyList,
+        addExpense,
+        upsertRelationEntry,
+      },
+      navigate: handleNavigate,
+      selectAgency: (agencyId) => setSelectedAgencyId(agencyId),
+      focusPerson: (personId) => setFocusedPersonId(personId),
+      issueTableCommand: (cmd) =>
+        setExternalTableCommand({
+          ...cmd,
+          nonce: Date.now(),
+        }),
+      setModeTier,
+      setAppTheme: (appTheme) => setThemePrefs({ appTheme }),
+      setDarkTheme,
+      setAllowCloudNames: (allowed) =>
+        setSecurityPrefs({ allowCloudBeneficiaryNames: allowed }),
+      applyAutoFixes: applyAssistantAutoFixes,
+      archiveCurrentPeriod: () => {
+        archiveCurrentPeriod({ isClosed: true, archiveSource: 'manual' });
+      },
+    },
+    onExportBackupFile: handleDownloadBackupJson,
+    canUndoApp: canUndo,
+    onUndoAppAction: undo,
+  });
+
+  const activeHierarchyNodeId = useMemo(
+    () =>
+      resolveActiveHierarchyNodeId({
+        activeView,
+        selectedAgencyId,
+        settingsSection,
+        settingsScreenMode,
+        morrowTab: assistant.activeCommandCenterTab,
+        columnCustomizerOpen,
+      }),
+    [
+      activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      assistant.activeCommandCenterTab,
+      columnCustomizerOpen,
+    ]
+  );
+
+  const hierarchyBadgeContext = useMemo<HierarchyBadgeContext>(
+    () => ({
+      agenciesCount: state.agencies.length,
+      personsCount: state.persons.length,
+      auditIssuesCount,
+      readyListsCount: state.readyLists.length,
+      relationsCount: state.relations.length,
+      archivesCount: monthlyArchives.length,
+      pendingDraftsCount: assistant.pendingDraftsCount,
+      recycleBinCount: recycleBin.length,
+      activeThemeName: activeThemeLabel,
+      modeLabel: capabilities.label,
+    }),
+    [
+      state.agencies.length,
+      state.persons.length,
+      auditIssuesCount,
+      state.readyLists.length,
+      state.relations.length,
+      monthlyArchives.length,
+      assistant.pendingDraftsCount,
+      recycleBin.length,
+      activeThemeLabel,
+      capabilities.label,
+    ]
+  );
+
+  const renderedHierarchyBar = (
+    <HierarchyBreadcrumbBar
+      tree={hierarchyTree}
+      activeNodeId={activeHierarchyNodeId}
+      badgeContext={hierarchyBadgeContext}
+      onNavigateTarget={handleNavigateHierarchyTarget}
+    />
+  );
+
+  return (
+    <div className="flex min-h-screen flex-col [overflow-x:clip]">
+      {activeView !== 'settings' && (
+        <TopBar
+          capabilities={capabilities}
+          authUser={authUser}
+          darkTheme={state.darkTheme}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          topBarConfig={state.topBarConfig}
+          effectiveMode={effectiveTopBarMode}
+          isAutoHidden={isAutoHidden}
+          activeViewLabel={activeViewLabel}
           agencies={state.agencies}
           persons={state.persons}
-          expenses={state.expenses}
-          calculationSettings={state.calculationSettings}
-          capabilities={capabilities}
-          onOpenMasterRoster={() => setActiveView('master_roster')}
-          onOpenAgencyRoster={(id) => {
-            setSelectedAgencyId(id);
+          readyLists={state.readyLists}
+          relations={state.relations}
+          ucrsSessions={ucrsSessions}
+          onToggleDarkTheme={setDarkTheme}
+          onChangeTopBarConfig={(patch) => {
+            setManualReveal(false);
+            setTopBarConfig(patch);
+          }}
+          onNavigateHome={() => handleNavigate('hub')}
+          onNavigateView={handleNavigate}
+          onSelectPersonFromSearch={(person) => {
+            setSelectedAgencyId(person.agencyId);
+            setFocusedPersonId(person.id);
+            setActiveView('agency_roster');
+            setExternalTableCommand({
+              agencyId: person.agencyId,
+              searchQuery: person.name,
+              focusPersonId: person.id,
+              nonce: Date.now(),
+            });
+          }}
+          onSelectAgencyFromSearch={(agencyId) => {
+            setSelectedAgencyId(agencyId);
             setActiveView('agency_roster');
           }}
-          onAddAgency={addAgencyDirect}
-          onUpdateAgencyDetails={updateAgencyDetails}
+          onUndo={undo}
+          onRedo={redo}
+          onOpenAuth={() => setAuthModalOpen(true)}
+          onOpenMobileSidebar={() => setDrawerOpen(true)}
+          onRequestReveal={() => setManualReveal(true)}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         />
       )}
+
+      <div className="flex flex-1 min-h-0">
+        {activeView !== 'settings' && (
+          <AppSidebar
+            activeView={activeView}
+            selectedAgencyId={selectedAgencyId}
+            agencies={state.agencies}
+            persons={state.persons}
+            activePeriod={activePeriod}
+            relationsCount={state.relations.length}
+            readyListsCount={state.readyLists.length}
+            archivesCount={monthlyArchives.length}
+            pendingDraftsCount={assistant.pendingDraftsCount}
+            calculationSettings={state.calculationSettings}
+            capabilities={capabilities}
+            themePrefs={themePrefs}
+            collapsed={sidebarCollapsed}
+            mobileOpen={drawerOpen}
+            onToggleCollapse={toggleSidebarCollapsed}
+            onCloseMobile={() => setDrawerOpen(false)}
+            onNavigate={handleNavigate}
+            onOpenAgencyRoster={(id) => {
+              setSelectedAgencyId(id);
+              setActiveView('agency_roster');
+            }}
+            onSelectAppTheme={(appTheme) => setThemePrefs({ appTheme })}
+          />
+        )}
+
+        <div key={activeView} className="flex-1 min-w-0 flex flex-col tabrix-view-enter">
+          {activeView !== 'settings' && renderedHierarchyBar}
+
+          {activeView === 'hub' && (
+            <AgenciesHubView
+              agencies={state.agencies}
+              persons={state.persons}
+              expenses={state.expenses}
+              activePeriod={activePeriod}
+              readyListsCount={state.readyLists.length}
+              relationsCount={state.relations.length}
+              calculationSettings={state.calculationSettings}
+              capabilities={capabilities}
+              hierarchyTree={hierarchyTree}
+              hierarchyBadgeContext={hierarchyBadgeContext}
+              onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
+              onOpenMasterRoster={() => setActiveView('master_roster')}
+              onOpenAgencyRoster={(id) => {
+                setSelectedAgencyId(id);
+                setActiveView('agency_roster');
+              }}
+              onNavigateView={(v, sec) => handleNavigate(v, sec)}
+              onAddAgency={addAgencyDirect}
+              onUpdateAgencyDetails={updateAgencyDetails}
+            />
+          )}
 
       {activeView === 'agency_roster' && currentAgency && (
         <AgencyRosterView
@@ -456,11 +766,19 @@ export default function App() {
           }
           onInlineUpdatePerson={updatePersonConfirmed}
           onBulkUpdateCategory={bulkUpdatePersonsCategory}
+          onBulkDeletePersons={deletePersonsBulkConfirmed}
+          onBulkUpdateStatusAndCategory={bulkUpdatePersonsStatusAndCategory}
+          onCreateReadyListFromSelection={createReadyListFromSelection}
+          columnCustomizerOpen={columnCustomizerOpen}
+          onColumnCustomizerOpenChange={setColumnCustomizerOpen}
+          onEnableExpertModeForCustomizer={() => setModeTier('expert')}
           onUpdateExpertTableConfig={setExpertTableConfig}
           onAddExpertCustomColumn={addExpertCustomColumn}
           onRemoveExpertCustomColumn={removeExpertCustomColumn}
           onResetExpertTableConfig={resetExpertTableConfig}
           onOpenSettings={() => handleNavigate('settings', 'modes')}
+          externalTableCommand={externalTableCommand}
+          onFocusedPersonChange={setFocusedPersonId}
         />
       )}
 
@@ -499,11 +817,19 @@ export default function App() {
           }
           onInlineUpdatePerson={updatePersonConfirmed}
           onBulkUpdateCategory={bulkUpdatePersonsCategory}
+          onBulkDeletePersons={deletePersonsBulkConfirmed}
+          onBulkUpdateStatusAndCategory={bulkUpdatePersonsStatusAndCategory}
+          onCreateReadyListFromSelection={createReadyListFromSelection}
+          columnCustomizerOpen={columnCustomizerOpen}
+          onColumnCustomizerOpenChange={setColumnCustomizerOpen}
+          onEnableExpertModeForCustomizer={() => setModeTier('expert')}
           onUpdateExpertTableConfig={setExpertTableConfig}
           onAddExpertCustomColumn={addExpertCustomColumn}
           onRemoveExpertCustomColumn={removeExpertCustomColumn}
           onResetExpertTableConfig={resetExpertTableConfig}
           onOpenSettings={() => handleNavigate('settings', 'modes')}
+          externalTableCommand={externalTableCommand}
+          onFocusedPersonChange={setFocusedPersonId}
         />
       )}
 
@@ -535,6 +861,7 @@ export default function App() {
           onRequestDeleteItem={(item) =>
             handleRequestDelete({ kind: 'ready_item', item })
           }
+          onBulkDeleteItems={deleteReadyListItemsBulkConfirmed}
           onMovePersonsToAgency={movePersonsToAgencyConfirmed}
           onUpsertRelation={upsertRelationEntry}
         />
@@ -634,9 +961,53 @@ export default function App() {
         />
       )}
 
+      {activeView === 'morrow_center' && (
+        <MorrowCommandCenterView
+          activeTab={assistant.activeCommandCenterTab}
+          onChangeTab={assistant.setActiveCommandCenterTab}
+          brainMode={assistant.brainMode}
+          onChangeBrainMode={assistant.setBrainMode}
+          connectivity={assistant.connectivity}
+          isThinking={assistant.isThinking}
+          messages={assistant.messages}
+          smartSuggestions={assistant.smartSuggestions}
+          hasUndoableAction={assistant.hasUndoableAssistantMessage}
+          onUndoLastAction={assistant.undoLastAssistantAction}
+          onSendMessage={(prompt) => void assistant.sendMessage(prompt)}
+          onChoiceClick={assistant.handleChoiceClick}
+          onResolveDiff={assistant.resolveConfirmationDiff}
+          onTriggerSpotlight={assistant.triggerSpotlight}
+          approvalDrafts={assistant.approvalDrafts}
+          onApproveDraft={assistant.approveDraft}
+          onRejectDraft={assistant.rejectDraft}
+          preferences={assistant.preferences}
+          onSaveMemoryRule={assistant.saveCustomMemoryPref}
+          onDeleteMemoryRule={assistant.deleteUserPref}
+          agencies={state.agencies}
+          persons={state.persons}
+          quickNotes={assistant.quickNotes}
+          onAddQuickNote={assistant.addQuickNote}
+          onUpdateQuickNoteLink={assistant.updateQuickNoteLink}
+          onSyncQuickNoteToPerson={assistant.syncQuickNoteToPerson}
+          onDeleteQuickNote={assistant.deleteQuickNote}
+          onJumpToPerson={(person) => {
+            setSelectedAgencyId(person.agencyId);
+            setFocusedPersonId(person.id);
+            setActiveView('agency_roster');
+            setExternalTableCommand({
+              agencyId: person.agencyId,
+              focusPersonId: person.id,
+              nonce: Date.now(),
+            });
+          }}
+        />
+      )}
+
       {activeView === 'settings' && (
         <SettingsView
           activeSection={settingsSection}
+          screenMode={settingsScreenMode}
+          onChangeScreenMode={setSettingsScreenMode}
           onChangeSection={setSettingsSection}
           onBackToApp={() =>
             setActiveView(previousView === 'settings' ? 'hub' : previousView)
@@ -681,22 +1052,18 @@ export default function App() {
           onSyncServer={syncWorkspaceToServer}
           onRestoreServer={restoreWorkspaceFromServer}
           onOpenAuth={() => setAuthModalOpen(true)}
+          assistantSettings={assistant.assistantSettings}
+          assistantConnectivity={assistant.connectivity}
+          assistantQuotaInfo={assistant.quotaInfo}
+          assistantCacheCount={assistant.cacheCount}
+          onUpdateAssistantSettings={assistant.updateAssistantSettings}
+          onResetAssistantQuota={assistant.resetQuotaStats}
+          onClearAssistantCache={assistant.clearResponseCache}
+          hierarchyBar={renderedHierarchyBar}
         />
       )}
-
-      {/* Sleek Side Menu Drawer */}
-      <SideMenuDrawer
-        open={drawerOpen}
-        activeView={activeView}
-        capabilities={capabilities}
-        persons={state.persons}
-        relationsCount={state.relations.length}
-        calculationSettings={state.calculationSettings}
-        themePrefs={themePrefs}
-        onClose={() => setDrawerOpen(false)}
-        onNavigate={handleNavigate}
-        onSelectAppTheme={(appTheme) => setThemePrefs({ appTheme })}
-      />
+        </div>
+      </div>
 
       {/* Editor Modals */}
       <AddPersonModal
@@ -776,7 +1143,7 @@ export default function App() {
               <Lock className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">شاشة مقفلة للخصوصية — تابريكس</h2>
+              <h2 className="text-lg font-bold">شاشة مقفلة للخصوصية — Morrow</h2>
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                 {securityPrefs.privacyPin
                   ? 'أدخل رمز القفل لإظهار السجلات والبيانات.'
@@ -827,6 +1194,83 @@ export default function App() {
           </form>
         </div>
       )}
+
+      {/* Integrated 3-Brain AI Assistant Widget */}
+      {!isAuthGateLocked && !securityPrefs.privacyLocked && (
+        <AssistantWidget
+          isOpen={assistant.isOpen}
+          onToggleOpen={assistant.setIsOpen}
+          brainMode={assistant.brainMode}
+          onChangeBrainMode={assistant.setBrainMode}
+          connectivity={assistant.connectivity}
+          isThinking={assistant.isThinking}
+          messages={assistant.messages}
+          proactiveTip={assistant.proactiveTip}
+          preferences={assistant.preferences}
+          onDeletePref={assistant.deleteUserPref}
+          queuedTasks={assistant.queuedTasks}
+          onSaveToQueue={assistant.savePromptToQueue}
+          onRunQueuedTask={assistant.runQueuedTask}
+          onRemoveQueuedTask={assistant.removeQueuedTask}
+          spotlight={assistant.spotlight}
+          onDismissSpotlight={assistant.dismissSpotlight}
+          onTriggerSpotlight={assistant.triggerSpotlight}
+          onSendMessage={assistant.sendMessage}
+          onChoiceClick={assistant.handleChoiceClick}
+          onResolveDiff={assistant.resolveConfirmationDiff}
+          focusedPersonName={focusedPersonName}
+          smartSuggestions={assistant.smartSuggestions}
+          assistantSettings={assistant.assistantSettings}
+          quotaInfo={assistant.quotaInfo}
+          hasUndoableAction={assistant.hasUndoableAssistantMessage}
+          onUndoLastAction={assistant.undoLastAssistantAction}
+          pendingDraftsCount={assistant.pendingDraftsCount}
+          onOpenCommandCenter={assistant.openCommandCenter}
+          onOpenAssistantSettings={() => {
+            assistant.setIsOpen(false);
+            setPreviousView(activeView);
+            setSettingsSection('security_data');
+            setSettingsScreenMode('detail');
+            setActiveView('settings');
+          }}
+        />
+      )}
+
+      {/* Global Ctrl+K Command Palette */}
+      {!isAuthGateLocked && !securityPrefs.privacyLocked && (
+        <CommandPaletteModal
+          open={commandPaletteOpen}
+          darkTheme={state.darkTheme}
+          brainMode={assistant.brainMode}
+          agencies={state.agencies}
+          persons={state.persons}
+          pendingDraftsCount={assistant.pendingDraftsCount}
+          hierarchyTree={hierarchyTree}
+          onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
+          onClose={() => setCommandPaletteOpen(false)}
+          onChangeBrainMode={assistant.setBrainMode}
+          onNavigateView={handleNavigate}
+          onOpenCommandCenterTab={assistant.openCommandCenter}
+          onSelectAgency={(agId) => setSelectedAgencyId(agId)}
+          onSelectPerson={(person) => {
+            setSelectedAgencyId(person.agencyId);
+            setFocusedPersonId(person.id);
+            setActiveView('agency_roster');
+            setExternalTableCommand({
+              agencyId: person.agencyId,
+              searchQuery: person.name,
+              focusPersonId: person.id,
+              nonce: Date.now(),
+            });
+          }}
+          onSendAssistantPrompt={(prompt) => {
+            void assistant.sendMessage(prompt, { fromFloatingWidget: true });
+          }}
+        />
+      )}
+
+      {/* Discreet Background & Stealth Execution Toast Stack */}
+      <ToastHost toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

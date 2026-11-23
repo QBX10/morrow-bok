@@ -1,15 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRightLeft,
   Check,
   CheckSquare,
+  ChevronDown,
   Copy,
   Eye,
+  FilePlus2,
   FileText,
   HeartHandshake,
   Image as ImageIcon,
   ListPlus,
+  RotateCcw,
   Scissors,
+  SlidersHorizontal,
+  Trash2,
   X,
 } from 'lucide-react';
 import type {
@@ -25,10 +30,14 @@ import type {
 import { getEffectiveAllocationForPerson } from '../utils/agencyLogic';
 import { exportSelectedRecordsToImage } from '../utils/excelExport';
 import {
-  buildSelectedRecordsCopyText,
   getRelationCategoryMeta,
   RELATION_CATEGORIES,
 } from '../utils/relationMeta';
+import {
+  computeSelectionAggregates,
+  formatSelectedRecordsCopy,
+  type SmartCopyMode,
+} from '../utils/selectionActions';
 import { SnippetExportModal } from './modals/SnippetExportModal';
 
 export interface SelectablePersonRecord {
@@ -40,6 +49,7 @@ export interface SelectablePersonRecord {
   agencyName?: string;
   nationalId?: string;
   individuals: number | null;
+  legacyQuantity?: string;
   decreaseCount?: number;
   addOrDeleteCount?: number;
   addOrDeleteAction?: 'إضافة' | 'حذف' | 'لا يوجد';
@@ -63,6 +73,9 @@ interface SelectionActionBarProps {
   periodMeta?: PeriodQuotaMeta;
   freeformHeader?: FreeformHeaderConfig;
   readOnlyArchiveMode?: boolean;
+  customCategories?: string[];
+  canUndo?: boolean;
+  onUndo?: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
   onMoveToAgency: (personIds: number[], targetAgencyId: number) => void;
@@ -76,6 +89,20 @@ interface SelectionActionBarProps {
     deliveryPhone?: string;
     deliveryTime?: string;
   }) => void;
+  onBulkDeleteSelected?: (records: SelectablePersonRecord[]) => void;
+  onBulkUpdateStatusAndCategory?: (
+    personIds: number[],
+    patch: {
+      blockType?: BlockScope;
+      blockedIndividuals?: number;
+      blockReason?: string;
+      customCategory?: string;
+    }
+  ) => void;
+  onCreateReadyListFromSelection?: (params: {
+    name: string;
+    personIds: number[];
+  }) => { listId: number; addedCount: number } | void;
 }
 
 export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
@@ -90,19 +117,42 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   periodMeta,
   freeformHeader,
   readOnlyArchiveMode = false,
+  customCategories = ['عام', 'أولوية', 'مراجعة', 'حالة خاصة'],
+  canUndo = false,
+  onUndo,
   onSelectAll,
   onClearSelection,
   onMoveToAgency,
   onAddToReadyList,
   onUpsertRelation,
+  onBulkDeleteSelected,
+  onBulkUpdateStatusAndCategory,
+  onCreateReadyListFromSelection,
 }) => {
   const [showQuickDetails, setShowQuickDetails] = useState(false);
   const [fullInfoOpen, setFullInfoOpen] = useState(false);
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [snippetModalOpen, setSnippetModalOpen] = useState(false);
+  const [batchEditOpen, setBatchEditOpen] = useState(false);
+  const [createListOpen, setCreateListOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [lastDeletedBanner, setLastDeletedBanner] = useState<{
+    count: number;
+  } | null>(null);
   const [exportingImg, setExportingImg] = useState(false);
+  const copyMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Batch status & category edit state
+  const [batchBlockType, setBatchBlockType] = useState<'keep' | BlockScope>('keep');
+  const [batchPartialBlocked, setBatchPartialBlocked] = useState('1');
+  const [batchBlockReason, setBatchBlockReason] = useState('');
+  const [batchCategory, setBatchCategory] = useState<string>('__keep__');
+
+  // Create Ready List from selection state
+  const [newReadyListName, setNewReadyListName] = useState('');
 
   // Move modal state
   const [moveMode, setMoveMode] = useState<'agency' | 'ready_list'>('ready_list');
@@ -135,37 +185,107 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
     [selectedRecords]
   );
 
-  const summaryTotals = useMemo(() => {
-    let individuals = 0;
-    let totalIqd = 0;
-    for (const r of selectedRecords) {
-      const eff = getEffectiveAllocationForPerson(r, calculationSettings);
-      individuals += eff.eligibleIndividuals ?? 0;
-      totalIqd += eff.priceIqd ?? 0;
-    }
-    return { individuals, totalIqd };
-  }, [selectedRecords, calculationSettings]);
+  useEffect(() => {
+    if (!copyMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (copyMenuRef.current && !copyMenuRef.current.contains(e.target as Node)) {
+        setCopyMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [copyMenuOpen]);
 
-  if (selectedRecords.length === 0) return null;
+  const aggregates = useMemo(
+    () => computeSelectionAggregates(selectedRecords, calculationSettings),
+    [selectedRecords, calculationSettings]
+  );
+
+  const summaryTotals = useMemo(
+    () => ({
+      individuals: aggregates.totalEligibleIndividuals,
+      totalIqd: aggregates.totalPriceIqd,
+    }),
+    [aggregates]
+  );
+
+  if (selectedRecords.length === 0) {
+    if (!lastDeletedBanner) return null;
+    return (
+      <section
+        role="status"
+        aria-label="تأكيد الحذف الآمن"
+        data-testid="bulk-delete-undo-banner"
+        className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--warning)',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <span className="font-bold">
+          تم نقل {lastDeletedBanner.count} سجل إلى سلة المهملات بأمان.
+        </span>
+        <div className="flex items-center gap-2">
+          {canUndo && onUndo && (
+            <button
+              type="button"
+              onClick={() => {
+                onUndo();
+                setLastDeletedBanner(null);
+              }}
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-bold"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>تراجع عن الحذف</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setLastDeletedBanner(null)}
+            aria-label="إغلاق إشعار الحذف"
+            className="rounded-lg border px-2.5 py-1.5 font-semibold"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+          >
+            إغلاق
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   const showNoticeMsg = (msg: string) => {
     setNotice(msg);
-    setTimeout(() => setNotice(''), 3200);
+    setTimeout(() => setNotice(''), 3600);
   };
 
-  const handleCopy = async () => {
-    const text = buildSelectedRecordsCopyText({
-      persons: selectedRecords,
-      settings: calculationSettings,
-      agencies,
-    });
+  const handleCopyMode = async (mode: SmartCopyMode = 'details_table') => {
+    setCopyMenuOpen(false);
+    const text = formatSelectedRecordsCopy(
+      selectedRecords,
+      mode,
+      calculationSettings,
+      { title: tableTitle, date: tableDate }
+    );
     try {
       await navigator.clipboard?.writeText(text);
-      showNoticeMsg(`تم نسخ بيانات (${selectedRecords.length}) بنجاح.`);
+      const label =
+        mode === 'names_only'
+          ? 'الأسماء فقط'
+          : mode === 'share_summary'
+          ? 'تقرير المشاركة'
+          : 'البيانات والحصص والمبالغ';
+      showNoticeMsg(`تم نسخ (${label}) لـ ${selectedRecords.length} سجل بنجاح.`);
     } catch {
       showNoticeMsg('تعذر الوصول للحافظة تلقائيًا — افتح معلومات كاملة للنسخ.');
     }
   };
+
+  const handleCopy = () => handleCopyMode('details_table');
 
   const handleExportImage = async () => {
     try {
@@ -199,32 +319,36 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   return (
     <section
       aria-label="شريط الإجراءات العلوي للمحددين"
-      className="no-print sticky top-2 z-20 space-y-2 rounded-xl border p-3 shadow-md"
+      data-testid="selection-action-bar"
+      className="no-print md:sticky md:top-2 z-[35] space-y-2.5 rounded-xl border p-3 shadow-md"
       style={{
         backgroundColor: 'var(--bg-surface)',
         borderColor: 'var(--accent)',
         color: 'var(--text-primary)',
       }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Count + Select All / Clear */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+      {/* Top Row: Selection Count + Live Multi-Metric Aggregates */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5 text-xs"
+        style={{ borderColor: 'var(--border-color)' }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
           <span
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-bold tabular-nums"
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold tabular-nums whitespace-nowrap"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
             }}
           >
             <CheckSquare className="h-3.5 w-3.5" />
-            <span>المحدد: {selectedRecords.length}</span>
+            <span>المحدد: {aggregates.count}</span>
           </span>
 
           {selectedRecords.length < totalVisibleCount && (
             <button
               type="button"
               onClick={onSelectAll}
-              className="rounded-lg border px-2.5 py-1.5 font-semibold hover:opacity-85"
+              className="min-h-[34px] rounded-lg border px-2.5 py-1 font-semibold whitespace-nowrap hover:opacity-85"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -238,9 +362,10 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             type="button"
             onClick={() => {
               setShowQuickDetails(false);
+              setConfirmDeleteOpen(false);
               onClearSelection();
             }}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold hover:opacity-85"
+            className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 font-semibold whitespace-nowrap hover:opacity-85"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -252,12 +377,49 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           </button>
         </div>
 
-        {/* Right: Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        {/* Live Aggregate Totals Strip */}
+        <div
+          data-testid="selection-aggregates-strip"
+          className="flex flex-wrap items-center gap-3 text-xs tabular-nums"
+        >
+          <div className="flex items-center gap-1">
+            <span style={{ color: 'var(--text-muted)' }}>صافي الأفراد:</span>
+            <span className="font-extrabold">
+              {aggregates.totalEligibleIndividuals} فرد
+            </span>
+          </div>
+          <span style={{ color: 'var(--border-color)' }}>|</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: 'var(--text-muted)' }}>إجمالي الحصة:</span>
+            <span className="font-extrabold" style={{ color: 'var(--accent)' }}>
+              {aggregates.quotaLabel}
+            </span>
+          </div>
+          <span style={{ color: 'var(--border-color)' }}>|</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: 'var(--text-muted)' }}>إجمالي المبلغ:</span>
+            <span className="font-extrabold" style={{ color: 'var(--success)' }}>
+              {aggregates.priceLabel}
+            </span>
+          </div>
+          {aggregates.blockedRecordsCount > 0 && (
+            <>
+              <span style={{ color: 'var(--border-color)' }}>|</span>
+              <span className="font-bold" style={{ color: 'var(--warning)' }}>
+                {aggregates.blockedRecordsCount} مستبعد/محجوب
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Action Buttons Row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setShowQuickDetails((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
             style={{
               backgroundColor: showQuickDetails
                 ? 'var(--bg-nav-active)'
@@ -275,7 +437,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           <button
             type="button"
             onClick={() => setFullInfoOpen(true)}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -295,7 +457,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 }
                 setMoveModalOpen(true);
               }}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+              className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -306,10 +468,62 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             </button>
           )}
 
+          {!readOnlyArchiveMode &&
+            linkedPersonIds.length > 0 &&
+            onBulkUpdateStatusAndCategory && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBatchBlockType('keep');
+                  setBatchCategory('__keep__');
+                  setBatchBlockReason('');
+                  setBatchEditOpen(true);
+                }}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <SlidersHorizontal
+                  className="h-3.5 w-3.5"
+                  style={{ color: 'var(--accent)' }}
+                />
+                <span>تعديل جماعي</span>
+              </button>
+            )}
+
+          {!readOnlyArchiveMode &&
+            linkedPersonIds.length > 0 &&
+            onCreateReadyListFromSelection && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNewReadyListName(
+                    `قائمة توزيع (${linkedPersonIds.length}) · ${new Date()
+                      .toISOString()
+                      .slice(0, 10)}`
+                  );
+                  setCreateListOpen(true);
+                }}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <FilePlus2
+                  className="h-3.5 w-3.5"
+                  style={{ color: 'var(--accent)' }}
+                />
+                <span>إنشاء قائمة توزيع</span>
+              </button>
+            )}
+
           <button
             type="button"
             onClick={() => setSnippetModalOpen(true)}
-            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold whitespace-nowrap"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-3 py-1.5 font-bold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
@@ -323,7 +537,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             type="button"
             disabled={exportingImg}
             onClick={handleExportImage}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold disabled:opacity-50"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap disabled:opacity-50"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -333,18 +547,85 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             <span>{exportingImg ? 'جارٍ التحويل...' : 'تحويله كصورة'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <Copy className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-            <span>نسخ سريع</span>
-          </button>
+          {/* Smart Formatted Copy Dropdown */}
+          <div ref={copyMenuRef} className="relative">
+            <div className="inline-flex items-stretch">
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-r-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>نسخ سريع</span>
+              </button>
+              <button
+                type="button"
+                aria-label="خيارات صيغة النسخ الذكي"
+                aria-expanded={copyMenuOpen}
+                onClick={() => setCopyMenuOpen((v) => !v)}
+                className="inline-flex min-h-[36px] items-center rounded-l-lg border border-r-0 px-2 py-1.5 font-bold"
+                style={{
+                  backgroundColor: copyMenuOpen
+                    ? 'var(--bg-nav-active)'
+                    : 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {copyMenuOpen && (
+              <div
+                role="menu"
+                aria-label="صيغ النسخ الذكي"
+                className="absolute left-0 top-full z-40 mt-1.5 w-64 rounded-xl border p-1.5 shadow-xl space-y-1"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleCopyMode('names_only')}
+                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                >
+                  <span className="font-bold">نسخ الأسماء فقط</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    قائمة مرقمة للأسماء المحددة دون أرقام
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleCopyMode('details_table')}
+                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                >
+                  <span className="font-bold">الأسماء + الأفراد + الحصة + المبلغ</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    تفاصيل الأكياس والكغم والمبالغ مع الإجمالي
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleCopyMode('share_summary')}
+                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                >
+                  <span className="font-bold">تقرير جاهز للمشاركة (واتساب / طباعة)</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    كشف منسق بعنوان وتاريخ ومجاميع ختامية
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {!readOnlyArchiveMode && linkedPersonIds.length > 0 && (
             <button
@@ -356,12 +637,11 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 setRelTime('');
                 setRelationModalOpen(true);
               }}
-              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-bold"
+              className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent)',
                 color: 'var(--accent)',
-                borderWidth: '1px',
               }}
             >
               <HeartHandshake className="h-3.5 w-3.5" />
@@ -369,7 +649,69 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             </button>
           )}
         </div>
+
+        {!readOnlyArchiveMode && onBulkDeleteSelected && (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteOpen((v) => !v)}
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+            style={{
+              backgroundColor: confirmDeleteOpen
+                ? 'var(--danger)'
+                : 'var(--bg-main)',
+              borderColor: 'var(--danger)',
+              color: confirmDeleteOpen ? '#ffffff' : 'var(--danger)',
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>حذف المحدد ({selectedRecords.length})</span>
+          </button>
+        )}
       </div>
+
+      {/* Inline Safe Bulk Delete Confirmation Bar */}
+      {confirmDeleteOpen && onBulkDeleteSelected && (
+        <div
+          role="alertdialog"
+          aria-label="تأكيد الحذف الجماعي الآمن"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 text-xs"
+          style={{
+            backgroundColor: 'var(--danger-bg, var(--bg-main))',
+            borderColor: 'var(--danger)',
+          }}
+        >
+          <span className="font-bold">
+            سيتم نقل {selectedRecords.length} سجل إلى سلة المهملات بأمان (يمكنك الاسترجاع والتراجع مباشرة).
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const count = selectedRecords.length;
+                onBulkDeleteSelected(selectedRecords);
+                setConfirmDeleteOpen(false);
+                setLastDeletedBanner({ count });
+                onClearSelection();
+              }}
+              className="min-h-[34px] rounded-lg px-3 py-1 font-bold text-white"
+              style={{ backgroundColor: 'var(--danger)' }}
+            >
+              تأكيد النقل لسلة المهملات
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteOpen(false)}
+              className="min-h-[34px] rounded-lg border px-3 py-1 font-semibold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div
@@ -1012,6 +1354,275 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Batch Status & Category Modal */}
+      {batchEditOpen && onBulkUpdateStatusAndCategory && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="التعديل الجماعي للحالة والفئة"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+          onClick={() => setBatchEditOpen(false)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const patch: {
+                blockType?: BlockScope;
+                blockedIndividuals?: number;
+                blockReason?: string;
+                customCategory?: string;
+              } = {};
+              if (batchBlockType !== 'keep') {
+                patch.blockType = batchBlockType;
+                if (batchBlockType === 'partial') {
+                  patch.blockedIndividuals = Math.max(
+                    1,
+                    Number(batchPartialBlocked) || 1
+                  );
+                }
+                if (batchBlockReason.trim()) {
+                  patch.blockReason = batchBlockReason.trim();
+                }
+              }
+              if (batchCategory !== '__keep__') {
+                patch.customCategory = batchCategory;
+              }
+              onBulkUpdateStatusAndCategory(linkedPersonIds, patch);
+              showNoticeMsg(
+                `تم تطبيق التعديل الجماعي على ${linkedPersonIds.length} سجل.`
+              );
+              setBatchEditOpen(false);
+            }}
+            className="w-full max-w-md space-y-4 rounded-xl border p-5 text-xs shadow-xl"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-primary)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold">
+                تعديل جماعي للحالة والفئة ({linkedPersonIds.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBatchEditOpen(false)}
+                aria-label="إغلاق"
+                className="rounded p-1 hover:opacity-75"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="mb-1 block font-bold">تحديث الحالة / الحجب</label>
+              <select
+                value={batchBlockType}
+                onChange={(e) =>
+                  setBatchBlockType(e.target.value as 'keep' | BlockScope)
+                }
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <option value="keep">عدم تغيير الحالة الحالية</option>
+                <option value="none">نشط (إزالة الحجب بالكامل)</option>
+                <option value="partial">حجب جزئي (تحديد عدد محجوبين)</option>
+                <option value="full">حجب كلي (استبعاد كامل العائلة)</option>
+                <option value="archived">مؤرشف</option>
+              </select>
+            </div>
+
+            {batchBlockType === 'partial' && (
+              <div>
+                <label className="mb-1 block font-bold">
+                  عدد الأفراد المحجوبين لكل سجل
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={batchPartialBlocked}
+                  onChange={(e) => setBatchPartialBlocked(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm tabular-nums"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                />
+              </div>
+            )}
+
+            {batchBlockType !== 'keep' && batchBlockType !== 'none' && (
+              <div>
+                <label className="mb-1 block font-bold">سبب التعديل (اختياري)</label>
+                <input
+                  type="text"
+                  value={batchBlockReason}
+                  onChange={(e) => setBatchBlockReason(e.target.value)}
+                  placeholder="مثال: تحديث بيانات الشهر الحالي"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block font-bold">تعيين الفئة المخصصة</label>
+              <select
+                value={batchCategory}
+                onChange={(e) => setBatchCategory(e.target.value)}
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <option value="__keep__">عدم تغيير الفئة الحالية</option>
+                <option value="">بدون فئة</option>
+                {customCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setBatchEditOpen(false)}
+                className="rounded-lg border px-4 py-2 font-semibold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  batchBlockType === 'keep' && batchCategory === '__keep__'
+                }
+                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold disabled:opacity-45"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>تطبيق التعديلات</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Create Ready List Directly From Selection Modal */}
+      {createListOpen && onCreateReadyListFromSelection && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="إنشاء قائمة توزيع مباشرة من المحددين"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+          onClick={() => setCreateListOpen(false)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const res = onCreateReadyListFromSelection({
+                name: newReadyListName.trim(),
+                personIds: linkedPersonIds,
+              });
+              showNoticeMsg(
+                `تم إنشاء قائمة توزيع جديدة وتعبئتها بـ ${
+                  res && typeof res === 'object'
+                    ? res.addedCount
+                    : linkedPersonIds.length
+                } مستفيد.`
+              );
+              setCreateListOpen(false);
+            }}
+            className="w-full max-w-md space-y-4 rounded-xl border p-5 text-xs shadow-xl"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-primary)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold">
+                إنشاء قائمة توزيع جديدة ({linkedPersonIds.length} مستفيد)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCreateListOpen(false)}
+                aria-label="إغلاق"
+                className="rounded p-1 hover:opacity-75"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="mb-1 block font-bold">اسم القائمة الجاهزة</label>
+              <input
+                type="text"
+                required
+                value={newReadyListName}
+                onChange={(e) => setNewReadyListName(e.target.value)}
+                placeholder="مثال: وجبة توزيع قطاع الشمال..."
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+            </div>
+
+            <div
+              className="rounded-lg border p-3 tabular-nums"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="font-bold">ملخص القائمة التي سيتم إنشاؤها:</div>
+              <div className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                {aggregates.count} سجل · {aggregates.totalEligibleIndividuals}{' '}
+                فرد · {aggregates.quotaLabel} · {aggregates.priceLabel}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setCreateListOpen(false)}
+                className="rounded-lg border px-4 py-2 font-semibold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <FilePlus2 className="h-3.5 w-3.5" />
+                <span>إنشاء القائمة وحفظها</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

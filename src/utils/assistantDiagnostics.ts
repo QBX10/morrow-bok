@@ -94,25 +94,46 @@ export function runAppDiagnostics(
       seenGlobal.set(norm, p);
     }
 
-    // 2. Invalid / zero individuals
-    if (p.individuals === null || p.individuals === undefined || p.individuals <= 0 || !Number.isFinite(p.individuals)) {
-      if (p.blockType !== 'full') {
-        issues.push({
-          id: `invalid_ind_${p.id}`,
-          category: 'invalid_individuals',
-          severity: 'high',
-          title: `عدد الأفراد غير مكتمل أو صفر: ${p.name}`,
-          detail: `القيمة الحالية (${String(p.individuals)}) تحتاج مراجعة أو تحويل السجل للحظر/الأرشفة.`,
-          agencyId: p.agencyId,
-          personId: p.id,
-          autoFixable: false,
-        });
-      }
+    // 2. Invalid / zero / outlier individuals
+    const isNegativeInd =
+      typeof p.individuals === 'number' &&
+      Number.isFinite(p.individuals) &&
+      p.individuals < 0;
+    const isSuspiciousHigh =
+      typeof p.individuals === 'number' &&
+      Number.isFinite(p.individuals) &&
+      p.individuals > 18;
+    if (
+      isNegativeInd ||
+      isSuspiciousHigh ||
+      ((p.individuals === null ||
+        p.individuals === undefined ||
+        p.individuals <= 0 ||
+        !Number.isFinite(p.individuals)) &&
+        p.blockType !== 'full')
+    ) {
+      issues.push({
+        id: `invalid_ind_${p.id}`,
+        category: 'invalid_individuals',
+        severity: isSuspiciousHigh ? 'medium' : 'high',
+        title: isSuspiciousHigh
+          ? `رقم أفراد غير اعتيادي (${p.individuals} فرد): ${p.name}`
+          : `عدد الأفراد غير مكتمل أو صفر: ${p.name}`,
+        detail: isSuspiciousHigh
+          ? `القيمة (${p.individuals}) تتجاوز المعدل المعتاد (18 فرداً) وقد تكون خطأ إدخال.`
+          : `القيمة الحالية (${String(p.individuals)}) تحتاج مراجعة أو تحويل السجل للحظر/الأرشفة.`,
+        agencyId: p.agencyId,
+        personId: p.id,
+        autoFixable: isNegativeInd,
+        fixDescription: isNegativeInd
+          ? 'تصفير القيمة السالبة إلى 0 للمراجعة الآمنة'
+          : undefined,
+      });
     }
 
     // 3. Status vs BlockType sync mismatch (auto-fixable!)
     const expectedStatus: Person['status'] =
-      p.blockType === 'full' ? 'محجوب' : p.blockType === 'archived' ? 'مؤرشف' : '';
+      p.blockType === 'full' ? 'محجوب' : '';
     if (p.status !== expectedStatus) {
       issues.push({
         id: `status_sync_${p.id}`,
@@ -289,6 +310,17 @@ export function applyDiagnosticAutoFixes(
         fixedCount += 1;
         summaryLines.push(`تنظيف اسم: ${cleaned}`);
       }
+    }
+
+    if (
+      fixIds.has(`invalid_ind_${p.id}`) &&
+      typeof p.individuals === 'number' &&
+      p.individuals < 0
+    ) {
+      p.individuals = 0;
+      changed = true;
+      fixedCount += 1;
+      summaryLines.push(`تصفير عدد الأفراد السالب للسجل ${p.name}`);
     }
 
     if (fixIds.has(`partial_bound_${p.id}`)) {

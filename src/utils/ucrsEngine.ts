@@ -77,7 +77,7 @@ const SEMANTIC_SYNONYM_GROUPS: Record<string, string[]> = {
 
 const RELEVANCE_PATTERNS = [
   'مستفيد',
-  'انفار',
+  '\u0627\u0646\u0641\u0627\u0631',
   'افراد',
   'طحين',
   'كمية',
@@ -90,7 +90,7 @@ const RELEVANCE_PATTERNS = [
   'محجوب',
   'حجب',
   'عائلة',
-  'نفر',
+  'فرد',
 ];
 
 const IRAQI_LOCATION_HINTS = [

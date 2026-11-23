@@ -7,10 +7,13 @@ import {
   CheckCircle2,
   Clock,
   Cpu,
+  ExternalLink,
   FileSpreadsheet,
   Navigation,
+  RotateCcw,
   Search,
   Send,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -19,6 +22,7 @@ import {
   WifiOff,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import type {
   AssistantBrainMode,
@@ -26,9 +30,14 @@ import type {
   AssistantConnectivityState,
   AssistantMessage,
   AssistantQueuedTask,
+  AssistantSettingsConfig,
+  AssistantSmartSuggestion,
   AssistantSpotlightState,
   AssistantUserPref,
+  MorrowCenterTab,
 } from '../types/assistant';
+import type { QuotaCheckResult } from '../utils/assistantQuota';
+import { getEngineDisplayMeta } from '../utils/morrowRouter';
 
 interface AssistantWidgetProps {
   isOpen: boolean;
@@ -58,10 +67,18 @@ interface AssistantWidgetProps {
     title: string;
     description: string;
   }) => void;
-  onSendMessage: (prompt: string) => void;
+  onSendMessage: (prompt: string, options?: { fromFloatingWidget?: boolean }) => void;
   onChoiceClick: (choice: AssistantChoiceChip) => void;
   onResolveDiff: (messageId: string, approved: boolean) => void;
   focusedPersonName?: string;
+  smartSuggestions?: AssistantSmartSuggestion[];
+  assistantSettings?: AssistantSettingsConfig;
+  quotaInfo?: QuotaCheckResult;
+  hasUndoableAction?: boolean;
+  onUndoLastAction?: (messageId?: string) => void;
+  onOpenAssistantSettings?: () => void;
+  pendingDraftsCount?: number;
+  onOpenCommandCenter?: (tab?: MorrowCenterTab) => void;
 }
 
 const BRAIN_MODES: Array<{
@@ -69,11 +86,10 @@ const BRAIN_MODES: Array<{
   label: string;
   desc: string;
 }> = [
-  { id: 'auto', label: 'تلقائي', desc: 'أوفلاين للأوامر السريعة + سحابي للطلبات الحرة' },
-  { id: 'local', label: 'محلي', desc: 'محرك عراقي 100% بدون إنترنت' },
-  { id: 'gemini_hydrogen', label: 'Hydrogen', desc: 'تحليل عميق عبر Gemini 4 Hydrogen' },
-  { id: 'gemini_lite', label: 'Lite', desc: 'استجابة سريعة عبر Gemini Flash Lite' },
-  { id: 'collaborative', label: 'تعاون مشترك', desc: 'توافق Hydrogen + Lite + تدقيق محلي لأقوى إجابة' },
+  { id: 'auto', label: 'تلقائي', desc: 'Morrow المحلي أولاً ثم 2.5 Flash ثم 2.5 Pro عند الحاجة' },
+  { id: 'local', label: 'Morrow محلي', desc: 'ردود وحسابات وفحص فوري بدون إنترنت' },
+  { id: 'gemini_2_5_flash', label: '2.5 Flash', desc: 'Gemini 2.5 Flash للمهام اللغوية السريعة' },
+  { id: 'gemini_2_5_pro', label: '2.5 Pro', desc: 'Gemini 2.5 Pro للتحليل العميق والتقارير' },
 ];
 
 export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
@@ -98,6 +114,14 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onChoiceClick,
   onResolveDiff,
   focusedPersonName,
+  smartSuggestions = [],
+  assistantSettings,
+  quotaInfo,
+  hasUndoableAction = false,
+  onUndoLastAction,
+  onOpenAssistantSettings,
+  pendingDraftsCount = 0,
+  onOpenCommandCenter,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [showPrefs, setShowPrefs] = useState(false);
@@ -131,12 +155,42 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     [brainMode]
   );
 
+  const statusMeta = useMemo(() => {
+    if (connectivity === 'online') {
+      return {
+        label: 'أونلاين',
+        bg: 'var(--success-bg)',
+        border: 'var(--success)',
+        color: 'var(--success)',
+        title: `متصل (${assistantSettings?.preferredModelId || 'gemini-2.5-flash'})`,
+      };
+    }
+    if (connectivity === 'quota_exhausted') {
+      return {
+        label: 'الحصة خلصت',
+        bg: 'var(--danger-bg, var(--warning-bg))',
+        border: 'var(--danger)',
+        color: 'var(--danger)',
+        title: 'انتهت حصة السحابة مؤقتاً — يعمل الآن بمحرك Morrow المحلي',
+      };
+    }
+    return {
+      label: 'أوفلاين',
+      bg: 'var(--warning-bg)',
+      border: 'var(--warning)',
+      color: 'var(--warning)',
+      title: assistantSettings?.onlineDisabled
+        ? 'معطّل من الإعدادات — وضع أوفلاين صارم'
+        : 'يعمل حالياً بمحرك Morrow المحلي بدون إنترنت',
+    };
+  }, [connectivity, assistantSettings]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     setInputValue('');
-    onSendMessage(trimmed);
+    onSendMessage(trimmed, { fromFloatingWidget: true });
   };
 
   return (
@@ -146,7 +200,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         <aside
           role="status"
           aria-live="polite"
-          className="no-print fixed top-14 left-1/2 z-50 flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border px-4 py-2.5 shadow-xl"
+          className="no-print fixed top-[78px] left-1/2 z-50 flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--accent)',
@@ -177,46 +231,14 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         </aside>
       )}
 
-      {/* Proactive 1-line non-intrusive health notice above launcher when closed */}
-      {!isOpen && proactiveTip && !tipDismissed && (
-        <div
-          className="no-print fixed bottom-20 left-4 z-40 flex max-w-[320px] items-center gap-2 rounded-xl border px-3 py-2 text-[11px] shadow-lg"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--warning)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--warning)' }} />
-          <button
-            type="button"
-            onClick={() => {
-              onToggleOpen(true);
-              onSendMessage('افحص التطبيق');
-            }}
-            className="flex-1 text-right font-semibold hover:underline"
-          >
-            {proactiveTip}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTipDismissed(true)}
-            aria-label="إخفاء التنبيه"
-            className="rounded p-0.5 hover:opacity-75"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
-
-      {/* Floating Glowing Launcher Button */}
+      {/* Floating Launcher Button */}
       {!isOpen && (
         <button
           type="button"
           onClick={() => onToggleOpen(true)}
-          aria-label="فتح المساعد الذكي روبوت تابريكس"
-          className="no-print assistant-glow-btn fixed bottom-4 left-4 z-40 inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold whitespace-nowrap transition-transform hover:scale-[1.03]"
+          aria-label="فتح المساعد الذكي Morrow"
+          title={proactiveTip || 'فتح المساعد الذكي Morrow'}
+          className="no-print assistant-glow-btn fixed bottom-3 left-3 z-40 inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2.5 text-[11px] font-bold whitespace-nowrap transition-transform hover:scale-[1.03] sm:bottom-4 sm:left-4 sm:gap-2 sm:px-4 sm:py-3 sm:text-xs"
           style={{
             backgroundColor: 'var(--accent)',
             borderColor: 'var(--accent)',
@@ -225,19 +247,19 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         >
           <Bot className="h-4 w-4 shrink-0" />
           <span>المساعد الذكي</span>
-          {queuedTasks.length > 0 && (
+          {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
             <span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
-              {queuedTasks.length}
+              {pendingDraftsCount + queuedTasks.length}
             </span>
           )}
         </button>
       )}
 
-      {/* Non-Blocking Side Drawer Panel (Table behind remains clickable & readable) */}
+      {/* Non-Blocking Side Drawer Panel */}
       {isOpen && (
         <aside
-          aria-label="لوحة المساعد الذكي — تابريكس"
-          className="no-print fixed top-14 bottom-3 left-3 z-40 flex w-[min(400px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border shadow-2xl"
+          aria-label="لوحة المساعد الذكي — Morrow"
+          className="no-print fixed top-14 bottom-3 left-3 z-40 flex w-[min(430px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border shadow-2xl"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--accent)',
@@ -245,7 +267,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             boxShadow: '0 18px 48px rgba(0, 0, 0, 0.28)',
           }}
         >
-          {/* Header: Identity + Online/Offline Badge + Close */}
+          {/* Header: Identity + Online/Offline/Quota Badge + Undo + Settings + Close */}
           <div
             className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5"
             style={{
@@ -265,35 +287,22 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h2 className="truncate text-xs font-bold">مساعد تابريكس</h2>
+                  <h2 className="text-xs font-bold whitespace-nowrap">Morrow</h2>
                   <span
+                    title={statusMeta.title}
                     className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap"
                     style={{
-                      backgroundColor:
-                        connectivity === 'online'
-                          ? 'var(--success-bg)'
-                          : 'var(--warning-bg)',
-                      borderColor:
-                        connectivity === 'online'
-                          ? 'var(--success)'
-                          : 'var(--warning)',
-                      color:
-                        connectivity === 'online'
-                          ? 'var(--success)'
-                          : 'var(--warning)',
+                      backgroundColor: statusMeta.bg,
+                      borderColor: statusMeta.border,
+                      color: statusMeta.color,
                     }}
                   >
                     {connectivity === 'online' ? (
-                      <>
-                        <Wifi className="h-2.5 w-2.5" />
-                        <span>أونلاين</span>
-                      </>
+                      <Wifi className="h-2.5 w-2.5" />
                     ) : (
-                      <>
-                        <WifiOff className="h-2.5 w-2.5" />
-                        <span>أوفلاين</span>
-                      </>
+                      <WifiOff className="h-2.5 w-2.5" />
                     )}
+                    <span>{statusMeta.label}</span>
                   </span>
                 </div>
                 <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
@@ -304,6 +313,61 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
+              {onOpenCommandCenter && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenCommandCenter(pendingDraftsCount > 0 ? 'approvals' : 'chat')
+                  }
+                  aria-label="فتح مركز Morrow الكامل"
+                  title="فتح مركز Morrow الكامل (الموافقات والذاكرة والملاحظات)"
+                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-bold whitespace-nowrap"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor:
+                      pendingDraftsCount > 0 ? 'var(--accent)' : 'var(--border-color)',
+                    color: pendingDraftsCount > 0 ? 'var(--accent)' : 'var(--text-primary)',
+                  }}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  <span>
+                    المركز{pendingDraftsCount > 0 ? ` (${pendingDraftsCount})` : ''}
+                  </span>
+                </button>
+              )}
+              {hasUndoableAction && onUndoLastAction && (
+                <button
+                  type="button"
+                  onClick={() => onUndoLastAction()}
+                  aria-label="تراجع عن آخر عملية للمساعد"
+                  title="تراجع عن آخر عملية نفذها المساعد"
+                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-bold"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--warning)',
+                    color: 'var(--warning)',
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>تراجع</span>
+                </button>
+              )}
+              {onOpenAssistantSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenAssistantSettings}
+                  aria-label="إعدادات المساعد الذكي والحصة"
+                  title="إعدادات النموذج والحصة والخصوصية"
+                  className="rounded-lg border p-1.5 text-[11px]"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowPrefs((v) => !v)}
@@ -334,7 +398,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </div>
           </div>
 
-          {/* Brain / Model Switcher + Collaborative Consensus Mode */}
+          {/* Brain / Model Switcher (All 5 modes preserved) */}
           <div
             className="border-b px-3 py-2"
             style={{
@@ -342,12 +406,12 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               borderColor: 'var(--border-color)',
             }}
           >
-            <div className="mb-1 flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="mb-1 flex items-center justify-between gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
               <span className="inline-flex items-center gap-1 font-bold">
                 <Cpu className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                <span>محرك الذكاء والتعاون:</span>
+                <span>محرك الذكاء:</span>
               </span>
-              <span>{BRAIN_MODES.find((b) => b.id === brainMode)?.desc}</span>
+              <span className="truncate">{BRAIN_MODES.find((b) => b.id === brainMode)?.desc}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {BRAIN_MODES.map((m) => {
@@ -371,7 +435,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </div>
           </div>
 
-          {/* Quick Offline Action Bar (4 core instant buttons) */}
+          {/* Quick Offline Action Bar (All 4 core instant buttons preserved) */}
           <div
             className="grid grid-cols-4 gap-1.5 border-b px-3 py-2"
             style={{
@@ -396,7 +460,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => onSendMessage('صدر تقرير اكسل')}
+              onClick={() => onSendMessage('صدر تقرير اكسل', { fromFloatingWidget: true })}
               className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
@@ -408,7 +472,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => onSendMessage('المكررين')}
+              onClick={() => onSendMessage('المكررين', { fromFloatingWidget: true })}
               className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
@@ -420,7 +484,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => onSendMessage('افحص التطبيق')}
+              onClick={() => onSendMessage('افحص التطبيق', { fromFloatingWidget: true })}
               className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
@@ -431,6 +495,36 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               <span>افحص</span>
             </button>
           </div>
+
+          {/* Quota Alert Strip */}
+          {quotaInfo &&
+            !assistantSettings?.onlineDisabled &&
+            (quotaInfo.quotaExhausted || quotaInfo.nearDailyLimit) && (
+              <div
+                className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
+                style={{
+                  backgroundColor: 'var(--warning-bg)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <span className="truncate font-semibold">
+                  {quotaInfo.quotaExhausted
+                    ? 'خلصت حصة السحابة — التحويل التلقائي للمحلي فعّال'
+                    : `تنبيه الحصة: ${quotaInfo.dailyUsed}/${quotaInfo.dailyLimit} طلب اليوم (${quotaInfo.dailyPercent}%)`}
+                </span>
+                {onOpenAssistantSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenAssistantSettings}
+                    className="shrink-0 font-bold underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    الإعدادات
+                  </button>
+                )}
+              </div>
+            )}
 
           {/* Saved Memory Preferences & Offline Queue Inspector */}
           {showPrefs && (
@@ -514,6 +608,39 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </div>
           )}
 
+          {/* Proactive Health Notice inside Drawer */}
+          {proactiveTip && !tipDismissed && !showPrefs && (
+            <div
+              className="flex items-center justify-between gap-2 border-b px-3 py-2 text-[11px]"
+              style={{
+                backgroundColor: 'var(--warning-bg)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onSendMessage('افحص التطبيق')}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-right font-semibold hover:underline"
+              >
+                <AlertTriangle
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: 'var(--warning)' }}
+                />
+                <span className="truncate">{proactiveTip}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipDismissed(true)}
+                aria-label="إخفاء التنبيه"
+                className="rounded p-0.5 hover:opacity-75"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
           {/* Queued Offline Requests Ready Banner when back Online */}
           {connectivity === 'online' && queuedTasks.length > 0 && !showPrefs && (
             <div
@@ -564,19 +691,59 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       maxWidth: isUser ? '88%' : '100%',
                     }}
                   >
-                    {!isUser && msg.engineLabel && (
+                    {!isUser && (msg.engineLabel || msg.engineUsed) && (
                       <div
                         className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold"
                         style={{ color: 'var(--accent)' }}
                       >
                         <span className="inline-flex items-center gap-1">
-                          <Sparkles className="h-2.5 w-2.5" />
-                          <span>{msg.engineLabel}</span>
+                          {msg.engineUsed === 'gemini_2_5_pro' ? (
+                            <Sparkles className="h-3 w-3 shrink-0" />
+                          ) : msg.engineUsed === 'gemini_2_5_flash' ? (
+                            <Zap className="h-3 w-3 shrink-0" />
+                          ) : (
+                            <Cpu className="h-3 w-3 shrink-0" />
+                          )}
+                          <span>
+                            {msg.engineLabel || getEngineDisplayMeta(msg.engineUsed).badgeLabel}
+                          </span>
                         </span>
+                        {typeof msg.confidence === 'number' && (
+                          <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                            ثقة {Math.round(msg.confidence * 100)}%
+                          </span>
+                        )}
                       </div>
                     )}
 
                     <div>{msg.text}</div>
+
+                    {/* Inline Undo Button on Executed Assistant Mutation */}
+                    {msg.canUndo && !msg.undoUsed && hasUndoableAction && onUndoLastAction && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => onUndoLastAction(msg.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--warning)',
+                            color: 'var(--warning)',
+                          }}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          <span>تراجع عن هذه العملية</span>
+                        </button>
+                      </div>
+                    )}
+                    {msg.undoUsed && (
+                      <div
+                        className="mt-1.5 text-[10px] font-semibold"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        تم التراجع عن هذا التعديل.
+                      </div>
+                    )}
 
                     {/* Sandbox Read-Only Confirmation */}
                     {msg.sandboxNotice && (
@@ -627,7 +794,10 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                             className="rounded-lg border px-2.5 py-1.5 text-right text-[11px] font-bold transition-colors hover:opacity-90"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
-                              borderColor: 'var(--accent)',
+                              borderColor:
+                                ch.tone === 'warning'
+                                  ? 'var(--warning)'
+                                  : 'var(--accent)',
                               color: 'var(--text-primary)',
                             }}
                           >
@@ -836,6 +1006,34 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             <div ref={scrollEndRef} />
           </div>
 
+          {/* Screen-Aware Smart Suggestions Strip */}
+          {smartSuggestions.length > 0 && (
+            <div
+              className="flex items-center gap-1.5 overflow-x-auto border-t px-2.5 py-1.5"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+              aria-label="اقتراحات ذكية حسب الشاشة المفتوحة"
+            >
+              {smartSuggestions.map((sug) => (
+                <button
+                  key={sug.id}
+                  type="button"
+                  onClick={() => onSendMessage(sug.prompt, { fromFloatingWidget: true })}
+                  className="shrink-0 rounded-lg border px-2 py-1 text-[10px] font-bold whitespace-nowrap transition-colors hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  {sug.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Input Composer */}
           <form
             onSubmit={handleSubmit}
@@ -850,7 +1048,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="اكتب طلبك باللهجة العراقية (مثال: ضيف علي 5 أفراد)..."
+              placeholder="اكتب طلبك باللهجة العراقية (مثال: ضيف علي وحسن واطبع تقرير)..."
               aria-label="اكتب أمرك للمساعد الذكي"
               className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-xs"
               style={{

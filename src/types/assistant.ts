@@ -9,14 +9,60 @@ import type {
   SettingsSectionId,
 } from './agency.ts';
 
+/**
+ * Strictly restricted to the 3 Morrow brains:
+ * - auto: Morrow Local -> Gemini 2.5 Flash -> Gemini 2.5 Pro escalation chain
+ * - local: Morrow (Local/Offline) only
+ * - gemini_2_5_flash: Fast cloud model (gemini-2.5-flash)
+ * - gemini_2_5_pro: Deep analytical cloud model (gemini-2.5-pro)
+ */
 export type AssistantBrainMode =
   | 'auto'
   | 'local'
-  | 'gemini_hydrogen'
-  | 'gemini_lite'
-  | 'collaborative';
+  | 'gemini_2_5_flash'
+  | 'gemini_2_5_pro';
 
-export type AssistantConnectivityState = 'online' | 'offline';
+export type AssistantEngineSource =
+  | 'morrow_local'
+  | 'gemini_2_5_flash'
+  | 'gemini_2_5_pro';
+
+export type MorrowCenterTab = 'chat' | 'approvals' | 'memory' | 'quick_notes';
+
+export type AssistantConnectivityState = 'online' | 'offline' | 'quota_exhausted';
+
+export interface AssistantSettingsConfig {
+  preferredModelId: string;
+  fallbackModelId: string;
+  onlineDisabled: boolean;
+  cacheEnabled: boolean;
+  dailyRequestLimit: number;
+  minuteRequestLimit: number;
+  quotaWarningPercent: number;
+}
+
+export interface AssistantQuotaStats {
+  dateKey: string;
+  dailyCount: number;
+  minuteTimestamps: number[];
+  lastModelUsed?: string;
+  quotaExhaustedUntil?: number | null;
+}
+
+export interface AssistantConversationMemory {
+  lastPersonId?: number | null;
+  lastPersonName?: string;
+  lastAgencyId?: number | null;
+  lastIntent?: string;
+  lastQuery?: string;
+  lastToolName?: AssistantToolName;
+}
+
+export interface AssistantSmartSuggestion {
+  id: string;
+  label: string;
+  prompt: string;
+}
 
 export type AssistantToolName =
   | 'search_person'
@@ -50,7 +96,11 @@ export interface AssistantChoiceChip {
     | 'select_person'
     | 'navigate_spotlight'
     | 'run_tool'
-    | 'queue_offline';
+    | 'queue_offline'
+    | 'send_prompt'
+    | 'open_command_center_tab'
+    | 'approve_draft'
+    | 'undo_action';
   payload: Record<string, unknown>;
 }
 
@@ -70,6 +120,39 @@ export interface AssistantBeforeAfterDiff {
   status: 'pending' | 'approved' | 'cancelled';
 }
 
+export interface AssistantApprovalDraft {
+  id: string;
+  createdAt: string;
+  sourceEngine: AssistantEngineSource;
+  sourceLabel: string;
+  promptOrigin?: string;
+  diff: AssistantBeforeAfterDiff;
+  status: 'pending' | 'approved' | 'rejected';
+  resolvedAt?: string;
+  resultText?: string;
+}
+
+export interface AssistantQuickNote {
+  id: string;
+  text: string;
+  source: 'text' | 'voice';
+  createdAt: string;
+  linkedPersonId?: number | null;
+  linkedPersonName?: string;
+  linkedAgencyId?: number | null;
+  linkedAgencyName?: string;
+  matchConfidence?: number;
+  syncedToPersonNotes?: boolean;
+}
+
+export interface AppToastItem {
+  id: string;
+  title: string;
+  description?: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+  createdAt: number;
+}
+
 export interface AssistantSlotSession {
   intent: 'add_person' | 'update_person' | 'archive_person' | 'export_sandbox' | 'manage_expense';
   collectedArgs: Record<string, unknown>;
@@ -82,11 +165,18 @@ export interface AssistantMessage {
   role: 'user' | 'assistant';
   text: string;
   createdAt: string;
-  engineUsed?: 'local' | 'gemini_hydrogen' | 'gemini_lite' | 'collaborative';
+  engineUsed?: AssistantEngineSource;
   engineLabel?: string;
+  modelId?: string;
+  fromCache?: boolean;
+  confidence?: number;
+  canUndo?: boolean;
+  undoUsed?: boolean;
+  stealthExecuted?: boolean;
   gracefulLevel?: 'A' | 'B' | 'C';
   choices?: AssistantChoiceChip[];
   confirmationDiff?: AssistantBeforeAfterDiff;
+  pendingDraftId?: string;
   spotlightAction?: {
     label: string;
     view: AppView;

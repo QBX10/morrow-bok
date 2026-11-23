@@ -206,7 +206,7 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         view: {
           type: Type.STRING,
           description:
-            'hub | agency_roster | master_roster | ready_lists | relationships | finance | quick_extract | data_archives | google_workspace | settings',
+            'hub | agency_roster | master_roster | ready_lists | relationships | finance | quick_extract | data_archives | google_workspace | morrow_center | settings',
         },
         agencyId: { type: Type.INTEGER },
         personId: { type: Type.INTEGER },
@@ -219,13 +219,13 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'update_settings',
     description:
-      'تغيير وضع التطبيق أو الثيم أو إعدادات الحاسبة أو حفظ تفضيل دائم للمستخدم.',
+      'تغيير وضع التطبيق أو الثيم أو الوضع الليلي/النهاري أو حفظ تفضيل دائم للمستخدم في الذاكرة.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         action: {
           type: Type.STRING,
-          description: 'set_mode | set_theme | save_pref | delete_pref | toggle_cloud_names',
+          description: 'set_mode | set_theme | set_dark_theme | save_pref | delete_pref | toggle_cloud_names',
         },
         key: { type: Type.STRING },
         label: { type: Type.STRING },

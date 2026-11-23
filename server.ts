@@ -35,6 +35,11 @@ import type { AssistantBrainMode, AssistantToolCall } from './src/types/assistan
 import { normalizePhoneNumber } from './src/utils/agencyLogic.ts';
 import { enforceSafeArabicTerminology } from './src/utils/assistantPrivacy.ts';
 import {
+  PRIMARY_FREE_GEMINI_MODEL,
+  SECONDARY_FREE_GEMINI_MODEL,
+  sanitizeAssistantModelId,
+} from './src/utils/assistantQuota.ts';
+import {
   ASSISTANT_TOOL_DECLARATIONS,
   validateToolCall,
 } from './src/utils/assistantTools.ts';
@@ -1357,7 +1362,7 @@ async function startServer() {
         ],
       };
 
-      const systemInstruction = `أنت "منظومة القراءة الكونية والإدراك التدريجي" (UCRS) داخل تطبيق تابريكس لإدارة وكالات الكمية الغذائية.
+      const systemInstruction = `أنت "منظومة القراءة الكونية والإدراك التدريجي" (UCRS) داخل تطبيق Morrow لإدارة وكالات الكمية الغذائية.
 مبادئك الصارمة:
 1. الفهم قبل الاستخراج: حدد أولاً نوع المحتوى وموضوعه وجودته وهل يخص جداول المستفيدين/الوكالات (important | useful | neutral | irrelevant) مع ذكر السبب، ورأيك الصريح.
 2. التدرج وعدم الاختراع (Zero Silent Errors): إذا رأيت 10 أسماء واستطعت قراءة 4 منها بثقة عالية و3 بشك و3 غير مقروءة، استخرج الأربعة الواضحة والمشكوكة بأمانة، وضع إحداثيات الأجزاء غير المقروءة في unreadableRegions واكتب في missingHint ما تحتاجه لإكمال الباقي (مثل: صورة أوضح للجزء العلوي الأيمن). لا تخمّن أي حرف أو رقم أبدًا!
@@ -1491,14 +1496,16 @@ async function startServer() {
     }
   });
 
-  // --- Embedded AI Assistant & Collaborative Gemini Routing ---
+  // --- Strictly Restricted 3-Brain Assistant Router (Morrow Local <-> gemini-2.5-flash <-> gemini-2.5-pro) ---
   app.get('/api/assistant/status', (_req: Request, res: Response) => {
     const ai = createGeminiClient();
     res.json({
       cloudConfigured: Boolean(ai),
+      defaultModel: PRIMARY_FREE_GEMINI_MODEL,
+      fallbackModel: SECONDARY_FREE_GEMINI_MODEL,
       models: {
-        hydrogen: 'gemini-4-hydrogen',
-        lite: 'gemini-3.1-flash-lite',
+        flash: PRIMARY_FREE_GEMINI_MODEL,
+        pro: SECONDARY_FREE_GEMINI_MODEL,
       },
     });
   });
@@ -1509,6 +1516,8 @@ async function startServer() {
       const body = (req.body || {}) as {
         prompt?: string;
         brainMode?: AssistantBrainMode;
+        preferredModel?: string;
+        fallbackModel?: string;
         cloudContext?: Record<string, unknown>;
         cloudHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
       };
@@ -1524,174 +1533,182 @@ async function startServer() {
         res.status(200).json({
           ok: false,
           fallbackToOffline: true,
-          reason: 'مفتاح Gemini غير مهيأ على الخادم، تم التحويل للمحرك المحلي.',
+          statusCategory: 'offline',
+          reason: 'مفتاح السحابة غير مهيأ على الخادم، تم التشغيل تلقائياً بمحرك Morrow المحلي.',
         });
         return;
       }
 
       const mode: AssistantBrainMode =
-        body.brainMode === 'gemini_lite' ||
-        body.brainMode === 'gemini_hydrogen' ||
-        body.brainMode === 'collaborative'
+        body.brainMode === 'gemini_2_5_flash' ||
+        body.brainMode === 'gemini_2_5_pro' ||
+        body.brainMode === 'local'
           ? body.brainMode
           : 'auto';
 
-      const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 4000);
+      const primaryModel = sanitizeAssistantModelId(
+        body.preferredModel || PRIMARY_FREE_GEMINI_MODEL
+      );
+      const secondaryModel = sanitizeAssistantModelId(
+        body.fallbackModel ||
+          (primaryModel === SECONDARY_FREE_GEMINI_MODEL
+            ? PRIMARY_FREE_GEMINI_MODEL
+            : SECONDARY_FREE_GEMINI_MODEL)
+      );
+
+      const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 2800);
       const historyLines = Array.isArray(body.cloudHistory)
         ? body.cloudHistory
-            .slice(-6)
-            .map((h) => `${h.role === 'user' ? 'المستخدم' : 'المساعد'}: ${String(h.text || '').slice(0, 350)}`)
+            .slice(-4)
+            .map((h) => `${h.role === 'user' ? 'المستخدم' : 'المساعد'}: ${String(h.text || '').slice(0, 320)}`)
             .join('\n')
         : '';
 
-      const systemInstruction = `أنت المساعد الذكي المدمج داخل تطبيق «تابريكس» لإدارة وكالات الكمية الغذائية.
+      const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المدمج داخل تطبيق إدارة وكالات الكمية الغذائية.
 قواعدك الصارمة:
-1. تحدث باللهجة العراقية البسيطة والمهنية والمختصرة.
-2. التزم تماماً بكلمة «الأفراد» و«أفراد» وامنع تماماً استخدام لفظ «الأنفار».
+1. تحدث باللهجة العراقية المهنية المختصرة والواضحة.
+2. التزم تماماً بكلمة «الأفراد» و«أفراد» و«فرد» حصرياً في جميع الردود والتقارير عند الإشارة لعدد الأشخاص.
 3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر فقط الأداة المناسبة من Function Calling بالوسائط الدقيقة.
-4. لا تفترض أو تخمّن بيانات غير موجودة: إن نقصت الوكالة أو عدد الأفراد في طلب إضافة/تعديل، اطلب من المستخدم التوضيح أو استدعِ الأداة بالقدر المتوفر ليقوم التطبيق بسؤاله بالأزرار.
+4. أي عملية تعديل أو إضافة أو أرشفة يجب أن تُجهَّز كمسودة للموافقة فقط عبر الأداة دون تخمين بيانات ناقصة.
 5. لا تقترح حذفاً نهائياً أبداً (استخدم archive_person فقط للأرشفة الآمنة).
-6. أجب في حدود المعقول وبوضوح، وإذا تعذّر جزء من الطلب اقترح تنفيذ الجزء الممكن أو التوضيح.
-سياق التطبيق الحالي (محجوب الأسماء حفاظاً على الخصوصية ما لم يفعلها المدير):
+6. أجب باختصار ووضوح، وقدّم نصائح تحليلية دقيقة عند استخدام التحليل العميق.
+سياق التطبيق المصغر (محجوب الأسماء حفاظاً على الخصوصية):
 ${contextText}`;
 
       const userContent = historyLines
         ? `سجل الحوار القريب:\n${historyLines}\n\nالطلب الحالي:\n${prompt}`
         : prompt;
 
-      const runSingleModel = async (
-        modelName: string,
-        extraHint?: string
+      const classifyCloudError = (err: unknown): { isQuota: boolean; isTransient: boolean } => {
+        const msg = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
+        const status =
+          typeof (err as { status?: unknown })?.status === 'number'
+            ? Number((err as { status: number }).status)
+            : 0;
+        const isQuota =
+          status === 429 ||
+          msg.includes('429') ||
+          msg.includes('resource_exhausted') ||
+          msg.includes('quota');
+        const isTransient =
+          status === 503 ||
+          status === 500 ||
+          msg.includes('503') ||
+          msg.includes('unavailable') ||
+          msg.includes('timeout') ||
+          msg.includes('overloaded');
+        return { isQuota, isTransient };
+      };
+
+      const runSingleModelWithRetry = async (
+        modelName: string
       ): Promise<{
         text: string;
         toolCalls: AssistantToolCall[];
         model: string;
       }> => {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('assistant_cloud_timeout')), 8500);
-        });
+        const maxAttempts = 2;
+        let lastErr: unknown = null;
 
-        const callPromise = ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: 'user',
-              parts: [
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('assistant_cloud_timeout')), 9500);
+            });
+
+            const callPromise = ai.models.generateContent({
+              model: modelName,
+              contents: [
                 {
-                  text: extraHint ? `${userContent}\n\n${extraHint}` : userContent,
+                  role: 'user',
+                  parts: [{ text: userContent }],
                 },
               ],
-            },
-          ],
-          config: {
-            systemInstruction,
-            tools: [{ functionDeclarations: ASSISTANT_TOOL_DECLARATIONS }],
-          },
-        });
+              config: {
+                systemInstruction,
+                tools: [{ functionDeclarations: ASSISTANT_TOOL_DECLARATIONS }],
+              },
+            });
 
-        const response = await Promise.race([callPromise, timeoutPromise]);
-        const validCalls: AssistantToolCall[] = [];
-        for (const fc of response.functionCalls || []) {
-          const checked = validateToolCall({ name: fc.name, args: fc.args });
-          if (checked.valid && checked.sanitized) {
-            validCalls.push(checked.sanitized);
+            const response = await Promise.race([callPromise, timeoutPromise]);
+            const validCalls: AssistantToolCall[] = [];
+            for (const fc of response.functionCalls || []) {
+              const checked = validateToolCall({ name: fc.name, args: fc.args });
+              if (checked.valid && checked.sanitized) {
+                validCalls.push(checked.sanitized);
+              }
+            }
+            return {
+              text: enforceSafeArabicTerminology(String(response.text || '').trim()),
+              toolCalls: validCalls,
+              model: modelName,
+            };
+          } catch (err) {
+            lastErr = err;
+            const { isQuota, isTransient } = classifyCloudError(err);
+            if (isQuota || !isTransient || attempt === maxAttempts - 1) {
+              throw err;
+            }
+            const backoffMs = 350 * Math.pow(2, attempt);
+            await new Promise((r) => setTimeout(r, backoffMs));
           }
         }
-        return {
-          text: enforceSafeArabicTerminology(String(response.text || '').trim()),
-          toolCalls: validCalls,
-          model: modelName,
-        };
+        throw lastErr;
       };
 
-      if (mode === 'collaborative') {
-        const [hydrogenRes, liteRes] = await Promise.allSettled([
-          runSingleModel(
-            'gemini-4-hydrogen',
-            'أنت العقل التحليلي العميق (Hydrogen): ركّز على دقة فهم السياق واختيار الأداة المثالية.'
-          ),
-          runSingleModel(
-            'gemini-3.1-flash-lite',
-            'أنت المدقق السريع (Lite): تحقق من الوسائط، النقص في البيانات، وصحة الصياغة العراقية المختصرة.'
-          ),
-        ]);
+      // Strictly 3-brain escalation chain: gemini-2.5-flash <-> gemini-2.5-pro -> morrow_local
+      const orderedModels =
+        mode === 'gemini_2_5_pro'
+          ? [SECONDARY_FREE_GEMINI_MODEL, PRIMARY_FREE_GEMINI_MODEL]
+          : [primaryModel, secondaryModel];
+      const uniqueChain = Array.from(new Set(orderedModels));
 
-        const hVal = hydrogenRes.status === 'fulfilled' ? hydrogenRes.value : null;
-        const lVal = liteRes.status === 'fulfilled' ? liteRes.value : null;
-
-        if (!hVal && !lVal) {
-          res.status(200).json({
-            ok: false,
-            fallbackToOffline: true,
-            reason: 'تعذر الوصول للنماذج السحابية ضمن المهلة المحددة.',
+      let hitQuota = false;
+      for (let i = 0; i < uniqueChain.length; i++) {
+        const candidateModel = uniqueChain[i];
+        try {
+          const result = await runSingleModelWithRetry(candidateModel);
+          const isFallbackUsed = i > 0;
+          const isPro = result.model === SECONDARY_FREE_GEMINI_MODEL;
+          res.json({
+            ok: true,
+            engineUsed: isPro ? 'gemini_2_5_pro' : 'gemini_2_5_flash',
+            modelId: result.model,
+            fallbackUsed: isFallbackUsed,
+            engineLabel: isPro
+              ? 'Gemini 2.5 Pro · تحليل عميق'
+              : 'Gemini 2.5 Flash · لغوي سريع',
+            text:
+              result.text ||
+              (result.toolCalls.length > 0
+                ? 'تم فهم الطلب وتجهيز الإجراء المناسب.'
+                : 'تفضل، كيف أقدر أساعدك أكثر؟'),
+            toolCalls: result.toolCalls,
+            latencyMs: Date.now() - startedAt,
           });
           return;
+        } catch (err) {
+          const { isQuota } = classifyCloudError(err);
+          if (isQuota) hitQuota = true;
+          // Escalate smoothly from Flash -> Pro (or vice versa) without exposing raw SDK errors
         }
-
-        const primaryTool = hVal?.toolCalls[0] || lVal?.toolCalls[0] || null;
-        const secondaryTool = lVal?.toolCalls[0] || null;
-        const consensusMatched =
-          Boolean(hVal?.toolCalls[0]) &&
-          Boolean(secondaryTool) &&
-          hVal!.toolCalls[0].name === secondaryTool!.name;
-
-        const mergedTextParts = [
-          hVal?.text || '',
-          lVal?.text && lVal.text !== hVal?.text && !consensusMatched ? lVal.text : '',
-        ].filter(Boolean);
-
-        const finalText =
-          mergedTextParts.join('\n\n') ||
-          (primaryTool
-            ? 'تم تحليل الطلب بالتعاون المشترك بين النموذجين وتجهيز الإجراء الأنسب.'
-            : 'تمت معالجة الطلب، أخبرني إذا تحتاج تفاصيل إضافية.');
-
-        res.json({
-          ok: true,
-          engineUsed: 'collaborative',
-          engineLabel: consensusMatched
-            ? 'تعاون مشترك (توافق Hydrogen + Lite)'
-            : 'تعاون مشترك (Hydrogen + تدقيق Lite)',
-          text: enforceSafeArabicTerminology(finalText),
-          toolCalls: primaryTool ? [primaryTool] : [],
-          collaborativeMeta: {
-            consensusMatched,
-            hydrogenTool: hVal?.toolCalls[0]?.name || null,
-            liteTool: lVal?.toolCalls[0]?.name || null,
-            latencyMs: Date.now() - startedAt,
-          },
-        });
-        return;
       }
 
-      const targetModel =
-        mode === 'gemini_lite' ? 'gemini-3.1-flash-lite' : 'gemini-4-hydrogen';
-      const result = await runSingleModel(targetModel);
-      res.json({
-        ok: true,
-        engineUsed: mode === 'gemini_lite' ? 'gemini_lite' : 'gemini_hydrogen',
-        engineLabel:
-          mode === 'gemini_lite'
-            ? 'Gemini 3.1 Flash Lite'
-            : 'Gemini 4 Hydrogen',
-        text:
-          result.text ||
-          (result.toolCalls.length > 0
-            ? 'تم فهم الطلب وتجهيز الأداة المناسبة.'
-            : 'تفضل، كيف أقدر أساعدك أكثر؟'),
-        toolCalls: result.toolCalls,
-        latencyMs: Date.now() - startedAt,
-      });
-    } catch (err) {
       res.status(200).json({
         ok: false,
         fallbackToOffline: true,
-        reason:
-          err instanceof Error && err.message === 'assistant_cloud_timeout'
-            ? 'انتهت مهلة السحابة السريعة؛ تم التحويل للمحرك المحلي.'
-            : err instanceof Error
-            ? err.message
-            : 'تعذر الاتصال بالسحابة، تم التحويل للمحرك المحلي.',
+        quotaExhausted: hitQuota,
+        statusCategory: hitQuota ? 'quota_exhausted' : 'offline',
+        reason: hitQuota
+          ? 'انتهت حصة السحابة مؤقتاً — تم التحويل تلقائياً إلى محرك Morrow المحلي.'
+          : 'تعذر الوصول للنماذج السحابية حالياً — تم التحويل تلقائياً إلى محرك Morrow المحلي.',
+      });
+    } catch {
+      res.status(200).json({
+        ok: false,
+        fallbackToOffline: true,
+        statusCategory: 'offline',
+        reason: 'تعذر الاتصال بالسحابة مؤقتاً، تم التحويل لمحرك Morrow المحلي.',
       });
     }
   });

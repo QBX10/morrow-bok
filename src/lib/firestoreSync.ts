@@ -51,7 +51,7 @@ export async function syncUserProfileToFirestore(params: {
   const publicPath = `users/${params.uid}/public/card`;
   const publicRef = doc(db, 'users', params.uid, 'public', 'card');
   const safeDisplayName =
-    clampStr(params.displayName, MAX_DISPLAY_NAME_LEN) || 'مستخدم تابريكس';
+    clampStr(params.displayName, MAX_DISPLAY_NAME_LEN) || 'مستخدم Morrow';
   const safeAvatar =
     params.avatarUrl && params.avatarUrl.length <= MAX_AVATAR_LEN
       ? params.avatarUrl
@@ -111,7 +111,7 @@ export async function syncWorkspaceSummaryToFirestore(params: {
   const wsPath = `users/${params.uid}/workspaces/main`;
   const wsRef = doc(db, 'users', params.uid, 'workspaces', 'main');
   const safeTitle =
-    clampStr(params.title, MAX_WORKSPACE_TITLE_LEN) || 'مساحة عمل تابريكس';
+    clampStr(params.title, MAX_WORKSPACE_TITLE_LEN) || 'مساحة عمل Morrow';
   const safeAgencyCount = Math.max(0, Math.min(500, Math.round(params.agencyCount)));
   const safeRecordCount = Math.max(0, Math.min(50000, Math.round(params.recordCount)));
 

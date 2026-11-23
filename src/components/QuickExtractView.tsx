@@ -1644,34 +1644,42 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     activeSession?.sources.find((s) => s.previewDataUrl)?.previewDataUrl;
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Top Pipeline Header + Universal Intake Switcher */}
       <section
-        className="rounded-xl border p-4 sm:p-5"
+        data-assistant-target="quick-extract-root"
+        className="tabrix-card rounded-2xl border p-4 sm:p-5"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-color)',
         }}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0 sm:flex-1">
-            <div className="flex items-start gap-2">
-              <FileSearch
-                className="mt-0.5 h-5 w-5 shrink-0"
-                style={{ color: 'var(--accent)' }}
-              />
-              <h1 className="text-base font-bold leading-snug sm:text-lg">
+          <div className="flex items-start gap-3.5 min-w-0 sm:flex-1">
+            <span
+              className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+              style={{
+                backgroundColor: 'var(--bg-nav-active)',
+                borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
+                color: 'var(--accent)',
+              }}
+              aria-hidden="true"
+            >
+              <FileSearch className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-base font-extrabold leading-snug sm:text-lg">
                 السحب السريع — منظومة القراءة الكونية والإدراك التدريجي
               </h1>
+              <p
+                className="mt-1 text-xs leading-relaxed"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                قراءة وفهم شامل لملفات PDF، كاميرا الدفتر اليدوي، حزم الصور، Word،
+                Excel، CSV، والنصوص — مع تحديد هوية المحتوى، التغطية التفاعلية،
+                البحث الدلالي، والتوجيه الذكي قبل الترحيل.
+              </p>
             </div>
-            <p
-              className="mt-1.5 text-xs leading-relaxed"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              قراءة وفهم شامل لملفات PDF، كاميرا الدفتر اليدوي، حزم الصور، Word،
-              Excel، CSV، والنصوص — مع تحديد هوية المحتوى، التغطية التفاعلية،
-              البحث الدلالي، والتوجيه الذكي قبل الترحيل.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">

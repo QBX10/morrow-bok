@@ -14,6 +14,7 @@ export type AppView =
   | 'quick_extract'
   | 'data_archives'
   | 'google_workspace'
+  | 'morrow_center'
   | 'settings';
 
 export type FreeformHeaderAlign = 'right' | 'center' | 'left';
@@ -167,6 +168,15 @@ export interface ExpertCustomColumn {
   type: 'text' | 'number';
 }
 
+export interface ExpertColumnPreset {
+  id: string;
+  name: string;
+  visibleColumns: string[];
+  columnOrder: string[];
+  pinnedColumnId?: string | null;
+  isBuiltIn?: boolean;
+}
+
 export interface ExpertTableConfig {
   visibleColumns: string[];
   columnOrder: string[];
@@ -174,6 +184,9 @@ export interface ExpertTableConfig {
   customCategories: string[];
   customColumns: ExpertCustomColumn[];
   allowDirectNoConfirmEdit: boolean;
+  pinnedColumnId?: string | null;
+  columnPresets?: ExpertColumnPreset[];
+  activePresetId?: string | null;
 }
 
 export interface CalculationSettings {

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Download, Plus, Trash2 } from 'lucide-react';
+import { Download, Plus, Trash2, Wallet } from 'lucide-react';
 import type {
   Agency,
   AgencyExpense,
@@ -12,6 +12,7 @@ import {
   formatIqd,
   formatNumberCompact,
 } from '../utils/agencyLogic';
+import { runAsyncExportTask } from '../hooks/useToastQueue';
 import { exportFinancialReportToExcel } from '../utils/excelExport';
 import type { ModeCapabilities } from '../utils/modePermissions';
 
@@ -84,16 +85,35 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
   };
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold">الحسابات والمالية</h1>
-          <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-            تفاصيل الأكياس، الأفراد، الإيرادات، أجور العمال، الصرفيات، وصافي الأرباح لكل وكالة
-          </p>
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 pb-24 sm:p-6 sm:pb-20">
+      <div
+        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderColor: 'var(--border-color)',
+        }}
+      >
+        <div className="flex items-start gap-3.5 min-w-0">
+          <span
+            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
+              color: 'var(--accent)',
+            }}
+            aria-hidden="true"
+          >
+            <Wallet className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-extrabold sm:text-xl">الحسابات والمالية</h1>
+            <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+              تفاصيل الأكياس، الأفراد، الإيرادات، أجور العمال، الصرفيات، وصافي الأرباح لكل وكالة
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <select
             value={selectedAgency?.id}
             onChange={(e) => setSelectedAgencyId(Number(e.target.value))}
@@ -116,12 +136,18 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             <button
               type="button"
               onClick={() =>
-                exportFinancialReportToExcel({
-                  agencyName: selectedAgency.name,
-                  persons: scopedPersons,
-                  expenses: scopedExpenses,
-                  settings: calculationSettings,
-                })
+                runAsyncExportTask(
+                  `جاري تجهيز التقرير المالي (${selectedAgency.name})...`,
+                  `تم تصدير التقرير المالي «${selectedAgency.name}» بنجاح`,
+                  () => {
+                    exportFinancialReportToExcel({
+                      agencyName: selectedAgency.name,
+                      persons: scopedPersons,
+                      expenses: scopedExpenses,
+                      settings: calculationSettings,
+                    });
+                  }
+                )
               }
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold whitespace-nowrap"
               style={{
@@ -139,6 +165,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
       {/* 6 Required Financial KPIs */}
       <section
         aria-label="ملخص الحسابات للوكالة"
+        data-assistant-target="finance-kpi-grid"
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         <div
