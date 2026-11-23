@@ -39,6 +39,10 @@ import {
   cloneReadOnlySandbox,
   validateToolCall,
 } from './assistantTools';
+import {
+  resolveToolExecution,
+  type AssistantActionRuntime,
+} from './assistantExecutor';
 
 function makeSeedState() {
   return structuredClone(INITIAL_DATABASE_STATE);
@@ -554,5 +558,127 @@ test('Memory rules, formula injection escaping, HTML escaping, and RTL Excel vie
   });
   assert.deepEqual(ws['!views'], [{ rightToLeft: true }]);
   assert.ok(Array.isArray(ws['!cols']) && ws['!cols'].length === 3);
+});
+
+test('offline brain supports agency comparison, quick notes recording, unblocking, agency transfer, ready lists, and morrow_center suggestions', () => {
+  const state = makeSeedState();
+  const sample = state.persons[0];
+  const sampleFirstTwo = sample.name.split(' ').slice(0, 2).join(' ');
+  const blockedPerson = {
+    ...sample,
+    blockType: 'full' as const,
+    blockedIndividuals: sample.individuals ?? 4,
+    status: 'محجوب' as const,
+    blockReason: 'مراجعة',
+  };
+  const stateWithBlocked = {
+    ...state,
+    persons: [blockedPerson, ...state.persons.slice(1)],
+  };
+  const uiContext = makeTestContext(stateWithBlocked);
+
+  // 1. Compare agencies intent + executor ResultCard
+  const cmp = runOfflineBrain({
+    prompt: 'قارن بين الوكالات',
+    state: stateWithBlocked,
+    uiContext,
+  });
+  assert.equal(cmp.handled, true);
+  assert.equal(cmp.toolCall?.name, 'compare_agencies');
+
+  let capturedNoteText = '';
+  const noopRuntime: AssistantActionRuntime = {
+    state: stateWithBlocked,
+    uiContext,
+    mutations: {
+      addPersonDirect: () => {},
+      updatePersonConfirmed: () => {},
+      createReadyList: () => 1,
+      addPersonsToReadyList: () => 1,
+      addExpense: () => {},
+      upsertRelationEntry: () => {},
+    },
+    navigate: () => {},
+    selectAgency: () => {},
+    focusPerson: () => {},
+    issueTableCommand: () => {},
+    triggerSpotlight: () => {},
+    setModeTier: () => {},
+    setAppTheme: () => {},
+    setDarkTheme: () => {},
+    setAllowCloudNames: () => {},
+    saveUserPref: () => {},
+    deleteUserPref: () => {},
+    applyAutoFixes: () => ({ fixedCount: 0, summaryLines: [] }),
+    exportBackupJson: () => {},
+    archiveCurrentPeriod: () => {},
+    addQuickNote: ({ text }) => {
+      capturedNoteText = text;
+      return {
+        id: 'qn_test',
+        text,
+        source: 'voice',
+        createdAt: new Date().toISOString(),
+        syncedToPersonNotes: true,
+      };
+    },
+  };
+
+  const cmpExec = resolveToolExecution(cmp.toolCall!, noopRuntime);
+  assert.ok(cmpExec.resultCard);
+  assert.ok((cmpExec.resultCard?.bars?.length || 0) >= state.agencies.length);
+
+  // 2. Quick note intent + executor callback
+  const noteCmd = runOfflineBrain({
+    prompt: `سجل ملاحظة: مراجعة عائلة ${sampleFirstTwo} يوم الأحد`,
+    state: stateWithBlocked,
+    uiContext,
+  });
+  assert.equal(noteCmd.handled, true);
+  assert.equal(noteCmd.toolCall?.name, 'add_quick_note');
+  const noteExec = resolveToolExecution(noteCmd.toolCall!, noopRuntime);
+  assert.equal(noteExec.gracefulLevel, 'A');
+  assert.ok(capturedNoteText.includes('مراجعة'));
+
+  // 3. Unblocking ("فك الحظر عن ...") before archive/block
+  const unblockCmd = runOfflineBrain({
+    prompt: `فك الحظر عن ${sampleFirstTwo}`,
+    state: stateWithBlocked,
+    uiContext,
+  });
+  assert.equal(unblockCmd.handled, true);
+  assert.equal(unblockCmd.confirmationDiff?.toolCall.name, 'update_person');
+  assert.equal(unblockCmd.confirmationDiff?.toolCall.args.blockType, 'none');
+
+  // 4. Transfer to another agency ("انقل ... وكالة 2")
+  const targetAgency = state.agencies[1] || state.agencies[0];
+  const transferState = {
+    ...state,
+    persons: [{ ...sample, agencyId: state.agencies[0].id }, ...state.persons.slice(1)],
+  };
+  if (state.agencies.length >= 2) {
+    const transferCmd = runOfflineBrain({
+      prompt: `انقل ${sampleFirstTwo} إلى ${targetAgency.name}`,
+      state: transferState,
+      uiContext: makeTestContext(transferState),
+    });
+    assert.equal(transferCmd.handled, true);
+    assert.equal(transferCmd.confirmationDiff?.toolCall.name, 'update_person');
+    assert.equal(transferCmd.confirmationDiff?.toolCall.args.agencyId, targetAgency.id);
+  }
+
+  // 5. Ready list creation ("انشئ قائمة جاهزة مستحقين الصباح")
+  const listCmd = runOfflineBrain({
+    prompt: 'انشئ قائمة جاهزة مستحقين الصباح',
+    state,
+    uiContext,
+  });
+  assert.equal(listCmd.handled, true);
+  assert.equal(listCmd.confirmationDiff?.toolCall.name, 'manage_ready_list');
+  assert.equal(listCmd.confirmationDiff?.toolCall.args.action, 'create');
+
+  // 6. Screen-aware suggestions for morrow_center
+  const morrowSug = getScreenAwareSuggestions('morrow_center');
+  assert.ok(morrowSug.some((s) => s.prompt.includes('قارن بين الوكالات')));
 });
 

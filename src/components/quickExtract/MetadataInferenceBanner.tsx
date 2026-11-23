@@ -99,6 +99,8 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
 
   const displayAgency = meta.agencyName || 'وكالة غير محددة في الترويسة';
   const displayDate = meta.tableDateLabel || 'تاريخ غير محدد';
+  const semanticMappings = meta.semanticMapping || [];
+  const detectedCols = meta.detectedColumns || [];
 
   const handleSaveEdit = () => {
     const pickedAgency =
@@ -122,30 +124,30 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
 
   return (
     <div
-      className="rounded-xl border p-3.5 transition-colors"
+      className="rounded-2xl border p-4 backdrop-blur-md transition-all duration-200"
       style={{
         backgroundColor: meta.confirmedByUser
-          ? 'var(--success-bg)'
-          : 'var(--warning-bg)',
+          ? 'color-mix(in srgb, var(--success-bg) 82%, var(--bg-surface))'
+          : 'color-mix(in srgb, var(--warning-bg) 78%, var(--bg-surface))',
         borderColor: meta.confirmedByUser ? 'var(--success)' : 'var(--warning)',
         color: 'var(--text-primary)',
       }}
     >
       {!editing ? (
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-2.5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
             {meta.confirmedByUser ? (
               <Check
                 className="mt-0.5 h-5 w-5 shrink-0"
                 style={{ color: 'var(--success)' }}
               />
             ) : (
-              <AlertTriangle
+              <Sparkles
                 className="mt-0.5 h-5 w-5 shrink-0"
-                style={{ color: 'var(--warning)' }}
+                style={{ color: 'var(--accent)' }}
               />
             )}
-            <div className="space-y-1 text-xs leading-relaxed">
+            <div className="space-y-2 text-xs leading-relaxed">
               <div className="text-sm font-semibold">
                 {meta.confirmedByUser ? (
                   <>
@@ -153,7 +155,7 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
                   </>
                 ) : (
                   <>
-                    لقد استنتجت أن هذا الجدول يخص{' '}
+                    يبدو أن هذا جدول{' '}
                     <span
                       className="mx-0.5 rounded px-1.5 py-0.5 font-bold"
                       style={{
@@ -177,16 +179,53 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
                     >
                       ({displayDate})
                     </span>
-                    . هل هذا صحيح؟
+                    {detectedCols.length > 0 && (
+                      <>
+                        . الأعمدة المكتشفة:{' '}
+                        <span className="font-bold">
+                          ({detectedCols.slice(0, 6).join('، ')})
+                        </span>
+                      </>
+                    )}
+                    . هل أبدأ السحب والاعتماد بناءً على ذلك؟
                   </>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {semanticMappings.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    الربط الدلالي الذكي:
+                  </span>
+                  {semanticMappings.map((m, i) => (
+                    <span
+                      key={`${m.sourceHeader}-${i}`}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <span>{m.sourceHeader}</span>
+                      <span style={{ color: 'var(--accent)' }}>←</span>
+                      <span style={{ color: 'var(--accent)' }}>{m.targetLabel}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div
+                className="flex flex-wrap items-center gap-3 text-[11px]"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 {meta.centerOrAgencyNumber && (
                   <span className="inline-flex items-center gap-1">
                     <Hash className="h-3 w-3" />
-                    رقم المركز/الوكالة: <strong style={{ color: 'var(--text-primary)' }}>{meta.centerOrAgencyNumber}</strong>
+                    رقم المركز/الوكالة:{' '}
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      {meta.centerOrAgencyNumber}
+                    </strong>
                   </span>
                 )}
                 {meta.matchedAgencyId && (
@@ -197,11 +236,23 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
                 )}
                 {!meta.confirmedByUser && (agencyLowConf || dateLowConf) && (
                   <span className="font-medium" style={{ color: 'var(--danger)' }}>
-                    ثقة الاستنتاج أقل من 99% ({Math.round(Math.min(meta.agencyNameConfidence || 1, meta.tableDateConfidence || 1) * 100)}%) — يُرجى المراجعة
+                    ثقة الاستنتاج أقل من 99% (
+                    {Math.round(
+                      Math.min(
+                        meta.agencyNameConfidence || 1,
+                        meta.tableDateConfidence || 1
+                      ) * 100
+                    )}
+                    %) — يُرجى المراجعة
+                  </span>
+                )}
+                {meta.fallbackUsed === 'flash-lite' && (
+                  <span style={{ color: 'var(--accent)' }}>
+                    مسار الاستجابة السريعة (Flash Lite)
                   </span>
                 )}
                 {meta.headerSnippet && (
-                  <span className="truncate max-w-md" title={meta.headerSnippet}>
+                  <span className="max-w-md truncate" title={meta.headerSnippet}>
                     الترويسة: {meta.headerSnippet}
                   </span>
                 )}
@@ -209,22 +260,22 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {!meta.confirmedByUser && (
               <button
                 type="button"
                 onClick={() => onConfirm({ ...meta, confirmedByUser: true })}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-white"
                 style={{ backgroundColor: 'var(--success)' }}
               >
                 <Check className="h-3.5 w-3.5" />
-                نعم، متابعة
+                نعم، ابدأ السحب بناءً على ذلك
               </button>
             )}
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',

@@ -3,6 +3,7 @@ import type {
   InferredDocumentMetadata,
   NormalizedBox,
   QuickExtractEvaluatedRow,
+  SemanticColumnMapping,
   ZeroTrustCellStatus,
 } from '../types/agency.ts';
 import { normalizeArabic } from './agencyLogic.ts';
@@ -20,6 +21,8 @@ export function evaluateZeroTrustCell(params: {
   valueDisplay: string;
   confidence: number | undefined;
   hasStructuralError?: boolean;
+  hasMathWarning?: boolean;
+  mathWarningText?: string;
   explicitConfirmed?: boolean;
   fieldLabel: string;
 }): ZeroTrustCellEvaluation {
@@ -48,6 +51,17 @@ export function evaluateZeroTrustCell(params: {
     };
   }
 
+  if (params.hasMathWarning) {
+    return {
+      status: 'yellow',
+      confidencePct: pct,
+      needsReview: true,
+      tooltipQuestion:
+        params.mathWarningText ||
+        `تعارض رياضي في ${params.fieldLabel} (${val}) — يُرجى مراجعة تطابق الكلي مع المستحق والمحجوب.`,
+    };
+  }
+
   if (conf < ZERO_TRUST_CONFIDENCE_THRESHOLD) {
     return {
       status: 'yellow',
@@ -70,9 +84,14 @@ export function computeRowZeroTrustSummary(row: QuickExtractEvaluatedRow): {
   numbers: ZeroTrustCellEvaluation;
   date: ZeroTrustCellEvaluation;
   anyDoubt: boolean;
+  hasMathConflict: boolean;
   worstStatus: ZeroTrustCellStatus;
 } {
-  const confirmed = Boolean(row.zeroTrustConfirmed || (row.doubtConfirmed && !hasLowConfidenceUnder99(row)));
+  const hasMathConflict = row.mathIssues.length > 0 && !row.mathConfirmed;
+  const confirmed = Boolean(
+    row.zeroTrustConfirmed ||
+      (row.doubtConfirmed && !hasLowConfidenceUnder99(row) && !hasMathConflict)
+  );
 
   const name = evaluateZeroTrustCell({
     valueDisplay: row.resolvedName,
@@ -81,13 +100,19 @@ export function computeRowZeroTrustSummary(row: QuickExtractEvaluatedRow): {
       row.hasDoubt ||
       row.missingFields.includes('name') ||
       row.suspectSegments.length > 0,
-    explicitConfirmed: Boolean(row.zeroTrustConfirmed || (row.doubtConfirmed && row.nameConfidence >= ZERO_TRUST_CONFIDENCE_THRESHOLD)),
+    explicitConfirmed: Boolean(
+      row.zeroTrustConfirmed ||
+        (row.doubtConfirmed && row.nameConfidence >= ZERO_TRUST_CONFIDENCE_THRESHOLD)
+    ),
     fieldLabel: 'الاسم',
   });
 
   const numSummaryText = [
     row.resolvedIndividuals !== null ? `الأفراد: ${row.resolvedIndividuals}` : 'الأفراد: مفقود',
-    (row.resolvedDecreaseCount ?? 0) > 0 ? `نزول: ${row.resolvedDecreaseCount}` : '',
+    typeof row.resolvedEligibleIndividuals === 'number'
+      ? `مستحق: ${row.resolvedEligibleIndividuals}`
+      : '',
+    (row.resolvedDecreaseCount ?? 0) > 0 ? `محجوب/نزول: ${row.resolvedDecreaseCount}` : '',
     (row.resolvedAddOrDeleteCount ?? 0) > 0
       ? `${row.resolvedAddOrDeleteAction}: ${row.resolvedAddOrDeleteCount}`
       : '',
@@ -99,10 +124,11 @@ export function computeRowZeroTrustSummary(row: QuickExtractEvaluatedRow): {
     valueDisplay: numSummaryText,
     confidence: row.numbersConfidence,
     hasStructuralError:
-      row.mathIssues.length > 0 ||
       row.missingFields.includes('individuals') ||
       row.missingFields.includes('decreaseCount') ||
       row.missingFields.includes('addOrDeleteCount'),
+    hasMathWarning: hasMathConflict,
+    mathWarningText: hasMathConflict ? row.mathIssues.join(' · ') : undefined,
     explicitConfirmed: Boolean(
       row.zeroTrustConfirmed ||
         (row.mathConfirmed &&
@@ -129,7 +155,9 @@ export function computeRowZeroTrustSummary(row: QuickExtractEvaluatedRow): {
         tooltipQuestion: '',
       };
 
-  const anyDoubt = !confirmed && (name.needsReview || numbers.needsReview || date.needsReview);
+  const anyDoubt =
+    (!confirmed && (name.needsReview || numbers.needsReview || date.needsReview)) ||
+    hasMathConflict;
   const worstStatus: ZeroTrustCellStatus =
     name.status === 'red' || numbers.status === 'red' || date.status === 'red'
       ? 'red'
@@ -137,7 +165,7 @@ export function computeRowZeroTrustSummary(row: QuickExtractEvaluatedRow): {
         ? 'yellow'
         : 'verified';
 
-  return { name, numbers, date, anyDoubt, worstStatus };
+  return { name, numbers, date, anyDoubt, hasMathConflict, worstStatus };
 }
 
 export function hasLowConfidenceUnder99(row: QuickExtractEvaluatedRow): boolean {
@@ -158,7 +186,9 @@ export function hasLowConfidenceUnder99(row: QuickExtractEvaluatedRow): boolean 
  * Computes a full-row bounding box (0..1000) spanning horizontally across the entire table row
  * so Contextual Row Snippet always displays the full context (name + neighboring numbers/notes).
  */
-export function getFullRowCropBox(row: Pick<QuickExtractEvaluatedRow, 'rowBox' | 'suspectBox'>): NormalizedBox | null {
+export function getFullRowCropBox(
+  row: Pick<QuickExtractEvaluatedRow, 'rowBox' | 'suspectBox'>
+): NormalizedBox | null {
   const base = row.rowBox || row.suspectBox;
   if (!base || base.ymax <= base.ymin) return null;
 
@@ -212,13 +242,155 @@ export function matchAgencyByName(
   return bestScore > 0 ? best : null;
 }
 
+export function mapColumnHeaderSemantically(
+  header: string
+): SemanticColumnMapping | null {
+  const raw = String(header || '').trim();
+  if (!raw || raw.length > 48) return null;
+  const norm = normalizeArabic(raw).toLowerCase();
+
+  if (
+    /(مستحق|مستحقه|مستحقين|الصافيه|الصافي|eligible)/i.test(norm)
+  ) {
+    return {
+      sourceHeader: raw,
+      targetField: 'eligibleIndividuals',
+      targetLabel: 'الأفراد المستحقة',
+      confidence: 0.98,
+    };
+  }
+
+  if (
+    /(محجوب|محجوبين|حجب|نزول|نقصان|نقص|decrease|blocked)/i.test(norm)
+  ) {
+    return {
+      sourceHeader: raw,
+      targetField: 'decreaseCount',
+      targetLabel: 'الحجب / النزول',
+      confidence: 0.98,
+    };
+  }
+
+  if (
+    /(افراد|الافراد الكليه|كلي|اجمالي|العدد|total|individuals|count)/i.test(norm)
+  ) {
+    return {
+      sourceHeader: raw,
+      targetField: 'individuals',
+      targetLabel: 'إجمالي الأفراد',
+      confidence: 0.98,
+    };
+  }
+
+  if (/(اضافه|حذف|تغيير|تعديل)/i.test(norm)) {
+    return {
+      sourceHeader: raw,
+      targetField: 'addOrDelete',
+      targetLabel: 'الإضافة والحذف',
+      confidence: 0.96,
+    };
+  }
+
+  if (/(الاسم|اسم|المستفيد|رب الاسره|name)/i.test(norm)) {
+    return {
+      sourceHeader: raw,
+      targetField: 'name',
+      targetLabel: 'الاسم الكامل',
+      confidence: 0.99,
+    };
+  }
+
+  if (/(تاريخ|الشهر|الفتره|date|month)/i.test(norm)) {
+    return {
+      sourceHeader: raw,
+      targetField: 'rowDate',
+      targetLabel: 'التاريخ',
+      confidence: 0.95,
+    };
+  }
+
+  if (/(ملاحظ|سبب|عنوان|note)/i.test(norm)) {
+    return {
+      sourceHeader: raw,
+      targetField: 'notes',
+      targetLabel: 'الملاحظات',
+      confidence: 0.95,
+    };
+  }
+
+  return null;
+}
+
+export function buildSemanticColumnMappings(
+  headers: string[]
+): SemanticColumnMapping[] {
+  const seen = new Set<string>();
+  const mappings: SemanticColumnMapping[] = [];
+  for (const h of headers) {
+    const clean = String(h || '').trim();
+    if (!clean) continue;
+    const mapped = mapColumnHeaderSemantically(clean);
+    if (mapped && !seen.has(`${mapped.sourceHeader}:${mapped.targetField}`)) {
+      seen.add(`${mapped.sourceHeader}:${mapped.targetField}`);
+      mappings.push(mapped);
+    }
+  }
+  return mappings;
+}
+
+export function extractHeaderColumnsFromText(rawText: string): string[] {
+  const lines = String(rawText || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 14);
+
+  for (const line of lines) {
+    const parts = line
+      .split(/\t|\||؛|,/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0 && p.length <= 45);
+    if (parts.length >= 2) {
+      const semanticHits = parts.filter((p) => mapColumnHeaderSemantically(p) !== null);
+      if (semanticHits.length >= 2) {
+        return parts;
+      }
+    }
+  }
+  return [];
+}
+
+export function buildProactiveHeaderGreeting(
+  meta: Pick<
+    InferredDocumentMetadata,
+    'agencyName' | 'tableDateLabel' | 'detectedColumns' | 'semanticMapping'
+  >
+): string {
+  const agencyPart = meta.agencyName
+    ? `لـ (${meta.agencyName})`
+    : 'لمستفيدين';
+  const monthPart = meta.tableDateLabel
+    ? ` لشهر (${meta.tableDateLabel})`
+    : '';
+  const cols =
+    meta.detectedColumns && meta.detectedColumns.length > 0
+      ? meta.detectedColumns
+      : (meta.semanticMapping || []).map((m) => m.sourceHeader);
+  const colsPart =
+    cols.length > 0
+      ? ` الأعمدة المكتشفة: (${cols.join('، ')}).`
+      : '';
+  return `يبدو أن هذا جدول ${agencyPart}${monthPart}.${colsPart} هل أبدأ السحب بناءً على ذلك؟`;
+}
+
 const ARABIC_MONTHS_REGEX =
   /(كانون الثاني|شباط|آذار|اذار|نيسان|أيار|ايار|حزيران|تموز|آب|اب|أيلول|ايلول|تشرين الأول|تشرين الاول|تشرين الثاني|كانون الأول|كانون الاول|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)/i;
 
 export function inferMetadataFromText(
   rawText: string,
   agencies: Agency[] = [],
-  fallbackFilename?: string
+  fallbackFilename?: string,
+  explicitHeaders?: string[]
 ): InferredDocumentMetadata | null {
   const lines = String(rawText || '')
     .split(/\r?\n/)
@@ -281,13 +453,32 @@ export function inferMetadataFromText(
     centerNumberConfidence = 0.94;
   }
 
-  if (!agencyName && !tableDateLabel && !centerOrAgencyNumber) {
+  const detectedColumns =
+    explicitHeaders && explicitHeaders.length > 0
+      ? explicitHeaders.filter(Boolean)
+      : extractHeaderColumnsFromText(rawText);
+  const semanticMapping = buildSemanticColumnMappings(detectedColumns);
+
+  if (
+    !agencyName &&
+    !tableDateLabel &&
+    !centerOrAgencyNumber &&
+    semanticMapping.length === 0
+  ) {
     return null;
   }
 
   const matched = matchAgencyByName(agencyName, agencies);
+  const resolvedAgencyName = agencyName || matched?.name || null;
+  const proactivePrompt = buildProactiveHeaderGreeting({
+    agencyName: resolvedAgencyName,
+    tableDateLabel,
+    detectedColumns,
+    semanticMapping,
+  });
+
   return {
-    agencyName: agencyName || matched?.name || null,
+    agencyName: resolvedAgencyName,
     agencyNameConfidence,
     matchedAgencyId: matched?.id ?? null,
     tableDateLabel,
@@ -295,6 +486,9 @@ export function inferMetadataFromText(
     centerOrAgencyNumber,
     centerNumberConfidence,
     headerSnippet: lines.slice(0, 3).join(' | '),
+    detectedColumns,
+    semanticMapping,
+    proactivePrompt,
     confirmedByUser: false,
   };
 }
@@ -312,11 +506,36 @@ export function normalizeInferredMetadata(
     ? String(raw.centerOrAgencyNumber).trim()
     : null;
 
-  if (!agencyName && !tableDateLabel && !centerOrAgencyNumber) return null;
+  const detectedColumns = Array.isArray(raw.detectedColumns)
+    ? raw.detectedColumns.map((c) => String(c || '').trim()).filter(Boolean)
+    : [];
+  const semanticMapping =
+    Array.isArray(raw.semanticMapping) && raw.semanticMapping.length > 0
+      ? raw.semanticMapping
+      : buildSemanticColumnMappings(detectedColumns);
+
+  if (
+    !agencyName &&
+    !tableDateLabel &&
+    !centerOrAgencyNumber &&
+    semanticMapping.length === 0
+  ) {
+    return null;
+  }
 
   const matched = matchAgencyByName(agencyName, agencies);
+  const resolvedAgencyName = agencyName || matched?.name || null;
+  const proactivePrompt =
+    raw.proactivePrompt ||
+    buildProactiveHeaderGreeting({
+      agencyName: resolvedAgencyName,
+      tableDateLabel,
+      detectedColumns,
+      semanticMapping,
+    });
+
   return {
-    agencyName,
+    agencyName: resolvedAgencyName,
     agencyNameConfidence:
       typeof raw.agencyNameConfidence === 'number'
         ? raw.agencyNameConfidence
@@ -339,6 +558,151 @@ export function normalizeInferredMetadata(
           ? 0.9
           : 0,
     headerSnippet: raw.headerSnippet ? String(raw.headerSnippet).trim() : undefined,
+    detectedColumns,
+    semanticMapping,
+    proactivePrompt,
+    fallbackUsed: raw.fallbackUsed,
     confirmedByUser: Boolean(raw.confirmedByUser),
   };
 }
+
+export type MetadataInferenceInput =
+  | string
+  | File
+  | {
+      filename?: string;
+      mimeType?: string;
+      base64Pdf?: string;
+      imageDataUrl?: string;
+      frames?: Array<{ mimeType?: string; data?: string; label?: string }>;
+      rawText?: string;
+      explicitHeaders?: string[];
+    };
+
+async function readFileAsDataUrlSafe(file: File): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+  const buf = await file.arrayBuffer();
+  const base64 =
+    typeof Buffer !== 'undefined'
+      ? Buffer.from(buf).toString('base64')
+      : '';
+  const mime = file.type || 'application/octet-stream';
+  return `data:${mime};base64,${base64}`;
+}
+
+function isBrowserFile(val: unknown): val is File {
+  return typeof File !== 'undefined' && val instanceof File;
+}
+
+/**
+ * Analyzes table headers from raw text, File, PDF, or camera frames using Vision AI
+ * (`/api/quick-extract/metadata-inference`) to infer agency name, month, and year,
+ * with automatic local fallback when offline or unconfigured.
+ */
+export async function performMetadataInference(
+  fileContent: MetadataInferenceInput,
+  agencies: Agency[] = []
+): Promise<InferredDocumentMetadata | null> {
+  let payload: {
+    filename?: string;
+    mimeType?: string;
+    base64Pdf?: string;
+    imageDataUrl?: string;
+    frames?: Array<{ mimeType?: string; data?: string; label?: string }>;
+    rawText?: string;
+    explicitHeaders?: string[];
+  };
+
+  if (typeof fileContent === 'string') {
+    payload = { rawText: fileContent };
+  } else if (isBrowserFile(fileContent)) {
+    const lower = fileContent.name.toLowerCase();
+    const isPdf =
+      fileContent.type === 'application/pdf' || lower.endsWith('.pdf');
+    const isImage =
+      fileContent.type.startsWith('image/') ||
+      /\.(png|jpe?g|webp|bmp)$/i.test(lower);
+    if (isPdf) {
+      payload = {
+        filename: fileContent.name,
+        mimeType: 'application/pdf',
+        base64Pdf: await readFileAsDataUrlSafe(fileContent),
+      };
+    } else if (isImage) {
+      payload = {
+        filename: fileContent.name,
+        mimeType: fileContent.type || 'image/jpeg',
+        imageDataUrl: await readFileAsDataUrlSafe(fileContent),
+      };
+    } else {
+      const txt = await fileContent.text().catch(() => '');
+      payload = {
+        filename: fileContent.name,
+        mimeType: fileContent.type || 'text/plain',
+        rawText: txt,
+      };
+    }
+  } else {
+    payload = { ...fileContent };
+  }
+
+  const localFallback = inferMetadataFromText(
+    payload.rawText || '',
+    agencies,
+    payload.filename,
+    payload.explicitHeaders
+  );
+
+  // Use Vision AI endpoint whenever visual source (PDF / image / frames) or text is present in a browser/fetch environment
+  const hasVisualPayload = Boolean(
+    payload.base64Pdf ||
+      payload.imageDataUrl ||
+      (payload.frames && payload.frames.length > 0)
+  );
+  if (typeof fetch !== 'function' || (!hasVisualPayload && !payload.rawText)) {
+    return localFallback;
+  }
+
+  try {
+    const controller =
+      typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer =
+      controller && typeof setTimeout === 'function'
+        ? setTimeout(() => controller.abort(), 9000)
+        : null;
+
+    const res = await fetch('/api/quick-extract/metadata-inference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller?.signal,
+      body: JSON.stringify({
+        filename: payload.filename,
+        mimeType: payload.mimeType,
+        base64Pdf: payload.base64Pdf,
+        imageDataUrl: payload.imageDataUrl,
+        frames: payload.frames?.slice(0, 1),
+        rawText: payload.rawText?.slice(0, 6000),
+      }),
+    });
+    if (timer) clearTimeout(timer);
+
+    if (!res.ok) return localFallback;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      metadata?: Partial<InferredDocumentMetadata> | null;
+    };
+    const normalized = normalizeInferredMetadata(data.metadata, agencies);
+    return normalized ? { ...normalized, confirmedByUser: false } : localFallback;
+  } catch {
+    return localFallback;
+  }
+}
+

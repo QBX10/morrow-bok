@@ -20,6 +20,8 @@ export const ALLOWED_ASSISTANT_TOOLS: ReadonlySet<AssistantToolName> = new Set([
   'archive_person',
   'filter_sort_table',
   'get_stats_profit',
+  'compare_agencies',
+  'add_quick_note',
   'manage_ready_list',
   'manage_expense',
   'open_import_compare',
@@ -128,6 +130,35 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'compare_agencies',
+    description:
+      'مقارنة شاملة وترتيب بين جميع الوكالات من حيث عدد الأفراد، العائلات، الأكياس، المحجوبين، وصافي الربح.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        metric: {
+          type: Type.STRING,
+          description: 'individuals | profit | bags | blocked',
+        },
+      },
+    },
+  },
+  {
+    name: 'add_quick_note',
+    description:
+      'تسجيل ملاحظة سريعة وربطها تلقائياً باسم المستفيد المذكور ومزامنتها مع ملاحظات سجل العائلة.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        text: { type: Type.STRING, description: 'نص الملاحظة المطلوب حفظها' },
+        personId: { type: Type.INTEGER, description: 'معرف المستفيد الاختياري للربط المباشر' },
+        personName: { type: Type.STRING, description: 'اسم المستفيد الاختياري للبحث والربط' },
+        syncToPerson: { type: Type.BOOLEAN, description: 'مزامنة الملاحظة لسطر المستفيد بالجدول' },
+      },
+      required: ['text'],
+    },
+  },
+  {
     name: 'manage_ready_list',
     description: 'إنشاء قائمة جاهزة أو إضافة مستفيد إليها أو فتح قسم القوائم الجاهزة.',
     parameters: {
@@ -139,6 +170,7 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         agencyId: { type: Type.INTEGER },
         personId: { type: Type.INTEGER },
         personName: { type: Type.STRING },
+        populateFromAgency: { type: Type.BOOLEAN },
       },
       required: ['action'],
     },

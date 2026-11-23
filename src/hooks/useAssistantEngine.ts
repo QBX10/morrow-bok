@@ -63,6 +63,7 @@ import { getEngineDisplayMeta, planBrainEscalation } from '../utils/morrowRouter
 import { autoLinkQuickNoteToPerson } from '../utils/quickNotesMatcher.ts';
 import { emitAppToast } from './useToastQueue.ts';
 
+const FLASH_LITE_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const PREFS_STORAGE_KEY = 'tabrex_assistant_prefs_v1';
 const QUEUE_STORAGE_KEY = 'tabrex_assistant_queue_v1';
 const LAST_BACKUP_STORAGE_KEY = 'tabrex_last_backup_at';
@@ -422,6 +423,72 @@ export function useAssistantEngine(params: {
     [runtime]
   );
 
+  const addQuickNote = useCallback(
+    (input: {
+      text: string;
+      source?: 'text' | 'voice';
+      overridePersonId?: number | null;
+      syncToPerson?: boolean;
+    }) => {
+      const clean = enforceSafeArabicTerminology(input.text.trim());
+      if (!clean) return null;
+
+      const agencyMap = new Map(runtime.state.agencies.map((a) => [a.id, a.name]));
+      let linkedPerson =
+        input.overridePersonId !== undefined && input.overridePersonId !== null
+          ? runtime.state.persons.find((p) => p.id === input.overridePersonId) || null
+          : null;
+      let matchConfidence = linkedPerson ? 1 : 0;
+
+      if (!linkedPerson && input.overridePersonId !== null) {
+        const auto = autoLinkQuickNoteToPerson(
+          clean,
+          runtime.state.persons,
+          runtime.state.agencies
+        );
+        linkedPerson = auto.person;
+        matchConfidence = auto.confidence;
+      }
+
+      const note: AssistantQuickNote = {
+        id: `qn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+        text: clean,
+        source: input.source || 'text',
+        createdAt: new Date().toISOString(),
+        linkedPersonId: linkedPerson?.id ?? null,
+        linkedPersonName: linkedPerson?.name,
+        linkedAgencyId: linkedPerson?.agencyId ?? null,
+        linkedAgencyName: linkedPerson ? agencyMap.get(linkedPerson.agencyId) : undefined,
+        matchConfidence,
+        syncedToPersonNotes: Boolean(input.syncToPerson && linkedPerson),
+      };
+
+      setQuickNotes((prev) => [note, ...prev].slice(0, 80));
+
+      if (input.syncToPerson && linkedPerson) {
+        const existingNotes = linkedPerson.notes?.trim();
+        const combinedNotes = existingNotes ? `${existingNotes} | ${clean}` : clean;
+        runtime.mutations.updatePersonConfirmed(linkedPerson.id, {
+          notes: combinedNotes,
+        });
+        emitAppToast({
+          title: `تم ربط الملاحظة بـ «${linkedPerson.name}»`,
+          description: 'حُفظت الملاحظة السريعة ومُزومنت مع سجل العائلة.',
+          tone: 'success',
+        });
+      } else {
+        emitAppToast({
+          title: linkedPerson
+            ? `ملاحظة مرتبطة تلقائياً بـ «${linkedPerson.name}»`
+            : 'تم حفظ الملاحظة السريعة',
+          tone: 'info',
+        });
+      }
+      return note;
+    },
+    [runtime.state.agencies, runtime.state.persons, runtime.mutations]
+  );
+
   const fullRuntime: AssistantActionRuntime = useMemo(
     () => ({
       ...runtime,
@@ -434,6 +501,7 @@ export function useAssistantEngine(params: {
       deleteUserPref,
       triggerSpotlight,
       exportBackupJson,
+      addQuickNote,
     }),
     [
       runtime,
@@ -443,6 +511,7 @@ export function useAssistantEngine(params: {
       deleteUserPref,
       triggerSpotlight,
       exportBackupJson,
+      addQuickNote,
     ]
   );
 
@@ -637,72 +706,6 @@ export function useAssistantEngine(params: {
   const hasUndoableAssistantMessage = useMemo(
     () => canUndoApp && messages.some((m) => m.canUndo && !m.undoUsed),
     [canUndoApp, messages]
-  );
-
-  const addQuickNote = useCallback(
-    (input: {
-      text: string;
-      source?: 'text' | 'voice';
-      overridePersonId?: number | null;
-      syncToPerson?: boolean;
-    }) => {
-      const clean = enforceSafeArabicTerminology(input.text.trim());
-      if (!clean) return null;
-
-      const agencyMap = new Map(runtime.state.agencies.map((a) => [a.id, a.name]));
-      let linkedPerson =
-        input.overridePersonId !== undefined && input.overridePersonId !== null
-          ? runtime.state.persons.find((p) => p.id === input.overridePersonId) || null
-          : null;
-      let matchConfidence = linkedPerson ? 1 : 0;
-
-      if (!linkedPerson && input.overridePersonId !== null) {
-        const auto = autoLinkQuickNoteToPerson(
-          clean,
-          runtime.state.persons,
-          runtime.state.agencies
-        );
-        linkedPerson = auto.person;
-        matchConfidence = auto.confidence;
-      }
-
-      const note: AssistantQuickNote = {
-        id: `qn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
-        text: clean,
-        source: input.source || 'text',
-        createdAt: new Date().toISOString(),
-        linkedPersonId: linkedPerson?.id ?? null,
-        linkedPersonName: linkedPerson?.name,
-        linkedAgencyId: linkedPerson?.agencyId ?? null,
-        linkedAgencyName: linkedPerson ? agencyMap.get(linkedPerson.agencyId) : undefined,
-        matchConfidence,
-        syncedToPersonNotes: Boolean(input.syncToPerson && linkedPerson),
-      };
-
-      setQuickNotes((prev) => [note, ...prev].slice(0, 80));
-
-      if (input.syncToPerson && linkedPerson) {
-        const existingNotes = linkedPerson.notes?.trim();
-        const combinedNotes = existingNotes ? `${existingNotes} | ${clean}` : clean;
-        runtime.mutations.updatePersonConfirmed(linkedPerson.id, {
-          notes: combinedNotes,
-        });
-        emitAppToast({
-          title: `تم ربط الملاحظة بـ «${linkedPerson.name}»`,
-          description: 'حُفظت الملاحظة السريعة ومُزومنت مع سجل العائلة.',
-          tone: 'success',
-        });
-      } else {
-        emitAppToast({
-          title: linkedPerson
-            ? `ملاحظة مرتبطة تلقائياً بـ «${linkedPerson.name}»`
-            : 'تم حفظ الملاحظة السريعة',
-          tone: 'info',
-        });
-      }
-      return note;
-    },
-    [runtime.state.agencies, runtime.state.persons, runtime.mutations]
   );
 
   const updateQuickNoteLink = useCallback(
@@ -1177,32 +1180,19 @@ export function useAssistantEngine(params: {
       setQuotaStats((prev) => recordOnlineRequest(prev, activeModel));
       try {
         const { cloudContext, cloudHistory } = liveCloudPayload;
+        const resolvedBrainMode =
+          brainMode === 'auto' && escalation.complexity === 'deep'
+            ? 'gemini_2_5_pro'
+            : brainMode;
 
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => controller.abort(), 11500);
-        const res = await fetch('/api/assistant/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            prompt: cleanPrompt,
-            brainMode:
-              brainMode === 'auto' && escalation.complexity === 'deep'
-                ? 'gemini_2_5_pro'
-                : brainMode,
-            preferredModel: activeModel,
-            fallbackModel,
-            cloudContext,
-            cloudHistory,
-          }),
-        });
-        window.clearTimeout(timer);
-
-        const data = (await res.json()) as {
+        type ChatApiPayload = {
           ok?: boolean;
           fallbackToOffline?: boolean;
           quotaExhausted?: boolean;
+          switchedToFlashLite?: boolean;
+          had503Retry?: boolean;
           reason?: string;
+          error?: string;
           engineUsed?: AssistantEngineSource;
           engineLabel?: string;
           modelId?: string;
@@ -1210,12 +1200,115 @@ export function useAssistantEngine(params: {
           toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
         };
 
-        if (!res.ok || !data.ok || data.fallbackToOffline) {
+        let res: Response | null = null;
+        let data: ChatApiPayload = {};
+        let notified503Switch = false;
+        const maxAttempts = 3;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const currentModel =
+            attempt === 0 ? activeModel : FLASH_LITE_FALLBACK_MODEL;
+          const controller = new AbortController();
+          const timer = window.setTimeout(() => controller.abort(), 11500);
+          try {
+            res = await fetch('/api/assistant/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({
+                prompt: cleanPrompt,
+                brainMode: resolvedBrainMode,
+                preferredModel: currentModel,
+                fallbackModel:
+                  attempt === 0 ? fallbackModel : FLASH_LITE_FALLBACK_MODEL,
+                cloudContext,
+                cloudHistory,
+              }),
+            });
+            window.clearTimeout(timer);
+
+            const parsedData = (await res.json().catch(() => ({}))) as ChatApiPayload;
+            data = parsedData;
+
+            const isServiceUnavailable503 =
+              res.status === 503 ||
+              res.status === 502 ||
+              res.status === 504 ||
+              String(parsedData?.error || parsedData?.reason || '').includes('503');
+
+            if (isServiceUnavailable503 && attempt < maxAttempts - 1) {
+              if (!notified503Switch) {
+                notified503Switch = true;
+                emitAppToast({
+                  title: 'تبديل تلقائي هادئ لنموذج Flash Lite',
+                  description:
+                    'الخادم مزدحم مؤقتاً (503) — جارٍ إعادة المحاولة بسلاسة عبر Flash Lite دون مقاطعة عملك.',
+                  tone: 'info',
+                });
+              }
+              await new Promise((resolve) =>
+                window.setTimeout(resolve, 650 * (attempt + 1))
+              );
+              continue;
+            }
+            break;
+          } catch (attemptErr) {
+            window.clearTimeout(timer);
+            const msg =
+              attemptErr instanceof Error
+                ? attemptErr.message.toLowerCase()
+                : String(attemptErr || '').toLowerCase();
+            const isTransientRetryable =
+              attempt < maxAttempts - 1 &&
+              (msg.includes('503') ||
+                msg.includes('abort') ||
+                msg.includes('network') ||
+                msg.includes('fetch') ||
+                msg.includes('timeout'));
+
+            if (isTransientRetryable) {
+              if (!notified503Switch) {
+                notified503Switch = true;
+                emitAppToast({
+                  title: 'إعادة محاولة تلقائية عبر Flash Lite',
+                  description:
+                    'حدث ضغط مؤقت أثناء الاتصال — تمت متابعة الطلب تلقائياً دون انقطاع.',
+                  tone: 'info',
+                });
+              }
+              await new Promise((resolve) =>
+                window.setTimeout(resolve, 650 * (attempt + 1))
+              );
+              continue;
+            }
+            throw attemptErr;
+          }
+        }
+
+        if (!res || !res.ok || !data.ok || data.fallbackToOffline) {
           if (data.quotaExhausted) {
             setQuotaStats((prev) => markQuotaExhausted(prev, 90_000));
           }
+          if (!notified503Switch) {
+            emitAppToast({
+              title: 'متابعة تلقائية بمحرك Morrow المحلي',
+              description:
+                data.reason ||
+                'الخدمة السحابية مشغولة حالياً — تم إكمال عملك محلياً بهدوء ودون توقف.',
+              tone: 'info',
+            });
+          }
           presentOfflineOutcome(localProbe, cleanPrompt, data.reason, options);
           return;
+        }
+
+        if ((data.switchedToFlashLite || data.had503Retry) && !notified503Switch) {
+          emitAppToast({
+            title: 'تم التبديل التلقائي إلى Flash Lite',
+            description:
+              'استمر التنفيذ بسلاسة عبر النموذج الخفيف البديل بعد خطأ مؤقت دون مقاطعة عملك.',
+            tone: 'info',
+          });
         }
 
         const resolvedEngine: AssistantEngineSource =
@@ -1345,6 +1438,12 @@ export function useAssistantEngine(params: {
           ],
         });
       } catch {
+        emitAppToast({
+          title: 'استمرارية ذكية دون مقاطعة',
+          description:
+            'تعذر الوصول للسحابة مؤقتاً — تم تحويل الطلب تلقائياً إلى محرك Morrow المحلي.',
+          tone: 'info',
+        });
         presentOfflineOutcome(
           localProbe,
           cleanPrompt,
@@ -1378,7 +1477,7 @@ export function useAssistantEngine(params: {
     (rawTool: AssistantToolCall): string => {
       const checked = validateToolCall(rawTool);
       if (!checked.valid || !checked.sanitized) {
-        return checked.reason || 'أمر غير مكتمل من الجلسة المباشرة.';
+        return checked.error || 'أمر غير مكتمل من الجلسة المباشرة.';
       }
       const tc = checked.sanitized;
       const resolved = resolveToolExecution(tc, fullRuntime);

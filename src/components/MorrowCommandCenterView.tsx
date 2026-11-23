@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
+  BarChart3,
   BookmarkCheck,
   Bot,
   Calendar,
@@ -8,6 +9,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardCheck,
+  Edit3,
   Copy,
   Cpu,
   Download,
@@ -179,6 +181,9 @@ interface MultimodalFeedEntry {
   kind: 'voice_note' | 'file_analysis' | 'live_summary';
   title: string;
   body: string;
+  voiceMode?: 'instruction' | 'quick_note' | 'draft_text';
+  linkedPersonName?: string;
+  linkedAgencyName?: string;
   audioUrl?: string;
   durationSec?: number;
   file?: File;
@@ -196,7 +201,12 @@ const SLASH_COMMAND_OPTIONS: Array<{
   canvasMode?: MorrowCanvasMode;
   prompt?: string;
   runVerifier?: boolean;
+  openTab?: MorrowCenterTab;
+  startVoice?: 'instruction' | 'quick_note';
 }> = [
+  { id: 'sl_voice', cmd: '/صوت', label: 'التسجيل الصوتي الذكي', desc: 'تسجيل أمر للذكاء أو ملاحظة سريعة بالصوت', startVoice: 'instruction' },
+  { id: 'sl_note', cmd: '/ملاحظة', label: 'الملاحظات السريعة والربط', desc: 'تسجيل ملاحظة نصية أو صوتية وربطها بالعائلة', openTab: 'quick_notes' },
+  { id: 'sl_compare', cmd: '/مقارنة', label: 'مقارنة الوكالات الشاملة', desc: 'ترتيب الوكالات بالأفراد والأكياس وصافي الربح', prompt: 'قارن بين الوكالات' },
   { id: 'sl_stats', cmd: '/احصائيات', label: 'اللوحة التفاعلية والرسوم', desc: 'الأفراد والأكياس وصافي الأرباح الحية', canvasMode: 'overview_charts' },
   { id: 'sl_edit', cmd: '/جدول', label: 'تعديل الأسماء مباشرة', desc: 'تحديث الأفراد والحظر مع بوابة الموافقة', canvasMode: 'editable_table' },
   { id: 'sl_forecast', cmd: '/توقع', label: 'توقعات الشهر القادم', desc: 'استشراف الاحتياج بناءً على الأرشيف', canvasMode: 'forecast' },
@@ -245,6 +255,7 @@ const BRAIN_BUTTONS: Array<{
 ];
 
 const COMMAND_LIBRARY_ITEMS = [
+  { id: 'cmd_compare', label: 'قارن بين الوكالات', desc: 'ترتيب الوكالات بالأفراد والأكياس وصافي الربح' },
   { id: 'cmd_close_month', label: 'إغلاق الشهر', desc: 'تشغيل ماكرو إغلاق الشهر والمطابقة والتدقيق' },
   { id: 'cmd_stats', label: 'احصائيات جميع الوكالات', desc: 'الأفراد والأكياس وصافي الأرباح بصرياً' },
   { id: 'cmd_diag', label: 'افحص التطبيق', desc: 'تحليل شامل للأخطاء والمكررين والنسخ الاحتياطي' },
@@ -399,15 +410,21 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     useState<MorrowSystemVerificationReport | null>(null);
   const [verifyingSystem, setVerifyingSystem] = useState(false);
 
-  // Voice Message Recording + Speech Recognition
+  // Voice Message Recording + Speech Recognition + Dual-mode (Instruction / Quick Note / Draft Text)
+  const [voiceTargetMode, setVoiceTargetMode] = useState<'instruction' | 'quick_note' | 'draft_text'>('instruction');
+  const voiceTargetModeRef = useRef<'instruction' | 'quick_note' | 'draft_text'>('instruction');
   const [isRecordingVoiceMsg, setIsRecordingVoiceMsg] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [transcribingVoice, setTranscribingVoice] = useState(false);
+  const [liveInterimText, setLiveInterimText] = useState('');
+  const [audioLevels, setAudioLevels] = useState<number[]>(() => Array(10).fill(18));
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceTimerRef = useRef<number | null>(null);
   const liveSpeechTranscriptRef = useRef<string>('');
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRafRef = useRef<number | null>(null);
 
   // Quick Notes / Memory local inputs
   const [customMemoryInput, setCustomMemoryInput] = useState('');
@@ -418,14 +435,42 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     undefined
   );
   const [isNoteRecording, setIsNoteRecording] = useState(false);
+  const [transcribingNoteVoice, setTranscribingNoteVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [micPermissionGuide, setMicPermissionGuide] = useState<MediaPermissionGuide | null>(null);
   const [checkingMicPermission, setCheckingMicPermission] = useState(false);
+  const pendingMicRetryTargetRef = useRef<'chat' | 'note' | null>(null);
+
+  const noteMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const noteRecordedChunksRef = useRef<Blob[]>([]);
+  const noteStreamRef = useRef<MediaStream | null>(null);
+  const noteLiveTranscriptRef = useRef<string>('');
 
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const chatTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const filePickerRef = useRef<HTMLInputElement | null>(null);
+
+  const updateVoiceTargetMode = (mode: 'instruction' | 'quick_note' | 'draft_text') => {
+    voiceTargetModeRef.current = mode;
+    setVoiceTargetMode(mode);
+  };
+
+  const cleanupVoiceAnalyser = () => {
+    if (analyserRafRef.current !== null) {
+      window.cancelAnimationFrame(analyserRafRef.current);
+      analyserRafRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        void audioContextRef.current.close();
+      } catch {
+        // ignore
+      }
+      audioContextRef.current = null;
+    }
+    setAudioLevels(Array(10).fill(18));
+  };
 
   useEffect(() => {
     if (!initialCanvasMode) return;
@@ -448,8 +493,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   useEffect(() => {
     return () => {
       if (voiceTimerRef.current !== null) window.clearInterval(voiceTimerRef.current);
+      cleanupVoiceAnalyser();
       if (voiceStreamRef.current) {
         voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (noteStreamRef.current) {
+        noteStreamRef.current.getTracks().forEach((t) => t.stop());
       }
       if (ttsAudioRef.current) {
         ttsAudioRef.current.pause();
@@ -675,12 +724,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     }
   };
 
-  // --- Voice Message Recording (Chat Audio Message + Speech/Gemini Transcribe) ---
+  // --- Voice Message Recording (Chat Instructions / Quick Notes / Draft Text + Live Waveform) ---
   const stopVoiceMessageRecording = async (shouldSend: boolean) => {
     if (voiceTimerRef.current !== null) {
       window.clearInterval(voiceTimerRef.current);
       voiceTimerRef.current = null;
     }
+    cleanupVoiceAnalyser();
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -692,8 +743,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
     const recorder = mediaRecorderRef.current;
     const durationSec = recordingSeconds;
+    const activeTargetMode = voiceTargetModeRef.current;
     setIsRecordingVoiceMsg(false);
     setRecordingSeconds(0);
+    setLiveInterimText('');
 
     if (!recorder || recorder.state === 'inactive') {
       voiceStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -740,7 +793,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       const res = await fetch('/api/morrow/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioBase64, mimeType: mime }),
+        body: JSON.stringify({
+          audioBase64,
+          mimeType: mime,
+          targetMode: activeTargetMode,
+          agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+        }),
       });
       const json = (await res.json()) as {
         ok?: boolean;
@@ -760,16 +818,73 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       setTranscribingVoice(false);
     }
 
+    if (activeTargetMode === 'quick_note') {
+      if (finalTranscript) {
+        const matched = autoLinkQuickNoteToPerson(finalTranscript, persons, agencies);
+        onAddQuickNote({
+          text: finalTranscript,
+          source: 'voice',
+          syncToPerson: true,
+        });
+        const linkedAgencyName = matched.person
+          ? agencies.find((a) => a.id === matched.person?.agencyId)?.name
+          : undefined;
+        setSummonNotice(
+          matched.person
+            ? `تم حفظ الملاحظة الصوتية وربطها تلقائياً بالعائلة «${matched.person.name}».`
+            : 'تم حفظ الملاحظة الصوتية في سجل الملاحظات السريعة.'
+        );
+        setMultimodalFeed((prev) => [
+          ...prev.slice(-15),
+          {
+            id: `voice_note_${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            kind: 'voice_note',
+            title: 'ملاحظة سريعة بالتسجيل الصوتي',
+            body: finalTranscript,
+            voiceMode: 'quick_note',
+            linkedPersonName: matched.person?.name,
+            linkedAgencyName,
+            audioUrl,
+            durationSec,
+          },
+        ]);
+      } else {
+        setMultimodalFeed((prev) => [
+          ...prev.slice(-15),
+          {
+            id: `voice_${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            kind: 'voice_note',
+            title: 'تسجيل صوتي محفوظ',
+            body: 'لم يتوفر نص مفرّغ — يمكنك الاستماع للتسجيل.',
+            voiceMode: 'quick_note',
+            audioUrl,
+            durationSec,
+          },
+        ]);
+      }
+      return;
+    }
+
+    if (activeTargetMode === 'draft_text') {
+      if (finalTranscript) {
+        setChatInput((prev) => (prev.trim() ? `${prev.trim()} ${finalTranscript}` : finalTranscript));
+        setSummonNotice('تم تفريغ التسجيل الصوتي في مربع الكتابة للمراجعة والتعديل قبل الإرسال.');
+        window.setTimeout(() => chatTextareaRef.current?.focus(), 60);
+      }
+      return;
+    }
+
     setMultimodalFeed((prev) => [
       ...prev.slice(-15),
       {
         id: `voice_${Date.now()}`,
         createdAt: new Date().toISOString(),
         kind: 'voice_note',
-        title: 'رسالة صوتية مسجلة',
-        body:
-          finalTranscript ||
-          'تم حفظ الرسالة الصوتية في المحادثة.',
+        title: 'تعليمة صوتية لـ Morrow',
+        body: finalTranscript || 'تم حفظ التسجيل الصوتي في المحادثة.',
+        voiceMode: 'instruction',
         audioUrl,
         durationSec,
       },
@@ -780,13 +895,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     }
   };
 
-  const startVoiceMessageRecording = async () => {
+  const startVoiceMessageRecording = async (
+    overrideMode?: 'instruction' | 'quick_note' | 'draft_text'
+  ) => {
     setVoiceError(null);
+    if (overrideMode) {
+      updateVoiceTargetMode(overrideMode);
+    }
     if (isRecordingVoiceMsg) {
       await stopVoiceMessageRecording(true);
       return;
     }
 
+    pendingMicRetryTargetRef.current = 'chat';
     setCheckingMicPermission(true);
     const perm = await requestMicrophonePermission();
     setCheckingMicPermission(false);
@@ -802,6 +923,36 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       voiceStreamRef.current = stream;
       recordedChunksRef.current = [];
       liveSpeechTranscriptRef.current = '';
+      setLiveInterimText('');
+
+      // Live audio frequency bars visualization
+      try {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          audioContextRef.current = ctx;
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 32;
+          source.connect(analyser);
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          const tick = () => {
+            if (!audioContextRef.current) return;
+            analyser.getByteFrequencyData(data);
+            const bars = Array.from({ length: 10 }, (_, idx) => {
+              const raw = data[idx % data.length] || 0;
+              return Math.max(16, Math.min(100, Math.round((raw / 255) * 100)));
+            });
+            setAudioLevels(bars);
+            analyserRafRef.current = window.requestAnimationFrame(tick);
+          };
+          analyserRafRef.current = window.requestAnimationFrame(tick);
+        }
+      } catch {
+        // Audio meter is visual only; recording continues smoothly without it
+      }
 
       const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
@@ -812,7 +963,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       };
       recorder.start();
 
-      // Optional live Web Speech capture alongside audio recording as instant local fallback
+      // Optional live Web Speech capture alongside audio recording for real-time preview & offline fallback
       const w = window as unknown as {
         SpeechRecognition?: new () => BrowserSpeechRecognition;
         webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
@@ -830,7 +981,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               parts.push(ev.results[i][0]?.transcript || '');
             }
             const txt = parts.join(' ').trim();
-            if (txt) liveSpeechTranscriptRef.current = txt;
+            if (txt) {
+              liveSpeechTranscriptRef.current = txt;
+              setLiveInterimText(txt);
+            }
           };
           rec.onerror = () => {};
           rec.onend = () => {};
@@ -847,20 +1001,89 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         setRecordingSeconds((s) => s + 1);
       }, 1000);
     } catch {
-      setVoiceError('تعذر بدء تسجيل الرسالة الصوتية.');
+      cleanupVoiceAnalyser();
+      setVoiceError('تعذر بدء التسجيل الصوتي.');
       setMicPermissionGuide(buildPermissionRecoveryGuide('microphone'));
     }
   };
 
-  // Voice dictation for Quick Notes secondary tab
+  // Voice recording & transcription for Quick Notes secondary tab (MediaRecorder + Gemini Transcribe + Speech API fallback)
   const toggleNoteVoiceDictation = async () => {
     setVoiceError(null);
-    if (isNoteRecording && recognitionRef.current) {
-      recognitionRef.current.stop();
+
+    if (isNoteRecording) {
       setIsNoteRecording(false);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
+
+      const recorder = noteMediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        await new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+          try {
+            recorder.stop();
+          } catch {
+            resolve();
+          }
+        });
+      }
+      noteStreamRef.current?.getTracks().forEach((t) => t.stop());
+      noteStreamRef.current = null;
+      noteMediaRecorderRef.current = null;
+
+      const mime = recorder?.mimeType || 'audio/webm';
+      const audioBlob = new Blob(noteRecordedChunksRef.current, { type: mime });
+      noteRecordedChunksRef.current = [];
+      let transcript = noteLiveTranscriptRef.current.trim();
+      noteLiveTranscriptRef.current = '';
+
+      if (audioBlob.size >= 400) {
+        setTranscribingNoteVoice(true);
+        try {
+          const audioBase64 = await blobToBase64(audioBlob);
+          const res = await fetch('/api/morrow/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioBase64,
+              mimeType: mime,
+              targetMode: 'quick_note',
+              agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+            }),
+          });
+          const json = (await res.json()) as {
+            ok?: boolean;
+            transcript?: string;
+            error?: string;
+          };
+          if (res.ok && json.ok && json.transcript) {
+            transcript = json.transcript.trim();
+          } else if (!transcript && json.error) {
+            setVoiceError(json.error);
+          }
+        } catch {
+          if (!transcript) {
+            setVoiceError('تعذر تفريغ التسجيل الصوتي عبر الخادم.');
+          }
+        } finally {
+          setTranscribingNoteVoice(false);
+        }
+      }
+
+      if (transcript) {
+        setNoteInput((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+        setNoteSource('voice');
+      }
       return;
     }
 
+    pendingMicRetryTargetRef.current = 'note';
     setCheckingMicPermission(true);
     const perm = await requestMicrophonePermission();
     setCheckingMicPermission(false);
@@ -871,46 +1094,58 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       return;
     }
 
-    const w = window as unknown as {
-      SpeechRecognition?: new () => BrowserSpeechRecognition;
-      webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
-    };
-    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) {
-      const msg = 'الإملاء الصوتي غير مدعوم في هذا المتصفح، يمكنك الكتابة نصياً.';
-      setVoiceError(msg);
-      setMicPermissionGuide(buildPermissionRecoveryGuide('microphone', msg));
-      return;
-    }
-
     try {
-      const rec = new Ctor();
-      rec.lang = 'ar-IQ';
-      rec.interimResults = true;
-      rec.continuous = false;
-      rec.onresult = (ev) => {
-        const transcriptParts: string[] = [];
-        for (let i = 0; i < ev.results.length; i++) {
-          transcriptParts.push(ev.results[i][0]?.transcript || '');
-        }
-        const combined = transcriptParts.join(' ').trim();
-        if (combined) {
-          setNoteInput(combined);
-          setNoteSource('voice');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      noteStreamRef.current = stream;
+      noteRecordedChunksRef.current = [];
+      noteLiveTranscriptRef.current = '';
+
+      const recorder = new MediaRecorder(stream);
+      noteMediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) {
+          noteRecordedChunksRef.current.push(ev.data);
         }
       };
-      rec.onerror = () => {
-        setIsNoteRecording(false);
+      recorder.start();
+
+      const w = window as unknown as {
+        SpeechRecognition?: new () => BrowserSpeechRecognition;
+        webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
       };
-      rec.onend = () => {
-        setIsNoteRecording(false);
-      };
-      recognitionRef.current = rec;
+      const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+      if (Ctor) {
+        try {
+          const rec = new Ctor();
+          rec.lang = 'ar-IQ';
+          rec.interimResults = true;
+          rec.continuous = true;
+          rec.onresult = (ev) => {
+            const transcriptParts: string[] = [];
+            for (let i = 0; i < ev.results.length; i++) {
+              transcriptParts.push(ev.results[i][0]?.transcript || '');
+            }
+            const combined = transcriptParts.join(' ').trim();
+            if (combined) {
+              noteLiveTranscriptRef.current = combined;
+              setNoteInput(combined);
+              setNoteSource('voice');
+            }
+          };
+          rec.onerror = () => {};
+          rec.onend = () => {};
+          recognitionRef.current = rec;
+          rec.start();
+        } catch {
+          // MediaRecorder handles transcription seamlessly on stop
+        }
+      }
+
       setIsNoteRecording(true);
-      rec.start();
     } catch {
       setIsNoteRecording(false);
-      setVoiceError('تعذر بدء التسجيل الصوتي.');
+      setVoiceError('تعذر بدء التسجيل الصوتي للملاحظات.');
+      setMicPermissionGuide(buildPermissionRecoveryGuide('microphone'));
     }
   };
 
@@ -1269,7 +1504,101 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           PRIMARY SCREEN (DEFAULT): ONLY Chat + Voice + Live + Files/Camera
          ==================================================================== */}
       {isMainConversationView && (
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-3 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-5 min-h-0">
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-3 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-5 min-h-0">
+          {/* Compact Workspace Quick Command Bar (Agency selector + Instant Smart Tools) */}
+          <div
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <FolderKanban className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+              {agencies.length > 0 && onSelectActiveAgency ? (
+                <select
+                  aria-label="اختيار الوكالة النشطة"
+                  value={activeAgency?.id ?? agencies[0].id}
+                  onChange={(e) => onSelectActiveAgency(Number(e.target.value))}
+                  className="max-w-[170px] truncate rounded-lg border px-2 py-1 text-xs font-extrabold outline-none"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {agencies.map((ag) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="truncate font-extrabold">
+                  {activeAgency?.name || 'جميع الوكالات'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void startVoiceMessageRecording('instruction')}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-extrabold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: isRecordingVoiceMsg ? 'var(--danger)' : 'var(--bg-nav-active)',
+                  borderColor: isRecordingVoiceMsg ? 'var(--danger)' : 'var(--accent)',
+                  color: isRecordingVoiceMsg ? '#ffffff' : 'var(--accent)',
+                }}
+              >
+                {isRecordingVoiceMsg ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+                <span>{isRecordingVoiceMsg ? 'إيقاف الصوت' : 'التسجيل الصوتي'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onChangeTab('quick_notes')}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>الملاحظات ({quickNotes.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCanvasMode('overview_charts');
+                  setCanvasOverlayActive(true);
+                }}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <LayoutPanelLeft className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>اللوحة التفاعلية</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => submitChatPrompt('قارن بين الوكالات')}
+                className="hidden sm:inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <BarChart3 className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>مقارنة الوكالات</span>
+              </button>
+            </div>
+          </div>
+
           {summonNotice && (
             <div
               className="mb-3 flex items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold"
@@ -1304,7 +1633,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     أهلاً بك في مساحة Morrow المتكاملة
                   </h2>
                   <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-                    تفاعل بالمحادثة والأوامر أو الرسائل الصوتية، ابدأ محادثة صوتية مباشرة لايف، أو ارفع وصوّر ملفاتك — جميع النماذج مرتبطة لحظياً بحصتك الحالية.
+                    سجّل صوتك لإضافة ملاحظة سريعة أو لإرسال تعليمات للذكاء الاصطناعي، افتح محادثة لايف التفاعلية، أو ارفع وصوّر ملفاتك — جميع النماذج مرتبطة لحظياً بحصتك الحالية.
                   </p>
                   {liveCloudContext?.liveWorkspace && (
                     <div
@@ -1322,23 +1651,51 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
                 {/* 3 Core Entry Tiles */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void startVoiceMessageRecording();
-                    }}
-                    className="flex flex-col items-start gap-2 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent)]"
+                  <div
+                    className="flex flex-col justify-between gap-2.5 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
-                    <Mic className="h-5 w-5" style={{ color: 'var(--accent)' }} />
-                    <div className="text-xs font-extrabold">محادثة أو رسالة صوتية</div>
-                    <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      اكتب أمرك أو سجّل رسالة صوتية تُفرّغ وتُنفذ مباشرة
+                    <button
+                      type="button"
+                      onClick={() => void startVoiceMessageRecording('instruction')}
+                      className="flex flex-col items-start gap-2 text-right"
+                    >
+                      <Mic className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+                      <div className="text-xs font-extrabold">التسجيل الصوتي الذكي</div>
+                      <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                        أملِ تعليمات للذكاء أو سجّل ملاحظات سريعة بالصوت بدلاً من الكتابة
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => void startVoiceMessageRecording('instruction')}
+                        className="rounded-lg border px-2 py-1 text-[10px] font-extrabold whitespace-nowrap hover:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        تعليمات للذكاء
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void startVoiceMessageRecording('quick_note')}
+                        className="rounded-lg border px-2 py-1 text-[10px] font-extrabold whitespace-nowrap hover:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        ملاحظة سريعة
+                      </button>
                     </div>
-                  </button>
+                  </div>
 
                   <button
                     type="button"
@@ -1477,6 +1834,27 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                           >
                             <Volume2 className="h-3 w-3" />
                             <span>{speakingMsgId === msg.id ? 'إيقاف' : 'استماع'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onAddQuickNote({
+                                text: msg.text.slice(0, 320),
+                                source: 'text',
+                                syncToPerson: true,
+                              });
+                              setSummonNotice('تم حفظ الرد في الملاحظات السريعة وربطه تلقائياً إذا تضمن اسماً.');
+                            }}
+                            title="حفظ كملاحظة سريعة"
+                            className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold hover:border-[var(--accent)]"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: 'var(--border-color)',
+                            }}
+                          >
+                            <StickyNote className="h-3 w-3" />
+                            <span>ملاحظة</span>
                           </button>
 
                           <button
@@ -1727,6 +2105,76 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   <div className="leading-relaxed whitespace-pre-line">{item.body}</div>
                 )}
 
+                {item.linkedPersonName && (
+                  <div
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-nav-active)',
+                      borderColor: 'var(--accent)',
+                      color: 'var(--accent)',
+                    }}
+                  >
+                    <Link2 className="h-3 w-3" />
+                    <span>
+                      مربوطة تلقائياً بالعائلة: {item.linkedPersonName}
+                      {item.linkedAgencyName ? ` (${item.linkedAgencyName})` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {item.kind === 'voice_note' && item.body && (
+                  <div className="pt-1 flex flex-wrap gap-1.5">
+                    {item.voiceMode === 'quick_note' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onChangeTab('quick_notes')}
+                          className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                          <span>فتح في الملاحظات السريعة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitChatPrompt(item.body)}
+                          className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <Sparkles className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                          <span>تنفيذ كتعليمة للذكاء</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onAddQuickNote({
+                            text: item.body,
+                            source: 'voice',
+                            syncToPerson: true,
+                          });
+                          setSummonNotice('تم حفظ نص التسجيل الصوتي كملاحظة سريعة.');
+                        }}
+                        className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                        <span>حفظ أيضاً كملاحظة سريعة</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {item.errorText && (
                   <div
                     className="rounded-xl border px-3 py-2 text-xs font-semibold"
@@ -1921,50 +2369,119 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               </div>
             )}
 
-            {/* Active Voice Message Recording Strip */}
+            {/* Active Voice Recording Studio Strip (Live Waveform + Destination Switcher + Interim Speech) */}
             {isRecordingVoiceMsg && (
               <div
-                className="flex items-center justify-between gap-2 rounded-2xl border px-3.5 py-2 text-xs font-extrabold"
+                data-testid="morrow-voice-recording-strip"
+                className="rounded-2xl border p-3 text-xs space-y-2.5"
                 style={{
                   backgroundColor: 'var(--danger-bg)',
                   borderColor: 'var(--danger)',
-                  color: 'var(--danger)',
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <Mic className="h-4 w-4 animate-pulse" />
-                  <span>جاري تسجيل رسالة صوتية...</span>
-                  <span className="font-mono tabular-nums">
-                    {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
-                    {String(recordingSeconds % 60).padStart(2, '0')}
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 font-extrabold" style={{ color: 'var(--danger)' }}>
+                    <Mic className="h-4 w-4 shrink-0" />
+                    <span>جاري التسجيل الصوتي...</span>
+                    <span className="font-mono tabular-nums">
+                      {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
+                      {String(recordingSeconds % 60).padStart(2, '0')}
+                    </span>
+
+                    {/* Live Audio Spectrum Bars */}
+                    <span className="inline-flex h-4 items-end gap-0.5 px-1" aria-hidden="true">
+                      {audioLevels.map((lvl, idx) => (
+                        <span
+                          key={idx}
+                          className="w-1 rounded-full transition-all duration-75"
+                          style={{
+                            height: `${Math.max(20, lvl)}%`,
+                            backgroundColor: 'var(--danger)',
+                          }}
+                        />
+                      ))}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void stopVoiceMessageRecording(false)}
+                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void stopVoiceMessageRecording(true)}
+                      className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-extrabold whitespace-nowrap"
+                      style={{
+                        backgroundColor: 'var(--danger)',
+                        color: '#ffffff',
+                      }}
+                    >
+                      <Square className="h-3 w-3" />
+                      <span>
+                        {voiceTargetMode === 'quick_note'
+                          ? 'إيقاف وحفظ الملاحظة'
+                          : voiceTargetMode === 'draft_text'
+                            ? 'إيقاف وإدراج النص'
+                            : 'إيقاف وتنفيذ'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void stopVoiceMessageRecording(false)}
-                    className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+
+                {/* Live Destination Selector */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                      الوجهة عند الإيقاف:
+                    </span>
+                    {(
+                      [
+                        { id: 'instruction', label: 'تعليمات للذكاء' },
+                        { id: 'quick_note', label: 'ملاحظة سريعة' },
+                        { id: 'draft_text', label: 'تحرير في المربع' },
+                      ] as const
+                    ).map((opt) => {
+                      const active = voiceTargetMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => updateVoiceTargetMode(opt.id)}
+                          className="rounded-lg border px-2.5 py-1 text-[11px] font-extrabold whitespace-nowrap"
+                          style={{
+                            backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
+                            borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                            color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {liveInterimText && (
+                  <div
+                    className="rounded-xl border px-3 py-1.5 text-[11px] font-semibold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
                       color: 'var(--text-primary)',
                     }}
                   >
-                    إلغاء
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void stopVoiceMessageRecording(true)}
-                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-extrabold"
-                    style={{
-                      backgroundColor: 'var(--danger)',
-                      color: '#ffffff',
-                    }}
-                  >
-                    <Square className="h-3 w-3" />
-                    <span>إيقاف وإرسال</span>
-                  </button>
-                </div>
+                    {liveInterimText}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1998,6 +2515,15 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     type="button"
                     onClick={() => {
                       setChatInput('');
+                      if (sc.startVoice) {
+                        void startVoiceMessageRecording(sc.startVoice);
+                        return;
+                      }
+                      if (sc.openTab) {
+                        setCanvasOverlayActive(false);
+                        onChangeTab(sc.openTab);
+                        return;
+                      }
                       if (sc.runVerifier) {
                         setSideDrawerOpen(true);
                         void handleRunSystemVerifier();
@@ -2050,7 +2576,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 placeholder={
                   attachedFile
                     ? 'اكتب سؤالك حول الملف المرفق أو اضغط إرسال...'
-                    : 'اكتب محادثة أو أمراً لـ Morrow (أو ابدأ بـ / للأوامر السريعة)...'
+                    : 'اكتب محادثة أو أمراً لـ Morrow (أو اضغط التسجيل الصوتي بالأسفل، أو / للأوامر)...'
                 }
                 className="min-w-0 flex-1 resize-none rounded-2xl border px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-[var(--accent)]"
                 style={{
@@ -2074,23 +2600,96 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               </button>
             </form>
 
-            {/* Clean Action Trio Bar: Voice Message + Live Talk + Upload/Camera */}
+            {/* Clean Action Trio Bar: التسجيل الصوتي + Target Mode + Live Talk + Upload/Camera */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
+                  data-testid="morrow-voice-record-btn"
                   disabled={checkingMicPermission || transcribingVoice}
                   onClick={() => void startVoiceMessageRecording()}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                   style={{
-                    backgroundColor: isRecordingVoiceMsg ? 'var(--danger)' : 'var(--bg-main)',
-                    borderColor: isRecordingVoiceMsg ? 'var(--danger)' : 'var(--border-color)',
+                    backgroundColor: isRecordingVoiceMsg
+                      ? 'var(--danger)'
+                      : 'color-mix(in srgb, var(--accent) 10%, var(--bg-main))',
+                    borderColor: isRecordingVoiceMsg ? 'var(--danger)' : 'var(--accent)',
                     color: isRecordingVoiceMsg ? '#ffffff' : 'var(--text-primary)',
                   }}
                 >
-                  {isRecordingVoiceMsg ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />}
-                  <span>{isRecordingVoiceMsg ? 'إيقاف التسجيل' : 'رسالة صوتية'}</span>
+                  {checkingMicPermission || transcribingVoice ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--accent)' }} />
+                  ) : isRecordingVoiceMsg ? (
+                    <MicOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Mic className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  )}
+                  <span>
+                    {transcribingVoice
+                      ? 'جاري التفريغ...'
+                      : isRecordingVoiceMsg
+                        ? 'إيقاف التسجيل'
+                        : 'التسجيل الصوتي'}
+                  </span>
                 </button>
+
+                {!isRecordingVoiceMsg && (
+                  <div
+                    className="inline-flex h-9 items-center rounded-xl border p-0.5 text-[11px]"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                    title="وجهة التسجيل الصوتي: أمر ذكي أو ملاحظة سريعة أو تحرير نصي"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => updateVoiceTargetMode('instruction')}
+                      className="rounded-lg px-2 py-1 font-bold whitespace-nowrap"
+                      style={{
+                        backgroundColor:
+                          voiceTargetMode === 'instruction' ? 'var(--accent)' : 'transparent',
+                        color:
+                          voiceTargetMode === 'instruction'
+                            ? 'var(--accent-fg)'
+                            : 'var(--text-muted)',
+                      }}
+                    >
+                      للذكاء
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateVoiceTargetMode('quick_note')}
+                      className="rounded-lg px-2 py-1 font-bold whitespace-nowrap"
+                      style={{
+                        backgroundColor:
+                          voiceTargetMode === 'quick_note' ? 'var(--accent)' : 'transparent',
+                        color:
+                          voiceTargetMode === 'quick_note'
+                            ? 'var(--accent-fg)'
+                            : 'var(--text-muted)',
+                      }}
+                    >
+                      ملاحظة
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateVoiceTargetMode('draft_text')}
+                      className="hidden sm:inline-flex items-center gap-0.5 rounded-lg px-2 py-1 font-bold whitespace-nowrap"
+                      style={{
+                        backgroundColor:
+                          voiceTargetMode === 'draft_text' ? 'var(--accent)' : 'transparent',
+                        color:
+                          voiceTargetMode === 'draft_text'
+                            ? 'var(--accent-fg)'
+                            : 'var(--text-muted)',
+                      }}
+                    >
+                      <Edit3 className="h-3 w-3" />
+                      <span>تحرير</span>
+                    </button>
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -2537,23 +3136,30 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               </div>
               <button
                 type="button"
+                data-testid="morrow-note-voice-btn"
+                disabled={checkingMicPermission || transcribingNoteVoice}
                 onClick={() => void toggleNoteVoiceDictation()}
-                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold whitespace-nowrap"
                 style={{
                   backgroundColor: isNoteRecording ? 'var(--danger)' : 'var(--bg-main)',
-                  borderColor: isNoteRecording ? 'var(--danger)' : 'var(--border-color)',
+                  borderColor: isNoteRecording ? 'var(--danger)' : 'var(--accent)',
                   color: isNoteRecording ? '#ffffff' : 'var(--text-primary)',
                 }}
               >
-                {isNoteRecording ? (
+                {transcribingNoteVoice || checkingMicPermission ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent)' }} />
+                    <span>جاري التفريغ الصوتي...</span>
+                  </>
+                ) : isNoteRecording ? (
                   <>
                     <MicOff className="h-4 w-4" />
-                    <span>إيقاف الإملاء</span>
+                    <span>إيقاف التسجيل الصوتي</span>
                   </>
                 ) : (
                   <>
                     <Mic className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                    <span>{speechSupported ? 'إملاء صوتي عربي' : 'إدخال صوتي'}</span>
+                    <span>{speechSupported ? 'التسجيل الصوتي' : 'التسجيل الصوتي الذكي'}</span>
                   </>
                 )}
               </button>
@@ -3219,10 +3825,24 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         open={Boolean(micPermissionGuide)}
         guide={micPermissionGuide}
         checking={checkingMicPermission}
-        onClose={() => setMicPermissionGuide(null)}
-        onRetryPermission={() => {
+        onClose={() => {
+          pendingMicRetryTargetRef.current = null;
           setMicPermissionGuide(null);
         }}
+        onRetryPermission={() => {
+          const target = pendingMicRetryTargetRef.current;
+          setMicPermissionGuide(null);
+          if (target === 'note') {
+            void toggleNoteVoiceDictation();
+          } else {
+            void startVoiceMessageRecording();
+          }
+        }}
+        onUseFallback={() => {
+          pendingMicRetryTargetRef.current = null;
+          window.setTimeout(() => chatTextareaRef.current?.focus(), 60);
+        }}
+        fallbackLabel="الكتابة النصية الآن"
       />
     </div>
   );

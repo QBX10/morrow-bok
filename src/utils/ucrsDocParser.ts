@@ -33,8 +33,9 @@ export interface LocalParsedDocumentResult {
 }
 
 const NAME_HEADER_HINTS = ['اسم', 'الاسم', 'المستفيد', 'رب الاسرة', 'الاسماء', 'name'];
-const IND_HEADER_HINTS = ['افراد', 'الافراد', 'الأفراد', '\u0627\u0646\u0641\u0627\u0631', '\u0627\u0644\u0623\u0646\u0641\u0627\u0631', 'العدد', 'count', 'individuals'];
-const DEC_HEADER_HINTS = ['نزول', 'نقصان', 'نقص', 'decrease'];
+const ELIGIBLE_HEADER_HINTS = ['مستحق', 'المستحق', 'المستحقة', 'المستحقين', 'الصافي', 'الصافية', 'eligible'];
+const IND_HEADER_HINTS = ['افراد الكلية', 'الأفراد الكلية', 'اجمالي الافراد', 'إجمالي الأفراد', 'افراد', 'الافراد', 'الأفراد', '\u0627\u0646\u0641\u0627\u0631', '\u0627\u0644\u0623\u0646\u0641\u0627\u0631', 'العدد', 'count', 'individuals'];
+const DEC_HEADER_HINTS = ['محجوب', 'محجوبين', 'نزول', 'نقصان', 'نقص', 'حجب', 'decrease', 'blocked'];
 const ADD_DEL_HEADER_HINTS = ['اضافة', 'إضافة', 'حذف', 'تعديل', 'التغيير'];
 const DATE_HEADER_HINTS = ['تاريخ', 'التاريخ', 'الشهر', 'الفترة', 'date', 'month'];
 const NOTE_HEADER_HINTS = ['ملاحظة', 'ملاحظات', 'عنوان', 'سبب', 'note', 'notes'];
@@ -66,18 +67,29 @@ function buildRowsFromMatrix(
     learningRules?: UcrsLearningRule[];
     focusedFields?: QuickExtractFocusField[];
   }
-): { rows: QuickExtractEvaluatedRow[]; colCount: number } {
+): { rows: QuickExtractEvaluatedRow[]; colCount: number; headerColumns: string[] } {
   const nonEmpty = matrix.filter((r) => r.some((cell) => String(cell || '').trim() !== ''));
-  if (nonEmpty.length === 0) return { rows: [], colCount: 0 };
+  if (nonEmpty.length === 0) return { rows: [], colCount: 0, headerColumns: [] };
 
   const headerRow = nonEmpty[0].map((c) => String(c || '').trim());
   const hasExplicitHeader =
     findColumnIndex(headerRow, NAME_HEADER_HINTS) !== -1 ||
-    findColumnIndex(headerRow, IND_HEADER_HINTS) !== -1;
+    findColumnIndex(headerRow, IND_HEADER_HINTS) !== -1 ||
+    findColumnIndex(headerRow, ELIGIBLE_HEADER_HINTS) !== -1;
 
   const startIdx = hasExplicitHeader ? 1 : 0;
   let nameCol = hasExplicitHeader ? findColumnIndex(headerRow, NAME_HEADER_HINTS) : -1;
+  const eligibleCol = hasExplicitHeader ? findColumnIndex(headerRow, ELIGIBLE_HEADER_HINTS) : -1;
   let indCol = hasExplicitHeader ? findColumnIndex(headerRow, IND_HEADER_HINTS) : -1;
+  if (indCol === eligibleCol && eligibleCol !== -1) {
+    // Prefer a separate total individuals column if both exist
+    const alt = headerRow.findIndex(
+      (h, idx) =>
+        idx !== eligibleCol &&
+        IND_HEADER_HINTS.some((hint) => h.toLowerCase().includes(hint.toLowerCase()))
+    );
+    if (alt !== -1) indCol = alt;
+  }
   const decCol = hasExplicitHeader ? findColumnIndex(headerRow, DEC_HEADER_HINTS) : -1;
   const addDelCol = hasExplicitHeader ? findColumnIndex(headerRow, ADD_DEL_HEADER_HINTS) : -1;
   const dateCol = hasExplicitHeader ? findColumnIndex(headerRow, DATE_HEADER_HINTS) : -1;
@@ -109,7 +121,7 @@ function buildRowsFromMatrix(
     const sample = nonEmpty.slice(startIdx, startIdx + 8);
     const maxCols = Math.max(...sample.map((r) => r.length), 1);
     for (let c = 0; c < maxCols; c++) {
-      if (c === nameCol) continue;
+      if (c === nameCol || c === eligibleCol) continue;
       const numericHits = sample.filter((r) => parseIntSafe(r[c]) !== null).length;
       if (numericHits > 0) {
         indCol = c;
@@ -130,6 +142,7 @@ function buildRowsFromMatrix(
 
     const learned = applyLearningRulesToName(rawName, rules);
     const indVal = indCol >= 0 ? parseIntSafe(line[indCol]) : null;
+    const eligibleVal = eligibleCol >= 0 ? parseIntSafe(line[eligibleCol]) : null;
     const decVal = decCol >= 0 ? parseIntSafe(line[decCol]) : 0;
     const addDelRaw = addDelCol >= 0 ? String(line[addDelCol] || '').trim() : '';
     const addDelCount = parseIntSafe(addDelRaw);
@@ -146,6 +159,7 @@ function buildRowsFromMatrix(
       pageNumber: 1,
       name: learned.updatedName || null,
       individuals: indVal,
+      eligibleIndividuals: eligibleVal,
       decreaseCount: decVal ?? 0,
       addOrDeleteCount: addDelCount ?? 0,
       addOrDeleteAction: action,
@@ -172,7 +186,11 @@ function buildRowsFromMatrix(
   }
 
   const colCount = Math.max(...nonEmpty.map((r) => r.length), 1);
-  return { rows, colCount };
+  return {
+    rows,
+    colCount,
+    headerColumns: hasExplicitHeader ? headerRow.filter(Boolean) : [],
+  };
 }
 
 function buildRowsFromPlainTextLines(
@@ -182,7 +200,12 @@ function buildRowsFromPlainTextLines(
     learningRules?: UcrsLearningRule[];
     focusedFields?: QuickExtractFocusField[];
   }
-): { matrix: string[][]; rows: QuickExtractEvaluatedRow[]; colCount: number } {
+): {
+  matrix: string[][];
+  rows: QuickExtractEvaluatedRow[];
+  colCount: number;
+  headerColumns: string[];
+} {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -207,7 +230,7 @@ function buildRowsFromPlainTextLines(
     const built = buildRowsFromMatrix(multiColLines, options);
     return { matrix: multiColLines, ...built };
   }
-  return { matrix: delimited, rows: [], colCount: 1 };
+  return { matrix: delimited, rows: [], colCount: 1, headerColumns: [] };
 }
 
 function buildEntitiesFromText(
@@ -357,6 +380,7 @@ export async function parseLocalStructuredDocument(params: {
   let rawText = params.rawTextInput || '';
   let rows: QuickExtractEvaluatedRow[] = [];
   let colCount = 1;
+  let headerColumns: string[] = [];
 
   if (params.file) {
     if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv')) {
@@ -374,6 +398,7 @@ export async function parseLocalStructuredDocument(params: {
       });
       rows = built.rows;
       colCount = built.colCount;
+      headerColumns = built.headerColumns;
       rawText = matrix
         .map((r) => r.map((c) => String(c ?? '')).join(' | '))
         .join('\n');
@@ -390,6 +415,7 @@ export async function parseLocalStructuredDocument(params: {
       });
       rows = built.rows;
       colCount = built.colCount;
+      headerColumns = built.headerColumns;
     } else {
       rawText = await params.file.text();
       const built = buildRowsFromPlainTextLines(rawText, {
@@ -399,6 +425,7 @@ export async function parseLocalStructuredDocument(params: {
       });
       rows = built.rows;
       colCount = built.colCount;
+      headerColumns = built.headerColumns;
     }
   } else if (rawText.trim()) {
     const built = buildRowsFromPlainTextLines(rawText, {
@@ -408,6 +435,7 @@ export async function parseLocalStructuredDocument(params: {
     });
     rows = built.rows;
     colCount = built.colCount;
+    headerColumns = built.headerColumns;
   }
 
   const identity = buildIdentityFromParsedText({
@@ -420,7 +448,12 @@ export async function parseLocalStructuredDocument(params: {
   });
 
   const entities = buildEntitiesFromText(rawText, rows);
-  const inferredMetadata = inferMetadataFromText(rawText, params.agencies || [], fileName);
+  const inferredMetadata = inferMetadataFromText(
+    rawText,
+    params.agencies || [],
+    fileName,
+    headerColumns
+  );
 
   return {
     rawText,

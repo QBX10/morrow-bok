@@ -6,9 +6,11 @@ import {
   recomputeRowValidation,
 } from './quickExtractEngine.ts';
 import {
+  buildSemanticColumnMappings,
   computeRowZeroTrustSummary,
   getFullRowCropBox,
   inferMetadataFromText,
+  performMetadataInference,
 } from './zeroTrustExtract.ts';
 
 const MOCK_AGENCIES: Agency[] = [
@@ -108,18 +110,128 @@ test('Contextual full-row crop spans edge-to-edge horizontally with vertical pad
   assert.ok(fullBoxFromRow.xmax >= 985);
 });
 
-test('Metadata inference extracts agency name, month/date, and center number from header text', () => {
+test('Metadata inference extracts agency name, month/date, semantic columns, and proactive greeting', () => {
   const header = `
     كشف توزيع الحصة التموينية
     وكالة منذر الحلو - مركز رقم 412
     لشهر تشرين الأول 2026
-    الاسم | عدد الأفراد | النزول
+    الاسم | الأفراد الكلية | المستحقة | المحجوبين
   `;
-  const meta = inferMetadataFromText(header, MOCK_AGENCIES, 'table.xlsx');
+  const meta = inferMetadataFromText(header, MOCK_AGENCIES, 'table.xlsx', [
+    'الاسم',
+    'الأفراد الكلية',
+    'المستحقة',
+    'المحجوبين',
+  ]);
   assert.ok(meta);
   assert.equal(meta.agencyName, 'وكالة منذر الحلو');
   assert.equal(meta.matchedAgencyId, 1);
   assert.equal(meta.tableDateLabel, 'تشرين الأول 2026');
   assert.equal(meta.centerOrAgencyNumber, '412');
   assert.equal(meta.confirmedByUser, false);
+  assert.ok(meta.proactivePrompt && meta.proactivePrompt.includes('هل أبدأ السحب'));
+
+  const mappings = buildSemanticColumnMappings([
+    'الاسم',
+    'الأفراد الكلية',
+    'المستحقة',
+    'المحجوبين',
+  ]);
+  assert.equal(mappings.find((m) => m.sourceHeader === 'الأفراد الكلية')?.targetField, 'individuals');
+  assert.equal(mappings.find((m) => m.sourceHeader === 'المستحقة')?.targetField, 'eligibleIndividuals');
+  assert.equal(mappings.find((m) => m.sourceHeader === 'المحجوبين')?.targetField, 'decreaseCount');
 });
+
+test('performMetadataInference resolves Vision AI response and matches agencies safely', async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        metadata: {
+          agencyName: 'وكالة منذر الحلو',
+          agencyNameConfidence: 0.97,
+          tableDateLabel: 'تشرين الأول 2026',
+          tableDateConfidence: 0.96,
+          centerOrAgencyNumber: '412',
+          detectedColumns: ['الاسم', 'الأفراد الكلية', 'المستحقة', 'المحجوبين'],
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )) as typeof fetch;
+
+  try {
+    const inferred = await performMetadataInference(
+      {
+        filename: 'sheet.jpg',
+        imageDataUrl: 'data:image/jpeg;base64,/9j/4AAQSkZJRg==',
+      },
+      MOCK_AGENCIES
+    );
+    assert.ok(inferred);
+    assert.equal(inferred.agencyName, 'وكالة منذر الحلو');
+    assert.equal(inferred.matchedAgencyId, 1);
+    assert.equal(inferred.tableDateLabel, 'تشرين الأول 2026');
+    assert.equal(inferred.confirmedByUser, false);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('Automatic mathematical validation highlights rows where total !== eligible + blocked', () => {
+  const conflictRow = evaluateExtractedRow(
+    {
+      rowIndex: 7,
+      pageNumber: 1,
+      name: 'فلاح حسن عبود',
+      individuals: 7,
+      eligibleIndividuals: 5,
+      decreaseCount: 1, // 5 + 1 = 6 !== 7 -> تعارض رياضي!
+      addOrDeleteCount: 0,
+      addOrDeleteAction: 'لا يوجد',
+      nameConfidence: 1,
+      numbersConfidence: 1,
+      dateConfidence: 1,
+      modelDoubtFlag: false,
+      modelDoubtReason: '',
+      rawSnippet: '7 | فلاح حسن عبود | 7 | 5 | 1',
+    },
+    0,
+    { scanMode: 'fast' }
+  );
+
+  assert.ok(conflictRow.mathIssues.some((m) => m.includes('تعارض رياضي')));
+  assert.equal(conflictRow.zeroTrustNumbersStatus, 'yellow');
+  const conflictSummary = computeRowZeroTrustSummary(conflictRow);
+  assert.equal(conflictSummary.hasMathConflict, true);
+  assert.equal(conflictSummary.anyDoubt, true);
+
+  const validRow = evaluateExtractedRow(
+    {
+      rowIndex: 8,
+      pageNumber: 1,
+      name: 'عباس كريم جاسم',
+      individuals: 6,
+      eligibleIndividuals: 5,
+      decreaseCount: 1, // 5 + 1 = 6
+      addOrDeleteCount: 0,
+      addOrDeleteAction: 'لا يوجد',
+      nameConfidence: 1,
+      numbersConfidence: 1,
+      dateConfidence: 1,
+      modelDoubtFlag: false,
+      modelDoubtReason: '',
+      rawSnippet: '8 | عباس كريم جاسم | 6 | 5 | 1',
+    },
+    1,
+    { scanMode: 'fast' }
+  );
+
+  assert.equal(validRow.mathIssues.length, 0);
+  assert.equal(validRow.zeroTrustNumbersStatus, 'verified');
+  const validSummary = computeRowZeroTrustSummary(validRow);
+  assert.equal(validSummary.hasMathConflict, false);
+  assert.equal(validSummary.anyDoubt, false);
+});
+
+

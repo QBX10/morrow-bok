@@ -2,16 +2,17 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bot,
-  Check,
+  CheckCircle2,
   Columns,
   Crop,
-  Edit3,
   Eye,
-  HelpCircle,
+  EyeOff,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Redo2,
   ShieldCheck,
-  Trash2,
+  Sparkles,
   Undo2,
   Upload,
   X,
@@ -22,25 +23,29 @@ import type {
   QuickExtractEvaluatedRow,
 } from '../../types/agency';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
+import { RowZoomViewerModal } from './ContextualRowSnippetModal';
+import { type CopilotOperation } from './LiveDraftCopilot';
 import {
-  ContextualRowSnippet,
-  RowZoomViewerModal,
-} from './ContextualRowSnippetModal';
-import { LiveDraftCopilot, type CopilotOperation } from './LiveDraftCopilot';
+  SmartExtractionLab,
+  type SmartLabFilterMode,
+} from './SmartExtractionLab';
 
-export type DraftFilterMode = 'all' | 'doubtful' | 'blocked' | 'verified';
+export type DraftFilterMode = SmartLabFilterMode;
 
 interface ZeroTrustDraftWorkspaceProps {
   rows: QuickExtractEvaluatedRow[];
   inferredMetadata?: InferredDocumentMetadata | null;
   documentSummary: string;
   sourceImageUrl?: string;
+  sourceImageUrls?: Record<number, string>;
   sourcePdfUrl?: string;
   filterMode: DraftFilterMode;
   onChangeFilterMode: (mode: DraftFilterMode) => void;
   hideEmptyColumns: boolean;
   onToggleHideEmptyColumns: (hide: boolean) => void;
   highlightedRowIndex: number | null;
+  labOpen?: boolean;
+  onToggleLabOpen?: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -56,6 +61,7 @@ interface ZeroTrustDraftWorkspaceProps {
   onDeleteRow: (rowId: string) => void;
   onApplyCopilotOperations: (ops: CopilotOperation[]) => string[];
   onAnalyzeCroppedRegion: (croppedDataUrl: string, box?: NormalizedBox) => Promise<void>;
+  onApplyVisibleSelection?: (visibleRowIds: string[]) => void;
   onFinalCommit: () => void;
   committing?: boolean;
   commitLabel?: string;
@@ -66,12 +72,15 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
   inferredMetadata,
   documentSummary,
   sourceImageUrl,
+  sourceImageUrls,
   sourcePdfUrl,
   filterMode,
   onChangeFilterMode,
   hideEmptyColumns,
   onToggleHideEmptyColumns,
   highlightedRowIndex,
+  labOpen: controlledLabOpen,
+  onToggleLabOpen,
   canUndo,
   canRedo,
   onUndo,
@@ -80,27 +89,27 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
   onDeleteRow,
   onApplyCopilotOperations,
   onAnalyzeCroppedRegion,
+  onApplyVisibleSelection,
   onFinalCommit,
   committing,
   commitLabel = 'تأكيد نهائي وحفظ في الجدول الأساسي',
 }) => {
-  const [copilotOpenMobile, setCopilotOpenMobile] = useState(false);
   const [presetPrompt, setPresetPrompt] = useState<string | null>(null);
-  const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null);
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{
-    resolvedName: string;
-    resolvedIndividuals: string;
-    resolvedDecreaseCount: string;
-    resolvedAddOrDeleteCount: string;
-    resolvedAddOrDeleteAction: 'إضافة' | 'حذف' | 'لا يوجد';
-    resolvedRowDate: string;
-    notes: string;
-  } | null>(null);
+  const [internalLabOpen, setInternalLabOpen] = useState(true);
   const [zoomRow, setZoomRow] = useState<QuickExtractEvaluatedRow | null>(null);
   const [cropModalOpen, setCropModalOpen] = useState(false);
 
-  // Compute 1% doubt summary across all draft rows
+  const copilotSectionRef = useRef<HTMLDivElement | null>(null);
+  const labOpen = controlledLabOpen ?? internalLabOpen;
+  const handleToggleLabOpen = () => {
+    if (onToggleLabOpen) {
+      onToggleLabOpen();
+    } else {
+      setInternalLabOpen((v) => !v);
+    }
+  };
+
+  // Compute 1% doubt + automatic math summary across all draft rows
   const rowSummaries = useMemo(() => {
     const map = new Map<string, ReturnType<typeof computeRowZeroTrustSummary>>();
     for (const r of rows) {
@@ -112,14 +121,25 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
   const counts = useMemo(() => {
     let doubtful = 0;
     let blocked = 0;
+    let largeFamilies = 0;
     let verified = 0;
+    let mathConflicts = 0;
     for (const r of rows) {
       const summary = rowSummaries.get(r.id);
       if (summary?.anyDoubt) doubtful += 1;
       else verified += 1;
+      if (summary?.hasMathConflict) mathConflicts += 1;
       if ((r.resolvedDecreaseCount ?? 0) > 0) blocked += 1;
+      if ((r.resolvedIndividuals ?? 0) >= 5) largeFamilies += 1;
     }
-    return { total: rows.length, doubtful, blocked, verified };
+    return {
+      total: rows.length,
+      doubtful,
+      blocked,
+      largeFamilies,
+      verified,
+      mathConflicts,
+    };
   }, [rows, rowSummaries]);
 
   const visibleRows = useMemo(() => {
@@ -128,109 +148,19 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
       if (filterMode === 'doubtful') return Boolean(summary?.anyDoubt);
       if (filterMode === 'verified') return !summary?.anyDoubt;
       if (filterMode === 'blocked') return (r.resolvedDecreaseCount ?? 0) > 0;
+      if (filterMode === 'large_families') return (r.resolvedIndividuals ?? 0) >= 5;
       return true;
     });
   }, [rows, rowSummaries, filterMode]);
 
-  const columnVisibility = useMemo(() => {
-    if (!hideEmptyColumns) {
-      return {
-        showDecrease: true,
-        showAddDel: true,
-        showDate: true,
-        showNotes: true,
-      };
-    }
-    return {
-      showDecrease: rows.some((r) => (r.resolvedDecreaseCount ?? 0) > 0),
-      showAddDel: rows.some(
-        (r) =>
-          (r.resolvedAddOrDeleteCount ?? 0) > 0 &&
-          r.resolvedAddOrDeleteAction !== 'لا يوجد'
-      ),
-      showDate: rows.some((r) => Boolean((r.resolvedRowDate || r.rowDate || '').trim())),
-      showNotes: rows.some((r) => Boolean((r.notes || '').trim())),
-    };
-  }, [rows, hideEmptyColumns]);
-
-  const startManualEdit = (row: QuickExtractEvaluatedRow) => {
-    setEditingRowId(row.id);
-    setEditDraft({
-      resolvedName: row.resolvedName,
-      resolvedIndividuals:
-        row.resolvedIndividuals !== null ? String(row.resolvedIndividuals) : '',
-      resolvedDecreaseCount: String(row.resolvedDecreaseCount ?? 0),
-      resolvedAddOrDeleteCount: String(row.resolvedAddOrDeleteCount ?? 0),
-      resolvedAddOrDeleteAction: row.resolvedAddOrDeleteAction,
-      resolvedRowDate: row.resolvedRowDate ?? row.rowDate ?? '',
-      notes: row.notes || '',
-    });
-  };
-
-  const saveManualEdit = (row: QuickExtractEvaluatedRow) => {
-    if (!editDraft) return;
-    const indNum =
-      editDraft.resolvedIndividuals.trim() === ''
-        ? null
-        : Math.max(0, Math.round(Number(editDraft.resolvedIndividuals) || 0));
-    const decNum = Math.max(
-      0,
-      Math.round(Number(editDraft.resolvedDecreaseCount) || 0)
-    );
-    const addDelNum = Math.max(
-      0,
-      Math.round(Number(editDraft.resolvedAddOrDeleteCount) || 0)
-    );
-
-    onUpdateRow(
-      row.id,
-      {
-        resolvedName: editDraft.resolvedName.trim(),
-        resolvedIndividuals: indNum,
-        resolvedDecreaseCount: decNum,
-        resolvedAddOrDeleteCount: addDelNum,
-        resolvedAddOrDeleteAction: editDraft.resolvedAddOrDeleteAction,
-        resolvedRowDate: editDraft.resolvedRowDate.trim(),
-        rowDate: editDraft.resolvedRowDate.trim() || null,
-        notes: editDraft.notes.trim(),
-        nameConfidence: 1,
-        numbersConfidence: 1,
-        dateConfidence: 1,
-        modelDoubtFlag: false,
-        modelDoubtReason: '',
-        hasDoubt: false,
-        doubtConfirmed: true,
-        mathConfirmed: true,
-      },
-      { zeroTrustConfirmed: true }
-    );
-    setEditingRowId(null);
-    setEditDraft(null);
-  };
-
-  const cellStyleForStatus = (status: 'verified' | 'yellow' | 'red') => {
-    if (status === 'red') {
-      return {
-        backgroundColor: 'var(--danger-bg)',
-        borderColor: 'var(--danger)',
-      };
-    }
-    if (status === 'yellow') {
-      return {
-        backgroundColor: 'var(--warning-bg)',
-        borderColor: 'var(--warning)',
-      };
-    }
-    return {};
-  };
-
   return (
     <div className="space-y-4">
-      {/* Draft Mode Top Toolbar */}
+      {/* Smart Lab Glassmorphic Control Bar */}
       <div
-        className="flex flex-col gap-3 rounded-xl border p-3.5"
+        className="flex flex-col gap-3 rounded-2xl border p-4 backdrop-blur-md transition-all duration-200"
         style={{
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor:
+            'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
           borderColor: 'var(--border-color)',
         }}
       >
@@ -240,15 +170,30 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
               className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
+                borderColor:
+                  'color-mix(in srgb, var(--accent) 35%, var(--border-color))',
                 color: 'var(--accent)',
               }}
             >
-              مسودة السحب (Draft Mode)
+              <Sparkles className="h-3.5 w-3.5" />
+              مختبر السحب الذكي — وضع المسودة (Draft Mode)
             </span>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              لا يتم الحفظ نهائياً إلا بعد مراجعتك والضغط على زر التأكيد النهائي
+              لا يتم الترحيل النهائي إلا بعد مراجعتك وتأكيدك الصريح
             </span>
+            {counts.mathConflicts > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-bold"
+                style={{
+                  backgroundColor: 'var(--warning-bg)',
+                  borderColor: 'var(--warning)',
+                  color: 'var(--warning)',
+                }}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                {counts.mathConflicts} تعارض رياضي بحاجة لمراجعة
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -256,7 +201,7 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
               type="button"
               onClick={onUndo}
               disabled={!canUndo}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-opacity disabled:opacity-40"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -270,7 +215,7 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
               type="button"
               onClick={onRedo}
               disabled={!canRedo}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-opacity disabled:opacity-40"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -283,8 +228,34 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
 
             <button
               type="button"
+              onClick={handleToggleLabOpen}
+              aria-expanded={labOpen}
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors"
+              style={{
+                backgroundColor: labOpen ? 'var(--bg-nav-active)' : 'var(--accent)',
+                borderColor: 'var(--accent)',
+                color: labOpen ? 'var(--accent)' : 'var(--accent-fg)',
+              }}
+            >
+              {labOpen ? (
+                <>
+                  <PanelLeftClose className="h-3.5 w-3.5 shrink-0" />
+                  <EyeOff className="h-3.5 w-3.5 shrink-0" />
+                  <span>إخفاء المختبر الذكي</span>
+                </>
+              ) : (
+                <>
+                  <PanelLeftOpen className="h-3.5 w-3.5 shrink-0" />
+                  <Eye className="h-3.5 w-3.5 shrink-0" />
+                  <span>إظهار المختبر الذكي</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setCropModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -298,12 +269,18 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
             <button
               type="button"
               onClick={() => {
+                if (!labOpen) handleToggleLabOpen();
                 setPresetPrompt(
-                  'يا مساعد، قم بإخفاء الأعمدة الفارغة وأخبرني إن وجدت أسطر ناقصة.'
+                  'يا مساعد، قم بإخفاء الأعمدة الفارغة وأخبرني كم عدد الصفوف المشكوك فيها.'
                 );
-                setCopilotOpenMobile(true);
+                window.setTimeout(() => {
+                  copilotSectionRef.current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                  });
+                }, 80);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -311,14 +288,14 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
               }}
             >
               <Bot className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              طلب تعديل من المساعد
+              طلب من المساعد
             </button>
 
             <button
               type="button"
               onClick={onFinalCommit}
               disabled={committing || rows.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold text-white whitespace-nowrap shrink-0 transition-opacity disabled:opacity-50"
               style={{
                 backgroundColor:
                   counts.doubtful > 0 ? 'var(--warning)' : 'var(--success)',
@@ -330,19 +307,32 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
                 <ShieldCheck className="h-4 w-4" />
               )}
               {commitLabel}
-              {counts.doubtful > 0 ? ` (${counts.doubtful} سطر بحاجة لمراجعة)` : ''}
+              {counts.doubtful > 0 ? ` (${counts.doubtful} بحاجة لمراجعة)` : ''}
             </button>
           </div>
         </div>
 
-        {/* Interactive Draft Filters & Column Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2.5" style={{ borderColor: 'var(--border-color)' }}>
+        {/* Contextual Smart Filters & Column Visibility Strip */}
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-t pt-3"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             {(
               [
-                { id: 'all', label: `الكل (${counts.total})` },
-                { id: 'doubtful', label: `شك <99% (${counts.doubtful})` },
-                { id: 'blocked', label: `أفراد محجوبين/نزول (${counts.blocked})` },
+                { id: 'all', label: `اسحب الكل (${counts.total})` },
+                {
+                  id: 'blocked',
+                  label: `اسحب الذين لديهم محجوبين فقط (${counts.blocked})`,
+                },
+                {
+                  id: 'large_families',
+                  label: `اسحب العائلات الكبيرة فقط ≥5 (${counts.largeFamilies})`,
+                },
+                {
+                  id: 'doubtful',
+                  label: `تعارض رياضي وشك <99% (${counts.doubtful})`,
+                },
                 { id: 'verified', label: `مؤكد ≥99% (${counts.verified})` },
               ] as const
             ).map((tab) => (
@@ -350,628 +340,86 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
                 key={tab.id}
                 type="button"
                 onClick={() => onChangeFilterMode(tab.id)}
-                className="rounded-lg border px-2.5 py-1 text-xs font-medium"
+                className="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
                 style={{
                   backgroundColor:
                     filterMode === tab.id ? 'var(--accent)' : 'var(--bg-main)',
                   borderColor:
                     filterMode === tab.id ? 'var(--accent)' : 'var(--border-color)',
-                  color: filterMode === tab.id ? '#fff' : 'var(--text-primary)',
+                  color:
+                    filterMode === tab.id ? 'var(--accent-fg)' : 'var(--text-primary)',
                 }}
               >
                 {tab.label}
               </button>
             ))}
+
+            {filterMode !== 'all' &&
+              visibleRows.length > 0 &&
+              onApplyVisibleSelection && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onApplyVisibleSelection(visibleRows.map((r) => r.id))
+                  }
+                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'var(--accent)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>اعتماد المفلترة للترحيل ({visibleRows.length})</span>
+                </button>
+              )}
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => onToggleHideEmptyColumns(!hideEmptyColumns)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium"
               style={{
                 backgroundColor: hideEmptyColumns
                   ? 'var(--bg-nav-active)'
                   : 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
+                borderColor: hideEmptyColumns
+                  ? 'var(--accent)'
+                  : 'var(--border-color)',
+                color: hideEmptyColumns ? 'var(--accent)' : 'var(--text-primary)',
               }}
             >
               <Columns className="h-3.5 w-3.5" />
               {hideEmptyColumns ? 'إظهار كل الأعمدة' : 'إخفاء الأعمدة الفارغة'}
             </button>
-
-            <button
-              type="button"
-              onClick={() => setCopilotOpenMobile((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs lg:hidden"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--accent)',
-              }}
-            >
-              <Bot className="h-3.5 w-3.5" />
-              الدردشة الحية
-            </button>
           </div>
         </div>
       </div>
 
-      {/* Main Split Grid: Editable Zero-Trust Draft Table (2/3) + Live Copilot Side Chat (1/3) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="space-y-3 lg:col-span-8">
-          <div
-            className="overflow-x-auto rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <table className="w-full border-collapse text-right text-xs">
-              <thead>
-                <tr
-                  className="border-b text-[11px]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <th className="px-3 py-2.5 font-semibold">#</th>
-                  <th className="px-3 py-2.5 font-semibold">اسم المستفيد (قاعدة 99%)</th>
-                  <th className="px-3 py-2.5 font-semibold">الأفراد</th>
-                  {columnVisibility.showDecrease && (
-                    <th className="px-3 py-2.5 font-semibold">نزول/محجوب</th>
-                  )}
-                  {columnVisibility.showAddDel && (
-                    <th className="px-3 py-2.5 font-semibold">إضافة / حذف</th>
-                  )}
-                  {columnVisibility.showDate && (
-                    <th className="px-3 py-2.5 font-semibold">التاريخ</th>
-                  )}
-                  {columnVisibility.showNotes && (
-                    <th className="px-3 py-2.5 font-semibold">ملاحظات</th>
-                  )}
-                  <th className="px-3 py-2.5 font-semibold">إجراءات التحقق</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-8 text-center text-xs"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      لا توجد صفوف مطابقة للتصفية الحالية داخل المسودة.
-                    </td>
-                  </tr>
-                ) : (
-                  visibleRows.map((row) => {
-                    const zt = rowSummaries.get(row.id) || computeRowZeroTrustSummary(row);
-                    const isEditing = editingRowId === row.id;
-                    const isHighlighted = highlightedRowIndex === row.rowIndex;
-
-                    const issueParts: string[] = [];
-                    if (zt.name.needsReview) {
-                      issueParts.push(`الاسم مشكوك بنسبة ${zt.name.confidencePct}%`);
-                    }
-                    if (zt.numbers.needsReview) {
-                      issueParts.push(`الأرقام مشكوكة بنسبة ${zt.numbers.confidencePct}%`);
-                    }
-                    if (zt.date.needsReview) {
-                      issueParts.push(`التاريخ مشكوك بنسبة ${zt.date.confidencePct}%`);
-                    }
-
-                    return (
-                      <React.Fragment key={row.id}>
-                        <tr
-                          className="border-b transition-colors"
-                          style={{
-                            borderColor: 'var(--border-color)',
-                            backgroundColor: isHighlighted
-                              ? 'var(--bg-nav-active)'
-                              : 'transparent',
-                          }}
-                        >
-                          <td className="px-3 py-2.5 font-mono tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                            {row.rowIndex}
-                          </td>
-
-                          {/* Name Cell with 1% Doubt Rule */}
-                          <td className="px-3 py-2.5 align-top">
-                            {isEditing && editDraft ? (
-                              <input
-                                type="text"
-                                value={editDraft.resolvedName}
-                                onChange={(e) =>
-                                  setEditDraft({
-                                    ...editDraft,
-                                    resolvedName: e.target.value,
-                                  })
-                                }
-                                className="w-full min-w-40 rounded-md border px-2 py-1 text-xs"
-                                style={{
-                                  backgroundColor: 'var(--bg-main)',
-                                  borderColor: 'var(--accent)',
-                                  color: 'var(--text-primary)',
-                                }}
-                              />
-                            ) : (
-                              <div
-                                className="relative rounded-md border px-2 py-1.5"
-                                style={{
-                                  borderColor: zt.name.needsReview
-                                    ? undefined
-                                    : 'transparent',
-                                  ...cellStyleForStatus(zt.name.status),
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-semibold">
-                                    {row.resolvedName || 'اسم مفقود / غير مقروء'}
-                                  </span>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <span
-                                      className="font-mono text-[10px] tabular-nums"
-                                      style={{ color: 'var(--text-muted)' }}
-                                    >
-                                      {zt.name.confidencePct}%
-                                    </span>
-                                    {zt.name.needsReview && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setOpenTooltipKey((prev) =>
-                                            prev === `${row.id}:name`
-                                              ? null
-                                              : `${row.id}:name`
-                                          )
-                                        }
-                                        className="rounded p-0.5"
-                                        style={{
-                                          color:
-                                            zt.name.status === 'red'
-                                              ? 'var(--danger)'
-                                              : 'var(--warning)',
-                                        }}
-                                        title={zt.name.tooltipQuestion}
-                                        aria-label="توضيح الشك في الاسم"
-                                      >
-                                        <HelpCircle className="h-3.5 w-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {openTooltipKey === `${row.id}:name` && (
-                                  <div
-                                    className="mt-1.5 rounded-md border p-2 text-[11px]"
-                                    style={{
-                                      backgroundColor: 'var(--bg-surface)',
-                                      borderColor: 'var(--warning)',
-                                      color: 'var(--text-primary)',
-                                    }}
-                                  >
-                                    <div>{zt.name.tooltipQuestion}</div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenTooltipKey(null);
-                                        startManualEdit(row);
-                                      }}
-                                      className="mt-1 font-semibold underline"
-                                      style={{ color: 'var(--accent)' }}
-                                    >
-                                      تعديل يدوي الآن
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Individuals Cell with 1% Doubt Rule */}
-                          <td className="px-3 py-2.5 align-top">
-                            {isEditing && editDraft ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={editDraft.resolvedIndividuals}
-                                onChange={(e) =>
-                                  setEditDraft({
-                                    ...editDraft,
-                                    resolvedIndividuals: e.target.value,
-                                  })
-                                }
-                                className="w-20 rounded-md border px-2 py-1 text-xs font-mono tabular-nums"
-                                style={{
-                                  backgroundColor: 'var(--bg-main)',
-                                  borderColor: 'var(--accent)',
-                                  color: 'var(--text-primary)',
-                                }}
-                              />
-                            ) : (
-                              <div
-                                className="rounded-md border px-2 py-1.5 font-mono tabular-nums"
-                                style={{
-                                  borderColor: zt.numbers.needsReview
-                                    ? undefined
-                                    : 'transparent',
-                                  ...cellStyleForStatus(zt.numbers.status),
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-1.5">
-                                  <span className="font-bold">
-                                    {row.resolvedIndividuals ?? '—'}
-                                  </span>
-                                  {zt.numbers.needsReview && (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setOpenTooltipKey((prev) =>
-                                          prev === `${row.id}:num`
-                                            ? null
-                                            : `${row.id}:num`
-                                        )
-                                      }
-                                      className="rounded p-0.5"
-                                      style={{
-                                        color:
-                                          zt.numbers.status === 'red'
-                                            ? 'var(--danger)'
-                                            : 'var(--warning)',
-                                      }}
-                                      title={zt.numbers.tooltipQuestion}
-                                      aria-label="توضيح الشك في الأرقام"
-                                    >
-                                      <HelpCircle className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                                {openTooltipKey === `${row.id}:num` && (
-                                  <div
-                                    className="mt-1.5 rounded-md border p-2 font-sans text-[11px]"
-                                    style={{
-                                      backgroundColor: 'var(--bg-surface)',
-                                      borderColor: 'var(--warning)',
-                                      color: 'var(--text-primary)',
-                                    }}
-                                  >
-                                    <div>{zt.numbers.tooltipQuestion}</div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenTooltipKey(null);
-                                        startManualEdit(row);
-                                      }}
-                                      className="mt-1 font-semibold underline"
-                                      style={{ color: 'var(--accent)' }}
-                                    >
-                                      تعديل يدوي
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Decrease / Blocked Individuals */}
-                          {columnVisibility.showDecrease && (
-                            <td className="px-3 py-2.5 align-top font-mono tabular-nums">
-                              {isEditing && editDraft ? (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={editDraft.resolvedDecreaseCount}
-                                  onChange={(e) =>
-                                    setEditDraft({
-                                      ...editDraft,
-                                      resolvedDecreaseCount: e.target.value,
-                                    })
-                                  }
-                                  className="w-16 rounded-md border px-2 py-1 text-xs"
-                                  style={{
-                                    backgroundColor: 'var(--bg-main)',
-                                    borderColor: 'var(--accent)',
-                                    color: 'var(--text-primary)',
-                                  }}
-                                />
-                              ) : (
-                                <span>{row.resolvedDecreaseCount ?? 0}</span>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Add/Delete */}
-                          {columnVisibility.showAddDel && (
-                            <td className="px-3 py-2.5 align-top">
-                              {isEditing && editDraft ? (
-                                <div className="flex items-center gap-1">
-                                  <select
-                                    value={editDraft.resolvedAddOrDeleteAction}
-                                    onChange={(e) =>
-                                      setEditDraft({
-                                        ...editDraft,
-                                        resolvedAddOrDeleteAction: e.target.value as
-                                          | 'إضافة'
-                                          | 'حذف'
-                                          | 'لا يوجد',
-                                      })
-                                    }
-                                    className="rounded-md border px-1.5 py-1 text-[11px]"
-                                    style={{
-                                      backgroundColor: 'var(--bg-main)',
-                                      borderColor: 'var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                    }}
-                                  >
-                                    <option value="لا يوجد">لا يوجد</option>
-                                    <option value="إضافة">إضافة</option>
-                                    <option value="حذف">حذف</option>
-                                  </select>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={editDraft.resolvedAddOrDeleteCount}
-                                    onChange={(e) =>
-                                      setEditDraft({
-                                        ...editDraft,
-                                        resolvedAddOrDeleteCount: e.target.value,
-                                      })
-                                    }
-                                    className="w-14 rounded-md border px-1.5 py-1 text-xs font-mono tabular-nums"
-                                    style={{
-                                      backgroundColor: 'var(--bg-main)',
-                                      borderColor: 'var(--border-color)',
-                                      color: 'var(--text-primary)',
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <span className="font-mono tabular-nums">
-                                  {row.resolvedAddOrDeleteAction === 'لا يوجد'
-                                    ? '—'
-                                    : `${row.resolvedAddOrDeleteAction} (${
-                                        row.resolvedAddOrDeleteCount ?? 0
-                                      })`}
-                                </span>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Row Date Cell */}
-                          {columnVisibility.showDate && (
-                            <td className="px-3 py-2.5 align-top">
-                              {isEditing && editDraft ? (
-                                <input
-                                  type="text"
-                                  value={editDraft.resolvedRowDate}
-                                  onChange={(e) =>
-                                    setEditDraft({
-                                      ...editDraft,
-                                      resolvedRowDate: e.target.value,
-                                    })
-                                  }
-                                  placeholder="التاريخ"
-                                  className="w-24 rounded-md border px-2 py-1 text-xs"
-                                  style={{
-                                    backgroundColor: 'var(--bg-main)',
-                                    borderColor: 'var(--accent)',
-                                    color: 'var(--text-primary)',
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  className="inline-flex items-center gap-1 rounded-md border px-1.5 py-1"
-                                  style={{
-                                    borderColor: zt.date.needsReview
-                                      ? undefined
-                                      : 'transparent',
-                                    ...cellStyleForStatus(zt.date.status),
-                                  }}
-                                >
-                                  <span>{row.resolvedRowDate || row.rowDate || '—'}</span>
-                                  {zt.date.needsReview && (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setOpenTooltipKey((prev) =>
-                                          prev === `${row.id}:date`
-                                            ? null
-                                            : `${row.id}:date`
-                                        )
-                                      }
-                                      title={zt.date.tooltipQuestion}
-                                      style={{ color: 'var(--warning)' }}
-                                    >
-                                      <HelpCircle className="h-3 w-3" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Notes */}
-                          {columnVisibility.showNotes && (
-                            <td className="px-3 py-2.5 align-top">
-                              {isEditing && editDraft ? (
-                                <input
-                                  type="text"
-                                  value={editDraft.notes}
-                                  onChange={(e) =>
-                                    setEditDraft({
-                                      ...editDraft,
-                                      notes: e.target.value,
-                                    })
-                                  }
-                                  className="w-28 rounded-md border px-2 py-1 text-xs"
-                                  style={{
-                                    backgroundColor: 'var(--bg-main)',
-                                    borderColor: 'var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                  }}
-                                />
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>
-                                  {row.notes || '—'}
-                                </span>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Immediate Actions */}
-                          <td className="px-3 py-2.5 align-top">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => saveManualEdit(row)}
-                                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white"
-                                  style={{ backgroundColor: 'var(--success)' }}
-                                >
-                                  <Check className="h-3 w-3" />
-                                  حفظ
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingRowId(null);
-                                    setEditDraft(null);
-                                  }}
-                                  className="rounded-md border px-2 py-1 text-[11px]"
-                                  style={{ borderColor: 'var(--border-color)' }}
-                                >
-                                  إلغاء
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => startManualEdit(row)}
-                                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
-                                  style={{
-                                    backgroundColor: 'var(--bg-main)',
-                                    borderColor: 'var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                  }}
-                                >
-                                  <Edit3 className="h-3 w-3" />
-                                  تعديل يدوي
-                                </button>
-
-                                {zt.anyDoubt ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      onUpdateRow(
-                                        row.id,
-                                        {
-                                          nameConfidence: 1,
-                                          numbersConfidence: 1,
-                                          dateConfidence: 1,
-                                          hasDoubt: false,
-                                          doubtConfirmed: true,
-                                          mathConfirmed: true,
-                                        },
-                                        { zeroTrustConfirmed: true }
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white"
-                                    style={{ backgroundColor: 'var(--success)' }}
-                                  >
-                                    <Check className="h-3 w-3" />
-                                    تأكيد
-                                  </button>
-                                ) : (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold"
-                                    style={{ color: 'var(--success)' }}
-                                  >
-                                    <Check className="h-3 w-3" /> موثق
-                                  </span>
-                                )}
-
-                                {(sourceImageUrl || sourcePdfUrl) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setZoomRow(row)}
-                                    className="rounded-md border p-1"
-                                    style={{ borderColor: 'var(--border-color)' }}
-                                    title="معاينة الصورة عند هذا السطر"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => onDeleteRow(row.id)}
-                                  className="rounded-md border p-1"
-                                  style={{
-                                    borderColor: 'var(--border-color)',
-                                    color: 'var(--danger)',
-                                  }}
-                                  title="حذف السطر من المسودة"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-
-                        {/* Contextual Full-Row Snippet attached directly beneath any <99% doubted row */}
-                        {zt.anyDoubt && (
-                          <tr
-                            className="border-b"
-                            style={{ borderColor: 'var(--border-color)' }}
-                          >
-                            <td colSpan={8} className="px-3 py-2">
-                              <ContextualRowSnippet
-                                row={row}
-                                issueSummary={
-                                  issueParts.join('، ') ||
-                                  row.modelDoubtReason ||
-                                  'درجة الثقة أقل من 99%'
-                                }
-                                sourceImageUrl={sourceImageUrl}
-                                sourcePdfUrl={sourcePdfUrl}
-                                onOpenZoom={setZoomRow}
-                              />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Live Assistant Copilot Side Panel */}
-        <div
-          className={`${
-            copilotOpenMobile ? 'block' : 'hidden'
-          } lg:col-span-4 lg:block`}
-        >
-          <LiveDraftCopilot
-            draftRows={rows}
-            inferredMetadata={inferredMetadata}
-            documentSummary={documentSummary}
-            sourceImageUrl={sourceImageUrl}
-            presetPrompt={presetPrompt}
-            onClearPresetPrompt={() => setPresetPrompt(null)}
-            onApplyOperations={onApplyCopilotOperations}
-            onCloseMobile={() => setCopilotOpenMobile(false)}
-          />
-        </div>
-      </div>
+      {/* Flex Split-Screen Smart Extraction Lab (Viewer Right + Interactive Table & Copilot Left) */}
+      <SmartExtractionLab
+        rows={rows}
+        inferredMetadata={inferredMetadata}
+        documentSummary={documentSummary}
+        sourceImageUrl={sourceImageUrl}
+        sourceImageUrls={sourceImageUrls}
+        sourcePdfUrl={sourcePdfUrl}
+        filterMode={filterMode}
+        hideEmptyColumns={hideEmptyColumns}
+        highlightedRowIndex={highlightedRowIndex}
+        isOpen={labOpen}
+        onToggleOpen={handleToggleLabOpen}
+        showToggleHeader={false}
+        onUpdateRow={onUpdateRow}
+        onDeleteRow={onDeleteRow}
+        onApplyCopilotOperations={onApplyCopilotOperations}
+        onAnalyzeCroppedRegion={onAnalyzeCroppedRegion}
+        onSelectZoomRow={setZoomRow}
+        presetPrompt={presetPrompt}
+        onClearPresetPrompt={() => setPresetPrompt(null)}
+        copilotSectionRef={copilotSectionRef}
+      />
 
       {/* Zoom & Original Source Viewer Modal */}
       <RowZoomViewerModal

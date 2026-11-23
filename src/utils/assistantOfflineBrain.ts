@@ -296,12 +296,20 @@ export function getScreenAwareSuggestions(
         { id: 'sug_arc_stats', label: 'إحصائيات التوزيع', prompt: 'احصائيات جميع الوكالات' },
       ];
 
+    case 'morrow_center':
+      return [
+        { id: 'sug_mc_cmp', label: 'قارن بين الوكالات', prompt: 'قارن بين الوكالات' },
+        { id: 'sug_mc_chk', label: 'فحص سلامة الجداول', prompt: 'افحص التطبيق' },
+        { id: 'sug_mc_fc', label: 'توقعات الحصة القادمة', prompt: 'توقع التغييرات للشهر القادم' },
+        { id: 'sug_mc_rep', label: 'التقرير التنفيذي', prompt: 'جهز تقرير تنفيذي شامل' },
+      ];
+
     default:
       return [
         { id: 'sug_hub_stats', label: 'إحصائيات شاملة', prompt: 'كم كيس وصافي الربح للجميع؟' },
+        { id: 'sug_hub_cmp', label: 'مقارنة الوكالات', prompt: 'قارن بين الوكالات' },
         { id: 'sug_hub_chk', label: 'فحص سلامة البيانات', prompt: 'افحص التطبيق' },
         { id: 'sug_hub_xls', label: 'تقرير إكسل سريع', prompt: 'صدر تقرير اكسل' },
-        { id: 'sug_hub_bak', label: 'نسخة احتياطية', prompt: 'نسخة احتياطية json' },
       ];
   }
 }
@@ -842,7 +850,7 @@ function runSingleOfflineClause(params: {
       norm
     )
       ? 'finance'
-      : /(قائمه جاهزه|القائمه|قائمه)/.test(norm)
+      : /(قايمه جاهزه|قائمه جاهزه|القايمه|القائمه|قايمه|قائمه)/.test(norm)
       ? 'ready_list'
       : 'roster';
     const hideStatusPref = uiContext.preferences.some(
@@ -872,6 +880,33 @@ function runSingleOfflineClause(params: {
         lastAgencyId: matchedAg?.id ?? uiContext.selectedAgencyId ?? undefined,
         lastIntent: 'export_sandbox',
       },
+    };
+  }
+
+  // 4.5 Agency Comparison & Ranking ("قارن بين الوكالات" / "منو أكثر وكالة أفراد" / "أعلى ربح")
+  if (
+    /(قارن بين الوكالات|قارن الوكالات|مقارنه الوكالات|منو اكثر وكاله|اكثر وكاله|اعلى وكاله|اقل وكاله|ترتيب الوكالات)/.test(
+      norm
+    )
+  ) {
+    const metric: 'individuals' | 'profit' | 'bags' | 'blocked' =
+      /(ربح|ارباح|ايراد|صافي)/.test(norm)
+        ? 'profit'
+        : /(كيس|اكياس|طحين)/.test(norm)
+          ? 'bags'
+          : /(محجوب|حظر|حجب)/.test(norm)
+            ? 'blocked'
+            : 'individuals';
+    return {
+      handled: true,
+      confidence: 0.95,
+      gracefulLevel: 'A',
+      replyText: 'تم إعداد المقارنة التفصيلية بين الوكالات:',
+      toolCall: {
+        name: 'compare_agencies',
+        args: { metric },
+      },
+      memoryPatch: { lastIntent: 'compare_agencies' },
     };
   }
 
@@ -1034,6 +1069,98 @@ function runSingleOfflineClause(params: {
     };
   }
 
+  // 9.5 Quick Notes via Text or Voice Command ("سجل ملاحظة: ..." / "ملاحظة سريعة لعائلة ...")
+  if (
+    /(?:^|\s)(?:سجل|اكتب|اضف|ضيف|احفظ)?\s*(?:ملاحظه سريعه|ملاحظة سريعة|ملاحظه|ملاحظة|مذكره|مذكرة)(?=\s|:|：|$)/.test(
+      norm
+    ) &&
+    !/(اخفي|لا تخلي|احذف|شيل|تقرير)/.test(norm)
+  ) {
+    const noteBody = rawFixed
+      .replace(
+        /^(?:سجل|اكتب|اضف|أضف|ضيف|احفظ|حفظ)?\s*(?:لي)?\s*(?:ملاحظة سريعة|ملاحظه سريعه|ملاحظة|ملاحظه|مذكرة|مذكره)\s*(?:بخصوص|حول|عن|على|لـ|ل)?\s*[:：-]?\s*/i,
+        ''
+      )
+      .trim();
+    if (noteBody.length >= 2) {
+      return {
+        handled: true,
+        confidence: 0.94,
+        gracefulLevel: 'A',
+        replyText: 'جاري حفظ الملاحظة السريعة وربطها بالعائلة تلقائياً...',
+        toolCall: {
+          name: 'add_quick_note',
+          args: {
+            text: noteBody,
+            syncToPerson: true,
+          },
+        },
+        memoryPatch: { lastIntent: 'add_quick_note' },
+      };
+    }
+  }
+
+  // 9.7 Ready Lists Create / Add Member ("انشئ قائمة جاهزة ..." / "ضيف [اسم] للقائمة الجاهزة")
+  if (/(قايمه جاهزه|قائمه جاهزه|قوايم جاهزه|قوائم جاهزه|للقايمه|للقائمه|قائمه|قايمه)/.test(norm)) {
+    const isCreate = /(انشي|انشئ|انشاء|انشا|سوي|سولي|اعمل|جديده|جديدة|كون)/.test(norm);
+    const isAddMember = /(ضيف|اضف|خلي)/.test(norm) && !isCreate;
+    if (isCreate) {
+      const matchedAg =
+        matchAgencyInText(rawFixed, state.agencies) ||
+        state.agencies.find((a) => a.id === uiContext.selectedAgencyId) ||
+        state.agencies[0];
+      const extractedListName = rawFixed
+        .replace(
+          /^(?:انشئ|أنشئ|سوي|سو|اعمل|افتح|ضيف|أضف)?\s*(?:لي)?\s*(?:قائمة جاهزة|قائمه جاهزه|قائمة|قائمه)\s*(?:باسم|سميها|اسمها)?\s*/i,
+          ''
+        )
+        .replace(/(?:لـ|ل|في|على)?\s*وكالة\s+[^\s]+(?:\s+[^\s]+)?/g, '')
+        .trim();
+      const tc: AssistantToolCall = {
+        name: 'manage_ready_list',
+        args: {
+          action: 'create',
+          listName: extractedListName || 'قائمة تسليم جديدة',
+          agencyId: matchedAg?.id || 1,
+        },
+      };
+      return {
+        handled: true,
+        confidence: 0.93,
+        gracefulLevel: 'A',
+        replyText: 'جهّزت مسودة إنشاء القائمة الجاهزة للموافقة:',
+        toolCall: tc,
+        confirmationDiff: buildBeforeAfterDiff(state, tc, uiContext.focusedPersonId),
+        memoryPatch: { lastIntent: 'manage_ready_list' },
+      };
+    }
+    if (isAddMember) {
+      const targetName = rawFixed
+        .replace(/^(?:ضيف|ضف|أضف|اضف|خلي)\s*/i, '')
+        .replace(/(?:إلى|الى|لـ|ل)?\s*(?:القائمة الجاهزة|القائمه الجاهزه|القائمة|القائمه).*$/i, '')
+        .trim();
+      const matches = targetName ? fuzzyMatchPersons(targetName, state.persons) : [];
+      const person = matches[0]?.person;
+      if (person) {
+        return {
+          handled: true,
+          confidence: 0.91,
+          gracefulLevel: 'A',
+          replyText: `جاري إضافة «${person.name}» إلى القائمة الجاهزة:`,
+          toolCall: {
+            name: 'manage_ready_list',
+            args: {
+              action: 'add_member',
+              personId: person.id,
+              personName: person.name,
+            },
+          },
+          memoryPatch: { lastPersonId: person.id, lastPersonName: person.name },
+        };
+      }
+    }
+  }
+
   // 10. Add Person with Smart Slot-Filling
   if (/^(?:ضيف|ضف|سجل|خلي|نزل|اضف|اضافه)(?=\s|$)/.test(norm)) {
     const extractedName = extractNameFromAddCommand(rawFixed);
@@ -1138,12 +1265,17 @@ function runSingleOfflineClause(params: {
     /(?:^|\s)(عدله|ارشفه|احذفه|امسحه|احجبه|زوده|نقصه|افتحه|شوفه)(?=\s|$)/.test(norm);
 
   if (
-    /(احجب|حجب|ارشف|امسح|احذف|شيل|عدل|عدله|غير|حدث|سوي|سو\s|خلي|خليه|اجعل|زود|زوده|نقص|نقصه|ارشفه)/.test(
+    /(فك الحظر|فك حظر|رفع الحظر|رفع حجب|الغاء الحظر|الغاء حجب|شيل الحظر|شيل الحجب|فك الحجب|فك حجب|تفعيل|استرجاع|استعاده|انقل|نقل|احجب|حجب|ارشف|امسح|احذف|شيل|عدل|عدله|غير|حدث|سوي|سو\s|خلي|خليه|اجعل|زود|زوده|نقص|نقصه|ارشفه)/.test(
       norm
     )
   ) {
-    const isArchiveOrDelete = /(ارشف|ارشفه|امسح|احذف|شيل)/.test(norm);
-    const isBlock = /(احجب|حجب)/.test(norm);
+    const isUnblock =
+      /(فك الحظر|فك حظر|رفع الحظر|رفع حجب|الغاء الحظر|الغاء حجب|شيل الحظر|شيل الحجب|فك الحجب|فك حجب|ارجاع للنشط|رجعه نشط|اعاده تفعيل|استعاده|استرجاع)/.test(
+        norm
+      );
+    const isTransferAgency = /(انقل|نقل|حوّل|حول)/.test(norm) && /(وكاله|وكالة)/.test(norm);
+    const isArchiveOrDelete = !isUnblock && /(ارشف|ارشفه|امسح|احذف|شيل)/.test(norm);
+    const isBlock = !isUnblock && /(احجب|حجب)/.test(norm);
     const isIncrement = /(زود|زوده|زيد)/.test(norm);
     const isDecrement = /(نقص|نقصه|قلل)/.test(norm);
 
@@ -1163,9 +1295,10 @@ function runSingleOfflineClause(params: {
     if (!targetPerson && !hasPronounObject) {
       const cleanedTarget = rawFixed
         .replace(
-          /(?:احجب|حجب|ارشف|امسح|احذف|شيل|عدل|عدله|غير|حدث|سوي|سو|خلي|خليه|اجعل|زود|زوده|نقص|نقصه|أفراد|افراد|فرد|إلى|الى|لـ)\s*/g,
+          /(?:فك الحظر عن|فك حظر|رفع الحظر عن|رفع الحجب عن|إلغاء الحظر عن|الغاء الحظر عن|إلغاء الحجب عن|الغاء الحجب عن|شيل الحظر عن|شيل الحجب عن|فك الحجب عن|إرجاع|ارجاع|استرجاع|استعادة|تفعيل|انقل|نقل|حوّل|حول|احجب|حجب|ارشف|امسح|احذف|شيل|عدل|عدله|غير|حدث|سوي|سو|خلي|خليه|اجعل|زود|زوده|نقص|نقصه|أفراد|افراد|فرد|إلى|الى|لـ|عن|من)\s*/g,
           ' '
         )
+        .replace(/وكالة\s+[^\s]+(?:\s+[^\s]+)?/g, ' ')
         .replace(/\b\d+\b/g, ' ')
         .trim();
       const candidates = fuzzyMatchPersons(cleanedTarget, state.persons);
@@ -1193,8 +1326,9 @@ function runSingleOfflineClause(params: {
               followUpAction: isArchiveOrDelete
                 ? 'archive_person'
                 : isBlock
-                ? 'block_person'
-                : 'update_person',
+                  ? 'block_person'
+                  : 'update_person',
+              ...(isUnblock ? { patchArgs: { blockType: 'none' } } : {}),
               extractedNumber: extractFirstNumber(rawFixed),
             },
           })),
@@ -1233,6 +1367,51 @@ function runSingleOfflineClause(params: {
       lastPersonName: targetPerson.name,
       lastAgencyId: targetPerson.agencyId,
     };
+
+    if (isUnblock) {
+      const tc: AssistantToolCall = {
+        name: 'update_person',
+        args: { personId: targetPerson.id, blockType: 'none', blockedIndividuals: 0 },
+      };
+      const diff = buildBeforeAfterDiff(state, tc, targetPerson.id);
+      if (!diff) {
+        return {
+          handled: true,
+          confidence: 0.94,
+          gracefulLevel: 'A',
+          replyText: `السجل «${targetPerson.name}» نشط بالفعل وليس محجوباً أو مؤرشفاً.`,
+          memoryPatch: personMemory,
+        };
+      }
+      return {
+        handled: true,
+        confidence: 0.95,
+        gracefulLevel: 'A',
+        replyText: `جهّزت فك الحظر وتفعيل «${targetPerson.name}» للمراجعة:`,
+        toolCall: tc,
+        confirmationDiff: diff,
+        memoryPatch: { ...personMemory, lastIntent: 'update_person' },
+      };
+    }
+
+    if (isTransferAgency) {
+      const destAgency = matchAgencyInText(rawFixed, state.agencies);
+      if (destAgency && destAgency.id !== targetPerson.agencyId) {
+        const tc: AssistantToolCall = {
+          name: 'update_person',
+          args: { personId: targetPerson.id, agencyId: destAgency.id },
+        };
+        return {
+          handled: true,
+          confidence: 0.94,
+          gracefulLevel: 'A',
+          replyText: `جهّزت نقل «${targetPerson.name}» إلى ${destAgency.name} للموافقة:`,
+          toolCall: tc,
+          confirmationDiff: buildBeforeAfterDiff(state, tc, targetPerson.id),
+          memoryPatch: { ...personMemory, lastAgencyId: destAgency.id, lastIntent: 'update_person' },
+        };
+      }
+    }
 
     if (isArchiveOrDelete) {
       const tc: AssistantToolCall = {

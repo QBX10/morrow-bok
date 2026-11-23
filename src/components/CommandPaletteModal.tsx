@@ -40,7 +40,6 @@ interface CommandPaletteModalProps {
   onNavigateHierarchyTarget?: (target: HierarchyTarget, nodeId: string) => void;
   cosmosTree?: CosmosNode;
   onSelectCosmosNode?: (node: CosmosNode) => void;
-  onToggleDarkTheme?: (dark: boolean) => void;
   onOpenWorldSwitcher?: () => void;
   onClose: () => void;
   onChangeBrainMode: (mode: AssistantBrainMode) => void;
@@ -72,7 +71,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onNavigateHierarchyTarget,
   cosmosTree,
   onSelectCosmosNode,
-  onToggleDarkTheme,
   onOpenWorldSwitcher,
   onClose,
   onChangeBrainMode,
@@ -142,18 +140,13 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
-        id: 'cmd_theme_toggle',
-        group: 'تنفيذ صامت فوري',
-        label: darkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي',
-        sublabel: 'تبديل فوري بنقرة واحدة مع حفظ السمة المختارة',
+        id: 'cmd_settings_appearance',
+        group: 'الإعدادات الهرمية',
+        label: 'استوديو المظهر والسمات والألوان',
+        sublabel: 'الانتقال مباشرة إلى إعدادات الوضع الليلي والسمات داخل قسم الإعدادات',
         icon: darkTheme ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />,
-        quickActionLabel: darkTheme ? 'نهاري الآن' : 'ليلي الآن',
         onRun: () => {
-          if (onToggleDarkTheme) {
-            onToggleDarkTheme(!darkTheme);
-          } else {
-            onSendAssistantPrompt(darkTheme ? 'الوضع النهاري' : 'الوضع الليلي');
-          }
+          onNavigateView('settings', 'appearance');
           onClose();
         },
       },
@@ -225,7 +218,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       onOpenCommandCenterTab,
       onOpenWorldSwitcher,
       onSendAssistantPrompt,
-      onToggleDarkTheme,
     ]
   );
 

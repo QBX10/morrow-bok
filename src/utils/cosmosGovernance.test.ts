@@ -134,7 +134,7 @@ test('preserves Frozen Zone themes, fonts, and safe migration/default settings',
   assert.equal(DEFAULT_CALCULATION_SETTINGS.feePerIndividualIqd, 250);
   assert.equal(DEFAULT_GENERAL_PREFS.settingsDisplayMode, 'fullscreen');
   assert.equal(DEFAULT_WORKSPACE_COSMOS.accessibility.numeralSystem, 'western');
-  assert.equal(INITIAL_DATABASE_STATE.stateVersion, 2);
+  assert.equal(INITIAL_DATABASE_STATE.stateVersion, 3);
 });
 
 test('assistant handles natural fee change "خلّي رسم الفرد 250" via update_settings update_calc with Before/After diff', () => {

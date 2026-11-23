@@ -13,6 +13,7 @@ import type {
   AssistantExternalTableCommand,
   AssistantMessage,
   AssistantMutationHandlers,
+  AssistantQuickNote,
   AssistantSlotSession,
   AssistantToolCall,
   AssistantUiContext,
@@ -72,6 +73,12 @@ export interface AssistantActionRuntime {
   applyAutoFixes: (issueIds?: string[]) => { fixedCount: number; summaryLines: string[] };
   exportBackupJson: (silentAuto?: boolean) => void;
   archiveCurrentPeriod: () => void;
+  addQuickNote?: (input: {
+    text: string;
+    source?: 'text' | 'voice';
+    overridePersonId?: number | null;
+    syncToPerson?: boolean;
+  }) => AssistantQuickNote | null;
 }
 
 export interface ToolExecutionResolution {
@@ -413,6 +420,143 @@ export function resolveToolExecution(
       };
     }
 
+    case 'compare_agencies': {
+      const metric = String(toolCall.args.metric || 'individuals');
+      const rows = state.agencies.map((ag) => {
+        const agPersons = state.persons.filter((p) => p.agencyId === ag.id);
+        const agExpenses = state.expenses.filter((e) => e.agencyId === ag.id);
+        const m = computeAgencyMetrics(agPersons, agExpenses, state.calculationSettings);
+        return { agency: ag, metrics: m };
+      });
+      if (rows.length === 0) {
+        return {
+          gracefulLevel: 'B',
+          replyText: 'لا توجد وكالات مسجلة للمقارنة حالياً.',
+        };
+      }
+      const sorted = [...rows].sort((a, b) => {
+        if (metric === 'profit') return b.metrics.profit - a.metrics.profit;
+        if (metric === 'bags') return b.metrics.fullBags - a.metrics.fullBags;
+        if (metric === 'blocked') return b.metrics.blockedCount - a.metrics.blockedCount;
+        return b.metrics.activeIndividuals - a.metrics.activeIndividuals;
+      });
+      const metricLabel =
+        metric === 'profit'
+          ? 'صافي الربح'
+          : metric === 'bags'
+            ? 'عدد الأكياس'
+            : metric === 'blocked'
+              ? 'حالات الحجب'
+              : 'الأفراد النشطين';
+      const maxVal = Math.max(
+        1,
+        ...sorted.map((r) =>
+          metric === 'profit'
+            ? Math.max(0, r.metrics.profit)
+            : metric === 'bags'
+              ? r.metrics.fullBags
+              : metric === 'blocked'
+                ? r.metrics.blockedCount
+                : r.metrics.activeIndividuals
+        )
+      );
+      const top = sorted[0];
+      const lines = sorted.map(
+        (r, i) =>
+          `${i + 1}. ${r.agency.icon || ''} ${r.agency.name}: ${r.metrics.activeIndividuals} أفراد (${r.metrics.activeHouseholds} عائلة) · ${r.metrics.fullBags} كيس · محجوب ${r.metrics.blockedCount} · صافي ${formatIqd(r.metrics.profit)}`
+      );
+      return {
+        gracefulLevel: 'A',
+        replyText: `مقارنة الوكالات حسب ${metricLabel} (الأعلى: «${top.agency.name}»):\n${lines.join('\n')}`,
+        resultCard: {
+          title: `مقارنة الوكالات — حسب ${metricLabel}`,
+          summary: `المتصدرة: ${top.agency.name} (${top.metrics.activeIndividuals} فرد · ${top.metrics.fullBags} كيس)`,
+          tone: 'accent',
+          bars: sorted.slice(0, 6).map((r) => {
+            const val =
+              metric === 'profit'
+                ? Math.max(0, r.metrics.profit)
+                : metric === 'bags'
+                  ? r.metrics.fullBags
+                  : metric === 'blocked'
+                    ? r.metrics.blockedCount
+                    : r.metrics.activeIndividuals;
+            return {
+              label: r.agency.name,
+              value: val,
+              max: maxVal,
+              displayValue:
+                metric === 'profit'
+                  ? formatIqd(r.metrics.profit)
+                  : metric === 'bags'
+                    ? `${r.metrics.fullBags} كيس`
+                    : metric === 'blocked'
+                      ? `${r.metrics.blockedCount} محجوب`
+                      : `${r.metrics.activeIndividuals} فرد`,
+            };
+          }),
+          details: [
+            `إجمالي الوكالات المقارنة: ${rows.length}`,
+            `الفرق عن الأعلى قابل للمتابعة في اللوحة التفاعلية`,
+          ],
+        },
+      };
+    }
+
+    case 'add_quick_note': {
+      const text = String(toolCall.args.text || '').trim();
+      if (!text) {
+        return {
+          gracefulLevel: 'B',
+          replyText: 'اكتب نص الملاحظة المطلوب حفظها.',
+        };
+      }
+      const hasPersonHint =
+        toolCall.args.personId !== undefined || Boolean(toolCall.args.personName);
+      const resolvedPerson = hasPersonHint
+        ? resolvePersonTarget(
+            state,
+            {
+              personId: toolCall.args.personId,
+              targetName: toolCall.args.personName,
+            },
+            uiContext.focusedPersonId
+          ).exact
+        : null;
+
+      const syncToPerson =
+        toolCall.args.syncToPerson === undefined ? true : Boolean(toolCall.args.syncToPerson);
+
+      if (runtime.addQuickNote) {
+        const saved = runtime.addQuickNote({
+          text,
+          source: 'text',
+          overridePersonId: resolvedPerson ? resolvedPerson.id : undefined,
+          syncToPerson,
+        });
+        return {
+          gracefulLevel: 'A',
+          replyText: saved?.linkedPersonName
+            ? `تم حفظ الملاحظة السريعة وربطها تلقائياً بـ «${saved.linkedPersonName}»${
+                saved.syncedToPersonNotes ? ' ومزامنتها مع سجل العائلة.' : '.'
+              }`
+            : 'تم حفظ الملاحظة السريعة في قسم الملاحظات بنجاح.',
+          choices: [
+            {
+              id: `open_qn_${Date.now()}`,
+              label: 'فتح الملاحظات السريعة',
+              actionType: 'open_command_center_tab',
+              payload: { tab: 'quick_notes' },
+            },
+          ],
+        };
+      }
+      return {
+        gracefulLevel: 'B',
+        replyText: 'افتح قسم الملاحظات السريعة لحفظ هذه الملاحظة.',
+      };
+    }
+
     case 'manage_ready_list': {
       const action = String(toolCall.args.action || 'open_list');
       if (action === 'create') {
@@ -424,18 +568,25 @@ export function resolveToolExecution(
         };
       }
       if (action === 'add_member') {
-        const listId = Number(toolCall.args.listId) || state.readyLists[0]?.id;
+        const requestedName = String(toolCall.args.listName || '').trim();
+        const matchedList =
+          (toolCall.args.listId
+            ? state.readyLists.find((l) => l.id === Number(toolCall.args.listId))
+            : null) ||
+          (requestedName
+            ? state.readyLists.find((l) => l.name.includes(requestedName))
+            : null) ||
+          state.readyLists[0];
         const { exact } = resolvePersonTarget(
           state,
           { personId: toolCall.args.personId, targetName: toolCall.args.personName },
           uiContext.focusedPersonId
         );
-        if (listId && exact) {
-          runtime.mutations.addPersonsToReadyList(listId, [exact.id]);
-          const listName = state.readyLists.find((l) => l.id === listId)?.name || 'القائمة';
+        if (matchedList && exact) {
+          runtime.mutations.addPersonsToReadyList(matchedList.id, [exact.id]);
           return {
             gracefulLevel: 'A',
-            replyText: `أضفت «${exact.name}» إلى قائمة «${listName}» فوراً.`,
+            replyText: `أضفت «${exact.name}» إلى قائمة «${matchedList.name}» فوراً.`,
           };
         }
       }
@@ -656,7 +807,7 @@ export function resolveToolExecution(
     }
 
     case 'navigate_focus': {
-      const view = (toolCall.args.view as AppView) || 'hub';
+      const view = ((toolCall.args.view || toolCall.args.targetView) as AppView) || 'hub';
       const agencyId = toolCall.args.agencyId ? Number(toolCall.args.agencyId) : null;
       const personId = toolCall.args.personId ? Number(toolCall.args.personId) : null;
       const section = toolCall.args.settingsSection as SettingsSectionId | undefined;
@@ -882,6 +1033,11 @@ export function executeApprovedToolMutation(
     }
     if (toolCall.args.blockType !== undefined) {
       patch.blockType = toolCall.args.blockType as Person['blockType'];
+      if (patch.blockType === 'none') {
+        patch.status = '';
+        patch.blockedIndividuals = 0;
+        patch.blockReason = '';
+      }
     }
     if (toolCall.args.blockedIndividuals !== undefined) {
       patch.blockedIndividuals = Math.max(
@@ -930,7 +1086,11 @@ export function executeApprovedToolMutation(
   if (toolCall.name === 'manage_ready_list' && toolCall.args.action === 'create') {
     const agencyId = Number(toolCall.args.agencyId) || state.agencies[0]?.id || 1;
     const listName = String(toolCall.args.listName || 'قائمة جديدة');
-    mutations.createReadyList({ agencyId, name: listName });
+    mutations.createReadyList({
+      agencyId,
+      name: listName,
+      populateFromAgency: Boolean(toolCall.args.populateFromAgency),
+    });
     runtime.navigate('ready_lists');
     return `تم إنشاء القائمة الجاهزة «${listName}» وفتح قسم القوائم.`;
   }

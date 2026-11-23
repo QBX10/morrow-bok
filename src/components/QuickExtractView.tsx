@@ -80,7 +80,10 @@ import {
   extractLearningRuleFromCorrection,
   mergeSupplementaryExtraction,
 } from '../utils/ucrsEngine';
-import { normalizeInferredMetadata } from '../utils/zeroTrustExtract';
+import {
+  normalizeInferredMetadata,
+  performMetadataInference,
+} from '../utils/zeroTrustExtract';
 import { CoreRosterTable, type CoreRosterRow } from './CoreRosterTable';
 import {
   SelectionActionBar,
@@ -265,6 +268,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [resilienceStatus, setResilienceStatus] = useState('');
+  const [selectionToast, setSelectionToast] = useState('');
   const [ttsStatus, setTtsStatus] = useState('');
   const [analysis, setAnalysis] =
     useState<QuickExtractAnalysisResult | null>(null);
@@ -292,6 +297,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     useState<QuickExtractCommitSummary | null>(null);
 
   // Zero-Trust Draft Mode UI states
+  const [pendingMetadata, setPendingMetadata] =
+    useState<InferredDocumentMetadata | null>(null);
+  const [smartLabOpen, setSmartLabOpen] = useState(true);
   const [draftFilterMode, setDraftFilterMode] =
     useState<DraftFilterMode>('all');
   const [hideEmptyDraftCols, setHideEmptyDraftCols] = useState(false);
@@ -434,9 +442,12 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     );
 
     const normalizedMeta = normalizeInferredMetadata(
-      rawResult.inferredMetadata,
+      rawResult.inferredMetadata ?? pendingMetadata,
       agencies
     );
+    if (normalizedMeta) {
+      setPendingMetadata(normalizedMeta);
+    }
 
     const normalizedResult: QuickExtractAnalysisResult = {
       ...rawResult,
@@ -698,6 +709,27 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     }
   };
 
+  const sleepMs = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const handleAnalyzeError = (err: unknown, fallbackMessage: string) => {
+    const rawMsg = err instanceof Error ? err.message : '';
+    if (
+      rawMsg === 'CLOUD_TEMPORARILY_BUSY' ||
+      /503|429|temporar|overload|unavailable/i.test(rawMsg)
+    ) {
+      setUploadError('');
+      setResilienceStatus(
+        'خوادم المعالجة تشهد ضغطاً مؤقتاً حالياً — تمت المحاولة عبر المسار البديل. يرجى المحاولة مرة أخرى بعد لحظة أو استخدام اللصق النصي.'
+      );
+      return;
+    }
+    setResilienceStatus('');
+    setUploadError(rawMsg || fallbackMessage);
+  };
+
   const callUcrsAnalyzeEndpoint = async (payload: {
     phase: 'classify_only' | 'progressive_extract' | 'fusion_complete';
     sourceKind: string;
@@ -714,38 +746,97 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       missingHint: string;
     };
   }) => {
-    const res = await fetch('/api/ucrs/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...payload,
-        customCommand: customCommand.trim() || undefined,
-        scanMode,
-        focusedFields,
-        clarityThreshold: quickExtractPrefs.clarityThreshold,
-        learningRules: ucrsLearningRules
-          .filter((r) => r.enabled)
-          .map((r) => ({
-            wrongToken: r.wrongToken,
-            correctedToken: r.correctedToken,
-          })),
-        referenceTemplate: activeReferenceTemplate
-          ? {
-              name: activeReferenceTemplate.name,
-              notes: activeReferenceTemplate.notes,
-              imageBase64: activeReferenceTemplate.imageDataUrl,
-              mimeType: activeReferenceTemplate.mimeType,
-              regions: activeReferenceTemplate.regions,
-            }
-          : undefined,
-      }),
+    const bodyJson = JSON.stringify({
+      ...payload,
+      customCommand: customCommand.trim() || undefined,
+      scanMode,
+      focusedFields,
+      clarityThreshold: quickExtractPrefs.clarityThreshold,
+      learningRules: ucrsLearningRules
+        .filter((r) => r.enabled)
+        .map((r) => ({
+          wrongToken: r.wrongToken,
+          correctedToken: r.correctedToken,
+        })),
+      referenceTemplate: activeReferenceTemplate
+        ? {
+            name: activeReferenceTemplate.name,
+            notes: activeReferenceTemplate.notes,
+            imageBase64: activeReferenceTemplate.imageDataUrl,
+            mimeType: activeReferenceTemplate.mimeType,
+            regions: activeReferenceTemplate.regions,
+          }
+        : undefined,
     });
 
-    const data = await res.json();
-    if (!res.ok && data?.status !== 'rejected' && data?.legibilityStatus !== 'rejected') {
-      throw new Error(data?.error || 'فشل تحليل المحتوى عبر منظومة القراءة الكونية.');
+    const backoffDelays = [900, 1600];
+    setResilienceStatus('');
+
+    for (let attempt = 0; attempt <= backoffDelays.length; attempt += 1) {
+      try {
+        const res = await fetch('/api/ucrs/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyJson,
+        });
+
+        const data = await res.json().catch(() => ({}));
+        const isBusy =
+          res.status === 503 ||
+          res.status === 502 ||
+          res.status === 429 ||
+          Boolean(data?.temporaryBusy);
+
+        if (isBusy) {
+          if (attempt < backoffDelays.length) {
+            setResilienceStatus(
+              'خوادم القراءة تشهد ضغطاً مؤقتاً — جاري المعالجة عبر مسار بديل...'
+            );
+            await sleepMs(backoffDelays[attempt]);
+            continue;
+          }
+          throw new Error('CLOUD_TEMPORARILY_BUSY');
+        }
+
+        if (
+          !res.ok &&
+          data?.status !== 'rejected' &&
+          data?.legibilityStatus !== 'rejected'
+        ) {
+          throw new Error(
+            data?.friendlyNotice ||
+              data?.error ||
+              'تعذر إكمال قراءة المستند، يرجى التحقق من وضوح الملف والمحاولة مجدداً.'
+          );
+        }
+
+        if (data?.resilienceNotice) {
+          setResilienceStatus(String(data.resilienceNotice));
+        } else if (data?.fallbackUsed === 'flash-lite') {
+          setResilienceStatus(
+            'تمت القراءة والاستخراج عبر المسار السريع البديل بنجاح.'
+          );
+        } else {
+          setResilienceStatus('');
+        }
+        return data;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const networkOrTransient =
+          msg === 'CLOUD_TEMPORARILY_BUSY' ||
+          err instanceof TypeError ||
+          /network|fetch|503|429/i.test(msg);
+        if (networkOrTransient && attempt < backoffDelays.length) {
+          setResilienceStatus(
+            'خوادم القراءة تشهد ضغطاً مؤقتاً — جاري إعادة المحاولة بصمت...'
+          );
+          await sleepMs(backoffDelays[attempt]);
+          continue;
+        }
+        throw err;
+      }
     }
-    return data;
+    throw new Error('CLOUD_TEMPORARILY_BUSY');
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -780,15 +871,33 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         base64Pdf,
       };
       const plan = buildDefaultReadingPlan(intentMode, customCommand);
-      const data = await callUcrsAnalyzeEndpoint({
-        phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
-        sourceKind: 'pdf',
-        intent: intentMode,
-        filename: file.name,
-        base64Pdf,
+      const headerInferencePromise = performMetadataInference(
+        {
+          filename: file.name,
+          mimeType: 'application/pdf',
+          base64Pdf,
+        },
+        agencies
+      ).then((meta) => {
+        if (meta) setPendingMetadata(meta);
+        return meta;
       });
+
+      const [data, preInferredMeta] = await Promise.all([
+        callUcrsAnalyzeEndpoint({
+          phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
+          sourceKind: 'pdf',
+          intent: intentMode,
+          filename: file.name,
+          base64Pdf,
+        }),
+        headerInferencePromise,
+      ]);
       if (pdfBlobUrl) {
         data.sourcePdfUrl = pdfBlobUrl;
+      }
+      if (!data.inferredMetadata && preInferredMeta) {
+        data.inferredMetadata = preInferredMeta;
       }
 
       buildAnalysisWithLearning({
@@ -804,9 +913,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         plan,
       });
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'حدث خطأ أثناء معالجة الملف.'
-      );
+      handleAnalyzeError(err, 'حدث خطأ أثناء معالجة الملف.');
     } finally {
       setLoading(false);
     }
@@ -832,19 +939,36 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       };
 
       const plan = buildDefaultReadingPlan(intentMode, customCommand);
-      const data = await callUcrsAnalyzeEndpoint({
-        phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
-        sourceKind: 'camera_burst',
-        intent: intentMode,
-        filename: label,
-        enhancementReport: summary.enhancementReport,
-        frames: framesPayload,
+      const headerInferencePromise = performMetadataInference(
+        {
+          filename: label,
+          frames: framesPayload,
+        },
+        agencies
+      ).then((meta) => {
+        if (meta) setPendingMetadata(meta);
+        return meta;
       });
+
+      const [data, preInferredMeta] = await Promise.all([
+        callUcrsAnalyzeEndpoint({
+          phase: intentMode === 'discover' ? 'classify_only' : 'progressive_extract',
+          sourceKind: 'camera_burst',
+          intent: intentMode,
+          filename: label,
+          enhancementReport: summary.enhancementReport,
+          frames: framesPayload,
+        }),
+        headerInferencePromise,
+      ]);
 
       if (summary.acceptedFrames[0]?.enhancedPreviewUrl) {
         data.sourceImageUrls = {
           1: summary.acceptedFrames[0].enhancedPreviewUrl,
         };
+      }
+      if (!data.inferredMetadata && preInferredMeta) {
+        data.inferredMetadata = preInferredMeta;
       }
 
       buildAnalysisWithLearning({
@@ -861,9 +985,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         plan,
       });
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'حدث خطأ أثناء معالجة لقطات الكاميرا.'
-      );
+      handleAnalyzeError(err, 'حدث خطأ أثناء معالجة لقطات الكاميرا.');
     } finally {
       setLoading(false);
     }
@@ -970,23 +1092,41 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       if (intake.kind === 'pdf') {
         const pdfBlobUrl = mode === 'new' ? replacePdfBlobUrl(first) : pdfBlobUrlRef.current;
         const base64Pdf = await fileToDataUrl(first);
-        const data = await callUcrsAnalyzeEndpoint({
-          phase: mode === 'append_fusion' ? 'fusion_complete' : 'progressive_extract',
-          sourceKind: 'pdf',
-          intent: intentMode,
-          filename: first.name,
-          base64Pdf,
-          existingSummary:
-            mode === 'append_fusion' && activeSession
-              ? {
-                  extractedNames: activeSession.rows.map((r) => r.resolvedName),
-                  doubtfulCount: activeSession.coverage.doubtfulCount,
-                  unreadableCount: activeSession.coverage.unreadableCount,
-                  missingHint: activeSession.coverage.missingHint,
-                }
-              : undefined,
+        const headerInferencePromise = performMetadataInference(
+          {
+            filename: first.name,
+            mimeType: 'application/pdf',
+            base64Pdf,
+          },
+          agencies
+        ).then((meta) => {
+          if (meta && mode === 'new') setPendingMetadata(meta);
+          return meta;
         });
+
+        const [data, preInferredMeta] = await Promise.all([
+          callUcrsAnalyzeEndpoint({
+            phase: mode === 'append_fusion' ? 'fusion_complete' : 'progressive_extract',
+            sourceKind: 'pdf',
+            intent: intentMode,
+            filename: first.name,
+            base64Pdf,
+            existingSummary:
+              mode === 'append_fusion' && activeSession
+                ? {
+                    extractedNames: activeSession.rows.map((r) => r.resolvedName),
+                    doubtfulCount: activeSession.coverage.doubtfulCount,
+                    unreadableCount: activeSession.coverage.unreadableCount,
+                    missingHint: activeSession.coverage.missingHint,
+                  }
+                : undefined,
+          }),
+          headerInferencePromise,
+        ]);
         if (pdfBlobUrl) data.sourcePdfUrl = pdfBlobUrl;
+        if (!data.inferredMetadata && preInferredMeta) {
+          data.inferredMetadata = preInferredMeta;
+        }
 
         if (mode === 'append_fusion' && activeSession) {
           const incomingRows = (data.rows || []).map(
@@ -1056,33 +1196,50 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           ? selectedImages[0].name
           : `حزمة صور (${selectedImages.length})`;
 
-      const data = await callUcrsAnalyzeEndpoint({
-        phase:
-          mode === 'append_fusion'
-            ? 'fusion_complete'
-            : intentMode === 'discover'
-            ? 'classify_only'
-            : 'progressive_extract',
-        sourceKind: intake.kind,
-        intent: intentMode,
-        filename: label,
-        frames,
-        existingSummary:
-          mode === 'append_fusion' && activeSession
-            ? {
-                extractedNames: activeSession.rows.map((r) => r.resolvedName),
-                doubtfulCount: activeSession.coverage.doubtfulCount,
-                unreadableCount: activeSession.coverage.unreadableCount,
-                missingHint: activeSession.coverage.missingHint,
-              }
-            : undefined,
+      const headerInferencePromise = performMetadataInference(
+        {
+          filename: label,
+          frames,
+        },
+        agencies
+      ).then((meta) => {
+        if (meta && mode === 'new') setPendingMetadata(meta);
+        return meta;
       });
+
+      const [data, preInferredMeta] = await Promise.all([
+        callUcrsAnalyzeEndpoint({
+          phase:
+            mode === 'append_fusion'
+              ? 'fusion_complete'
+              : intentMode === 'discover'
+              ? 'classify_only'
+              : 'progressive_extract',
+          sourceKind: intake.kind,
+          intent: intentMode,
+          filename: label,
+          frames,
+          existingSummary:
+            mode === 'append_fusion' && activeSession
+              ? {
+                  extractedNames: activeSession.rows.map((r) => r.resolvedName),
+                  doubtfulCount: activeSession.coverage.doubtfulCount,
+                  unreadableCount: activeSession.coverage.unreadableCount,
+                  missingHint: activeSession.coverage.missingHint,
+                }
+              : undefined,
+        }),
+        headerInferencePromise,
+      ]);
 
       if (firstPreviewUrl) {
         data.sourceImageUrls = {
           ...(analysis?.sourceImageUrls || {}),
           1: firstPreviewUrl,
         };
+      }
+      if (!data.inferredMetadata && preInferredMeta) {
+        data.inferredMetadata = preInferredMeta;
       }
 
       if (mode === 'append_fusion' && activeSession) {
@@ -1150,9 +1307,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         });
       }
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'حدث خطأ أثناء استيعاب الملف.'
-      );
+      handleAnalyzeError(err, 'حدث خطأ أثناء استيعاب الملف.');
     } finally {
       setLoading(false);
     }
@@ -1174,14 +1329,21 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setLoading(true);
     try {
       replacePdfBlobUrl(undefined);
-      const parsed = await parseLocalStructuredDocument({
-        rawTextInput: pastedText,
-        agencies,
-        knownPersons: persons,
-        learningRules: ucrsLearningRules.filter((r) => r.enabled),
-        focusedFields,
-        customCommand,
-      });
+      const [parsed, inferredHeader] = await Promise.all([
+        parseLocalStructuredDocument({
+          rawTextInput: pastedText,
+          agencies,
+          knownPersons: persons,
+          learningRules: ucrsLearningRules.filter((r) => r.enabled),
+          focusedFields,
+          customCommand,
+        }),
+        performMetadataInference(pastedText, agencies),
+      ]);
+      const resolvedTextMeta = parsed.inferredMetadata ?? inferredHeader;
+      if (resolvedTextMeta) {
+        setPendingMetadata(resolvedTextMeta);
+      }
       lastPayloadRef.current = {
         kind: 'text',
         filename: 'نص مباشر',
@@ -1200,7 +1362,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           rejectionReasons: [],
           documentSummary: parsed.documentSummary,
           rows: parsed.rows,
-          inferredMetadata: parsed.inferredMetadata,
+          inferredMetadata: resolvedTextMeta,
           identity: parsed.identity,
           entities: parsed.entities,
         },
@@ -1281,9 +1443,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       persistSession(updatedSession);
       setSelectedRowIds(updatedSession.rows.map((r) => r.id));
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'تعذر قراءة الجزء المقصوص.'
-      );
+      handleAnalyzeError(err, 'تعذر قراءة الجزء المقصوص.');
     } finally {
       setLoading(false);
     }
@@ -1343,9 +1503,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           plan: nextPlan,
         });
       } catch (err) {
-        setUploadError(
-          err instanceof Error ? err.message : 'تعذر تنفيذ الخطة.'
-        );
+        handleAnalyzeError(err, 'تعذر تنفيذ الخطة.');
       } finally {
         setLoading(false);
       }
@@ -1425,6 +1583,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       normalizeInferredMetadata(nextMeta, agencies) || nextMeta;
     const confirmedMeta = { ...normalized, confirmedByUser: nextMeta.confirmedByUser };
 
+    setPendingMetadata(confirmedMeta);
     setAnalysis((prev) =>
       prev ? { ...prev, inferredMetadata: confirmedMeta } : prev
     );
@@ -1457,6 +1616,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       if (op.type === 'filter_blocked') {
         setDraftFilterMode('blocked');
         appliedLog.push('تمت تصفية الجدول لإظهار الأسماء ذات الأفراد المحجوبين/النزول فقط');
+      } else if (op.type === 'filter_large_families') {
+        setDraftFilterMode('large_families');
+        appliedLog.push('تمت تصفية الجدول لإظهار العائلات الكبيرة (5 أفراد فأكثر) فقط');
       } else if (op.type === 'filter_doubtful') {
         setDraftFilterMode('doubtful');
         appliedLog.push('تمت تصفية الجدول لإظهار الصفوف التي تحتاج مراجعة (<99%)');
@@ -1860,10 +2022,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     replacePdfBlobUrl(undefined);
     setAnalysis(null);
     setActiveSession(null);
+    setPendingMetadata(null);
     setAllParsedRowsBackup(null);
     lastPayloadRef.current = null;
     setFileName('');
     setUploadError('');
+    setResilienceStatus('');
+    setSelectionToast('');
     setCommitSummary(null);
     setPastRows([]);
     setFutureRows([]);
@@ -1886,14 +2051,34 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     activeSession?.sources.find((s) => s.previewDataUrl)?.previewDataUrl;
   const activeSourcePdfUrl = analysis?.sourcePdfUrl || activePdfBlobUrl;
 
+  const topNotificationMetadata =
+    analysis?.inferredMetadata ??
+    activeSession?.inferredMetadata ??
+    pendingMetadata;
+
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
+    <main className="mx-auto w-full max-w-7xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
+      {/* Top Proactive Header Metadata Inference Notification Banner */}
+      {(topNotificationMetadata || (analysis && analysis.status !== 'rejected')) && (
+        <MetadataInferenceBanner
+          metadata={topNotificationMetadata}
+          agencies={agencies}
+          onConfirm={(confirmedMeta) =>
+            updateInferredMetadata(confirmedMeta, true)
+          }
+          onUpdate={(editedMeta) =>
+            updateInferredMetadata(editedMeta, true)
+          }
+        />
+      )}
+
       {/* Top Pipeline Header + Universal Intake Switcher */}
       <section
         data-assistant-target="quick-extract-root"
-        className="tabrix-card rounded-2xl border p-4 sm:p-5"
+        className="tabrix-card rounded-2xl border p-4 backdrop-blur-md sm:p-5"
         style={{
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor:
+            'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
           borderColor: 'var(--border-color)',
         }}
       >
@@ -2460,6 +2645,49 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
         )}
 
+        {resilienceStatus && (
+          <div
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold backdrop-blur-sm transition-all duration-200"
+            style={{
+              borderColor: 'var(--warning)',
+              backgroundColor: 'var(--warning-bg)',
+              color: 'var(--warning)',
+            }}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 shrink-0" />
+            )}
+            <span>{resilienceStatus}</span>
+          </div>
+        )}
+
+        {selectionToast && (
+          <div
+            role="status"
+            className="mt-3 flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold"
+            style={{
+              borderColor: 'var(--success)',
+              backgroundColor: 'var(--success-bg)',
+              color: 'var(--success)',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>{selectionToast}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectionToast('')}
+              className="text-[11px] underline"
+            >
+              إخفاء
+            </button>
+          </div>
+        )}
+
         {uploadError && (
           <div
             role="alert"
@@ -2681,34 +2909,23 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       {/* Post-Extraction Pipeline */}
       {ucrsTab === 'pipeline' && analysis && analysis.status !== 'rejected' && (
         <>
-          {/* Smart Header Metadata Inference Banner */}
-          <MetadataInferenceBanner
-            metadata={
-              analysis.inferredMetadata ?? activeSession?.inferredMetadata
-            }
-            agencies={agencies}
-            onConfirm={(confirmedMeta) =>
-              updateInferredMetadata(confirmedMeta, true)
-            }
-            onUpdate={(editedMeta) =>
-              updateInferredMetadata(editedMeta, true)
-            }
-          />
-
-          {/* Zero-Trust Draft Mode + 1% Doubt Rule Table + Contextual Full-Row Snippets + Live Copilot */}
+          {/* Zero-Trust Split-Screen Smart Extraction Lab: Viewer + Editable Draft Table + Snippets + Copilot */}
           <ZeroTrustDraftWorkspace
             rows={rows}
             inferredMetadata={
-              analysis.inferredMetadata ?? activeSession?.inferredMetadata
+              analysis.inferredMetadata ?? activeSession?.inferredMetadata ?? pendingMetadata
             }
             documentSummary={analysis.documentSummary || fileName}
             sourceImageUrl={activeSourceImageUrl}
+            sourceImageUrls={analysis.sourceImageUrls}
             sourcePdfUrl={activeSourcePdfUrl}
             filterMode={draftFilterMode}
             onChangeFilterMode={setDraftFilterMode}
             hideEmptyColumns={hideEmptyDraftCols}
             onToggleHideEmptyColumns={setHideEmptyDraftCols}
             highlightedRowIndex={copilotHighlightRowIdx}
+            labOpen={smartLabOpen}
+            onToggleLabOpen={() => setSmartLabOpen((v) => !v)}
             canUndo={pastRows.length > 0}
             canRedo={futureRows.length > 0}
             onUndo={handleLocalUndo}
@@ -2717,6 +2934,12 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             onDeleteRow={deleteDraftRow}
             onApplyCopilotOperations={handleApplyCopilotOperations}
             onAnalyzeCroppedRegion={handleAnalyzeCroppedRegion}
+            onApplyVisibleSelection={(visibleIds) => {
+              setSelectedRowIds(visibleIds);
+              setSelectionToast(
+                `تم اعتماد (${visibleIds.length}) سجل مفلتر داخل قائمة الترحيل النهائي.`
+              );
+            }}
             onFinalCommit={() => {
               const hasUnconfirmed = rows.some(
                 (r) =>
@@ -2727,12 +2950,14 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               );
               if (hasUnconfirmed) {
                 setDraftFilterMode('doubtful');
-                setUploadError(
-                  'توجد خلايا بنسبة ثقة أقل من 99% أو نواقص لم يتم تأكيدها بعد. تم تصفية المسودة لإظهارها للمراجعة قبل الحفظ النهائي.'
+                setUploadError('');
+                setResilienceStatus(
+                  'توجد خلايا بنسبة ثقة أقل من 99% أو تعارضات رياضية لم يتم تأكيدها بعد. تم تصفية المسودة لإظهارها للمراجعة قبل الحفظ النهائي.'
                 );
                 return;
               }
               setUploadError('');
+              setResilienceStatus('');
               if (
                 selectedPlanCounts.update > 0 ||
                 selectedPlanCounts.replace > 0

@@ -550,6 +550,7 @@ export function auditExtractedRowMath(
     QuickExtractEvaluatedRow,
     | 'resolvedName'
     | 'resolvedIndividuals'
+    | 'resolvedEligibleIndividuals'
     | 'resolvedDecreaseCount'
     | 'resolvedAddOrDeleteCount'
     | 'resolvedAddOrDeleteAction'
@@ -564,6 +565,10 @@ export function auditExtractedRowMath(
 
   const issues: string[] = [];
   const base = row.resolvedIndividuals;
+  const eligible =
+    typeof row.resolvedEligibleIndividuals === 'number'
+      ? row.resolvedEligibleIndividuals
+      : null;
   const dec = focusSet.has('decreaseCount') ? row.resolvedDecreaseCount : null;
   const addDel = focusSet.has('addOrDelete')
     ? row.resolvedAddOrDeleteCount
@@ -572,8 +577,17 @@ export function auditExtractedRowMath(
     ? row.resolvedAddOrDeleteAction
     : 'لا يوجد';
 
-  const isInt = (v: number | null): v is number =>
-    v !== null && Number.isInteger(v) && v >= 0;
+  const isInt = (v: number | null | undefined): v is number =>
+    v !== null && v !== undefined && Number.isInteger(v) && v >= 0;
+
+  if (isInt(base) && isInt(eligible)) {
+    const blocked = isInt(dec) ? dec : 0;
+    if (base !== eligible + blocked) {
+      issues.push(
+        `تعارض رياضي: الأفراد الكلية (${base}) لا تساوي المستحقة (${eligible}) + المحجوبين (${blocked})`
+      );
+    }
+  }
 
   if (focusSet.has('decreaseCount') && isInt(base) && isInt(dec) && dec > base) {
     issues.push(
@@ -742,6 +756,9 @@ export function evaluateExtractedRow(
         ? raw.individuals
         : null
       : 0,
+    resolvedEligibleIndividuals: isValidInt(raw.eligibleIndividuals)
+      ? raw.eligibleIndividuals
+      : null,
     resolvedDecreaseCount: focusSet.has('decreaseCount')
       ? isValidInt(raw.decreaseCount)
         ? raw.decreaseCount
@@ -760,10 +777,11 @@ export function evaluateExtractedRow(
       ? findExistingMatchInAgency(cleanName, options.persons)
       : null;
 
+  const allMathIssues = auditExtractedRowMath(resolvedRowBase, matched, focus);
   const mathIssues =
     scanMode === 'fast'
-      ? []
-      : auditExtractedRowMath(resolvedRowBase, matched, focus);
+      ? allMathIssues.filter((m) => m.startsWith('تعارض رياضي:'))
+      : allMathIssues;
 
   const rowHasDoubt = doubtReasons.length > 0 || suspectSegments.length > 0;
 

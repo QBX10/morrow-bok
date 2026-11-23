@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
 import {
+  Calendar,
   CheckCircle2,
+  Hash,
   Lock,
   RotateCcw,
+  ShieldCheck,
   Sliders,
   Tag,
   Type,
   Unlock,
 } from 'lucide-react';
 import type {
+  AccessibilityAndExperiencePrefs,
   AppModeTier,
   ArabicFontId,
   ExpertTableConfig,
   FontSizeStep,
   FontWeightStep,
+  GeneralAppPrefs,
+  GranularControlPrefs,
   RowDensityStep,
   ThemePreferences,
 } from '../../../types/agency';
@@ -22,7 +28,10 @@ import type {
   HierarchyNode,
 } from '../../../utils/hierarchyRegistry';
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
-import { MODE_TIER_META } from '../../../utils/modePermissions';
+import {
+  DEFAULT_GRANULAR_CONTROLS,
+  MODE_TIER_META,
+} from '../../../utils/modePermissions';
 import {
   ARABIC_FONTS,
   DEFAULT_THEME_PREFERENCES,
@@ -33,7 +42,7 @@ import {
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 
-/* ─── FONTS & SPACING CAPSULES (Level 3 -> Level 4) ───────────────────────── */
+/* ─── FONTS, TYPOGRAPHY & LOCALE CAPSULES ────────────────────────────────── */
 
 interface FontsCapsulesProps {
   sectionNode: HierarchyNode;
@@ -42,7 +51,11 @@ interface FontsCapsulesProps {
   displayMode: 'fullscreen' | 'contained';
   badgeContext: HierarchyBadgeContext;
   themePrefs: ThemePreferences;
+  accessibility?: AccessibilityAndExperiencePrefs;
   onUpdateThemePrefs: (patch: Partial<ThemePreferences>) => void;
+  onUpdateAccessibilityPrefs?: (
+    patch: Partial<AccessibilityAndExperiencePrefs>
+  ) => void;
   onOpenCapsule: (capsuleId: string | null) => void;
   onNotifySuccess: (msg: string) => void;
 }
@@ -54,12 +67,32 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
   displayMode,
   badgeContext,
   themePrefs,
+  accessibility,
   onUpdateThemePrefs,
+  onUpdateAccessibilityPrefs,
   onOpenCapsule,
   onNotifySuccess,
 }) => {
   const activeFont =
     ARABIC_FONTS.find((f) => f.id === themePrefs.fontFamily) || ARABIC_FONTS[0];
+  const numeralSystem = accessibility?.numeralSystem || 'western';
+  const calendarSystem = accessibility?.calendarSystem || 'gregorian';
+
+  const formatSampleNumber = (n: string) =>
+    numeralSystem === 'hindi'
+      ? n.replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)])
+      : n;
+
+  const sampleDate = (() => {
+    try {
+      return new Intl.DateTimeFormat(
+        calendarSystem === 'hijri' ? 'ar-SA-u-ca-islamic-umalqura' : 'ar-IQ',
+        { dateStyle: 'full' }
+      ).format(new Date());
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  })();
 
   // Level 3 Hub
   if (!activeCapsuleId) {
@@ -77,7 +110,11 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
             tabularNumerals: DEFAULT_THEME_PREFERENCES.tabularNumerals,
             rowHoverHighlight: DEFAULT_THEME_PREFERENCES.rowHoverHighlight,
           });
-          onNotifySuccess('تمت استعادة إعدادات الخطوط والتباعد الافتراضية فقط.');
+          onUpdateAccessibilityPrefs?.({
+            numeralSystem: 'western',
+            calendarSystem: 'gregorian',
+          });
+          onNotifySuccess('تمت استعادة إعدادات الخطوط والترقيم الافتراضية.');
         }}
         resetBranchLabel="استعادة افتراضي الخطوط"
       >
@@ -97,15 +134,17 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
             <span className="font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
               {FONT_SIZE_MAP[themePrefs.fontSize].label} ·{' '}
               {FONT_WEIGHT_MAP[themePrefs.fontWeight].label} ·{' '}
-              {ROW_DENSITY_MAP[themePrefs.rowDensity].label}
+              {numeralSystem === 'hindi' ? 'أرقام هندية (١٢٣)' : 'أرقام غربية (123)'}
             </span>
           </div>
           <div className="text-base sm:text-lg font-extrabold tabular-nums">
-            وكالة منذر الحلو · 5 أفراد = 45 كغم · الرسم التلقائي 1,500 د.ع
+            {formatSampleNumber(
+              'وكالة منذر الحلو · 5 أفراد = 45 كغم · الرسم التلقائي 1,500 د.ع'
+            )}
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sectionNode.children.map((child) => {
             const badge = resolveHierarchyNodeBadge(child, badgeContext);
             const preview =
@@ -130,12 +169,211 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح المحور"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );
           })}
+
+          {onUpdateAccessibilityPrefs && (
+            <NodeCard
+              node={{
+                id: 'cap_fonts_locale',
+                parentId: sectionNode.id,
+                level: 4,
+                category: 'settings',
+                title: 'الأرقام والتقويم (١٢٣ / هجري)',
+                subtitle: 'التبديل بين الأرقام العربية/الهندية والتقويم الهجري والميلادي',
+                icon: 'calendar',
+                accentTone: 'cyan',
+                keywords: ['أرقام', 'هجري', 'ميلادي'],
+                target: {
+                  view: 'settings',
+                  settingsSection: 'fonts',
+                  settingsScreenMode: 'detail',
+                  settingsCapsuleId: 'cap_fonts_locale',
+                },
+                children: [],
+              }}
+              preview={
+                <div className="flex items-center justify-between font-bold">
+                  <span>{numeralSystem === 'hindi' ? '١٢٣ هندية' : '123 قياسية'}</span>
+                  <span style={{ color: 'var(--accent)' }}>
+                    {calendarSystem === 'hijri' ? 'التقويم الهجري' : 'التقويم الميلادي'}
+                  </span>
+                </div>
+              }
+              actionLabel="فتح المحور"
+              onOpen={() => onOpenCapsule('cap_fonts_locale')}
+            />
+          )}
         </div>
+      </NodeView>
+    );
+  }
+
+  // Deep Sub-Axis: Numerals & Calendar Locale
+  if (activeCapsuleId === 'cap_fonts_locale') {
+    return (
+      <NodeView
+        node={{
+          ...activeNode,
+          id: 'cap_fonts_locale',
+          title: 'صيغة الأرقام والتقويم (هجري / ميلادي)',
+          description:
+            'تحديد شكل الأرقام وطريقة عرض التواريخ في البطاقات والملخصات الرسمية.',
+        }}
+        displayMode={displayMode}
+        liveStatusText={`${
+          numeralSystem === 'hindi' ? '١٢٣ هندية' : '123 غربية'
+        } · ${calendarSystem === 'hijri' ? 'هجري' : 'ميلادي'}`}
+        onResetBranch={() => {
+          onUpdateAccessibilityPrefs?.({
+            numeralSystem: 'western',
+            calendarSystem: 'gregorian',
+          });
+          onNotifySuccess('تمت استعادة الأرقام القياسية والتقويم الميلادي.');
+        }}
+      >
+        <section
+          className="capsule-glass-card border p-5 space-y-5 text-xs"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Numeral System */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 font-extrabold text-sm">
+                <Hash className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <span>نظام عرض الأرقام</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateAccessibilityPrefs?.({ numeralSystem: 'western' });
+                    onNotifySuccess('تم اعتماد الأرقام الغربية القياسية (123).');
+                  }}
+                  className="rounded-xl border p-3.5 text-right transition-colors"
+                  style={{
+                    backgroundColor:
+                      numeralSystem === 'western'
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                    borderColor:
+                      numeralSystem === 'western'
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                  }}
+                >
+                  <div className="font-extrabold">أرقام قياسية (123)</div>
+                  <div className="mt-1 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                    5 أفراد · 45 كغم · 1,500 د.ع
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateAccessibilityPrefs?.({ numeralSystem: 'hindi' });
+                    onNotifySuccess('تم اعتماد الأرقام الهندية العربية (١٢٣).');
+                  }}
+                  className="rounded-xl border p-3.5 text-right transition-colors"
+                  style={{
+                    backgroundColor:
+                      numeralSystem === 'hindi'
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                    borderColor:
+                      numeralSystem === 'hindi'
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                  }}
+                >
+                  <div className="font-extrabold">أرقام هندية (١٢٣)</div>
+                  <div className="mt-1 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                    ٥ أفراد · ٤٥ كغم · ١,٥٠٠ د.ع
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Calendar System */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 font-extrabold text-sm">
+                <Calendar className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <span>نظام التقويم والتاريخ</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateAccessibilityPrefs?.({ calendarSystem: 'gregorian' });
+                    onNotifySuccess('تم تفعيل التقويم الميلادي.');
+                  }}
+                  className="rounded-xl border p-3.5 text-right transition-colors"
+                  style={{
+                    backgroundColor:
+                      calendarSystem === 'gregorian'
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                    borderColor:
+                      calendarSystem === 'gregorian'
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                  }}
+                >
+                  <div className="font-extrabold">التقويم الميلادي</div>
+                  <div className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                    تشرين الثاني · كانون الأول
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateAccessibilityPrefs?.({ calendarSystem: 'hijri' });
+                    onNotifySuccess('تم تفعيل التقويم الهجري (أم القرى).');
+                  }}
+                  className="rounded-xl border p-3.5 text-right transition-colors"
+                  style={{
+                    backgroundColor:
+                      calendarSystem === 'hijri'
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                    borderColor:
+                      calendarSystem === 'hijri'
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                  }}
+                >
+                  <div className="font-extrabold">التقويم الهجري</div>
+                  <div className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                    جمادى الآخرة · رمضان
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Live Locale Sample Preview */}
+          <div
+            className="rounded-xl border p-4"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+              معاينة الترويسة المعتمدة الآن:
+            </div>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-sm font-extrabold tabular-nums">
+              <span>{sampleDate}</span>
+              <span style={{ color: 'var(--accent)' }}>
+                {formatSampleNumber('124 عائلة · 620 فرد · 111 كيس')}
+              </span>
+            </div>
+          </div>
+        </section>
       </NodeView>
     );
   }
@@ -180,7 +418,7 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
                     });
                     onNotifySuccess(`تم اختيار الخط: ${font.name}`);
                   }}
-                  className="flex min-h-[120px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
+                  className="flex min-h-[116px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
                   style={{
                     fontFamily: font.cssFamily,
                     backgroundColor: selected
@@ -216,7 +454,7 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
                     {font.description}
                   </p>
                   <div className="mt-2.5 text-xs font-bold tabular-nums">
-                    معاينة: Morrow · 5 أفراد · 45 كغم · 1,500 د.ع
+                    {formatSampleNumber('Morrow · 5 أفراد · 45 كغم · 1,500 د.ع')}
                   </div>
                 </button>
               );
@@ -416,7 +654,7 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
   );
 };
 
-/* ─── MODES & EXPERT CONTROL CAPSULES (Level 3 -> Level 4) ────────────────── */
+/* ─── MODES, GRANULAR PERMISSIONS & EXPERT CAPSULES ─────────────────────── */
 
 interface ModesCapsulesProps {
   sectionNode: HierarchyNode;
@@ -427,13 +665,62 @@ interface ModesCapsulesProps {
   modeTier: AppModeTier;
   editorEnabled: boolean;
   expertTableConfig: ExpertTableConfig;
+  generalPrefs?: GeneralAppPrefs;
   onChangeModeTier: (tier: AppModeTier) => void;
   onToggleEditor: (enabled: boolean) => void;
   onUpdateExpertTableConfig: (patch: Partial<ExpertTableConfig>) => void;
   onResetExpertTableConfig: () => void;
+  onUpdateGeneralPrefs?: (patch: Partial<GeneralAppPrefs>) => void;
   onOpenCapsule: (capsuleId: string | null) => void;
   onNotifySuccess: (msg: string) => void;
 }
+
+const GRANULAR_ITEMS: Array<{
+  key: keyof GranularControlPrefs;
+  title: string;
+  desc: string;
+}> = [
+  {
+    key: 'enableEditRecords',
+    title: 'التعديل المباشر داخل الجداول',
+    desc: 'تحديث الأسماء والأعداد والأختام مباشرة داخل صفوف الوكالات.',
+  },
+  {
+    key: 'enableAgencyManagement',
+    title: 'إنشاء وإدارة الوكالات',
+    desc: 'إضافة وكالات جديدة أو تعديل شعاراتها وحالات القفل الخاصة بها.',
+  },
+  {
+    key: 'enableFinance',
+    title: 'إظهار قسم الحسابات والمالية',
+    desc: 'متابعة الإيرادات والأجور والمصروفات وصافي الأرباح.',
+  },
+  {
+    key: 'enableQuickExtract',
+    title: 'محرك السحب الذكي (OCR)',
+    desc: 'استخراج قوائم PDF والصور والمطابقة التلقائية بالوكالات.',
+  },
+  {
+    key: 'enableColumnCustomization',
+    title: 'تخصيص وترتيب أعمدة الجداول',
+    desc: 'إخفاء أو إظهار الأعمدة وإضافة أعمدة مخصصة جديدة.',
+  },
+  {
+    key: 'enableBulkEdit',
+    title: 'التحديد المتعدد والإجراءات الجماعية',
+    desc: 'نقل أو حظر أو تعديل عدة سجلات دفعة واحدة.',
+  },
+  {
+    key: 'enableSmartAudit',
+    title: 'رادار التدقيق وفحص التضاربات',
+    desc: 'تنبيه تلقائي عند تكرار الأسماء أو فقدان البيانات.',
+  },
+  {
+    key: 'bypassEditConfirm',
+    title: 'تحرير سريع بدون نوافذ تأكيد',
+    desc: 'تطبيق تعديلات الصفوف مباشرة مع الاحتفاظ بالتراجع وسلة الاسترجاع.',
+  },
+];
 
 export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
   sectionNode,
@@ -444,16 +731,36 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
   modeTier,
   editorEnabled,
   expertTableConfig,
+  generalPrefs,
   onChangeModeTier,
   onToggleEditor,
   onUpdateExpertTableConfig,
   onResetExpertTableConfig,
+  onUpdateGeneralPrefs,
   onOpenCapsule,
   onNotifySuccess,
 }) => {
   const [newCategoryName, setNewCategoryName] = useState('');
   const currentTierMeta =
     MODE_TIER_META.find((m) => m.tier === modeTier) || MODE_TIER_META[0];
+  const granular: GranularControlPrefs = {
+    ...DEFAULT_GRANULAR_CONTROLS,
+    ...(generalPrefs?.granularControls || {}),
+  };
+
+  const toggleGranular = (key: keyof GranularControlPrefs) => {
+    const nextVal = !granular[key];
+    onUpdateGeneralPrefs?.({
+      granularControls: {
+        ...granular,
+        [key]: nextVal,
+      },
+    });
+    if (key === 'bypassEditConfirm') {
+      onUpdateExpertTableConfig({ allowDirectNoConfirmEdit: nextVal });
+    }
+    onNotifySuccess('تم تحديث مصفوفة الصلاحيات بنجاح.');
+  };
 
   // Level 3 Hub
   if (!activeCapsuleId) {
@@ -464,9 +771,12 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
         liveStatusText={currentTierMeta.title}
         onResetBranch={() => {
           onResetExpertTableConfig();
-          onNotifySuccess('تمت استعادة ترتيب وأسماء الأعمدة الافتراضية فقط.');
+          onUpdateGeneralPrefs?.({
+            granularControls: { ...DEFAULT_GRANULAR_CONTROLS },
+          });
+          onNotifySuccess('تمت استعادة الصلاحيات القياسية وتخطيط الجدول.');
         }}
-        resetBranchLabel="إعادة ضبط تخطيط الجدول"
+        resetBranchLabel="إعادة ضبط الصلاحيات والجدول"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {sectionNode.children.map((child) => {
@@ -474,9 +784,9 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
             const preview =
               child.id === 'modes_tier_cap' ? (
                 <div className="flex items-center justify-between font-bold">
-                  <span>المستوى النشط:</span>
-                  <span style={{ color: 'var(--accent)' }}>
-                    {currentTierMeta.title}
+                  <span>الصلاحيات المفعّلة:</span>
+                  <span className="tabular-nums" style={{ color: 'var(--accent)' }}>
+                    {Object.values(granular).filter(Boolean).length} / 8
                   </span>
                 </div>
               ) : child.id === 'modes_editor_cap' ? (
@@ -487,11 +797,7 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
                       color: editorEnabled ? 'var(--success)' : 'var(--text-muted)',
                     }}
                   >
-                    {modeTier === 'beginner'
-                      ? 'مقفل في المبتدئ'
-                      : editorEnabled
-                      ? 'مفعّل'
-                      : 'متوقف'}
+                    {editorEnabled ? 'مفعّل' : 'القراءة فقط'}
                   </span>
                 </div>
               ) : (
@@ -509,7 +815,7 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح المحور"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );
@@ -519,7 +825,7 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
     );
   }
 
-  // Level 4A: Mode Tiers
+  // Level 4A: Granular Permissions Matrix & Mode Tiers
   if (activeCapsuleId === 'modes_tier_cap') {
     return (
       <NodeView
@@ -527,68 +833,128 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
         displayMode={displayMode}
         liveStatusText={currentTierMeta.title}
       >
-        <section
-          aria-label="قسم الأوضاع"
-          className="capsule-glass-card border p-5 space-y-4"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex items-center gap-2">
-            <Sliders className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <h2 className="text-base font-extrabold">
-              الأوضاع (تدرج مستويات التحكم والقدرات)
-            </h2>
-          </div>
+        <div className="space-y-5">
+          {/* Granular Matrix (Deep Control) */}
+          {onUpdateGeneralPrefs && (
+            <section
+              aria-label="مصفوفة الصلاحيات الدقيقة"
+              className="capsule-glass-card border p-5 space-y-4"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <h2 className="text-base font-extrabold">
+                    مصفوفة الصلاحيات التشغيلية المستقلة
+                  </h2>
+                </div>
+                <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--accent)' }}>
+                  {Object.values(granular).filter(Boolean).length} من {GRANULAR_ITEMS.length} نشط
+                </span>
+              </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {MODE_TIER_META.map((item) => {
-              const selected = modeTier === item.tier;
-              return (
-                <button
-                  key={item.tier}
-                  type="button"
-                  onClick={() => {
-                    onChangeModeTier(item.tier);
-                    onNotifySuccess(`تم التبديل إلى: ${item.title}`);
-                  }}
-                  className="flex min-h-[110px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
-                  style={{
-                    backgroundColor: selected
-                      ? 'var(--bg-nav-active)'
-                      : 'var(--bg-main)',
-                    borderColor: selected
-                      ? 'var(--accent)'
-                      : 'var(--border-color)',
-                  }}
-                >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <span
-                      className="text-sm font-extrabold"
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+                {GRANULAR_ITEMS.map((item) => {
+                  const checked = Boolean(granular[item.key]);
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex min-h-[64px] cursor-pointer items-start gap-2.5 rounded-2xl border p-3.5 transition-colors"
                       style={{
-                        color: selected
+                        backgroundColor: checked
+                          ? 'var(--bg-nav-active)'
+                          : 'var(--bg-main)',
+                        borderColor: checked
                           ? 'var(--accent)'
-                          : 'var(--text-primary)',
+                          : 'var(--border-color)',
                       }}
                     >
-                      {item.title}
-                    </span>
-                    {selected && (
-                      <CheckCircle2
-                        className="h-4 w-4 shrink-0"
-                        style={{ color: 'var(--accent)' }}
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleGranular(item.key)}
+                        className="mt-1"
                       />
-                    )}
-                  </div>
-                  <p
-                    className="mt-1.5 text-xs leading-relaxed"
-                    style={{ color: 'var(--text-muted)' }}
+                      <div>
+                        <div className="font-extrabold">{item.title}</div>
+                        <div
+                          className="mt-0.5 leading-relaxed"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {item.desc}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Mode Tier Selector */}
+          <section
+            aria-label="قسم الأوضاع"
+            className="capsule-glass-card border p-5 space-y-4"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <div className="flex items-center gap-2">
+              <Sliders className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+              <h2 className="text-base font-extrabold">
+                مستوى التحكم العام للوضع الموحد
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {MODE_TIER_META.map((item) => {
+                const selected = modeTier === item.tier;
+                return (
+                  <button
+                    key={item.tier}
+                    type="button"
+                    onClick={() => {
+                      onChangeModeTier(item.tier);
+                      onNotifySuccess(`تم التبديل إلى: ${item.title}`);
+                    }}
+                    className="flex min-h-[96px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
+                    style={{
+                      backgroundColor: selected
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                      borderColor: selected
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                    }}
                   >
-                    {item.subtitle}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span
+                        className="text-sm font-extrabold"
+                        style={{
+                          color: selected
+                            ? 'var(--accent)'
+                            : 'var(--text-primary)',
+                        }}
+                      >
+                        {item.title}
+                      </span>
+                      {selected && (
+                        <CheckCircle2
+                          className="h-4 w-4 shrink-0"
+                          style={{ color: 'var(--accent)' }}
+                        />
+                      )}
+                    </div>
+                    <p
+                      className="mt-1.5 text-xs leading-relaxed"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {item.subtitle}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
       </NodeView>
     );
   }
@@ -620,7 +986,7 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
                 />
               )}
               <h2 className="text-base font-extrabold">
-                وضع «المحرر» وقواعد التأكيد
+                وضع «المحرر» وقواعد التأكيد والحماية
               </h2>
             </div>
 
@@ -651,17 +1017,61 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
             </button>
           </div>
 
-          <div
-            className="space-y-1.5 text-xs leading-relaxed"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <div>
-              • <strong>الإضافة:</strong> تتم مباشرة لسرعة الإدخال.
+          {onUpdateGeneralPrefs && generalPrefs && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+              <label
+                className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: generalPrefs.confirmBeforeEdit
+                    ? 'var(--accent)'
+                    : 'var(--border-color)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={generalPrefs.confirmBeforeEdit}
+                  onChange={(e) =>
+                    onUpdateGeneralPrefs({ confirmBeforeEdit: e.target.checked })
+                  }
+                  className="mt-0.5"
+                />
+                <div>
+                  <div className="font-extrabold">تأكيد قبل تعديل السجلات</div>
+                  <div style={{ color: 'var(--text-muted)' }}>
+                    يطلب موافقة عند حفظ تغييرات البطاقة الشخصية.
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: generalPrefs.confirmBeforeDelete
+                    ? 'var(--accent)'
+                    : 'var(--border-color)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={generalPrefs.confirmBeforeDelete}
+                  onChange={(e) =>
+                    onUpdateGeneralPrefs({
+                      confirmBeforeDelete: e.target.checked,
+                    })
+                  }
+                  className="mt-0.5"
+                />
+                <div>
+                  <div className="font-extrabold">تأكيد قبل حذف أي سجل</div>
+                  <div style={{ color: 'var(--text-muted)' }}>
+                    نافذة حماية قبل نقل العناصر إلى سلة الاسترجاع.
+                  </div>
+                </div>
+              </label>
             </div>
-            <div>
-              • <strong>التعديل والحذف:</strong> يخضع لإعدادات الحماية أو الحرية المطلقة للخبير.
-            </div>
-          </div>
+          )}
         </section>
       </NodeView>
     );
@@ -690,12 +1100,10 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold">
-              الحرية المطلقة وتخصيص الجدول (لوحة الخبير)
+              الحرية المطلقة وتخصيص الجدول والفئات
             </h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {modeTier === 'expert'
-                ? 'وضع الخبير مفعّل: يمكنك إدارة الحرية المباشرة، الفئات المخصصة، وإعادة ضبط أعمدة الجداول.'
-                : 'فعّل «الوضع الخبير» أعلاه لتشغيل أدوات التخصيص المتقدمة داخل الجداول.'}
+              إدارة الفئات التصنيفية للمستفيدين، التحرير السريع، وتخطيط الأعمدة الافتراضي.
             </p>
           </div>
 
@@ -734,7 +1142,7 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
               });
               onNotifySuccess(
                 e.target.checked
-                  ? 'تم تفعيل التحرير والحفظ الفوري بدون نوافذ تأكيد في وضع الخبير.'
+                  ? 'تم تفعيل التحرير والحفظ الفوري بدون نوافذ تأكيد.'
                   : 'تمت إعادة تفعيل خطوة التأكيد عند التعديل والحذف.'
               );
             }}
@@ -742,10 +1150,10 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
           />
           <div>
             <div className="font-extrabold">
-              تحرير وحفظ فوري بدون قيود أو نوافذ تأكيد (في وضع الخبير)
+              تحرير وحفظ فوري بدون نوافذ تأكيد
             </div>
             <div style={{ color: 'var(--text-muted)' }}>
-              يسمح للخبير بتعديل الأسماء والأعداد والأعمدة المخصصة وحذف الصفوف فوراً دون نوافذ تأكيد، مع استمرار حفظ المحذوفات في سلة الاسترجاع.
+              تعديل الأسماء والأعداد والأعمدة المخصصة مباشرة مع حفظ المحذوفات في سلة الاسترجاع.
             </div>
           </div>
         </label>

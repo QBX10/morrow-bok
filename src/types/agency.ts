@@ -289,6 +289,20 @@ export interface QuickExtractSuspectSegment {
   reason: string;
 }
 
+export interface SemanticColumnMapping {
+  sourceHeader: string;
+  targetField:
+    | 'name'
+    | 'individuals'
+    | 'eligibleIndividuals'
+    | 'decreaseCount'
+    | 'addOrDelete'
+    | 'rowDate'
+    | 'notes';
+  targetLabel: string;
+  confidence?: number;
+}
+
 export interface InferredDocumentMetadata {
   agencyName: string | null;
   agencyNameConfidence: number;
@@ -298,6 +312,10 @@ export interface InferredDocumentMetadata {
   centerOrAgencyNumber: string | null;
   centerNumberConfidence: number;
   headerSnippet?: string;
+  detectedColumns?: string[];
+  semanticMapping?: SemanticColumnMapping[];
+  proactivePrompt?: string;
+  fallbackUsed?: 'primary' | 'flash-lite' | 'local';
   confirmedByUser: boolean;
 }
 
@@ -306,6 +324,7 @@ export interface QuickExtractRawRow {
   pageNumber: number;
   name: string | null;
   individuals: number | null;
+  eligibleIndividuals?: number | null;
   decreaseCount: number | null;
   addOrDeleteCount: number | null;
   addOrDeleteAction: 'إضافة' | 'حذف' | 'لا يوجد' | 'غير محدد';
@@ -339,6 +358,7 @@ export interface QuickExtractEvaluatedRow extends QuickExtractRawRow {
   isComplete: boolean;
   resolvedName: string;
   resolvedIndividuals: number | null;
+  resolvedEligibleIndividuals?: number | null;
   resolvedDecreaseCount: number | null;
   resolvedAddOrDeleteCount: number | null;
   resolvedAddOrDeleteAction: 'إضافة' | 'حذف' | 'لا يوجد';
@@ -363,6 +383,8 @@ export interface QuickExtractAnalysisResult {
   sourceImageUrls?: Record<number, string>;
   sourcePdfUrl?: string;
   inferredMetadata?: InferredDocumentMetadata | null;
+  fallbackUsed?: 'primary' | 'flash-lite' | 'local';
+  resilienceNotice?: string;
 }
 
 // --- Universal Cognitive Reading & Progressive Comprehension System (UCRS) ---

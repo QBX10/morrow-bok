@@ -71,6 +71,8 @@ export type AssistantToolName =
   | 'archive_person'
   | 'filter_sort_table'
   | 'get_stats_profit'
+  | 'compare_agencies'
+  | 'add_quick_note'
   | 'manage_ready_list'
   | 'manage_expense'
   | 'open_import_compare'

@@ -20,7 +20,6 @@ import { TopBar } from './components/TopBar';
 import { AssistantWidget } from './components/AssistantWidget';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
-import { HierarchyBreadcrumbBar } from './components/HierarchyBreadcrumbBar';
 import { ToastHost } from './components/ToastHost';
 import { Switcher } from './components/cosmos/Switcher';
 import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
@@ -48,14 +47,12 @@ import { auditAgencyPersons } from './utils/agencyLogic';
 import {
   buildCosmosRegistry,
   getCosmosNodeById,
-  getCosmosPath,
   recordCosmosNodeVisit,
   resolveCosmosNodeForTarget,
   type CosmosNode,
 } from './utils/cosmosRegistry';
 import {
   buildMorrowHierarchyTree,
-  resolveActiveHierarchyNodeId,
   type HierarchyBadgeContext,
   type HierarchyTarget,
 } from './utils/hierarchyRegistry';
@@ -111,13 +108,11 @@ export default function App() {
     resetThemePrefs,
     saveCustomThemePreset,
     deleteCustomThemePreset,
-    updateWorkspaceCosmos,
     updateAccessibilityPrefs,
     updateFeatureFlags,
     togglePinnedCosmosNode,
     recordRecentCosmosNode,
     toggleHiddenCosmosWorld,
-    dismissCosmosSuggestion,
     appendWorldChangeLog,
     restorePreMigrationSnapshot,
     saveAppearanceProfile,
@@ -790,37 +785,6 @@ export default function App() {
     ]
   );
 
-  const activeCosmosTrail = useMemo(
-    () =>
-      getCosmosPath(cosmosRoot, activeCosmosNode.id).map((n) => ({
-        id: n.id,
-        title: n.title,
-      })),
-    [cosmosRoot, activeCosmosNode.id]
-  );
-
-  const activeHierarchyNodeId = useMemo(
-    () =>
-      resolveActiveHierarchyNodeId({
-        activeView,
-        selectedAgencyId,
-        settingsSection,
-        settingsScreenMode,
-        settingsCapsuleId,
-        morrowTab: assistant.activeCommandCenterTab,
-        columnCustomizerOpen,
-      }),
-    [
-      activeView,
-      selectedAgencyId,
-      settingsSection,
-      settingsScreenMode,
-      settingsCapsuleId,
-      assistant.activeCommandCenterTab,
-      columnCustomizerOpen,
-    ]
-  );
-
   const hierarchyBadgeContext = useMemo<HierarchyBadgeContext>(
     () => ({
       agenciesCount: state.agencies.length,
@@ -871,15 +835,6 @@ export default function App() {
     ]
   );
 
-  const renderedHierarchyBar = (
-    <HierarchyBreadcrumbBar
-      tree={hierarchyTree}
-      activeNodeId={activeHierarchyNodeId}
-      badgeContext={hierarchyBadgeContext}
-      onNavigateTarget={handleNavigateHierarchyTarget}
-    />
-  );
-
   const openMorrowStudio = (tab: 'chat' | 'approvals' | 'memory' | 'quick_notes' = 'chat') => {
     if (activeView !== 'morrow_center' && activeView !== 'settings') {
       setPreviousView(activeView);
@@ -909,13 +864,14 @@ export default function App() {
         <TopBar
           capabilities={capabilities}
           authUser={authUser}
-          darkTheme={state.darkTheme}
           canUndo={canUndo}
           canRedo={canRedo}
-          topBarConfig={state.topBarConfig}
           effectiveMode={effectiveTopBarMode}
           isAutoHidden={isAutoHidden}
           activeViewLabel={activeViewLabel}
+          showViewTitle={state.topBarConfig.showViewTitle}
+          showUndoRedo={state.topBarConfig.showUndoRedo}
+          showAuthButton={state.topBarConfig.showAuthButton}
           agencies={state.agencies}
           persons={state.persons}
           readyLists={state.readyLists}
@@ -923,11 +879,6 @@ export default function App() {
           ucrsSessions={ucrsSessions}
           hierarchyTree={hierarchyTree}
           pendingDraftsCount={assistant.pendingDraftsCount}
-          onToggleDarkTheme={setDarkTheme}
-          onChangeTopBarConfig={(patch) => {
-            setAutoScrollHidden(false);
-            setTopBarConfig(patch);
-          }}
           onNavigateHome={() => handleNavigate('hub')}
           onNavigateView={handleNavigate}
           onOpenMorrowStudio={() => openMorrowStudio('chat')}
@@ -957,12 +908,6 @@ export default function App() {
           canGoForward={navHistory.index < navHistory.stack.length - 1}
           onGoBack={goBackHistory}
           onGoForward={goForwardHistory}
-          cosmosTrail={activeCosmosTrail}
-          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
-          onSelectCosmosTrailNode={(nodeId) => {
-            const targetNode = getCosmosNodeById(cosmosRoot, nodeId);
-            if (targetNode) handleSelectCosmosNode(targetNode);
-          }}
         />
       )}
 
@@ -980,7 +925,6 @@ export default function App() {
             pendingDraftsCount={assistant.pendingDraftsCount}
             calculationSettings={state.calculationSettings}
             capabilities={capabilities}
-            themePrefs={themePrefs}
             collapsed={sidebarCollapsed}
             mobileOpen={drawerOpen}
             onToggleCollapse={toggleSidebarCollapsed}
@@ -991,7 +935,6 @@ export default function App() {
               setSelectedAgencyId(id);
               setActiveView('agency_roster');
             }}
-            onSelectAppTheme={(appTheme) => setThemePrefs({ appTheme })}
           />
         )}
 
@@ -999,54 +942,22 @@ export default function App() {
           key={activeView}
           className="flex-1 min-w-0 flex flex-col tabrix-view-enter"
         >
-          {!isDedicatedFullScreenView && renderedHierarchyBar}
-
           {activeView === 'hub' && (
             <AgenciesHubView
               agencies={state.agencies}
               persons={state.persons}
               expenses={state.expenses}
               activePeriod={activePeriod}
-              readyListsCount={state.readyLists.length}
-              relationsCount={state.relations.length}
+              monthlyArchives={monthlyArchives}
               calculationSettings={state.calculationSettings}
               capabilities={capabilities}
-              hierarchyTree={hierarchyTree}
-              hierarchyBadgeContext={hierarchyBadgeContext}
-              onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
               onOpenMasterRoster={() => setActiveView('master_roster')}
               onOpenAgencyRoster={(id) => {
                 setSelectedAgencyId(id);
                 setActiveView('agency_roster');
               }}
-              onNavigateView={(v, sec) => handleNavigate(v, sec)}
               onAddAgency={addAgencyDirect}
               onUpdateAgencyDetails={updateAgencyDetails}
-              rootCosmos={cosmosRoot}
-              workspaceCosmos={workspaceCosmos}
-              onSelectCosmosNode={handleSelectCosmosNode}
-              onTogglePinnedNode={togglePinnedCosmosNode}
-              onDismissSuggestion={dismissCosmosSuggestion}
-              onCompleteOnboarding={() =>
-                updateAccessibilityPrefs({ onboardingCompleted: true })
-              }
-              onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
-              monthlyArchives={monthlyArchives}
-              lastBackupAt={assistant.lastBackupAt}
-              onOpenMorrowInsight={(insight) => {
-                if (insight.targetCanvasMode) {
-                  assistant.setActiveCommandCenterTab('chat');
-                  setInitialMorrowCanvas({
-                    mode: insight.targetCanvasMode,
-                    nonce: Date.now(),
-                  });
-                  handleNavigate('morrow_center');
-                  return;
-                }
-                if (insight.targetView) {
-                  handleNavigate(insight.targetView);
-                }
-              }}
             />
           )}
 
@@ -1425,7 +1336,6 @@ export default function App() {
           onUpdateAssistantSettings={assistant.updateAssistantSettings}
           onResetAssistantQuota={assistant.resetQuotaStats}
           onClearAssistantCache={assistant.clearResponseCache}
-          hierarchyBar={renderedHierarchyBar}
           workspaceCosmos={workspaceCosmos}
           rootCosmos={cosmosRoot}
           migrationSnapshot={state.migrationSnapshot}
@@ -1643,7 +1553,6 @@ export default function App() {
           onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
           cosmosTree={cosmosRoot}
           onSelectCosmosNode={handleSelectCosmosNode}
-          onToggleDarkTheme={setDarkTheme}
           onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
           onClose={() => setCommandPaletteOpen(false)}
           onChangeBrainMode={assistant.setBrainMode}
@@ -1688,7 +1597,6 @@ export default function App() {
           canAddPerson={capabilities.canEditRecords}
           canUseQuickExtract={capabilities.canUseQuickExtract}
           onNavigateView={handleNavigate}
-          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
           onQuickAddPerson={() => {
             setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
             setAddPersonOpen(true);

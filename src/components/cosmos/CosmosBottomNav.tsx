@@ -1,354 +1,210 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Bot,
-  Building2,
-  Camera,
-  Command,
-  Compass,
-  Globe2,
   Home,
-  LayoutGrid,
-  ListChecks,
+  Plus,
+  ScanLine,
+  Search,
   Settings,
-  ShieldCheck,
-  Sparkles,
   Table2,
-  UserPlus,
 } from 'lucide-react';
 import type { AppView, SettingsSectionId } from '../../types/agency';
-import { BottomSheet } from './BottomSheet';
 
 interface CosmosBottomNavProps {
   activeView: AppView;
   canAddPerson: boolean;
   canUseQuickExtract: boolean;
-  onNavigateView: (view: AppView, settingsSection?: SettingsSectionId) => void;
-  onOpenWorldSwitcher: () => void;
+  onNavigateView: (view: AppView, sec?: SettingsSectionId) => void;
   onQuickAddPerson: () => void;
   onOpenAssistant: () => void;
-  onOpenCommandPalette?: () => void;
-  onQuickAddAgency?: () => void;
-  onRunAudit?: () => void;
-  assistantConnectivity?: 'online' | 'offline' | 'checking';
+  onOpenCommandPalette: () => void;
   isAssistantThinking?: boolean;
   pendingDraftsCount?: number;
 }
 
 /**
- * Modern Spatial Floating Dock (replaces traditional horizontal bottom bar on mobile).
- * Sits lightly in the bottom-right corner (opposite the bottom-left Morrow pill),
- * glides away smoothly when scrolling down, and snaps back immediately on scroll up.
+ * Mobile One-Thumb Floating Navigation Dock — strictly operational + single Settings gateway.
  */
 export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   activeView,
   canAddPerson,
   canUseQuickExtract,
   onNavigateView,
-  onOpenWorldSwitcher,
   onQuickAddPerson,
   onOpenAssistant,
   onOpenCommandPalette,
-  onQuickAddAgency,
-  onRunAudit,
+  isAssistantThinking = false,
   pendingDraftsCount = 0,
 }) => {
-  const [quickSheetOpen, setQuickSheetOpen] = useState(false);
-  const [dockHidden, setDockHidden] = useState(false);
-
+  const [hiddenByScroll, setHiddenByScroll] = useState(false);
   const lastScrollYRef = useRef(0);
 
   useEffect(() => {
     const onScroll = () => {
-      const y = Math.max(0, window.scrollY || 0);
-      const delta = y - lastScrollYRef.current;
-      if (y <= 36) {
-        setDockHidden(false);
-      } else if (delta < -4) {
-        setDockHidden(false);
-      } else if (delta > 8 && y > 72) {
-        setDockHidden(true);
+      const curY = window.scrollY || 0;
+      const delta = curY - lastScrollYRef.current;
+      if (curY < 60) {
+        setHiddenByScroll(false);
+      } else if (delta > 16) {
+        setHiddenByScroll(true);
+      } else if (delta < -10) {
+        setHiddenByScroll(false);
       }
-      lastScrollYRef.current = y;
+      lastScrollYRef.current = curY;
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const isHubActive = activeView === 'hub';
+  const items: Array<{
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    active?: boolean;
+    primary?: boolean;
+    onClick: () => void;
+    onLongPress?: () => void;
+    badge?: number;
+  }> = [
+    {
+      id: 'home',
+      label: 'الوكالات',
+      icon: <Home className="h-4 w-4" />,
+      active: activeView === 'hub',
+      onClick: () => onNavigateView('hub'),
+    },
+    {
+      id: 'roster',
+      label: 'الجدول',
+      icon: <Table2 className="h-4 w-4" />,
+      active: activeView === 'master_roster' || activeView === 'agency_roster',
+      onClick: () => onNavigateView('master_roster'),
+    },
+    {
+      id: 'center_action',
+      label: canAddPerson ? 'إضافة' : 'بحث',
+      icon: canAddPerson ? <Plus className="h-5 w-5" /> : <Search className="h-5 w-5" />,
+      primary: true,
+      onClick: () => (canAddPerson ? onQuickAddPerson() : onOpenCommandPalette()),
+      onLongPress: onOpenCommandPalette,
+    },
+    {
+      id: 'morrow',
+      label: 'Morrow',
+      icon: <Bot className="h-4 w-4" />,
+      active: activeView === 'morrow_center',
+      badge: pendingDraftsCount > 0 ? pendingDraftsCount : undefined,
+      onClick: onOpenAssistant,
+      onLongPress: () => onNavigateView('morrow_center'),
+    },
+    canUseQuickExtract
+      ? {
+          id: 'extract',
+          label: 'السحب',
+          icon: <ScanLine className="h-4 w-4" />,
+          active: activeView === 'quick_extract',
+          onClick: () => onNavigateView('quick_extract'),
+          onLongPress: () => onNavigateView('settings'),
+        }
+      : {
+          id: 'settings',
+          label: 'الإعدادات',
+          icon: <Settings className="h-4 w-4" />,
+          active: activeView === 'settings',
+          onClick: () => onNavigateView('settings'),
+        },
+  ];
 
   return (
-    <>
+    <nav
+      aria-label="شريط الوصول السريع للجوال"
+      className={`lg:hidden fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] flex justify-center px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pointer-events-none transition-transform duration-200 ${
+        hiddenByScroll ? 'translate-y-24' : 'translate-y-0'
+      }`}
+    >
       <div
-        aria-label="بوابة الوصول السريع العائمة"
-        className={`no-print fixed bottom-4 right-4 z-[var(--z-bottom-nav)] md:hidden flex items-center gap-1.5 rounded-full border p-1 shadow-xl backdrop-blur-xl transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          dockHidden
-            ? 'translate-y-20 opacity-0 pointer-events-none'
-            : 'translate-y-0 opacity-100'
-        }`}
-        style={{
-          backgroundColor: 'color-mix(in srgb, var(--bg-surface) 90%, transparent)',
-          borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
-        }}
+        className="cosmos-glass-panel pointer-events-auto flex w-full max-w-md items-center justify-around gap-1 border px-2 py-1.5 shadow-2xl"
+        style={{ borderColor: 'var(--border-color)' }}
       >
-        <button
-          type="button"
-          onClick={() => onNavigateView('hub')}
-          aria-label="الشاشة الرئيسية"
-          title="المركز الرئيسي"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors"
-          style={{
-            backgroundColor: isHubActive ? 'var(--accent)' : 'var(--bg-main)',
-            color: isHubActive ? 'var(--accent-fg)' : 'var(--text-primary)',
-          }}
-        >
-          <Home className="h-4.5 w-4.5" />
-        </button>
+        {items.map((item) => {
+          let holdTimer: number | null = null;
+          const startHold = () => {
+            if (!item.onLongPress) return;
+            holdTimer = window.setTimeout(() => {
+              item.onLongPress?.();
+              holdTimer = null;
+            }, 460);
+          };
+          const cancelHold = () => {
+            if (holdTimer !== null) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+          };
 
-        <button
-          type="button"
-          onClick={() => setQuickSheetOpen(true)}
-          aria-label="فتح بوابة التنقل السريع والأدوات"
-          className="inline-flex h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-extrabold transition-opacity hover:opacity-90"
-          style={{
-            backgroundColor: 'var(--bg-main)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <Compass className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-          <span>التنقل</span>
-          {pendingDraftsCount > 0 && (
-            <span
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-black tabular-nums"
+          if (item.primary) {
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onClick}
+                onTouchStart={startHold}
+                onTouchEnd={cancelHold}
+                onTouchCancel={cancelHold}
+                className="-mt-4 flex h-12 min-w-[56px] flex-col items-center justify-center rounded-2xl px-3 shadow-lg transition-transform active:scale-95"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+                aria-label={item.label}
+              >
+                {item.icon}
+                <span className="text-[10px] font-black leading-none mt-0.5">
+                  {item.label}
+                </span>
+              </button>
+            );
+          }
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onClick}
+              onTouchStart={startHold}
+              onTouchEnd={cancelHold}
+              onTouchCancel={cancelHold}
+              className="relative flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition-colors active:scale-95"
               style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
+                backgroundColor: item.active ? 'var(--bg-nav-active)' : 'transparent',
+                color: item.active ? 'var(--accent)' : 'var(--text-muted)',
               }}
             >
-              {pendingDraftsCount}
-            </span>
-          )}
-        </button>
+              <span className="relative">
+                {item.icon}
+                {item.id === 'morrow' && isAssistantThinking && (
+                  <span
+                    className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
+                    style={{ backgroundColor: 'var(--warning)' }}
+                  />
+                )}
+              </span>
+              <span className="whitespace-nowrap leading-none">{item.label}</span>
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span
+                  className="absolute top-0.5 left-1 rounded-full px-1 text-[9px] font-black tabular-nums"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
-
-      <BottomSheet
-        open={quickSheetOpen}
-        onClose={() => setQuickSheetOpen(false)}
-        title="بوابة التنقل السريع"
-        subtitle="وصول حديث وفوري لجميع أقسام وأدوات التطبيق"
-        icon={<LayoutGrid className="h-5 w-5" />}
-      >
-        <div className="grid grid-cols-2 gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onNavigateView('hub');
-            }}
-            className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <Home className="h-4.5 w-4.5 shrink-0" style={{ color: 'var(--accent)' }} />
-            <div className="min-w-0">
-              <div className="text-xs font-extrabold">المركز الرئيسي</div>
-              <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                الوكالات والملخص
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onNavigateView('master_roster');
-            }}
-            className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <Table2 className="h-4.5 w-4.5 shrink-0" style={{ color: '#0ea5e9' }} />
-            <div className="min-w-0">
-              <div className="text-xs font-extrabold">الجدول الشامل</div>
-              <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                جميع المستفيدين
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onNavigateView('morrow_center');
-            }}
-            className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <Bot className="h-4.5 w-4.5 shrink-0" style={{ color: '#8b5cf6' }} />
-            <div className="min-w-0">
-              <div className="text-xs font-extrabold">مساعد Morrow</div>
-              <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                صوت، لايف، وملفات
-              </div>
-            </div>
-          </button>
-
-          {canUseQuickExtract && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuickSheetOpen(false);
-                onNavigateView('quick_extract');
-              }}
-              className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <Camera className="h-4.5 w-4.5 shrink-0" style={{ color: '#10b981' }} />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold">السحب الذكي</div>
-                <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                  كاميرا وPDF
-                </div>
-              </div>
-            </button>
-          )}
-
-          {canAddPerson && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuickSheetOpen(false);
-                onQuickAddPerson();
-              }}
-              className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <UserPlus className="h-4.5 w-4.5 shrink-0" style={{ color: '#16a34a' }} />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold">إضافة مستفيد</div>
-                <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                  إدراج مباشر
-                </div>
-              </div>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onNavigateView('ready_lists');
-            }}
-            className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <ListChecks className="h-4.5 w-4.5 shrink-0" style={{ color: '#14b8a6' }} />
-            <div className="min-w-0">
-              <div className="text-xs font-extrabold">القوائم الجاهزة</div>
-              <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                القوالب المحفوظة
-              </div>
-            </div>
-          </button>
-
-          {onOpenCommandPalette && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuickSheetOpen(false);
-                onOpenCommandPalette();
-              }}
-              className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <Command className="h-4.5 w-4.5 shrink-0" style={{ color: '#f59e0b' }} />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold">البحث الشامل ⌘K</div>
-                <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                  وصول فوري
-                </div>
-              </div>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onNavigateView('settings');
-            }}
-            className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <Settings className="h-4.5 w-4.5 shrink-0" style={{ color: 'var(--accent)' }} />
-            <div className="min-w-0">
-              <div className="text-xs font-extrabold">الإعدادات</div>
-              <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                الثيمات والتحكم
-              </div>
-            </div>
-          </button>
-
-          {onQuickAddAgency && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuickSheetOpen(false);
-                onQuickAddAgency();
-              }}
-              className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <Building2 className="h-4.5 w-4.5 shrink-0" style={{ color: 'var(--accent)' }} />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold">إضافة وكالة</div>
-              </div>
-            </button>
-          )}
-
-          {onRunAudit && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuickSheetOpen(false);
-                onRunAudit();
-              }}
-              className="cosmos-touch-primary flex items-center gap-2.5 rounded-2xl border p-3.5 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <ShieldCheck className="h-4.5 w-4.5 shrink-0" style={{ color: '#f97316' }} />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold">فحص السجلات</div>
-              </div>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onOpenWorldSwitcher();
-            }}
-            className="cosmos-touch-primary col-span-2 flex items-center justify-center gap-2.5 rounded-2xl border p-3.5 hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-          >
-            <Globe2 className="h-4.5 w-4.5 shrink-0" style={{ color: '#0284c7' }} />
-            <span className="text-xs font-extrabold">بوابة العوالم والأكوان الـ14</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setQuickSheetOpen(false);
-              onOpenAssistant();
-            }}
-            className="cosmos-touch-primary col-span-2 flex items-center justify-center gap-2 rounded-2xl border p-3 hover:border-[var(--accent)]"
-            style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
-          >
-            <Sparkles className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-            <span className="text-xs font-bold">فتح النافذة الحوارية السريعة للمساعد</span>
-          </button>
-        </div>
-      </BottomSheet>
-    </>
+    </nav>
   );
 };

@@ -2,6 +2,7 @@ import {
   GoogleGenAI,
   Modality,
   Type,
+  type FunctionDeclaration,
   type GenerateContentResponse,
   type LiveServerMessage,
 } from '@google/genai';
@@ -55,6 +56,11 @@ import {
   validateToolCall,
 } from './src/utils/assistantTools.ts';
 import { buildSafeQuickExtractResult } from './src/utils/quickExtractEngine.ts';
+import {
+  buildProactiveHeaderGreeting,
+  buildSemanticColumnMappings,
+  inferMetadataFromText,
+} from './src/utils/zeroTrustExtract.ts';
 
 dotenv.config();
 
@@ -64,6 +70,7 @@ const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
 const GEMINI_MODEL = 'gemini-4-hydrogen';
+const LITE_FALLBACK_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 const pendingPhoneOtps = new Map<
   string,
@@ -98,6 +105,182 @@ function createGeminiClient(): GoogleGenAI | null {
       },
     },
   });
+}
+
+function isTransientCloudError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
+  const status =
+    typeof (err as { status?: unknown })?.status === 'number'
+      ? Number((err as { status: number }).status)
+      : 0;
+  return (
+    status === 503 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 504 ||
+    msg.includes('503') ||
+    msg.includes('429') ||
+    msg.includes('unavailable') ||
+    msg.includes('overloaded') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('timeout') ||
+    msg.includes('econnreset')
+  );
+}
+
+async function generateWithSilentResilience(
+  ai: GoogleGenAI,
+  params: {
+    contents: unknown;
+    config?: Record<string, unknown>;
+    primaryModel?: string;
+    fallbackModel?: string;
+  }
+): Promise<{
+  response: GenerateContentResponse;
+  modelUsed: string;
+  fallbackUsed: 'primary' | 'flash-lite';
+}> {
+  const chain = Array.from(
+    new Set([
+      params.primaryModel || GEMINI_MODEL,
+      params.fallbackModel || LITE_FALLBACK_GEMINI_MODEL,
+    ])
+  );
+
+  let lastError: unknown = null;
+  for (let mIdx = 0; mIdx < chain.length; mIdx++) {
+    const modelName = chain[mIdx];
+    const maxAttempts = mIdx === 0 ? 2 : 2;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('cloud_model_timeout')), 28000);
+        });
+        const callPromise = ai.models.generateContent({
+          model: modelName,
+          contents: params.contents as Parameters<typeof ai.models.generateContent>[0]['contents'],
+          config: params.config as Parameters<typeof ai.models.generateContent>[0]['config'],
+        });
+        const response = await Promise.race([callPromise, timeoutPromise]);
+        return {
+          response,
+          modelUsed: modelName,
+          fallbackUsed: mIdx === 0 ? 'primary' : 'flash-lite',
+        };
+      } catch (err) {
+        lastError = err;
+        if (!isTransientCloudError(err)) {
+          throw err;
+        }
+        const waitMs = 350 * (attempt + 1) + Math.floor(Math.random() * 140);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
+function runLocalCopilotFallback(
+  message: string,
+  draftRows: Array<{
+    rowIndex: number;
+    resolvedName: string;
+    resolvedIndividuals: number | null;
+    resolvedEligibleIndividuals?: number | null;
+    resolvedDecreaseCount: number | null;
+    nameConfidence?: number;
+    numbersConfidence?: number;
+    zeroTrustConfirmed?: boolean;
+    mathIssuesCount?: number;
+  }>,
+  inferredMetadata?: Partial<InferredDocumentMetadata> | null
+): { reply: string; operations: Array<Record<string, unknown>> } {
+  const norm = message.trim();
+  const operations: Array<Record<string, unknown>> = [];
+
+  if (/اخفاء.*اعمد|إخفاء.*أعمد|الاعمدة الفارغة|الأعمدة الفارغة/i.test(norm)) {
+    operations.push({ type: 'hide_empty_columns' });
+    return {
+      reply: 'تم إخفاء الأعمدة الفارغة في مسودة الجدول فوراً لتسهيل المراجعة.',
+      operations,
+    };
+  }
+  if (/اظهار.*كل.*اعمد|إظهار.*كل.*أعمد|جميع الأعمدة/i.test(norm)) {
+    operations.push({ type: 'show_all_columns' });
+    return {
+      reply: 'تم إظهار كافة الأعمدة في الجدول.',
+      operations,
+    };
+  }
+  if (/محجوب|نزول|حجب/i.test(norm) && !/كم/.test(norm)) {
+    const blockedCount = draftRows.filter((r) => (r.resolvedDecreaseCount ?? 0) > 0).length;
+    operations.push({ type: 'filter_blocked' });
+    return {
+      reply: `تمت تصفية المسودة لعرض العائلات التي لديها أفراد محجوبين/نزول فقط (${blockedCount} صف).`,
+      operations,
+    };
+  }
+  if (/عائلات كبيرة|الكبيرة|اكبر|أكبر/i.test(norm)) {
+    const bigCount = draftRows.filter((r) => (r.resolvedIndividuals ?? 0) >= 5).length;
+    operations.push({ type: 'filter_large_families' });
+    return {
+      reply: `تمت تصفية المسودة لإظهار العائلات الكبيرة (5 أفراد فأكثر): ${bigCount} عائلة.`,
+      operations,
+    };
+  }
+  if (/مشكوك|شك|تعارض|مراجعة|أخطاء/i.test(norm)) {
+    const doubtful = draftRows.filter(
+      (r) =>
+        !r.zeroTrustConfirmed ||
+        (r.nameConfidence ?? 1) < 0.99 ||
+        (r.numbersConfidence ?? 1) < 0.99 ||
+        (r.mathIssuesCount ?? 0) > 0
+    );
+    if (!/كم/.test(norm)) {
+      operations.push({ type: 'filter_doubtful' });
+    }
+    return {
+      reply:
+        doubtful.length === 0
+          ? 'جميع الصفوف الحالية مؤكدة بنسبة 99% فأعلى ولا يوجد أي شك أو تعارض رياضي.'
+          : `يوجد حالياً (${doubtful.length}) صفاً يحتاج مراجعة من أصل (${draftRows.length}) صف (صفوف: ${doubtful
+              .slice(0, 8)
+              .map((r) => r.rowIndex)
+              .join('، ')}).`,
+      operations,
+    };
+  }
+  if (/الكل|الغاء التصفية|إلغاء التصفية|اعرض الجميع/i.test(norm)) {
+    operations.push({ type: 'filter_clear' });
+    return {
+      reply: `تم إلغاء التصفية وعرض جميع الصفوف (${draftRows.length} صف).`,
+      operations,
+    };
+  }
+  const rowNumMatch = norm.match(/(?:صف|سطر|رقم)\s*(\d+)/);
+  if (rowNumMatch) {
+    const num = Number(rowNumMatch[1]);
+    const found = draftRows.find((r) => r.rowIndex === num);
+    if (found) {
+      operations.push({ type: 'highlight_row', rowIndex: num });
+      return {
+        reply: `السطر رقم ${num}: «${found.resolvedName || 'غير مسمى'}» — الأفراد: ${found.resolvedIndividuals ?? '—'}، المحجوب: ${found.resolvedDecreaseCount ?? 0}. تم تمييزه على الصورة والجدول.`,
+        operations,
+      };
+    }
+  }
+  if (/تاريخ|شهر|وكالة|هوية/i.test(norm)) {
+    return {
+      reply: `بيانات الترويسة المستنتجة: الوكالة «${inferredMetadata?.agencyName || 'غير محددة'}»، الشهر/التاريخ «${inferredMetadata?.tableDateLabel || 'غير محدد'}».`,
+      operations,
+    };
+  }
+  return {
+    reply: `المسودة تضم حالياً ${draftRows.length} صفاً. يمكنك طلب: «كم عدد الصفوف المشكوك فيها؟» أو «اخفِ الأعمدة الفارغة» أو «فلتر المحجوبين».`,
+    operations,
+  };
 }
 
 async function startServer() {
@@ -637,6 +820,196 @@ async function startServer() {
     }
   });
 
+  // --- Quick Extract Header Metadata Inference (Vision AI) ---
+
+  app.post('/api/quick-extract/metadata-inference', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        filename?: string;
+        mimeType?: string;
+        base64Pdf?: string;
+        imageDataUrl?: string;
+        frames?: Array<{ mimeType?: string; data?: string; label?: string }>;
+        rawText?: string;
+      };
+
+      const filename = String(body.filename || '').trim().slice(0, 180);
+      const rawText = String(body.rawText || '').trim().slice(0, 6000);
+      const localFallback = inferMetadataFromText(rawText, [], filename);
+
+      const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [];
+
+      if (body.base64Pdf) {
+        const cleanPdf = String(body.base64Pdf)
+          .replace(/^data:application\/pdf;base64,/, '')
+          .trim();
+        if (cleanPdf) {
+          parts.push({ inlineData: { mimeType: 'application/pdf', data: cleanPdf } });
+        }
+      } else if (Array.isArray(body.frames) && body.frames.length > 0) {
+        const firstFrame = body.frames[0];
+        const cleanImg = String(firstFrame?.data || '')
+          .replace(/^data:image\/[a-zA-Z+]+;base64,/, '')
+          .trim();
+        if (cleanImg) {
+          const mimeType =
+            firstFrame.mimeType === 'image/png' || firstFrame.mimeType === 'image/webp'
+              ? firstFrame.mimeType
+              : 'image/jpeg';
+          parts.push({ inlineData: { mimeType, data: cleanImg } });
+        }
+      } else if (body.imageDataUrl) {
+        const mimeMatch = String(body.imageDataUrl).match(/^data:(image\/[a-zA-Z+]+);base64,/);
+        const cleanImg = String(body.imageDataUrl)
+          .replace(/^data:image\/[a-zA-Z+]+;base64,/, '')
+          .trim();
+        if (cleanImg) {
+          parts.push({
+            inlineData: {
+              mimeType: mimeMatch?.[1] || 'image/jpeg',
+              data: cleanImg,
+            },
+          });
+        }
+      }
+
+      if (parts.length === 0 && !rawText) {
+        res.json({ ok: true, metadata: localFallback });
+        return;
+      }
+
+      const ai = createGeminiClient();
+      if (!ai) {
+        res.json({ ok: true, metadata: localFallback });
+        return;
+      }
+
+      parts.push({
+        text: `اقرأ ترويسة الجدول فقط من المصدر المرفق (${filename || 'document'})${
+          rawText ? `\nعينة النص:\n${rawText.slice(0, 1800)}` : ''
+        } واستخرج: اسم الوكالة، الشهر، السنة، رقم المركز/الوكالة إن وجد، وعناوين الأعمدة الظاهرة.`,
+      });
+
+      const metadataSchema = {
+        type: Type.OBJECT,
+        properties: {
+          agencyName: { type: Type.STRING, nullable: true },
+          agencyNameConfidence: { type: Type.NUMBER },
+          monthLabel: { type: Type.STRING, nullable: true },
+          yearLabel: { type: Type.STRING, nullable: true },
+          tableDateLabel: { type: Type.STRING, nullable: true },
+          tableDateConfidence: { type: Type.NUMBER },
+          centerOrAgencyNumber: { type: Type.STRING, nullable: true },
+          centerNumberConfidence: { type: Type.NUMBER },
+          headerSnippet: { type: Type.STRING },
+          detectedColumns: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+        },
+      };
+
+      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
+        contents: [{ role: 'user', parts }],
+        config: {
+          systemInstruction:
+            'أنت محلل ترويسات جداول وكالات الكمية الغذائية بدقة عالية. استخرج اسم الوكالة والشهر والسنة وعناوين الأعمدة كما هي في الترويسة فقط بصيغة JSON دون تخمين غير موجود.',
+          responseMimeType: 'application/json',
+          responseSchema: metadataSchema,
+          temperature: 0.1,
+        },
+      });
+
+      const parsed = JSON.parse(String(response.text || '{}')) as {
+        agencyName?: string | null;
+        agencyNameConfidence?: number;
+        monthLabel?: string | null;
+        yearLabel?: string | null;
+        tableDateLabel?: string | null;
+        tableDateConfidence?: number;
+        centerOrAgencyNumber?: string | null;
+        centerNumberConfidence?: number;
+        headerSnippet?: string;
+        detectedColumns?: string[];
+      };
+
+      const combinedDate =
+        String(parsed.tableDateLabel || '').trim() ||
+        [parsed.monthLabel, parsed.yearLabel]
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+          .join(' ') ||
+        localFallback?.tableDateLabel ||
+        null;
+
+      const detectedColumns = Array.isArray(parsed.detectedColumns)
+        ? parsed.detectedColumns.map((c) => String(c || '').trim()).filter(Boolean)
+        : localFallback?.detectedColumns || [];
+      const semanticMapping = buildSemanticColumnMappings(detectedColumns);
+      const resolvedAgencyName =
+        String(parsed.agencyName || '').trim() || localFallback?.agencyName || null;
+
+      if (
+        !resolvedAgencyName &&
+        !combinedDate &&
+        !parsed.centerOrAgencyNumber &&
+        detectedColumns.length === 0
+      ) {
+        res.json({ ok: true, metadata: localFallback });
+        return;
+      }
+
+      const metadata: InferredDocumentMetadata = {
+        agencyName: resolvedAgencyName,
+        agencyNameConfidence:
+          typeof parsed.agencyNameConfidence === 'number'
+            ? parsed.agencyNameConfidence
+            : resolvedAgencyName
+              ? 0.94
+              : 0,
+        matchedAgencyId: null,
+        tableDateLabel: combinedDate,
+        tableDateConfidence:
+          typeof parsed.tableDateConfidence === 'number'
+            ? parsed.tableDateConfidence
+            : combinedDate
+              ? 0.94
+              : 0,
+        centerOrAgencyNumber:
+          String(parsed.centerOrAgencyNumber || '').trim() ||
+          localFallback?.centerOrAgencyNumber ||
+          null,
+        centerNumberConfidence:
+          typeof parsed.centerNumberConfidence === 'number'
+            ? parsed.centerNumberConfidence
+            : parsed.centerOrAgencyNumber
+              ? 0.92
+              : 0,
+        headerSnippet:
+          String(parsed.headerSnippet || '').trim() || localFallback?.headerSnippet,
+        detectedColumns,
+        semanticMapping,
+        proactivePrompt: buildProactiveHeaderGreeting({
+          agencyName: resolvedAgencyName,
+          tableDateLabel: combinedDate,
+          detectedColumns,
+          semanticMapping,
+        }),
+        fallbackUsed,
+        confirmedByUser: false,
+      };
+
+      res.json({ ok: true, metadata, fallbackUsed });
+    } catch {
+      const body = (req.body || {}) as { filename?: string; rawText?: string };
+      res.json({
+        ok: true,
+        metadata: inferMetadataFromText(String(body.rawText || ''), [], body.filename),
+        fallbackUsed: 'flash-lite',
+      });
+    }
+  });
+
   // --- Quick Extract ("السحب السريع") PDF & Camera Burst Extraction Endpoint ---
 
   app.post('/api/quick-extract', async (req: Request, res: Response) => {
@@ -843,6 +1216,10 @@ async function startServer() {
               centerOrAgencyNumber: { type: Type.STRING, nullable: true },
               centerNumberConfidence: { type: Type.NUMBER },
               headerSnippet: { type: Type.STRING },
+              detectedColumns: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
             },
           },
           rows: {
@@ -854,6 +1231,7 @@ async function startServer() {
                 pageNumber: { type: Type.INTEGER },
                 name: { type: Type.STRING, nullable: true },
                 individuals: { type: Type.INTEGER, nullable: true },
+                eligibleIndividuals: { type: Type.INTEGER, nullable: true },
                 decreaseCount: { type: Type.INTEGER, nullable: true },
                 addOrDeleteCount: { type: Type.INTEGER, nullable: true },
                 addOrDeleteAction: {
@@ -934,10 +1312,10 @@ async function startServer() {
           ? '- name: اسم المستفيد الكامل بالعربية (أو null إذا كان غير مقروء/ناقصًا).'
           : '- name: الحقل غير مطلوب حاليًا؛ ضع string فارغ "" أو تجاهل التوسع فيه.',
         focusSet.has('individuals')
-          ? '- individuals: عدد الأفراد (عدد صحيح >= 0، أو null إذا كان مفقودًا).'
+          ? '- individuals: إجمالي الأفراد الكلية (عدد صحيح >= 0، أو null إذا كان مفقودًا)، وإذا وُجد عمود منفصل للأفراد المستحقة/الصافية فاملأ eligibleIndividuals.'
           : '- individuals: الحقل خارج نطاق التركيز؛ أعد 0.',
         focusSet.has('decreaseCount')
-          ? '- decreaseCount: عدد النزول أو النقصان (عدد صحيح >= 0، أو null إذا كان غامضًا).'
+          ? '- decreaseCount: عدد المحجوبين أو النزول/النقصان (عدد صحيح >= 0، أو null إذا كان غامضًا).'
           : '- decreaseCount: الحقل خارج نطاق التركيز؛ أعد 0.',
         focusSet.has('addOrDelete')
           ? '- addOrDeleteCount & addOrDeleteAction: عدد الإضافة أو الحذف ونوعه ("إضافة" | "حذف" | "لا يوجد" | "غير محدد").'
@@ -946,12 +1324,14 @@ async function startServer() {
 
       const systemPrompt = `أنت محرك معالجة مستندات ذكي (Intelligent Document Processing) ورؤية حاسوبية متخصص في استخراج الجداول العربية المكتوبة رقميًا أو بخط اليد (الدفاتر الورقية).
 تعمل وفق القواعد الصارمة التالية — "الأمان المطلق ومبدأ الشك 1% — لا تخمّن أبدًا":
-1. استنتاج الهوية والسياق التلقائي (Metadata Inference):
+1. استنتاج الهوية والسياق التلقائي والربط الدلالي للأعمدة (Metadata Inference & Semantic Mapping):
    - اقرأ ترويسة الصورة أو أعلى الملف بعناية لاستنتاج:
      * agencyName: اسم الوكالة أو الوكيل (مثلاً: وكالة منذر الحلو).
      * tableDateLabel: تاريخ أو شهر الجدول (مثلاً: تشرين الأول 2026).
      * centerOrAgencyNumber: رقم المركز أو رقم الوكالة إن وُجد.
      * headerSnippet: نص الترويسة المستخرج كما ظهر في الأعلى.
+     * detectedColumns: قائمة بأسماء الأعمدة الظاهرة في ترويسة الجدول كما كُتبت (مثلاً: ["الاسم", "الأفراد الكلية", "المستحقة", "المحجوبين"]).
+   - اربط الأعمدة دلالياً: (الأفراد الكلية -> individuals)، (المستحقة/الصافية -> eligibleIndividuals)، (المحجوبين/النزول -> decreaseCount).
 2. فحص الجودة ومبدأ الشك بنسبة 1% (أقل من 99%):
    - عالج تداخل الأسطر وضيق الجداول، وإذا توفرت عدة لقطات (Burst Frames) لنفس الدفتر فطابقها معًا للتأكد من كل نقطة وحرف ورقم.
    - إذا كانت الصورة/الصفحة مهزوزة، مطموسة، مغطاة بظل/لمعان، أو غير مقروءة بحيث يستحيل قراءة الصفوف بأمان: اضبط legibilityStatus="rejected" واكتب الأسباب الدقيقة بالعربية في rejectionReasons واترك rows فارغًا.
@@ -968,8 +1348,7 @@ async function startServer() {
    }
    - عند الشك في أي حرف عربي: اضبط modelDoubtFlag=true، خفّض nameConfidence لأقل من 0.90، واذكر المقاطع في suspectSpans.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
         contents: [
           {
             role: 'user',
@@ -993,6 +1372,42 @@ async function startServer() {
         rows?: QuickExtractRawRow[];
       };
 
+      const detectedColumns = Array.isArray(parsed.inferredMetadata?.detectedColumns)
+        ? parsed.inferredMetadata!.detectedColumns.map((c) => String(c || '').trim()).filter(Boolean)
+        : [];
+      const semanticMapping = buildSemanticColumnMappings(detectedColumns);
+      const inferredMetaObj: InferredDocumentMetadata | null = parsed.inferredMetadata
+        ? {
+            agencyName: parsed.inferredMetadata.agencyName ?? null,
+            agencyNameConfidence:
+              typeof parsed.inferredMetadata.agencyNameConfidence === 'number'
+                ? parsed.inferredMetadata.agencyNameConfidence
+                : 0.9,
+            tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
+            tableDateConfidence:
+              typeof parsed.inferredMetadata.tableDateConfidence === 'number'
+                ? parsed.inferredMetadata.tableDateConfidence
+                : 0.9,
+            centerOrAgencyNumber:
+              parsed.inferredMetadata.centerOrAgencyNumber ?? null,
+            centerNumberConfidence:
+              typeof parsed.inferredMetadata.centerNumberConfidence === 'number'
+                ? parsed.inferredMetadata.centerNumberConfidence
+                : 0.9,
+            headerSnippet: parsed.inferredMetadata.headerSnippet || undefined,
+            detectedColumns,
+            semanticMapping,
+            proactivePrompt: buildProactiveHeaderGreeting({
+              agencyName: parsed.inferredMetadata.agencyName ?? null,
+              tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
+              detectedColumns,
+              semanticMapping,
+            }),
+            fallbackUsed,
+            confirmedByUser: false,
+          }
+        : null;
+
       const safeResult = buildSafeQuickExtractResult({
         sourceMode: mode,
         scanMode,
@@ -1009,35 +1424,27 @@ async function startServer() {
           : [],
         documentSummary: parsed.documentSummary || '',
         rawRows: Array.isArray(parsed.rows) ? parsed.rows : [],
-        inferredMetadata: parsed.inferredMetadata
-          ? {
-              agencyName: parsed.inferredMetadata.agencyName ?? null,
-              agencyNameConfidence:
-                typeof parsed.inferredMetadata.agencyNameConfidence === 'number'
-                  ? parsed.inferredMetadata.agencyNameConfidence
-                  : 0.9,
-              tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
-              tableDateConfidence:
-                typeof parsed.inferredMetadata.tableDateConfidence === 'number'
-                  ? parsed.inferredMetadata.tableDateConfidence
-                  : 0.9,
-              centerOrAgencyNumber:
-                parsed.inferredMetadata.centerOrAgencyNumber ?? null,
-              centerNumberConfidence:
-                typeof parsed.inferredMetadata.centerNumberConfidence === 'number'
-                  ? parsed.inferredMetadata.centerNumberConfidence
-                  : 0.9,
-              headerSnippet: parsed.inferredMetadata.headerSnippet || undefined,
-              confirmedByUser: false,
-            }
-          : null,
+        inferredMetadata: inferredMetaObj,
       });
 
-      res.json(safeResult);
+      res.json({
+        ...safeResult,
+        fallbackUsed,
+        resilienceNotice:
+          fallbackUsed === 'flash-lite'
+            ? 'تمت المعالجة عبر المسار السريع البديل (Flash Lite) لضمان الاستمرارية بدون انقطاع.'
+            : undefined,
+      });
     } catch (err) {
-      res.status(500).json({
-        error:
-          err instanceof Error
+      const transient = isTransientCloudError(err);
+      res.status(transient ? 503 : 500).json({
+        temporaryBusy: transient,
+        friendlyNotice: transient
+          ? 'خوادم القراءة تشهد ضغطاً مؤقتاً — جاري إعادة المحاولة عبر المسار البديل...'
+          : 'تعذر إتمام قراءة هذا المستند حالياً.',
+        error: transient
+          ? 'خوادم القراءة مشغولة مؤقتاً — جاري المعالجة عبر مسار بديل...'
+          : err instanceof Error
             ? `تعذر تحليل المستند: ${err.message}`
             : 'تعذر تحليل المستند.',
       });
@@ -1324,6 +1731,10 @@ async function startServer() {
               centerOrAgencyNumber: { type: Type.STRING, nullable: true },
               centerNumberConfidence: { type: Type.NUMBER },
               headerSnippet: { type: Type.STRING },
+              detectedColumns: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
             },
           },
           rows: {
@@ -1335,6 +1746,7 @@ async function startServer() {
                 pageNumber: { type: Type.INTEGER },
                 name: { type: Type.STRING, nullable: true },
                 individuals: { type: Type.INTEGER, nullable: true },
+                eligibleIndividuals: { type: Type.INTEGER, nullable: true },
                 decreaseCount: { type: Type.INTEGER, nullable: true },
                 addOrDeleteCount: { type: Type.INTEGER, nullable: true },
                 addOrDeleteAction: {
@@ -1459,15 +1871,14 @@ async function startServer() {
 
       const systemInstruction = `أنت "منظومة القراءة الكونية والإدراك التدريجي" (UCRS) داخل تطبيق Morrow لإدارة وكالات الكمية الغذائية، وتعمل تحت مبدأ الأمان المطلق والشك 1% (Zero-Trust).
 مبادئك الصارمة:
-1. استنتاج الهوية والترويسة تلقائياً: اقرأ أعلى الصورة أو المستند لاستنتاج اسم الوكالة (agencyName)، وتاريخ/شهر الجدول (tableDateLabel مثل: تشرين الأول 2026)، ورقم المركز أو الوكالة (centerOrAgencyNumber)، ونص الترويسة (headerSnippet) واملأ inferredMetadata.
+1. استنتاج الهوية والترويسة والربط الدلالي للأعمدة تلقائياً: اقرأ أعلى الصورة أو المستند لاستنتاج اسم الوكالة (agencyName)، وتاريخ/شهر الجدول (tableDateLabel مثل: تشرين الأول 2026)، ورقم المركز أو الوكالة (centerOrAgencyNumber)، ونص الترويسة (headerSnippet)، وأسماء الأعمدة المكتشفة (detectedColumns مثل: ["الاسم", "الأفراد الكلية", "المستحقة", "المحجوبين"]) واملأ inferredMetadata. واربط الأعمدة دلالياً: الكلي -> individuals، المستحقة -> eligibleIndividuals، المحجوبين/النزول -> decreaseCount.
 2. الفهم قبل الاستخراج: حدد أولاً نوع المحتوى وموضوعه وجودته وهل يخص جداول المستفيدين/الوكالات (important | useful | neutral | irrelevant) مع ذكر السبب، ورأيك الصريح.
 3. التدرج ومبدأ الشك 1% (Zero Silent Errors): إذا وجدت أي غموض أو بهتان ولو بنسبة 1% في اسم أو رقم أو تاريخ، اضبط درجة ثقته أقل من 0.99 (مثل 0.94 أو 0.84) ولا تعطه 0.99+ إلا عند الوضوح التام. وإذا رأيت 10 أسماء واستطعت قراءة 4 بثقة و3 بشك و3 غير مقروءة، استخرج ما أمكن بأمانة وضع إحداثيات غير المقروءة في unreadableRegions واكتب missingHint. لا تخمّن أي حرف أو رقم أبدًا!
 4. القص البصري الشامل للسطر: أرجع لكل صف rowBox (ymin, xmin, ymax, xmax من 0 إلى 1000) يمتد أفقياً عبر **السطر كاملاً** من أول عمود إلى آخر عمود، بالإضافة إلى suspectBox لبقعة الشك.
 5. في وضع الاكتشاف أو الكتب/المستندات أو البحث الدلالي: املأ entities بالأسماء، التواريخ، الأماكن، الملاحظات، والفقرات المهمة.
 6. التزم بوضع التشغيل: ${scanMode === 'fast' ? 'الوضع السريع' : 'الوضع المدقق'}.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
         contents: [{ role: 'user', parts: contentParts }],
         config: {
           systemInstruction,
@@ -1495,6 +1906,11 @@ async function startServer() {
         }>;
       };
 
+      const detectedColumns = Array.isArray(parsed.inferredMetadata?.detectedColumns)
+        ? parsed.inferredMetadata!.detectedColumns.map((c) => String(c || '').trim()).filter(Boolean)
+        : [];
+      const semanticMapping = buildSemanticColumnMappings(detectedColumns);
+
       const normalizedMeta: InferredDocumentMetadata | null = parsed.inferredMetadata
         ? {
             agencyName: parsed.inferredMetadata.agencyName ?? null,
@@ -1514,6 +1930,15 @@ async function startServer() {
                 ? parsed.inferredMetadata.centerNumberConfidence
                 : 0.9,
             headerSnippet: parsed.inferredMetadata.headerSnippet || undefined,
+            detectedColumns,
+            semanticMapping,
+            proactivePrompt: buildProactiveHeaderGreeting({
+              agencyName: parsed.inferredMetadata.agencyName ?? null,
+              tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
+              detectedColumns,
+              semanticMapping,
+            }),
+            fallbackUsed,
             confirmedByUser: false,
           }
         : null;
@@ -1546,11 +1971,22 @@ async function startServer() {
         unreadableRegions: Array.isArray(parsed.unreadableRegions)
           ? parsed.unreadableRegions
           : [],
+        fallbackUsed,
+        resilienceNotice:
+          fallbackUsed === 'flash-lite'
+            ? 'تمت القراءة عبر المسار السريع البديل (Flash Lite) تلقائياً بسبب ضغط الخادم.'
+            : undefined,
       });
     } catch (err) {
-      res.status(500).json({
-        error:
-          err instanceof Error
+      const transient = isTransientCloudError(err);
+      res.status(transient ? 503 : 500).json({
+        temporaryBusy: transient,
+        friendlyNotice: transient
+          ? 'خوادم القراءة مشغولة حالياً — جاري المعالجة عبر المسار البديل...'
+          : 'تعذر إتمام القراءة حالياً.',
+        error: transient
+          ? 'خوادم القراءة مشغولة مؤقتاً — جاري المعالجة عبر مسار بديل...'
+          : err instanceof Error
             ? `تعذر تشغيل منظومة القراءة الكونية: ${err.message}`
             : 'تعذر تشغيل منظومة القراءة الكونية.',
       });
@@ -1620,40 +2056,91 @@ async function startServer() {
 
   // --- Quick Extract Live Draft Assistant Copilot ---
   app.post('/api/quick-extract/copilot', async (req: Request, res: Response) => {
+    const body = (req.body || {}) as {
+      message?: string;
+      documentSummary?: string;
+      inferredMetadata?: Partial<InferredDocumentMetadata> | null;
+      sourceImageBase64?: string;
+      sourceMimeType?: string;
+      draftRows?: Array<{
+        id?: string;
+        rowIndex: number;
+        resolvedName: string;
+        resolvedIndividuals: number | null;
+        resolvedEligibleIndividuals?: number | null;
+        resolvedDecreaseCount: number | null;
+        resolvedAddOrDeleteCount: number | null;
+        resolvedAddOrDeleteAction: string;
+        resolvedRowDate?: string;
+        notes?: string;
+        nameConfidence?: number;
+        numbersConfidence?: number;
+        zeroTrustConfirmed?: boolean;
+        mathIssuesCount?: number;
+      }>;
+      history?: Array<{ role: 'user' | 'model'; text: string }>;
+    };
+
+    const message = String(body.message || '').trim().slice(0, 1200);
+    if (!message) {
+      res.status(400).json({ error: 'رسالة المساعد فارغة.' });
+      return;
+    }
+
+    const compactRows = (Array.isArray(body.draftRows) ? body.draftRows : [])
+      .slice(0, 180)
+      .map((r) => {
+        const nameConf =
+          typeof r.nameConfidence === 'number' ? r.nameConfidence : 1;
+        const numConf =
+          typeof r.numbersConfidence === 'number' ? r.numbersConfidence : 1;
+        const mathCount = Number(r.mathIssuesCount || 0);
+        const confirmed = Boolean(r.zeroTrustConfirmed);
+        const isDoubtful =
+          !confirmed &&
+          (nameConf < 0.99 || numConf < 0.99 || mathCount > 0);
+        return {
+          rowIndex: r.rowIndex,
+          name: r.resolvedName,
+          individuals: r.resolvedIndividuals,
+          eligibleIndividuals: r.resolvedEligibleIndividuals ?? null,
+          decreaseCount: r.resolvedDecreaseCount,
+          addOrDeleteCount: r.resolvedAddOrDeleteCount,
+          addOrDeleteAction: r.resolvedAddOrDeleteAction,
+          rowDate: r.resolvedRowDate || '',
+          notes: r.notes || '',
+          nameConfidence: nameConf,
+          numbersConfidence: numConf,
+          confirmed,
+          mathIssuesCount: mathCount,
+          isDoubtful,
+        };
+      });
+
+    const copilotStats = {
+      totalRows: compactRows.length,
+      doubtfulCount: compactRows.filter((r) => r.isDoubtful).length,
+      doubtfulRowIndexes: compactRows
+        .filter((r) => r.isDoubtful)
+        .map((r) => r.rowIndex),
+      mathConflictCount: compactRows.filter(
+        (r) => r.mathIssuesCount > 0 && !r.confirmed
+      ).length,
+      blockedCount: compactRows.filter((r) => (r.decreaseCount ?? 0) > 0).length,
+      largeFamiliesCount: compactRows.filter((r) => (r.individuals ?? 0) >= 5).length,
+    };
+
     try {
-      const body = (req.body || {}) as {
-        message?: string;
-        documentSummary?: string;
-        inferredMetadata?: Partial<InferredDocumentMetadata> | null;
-        sourceImageBase64?: string;
-        sourceMimeType?: string;
-        draftRows?: Array<{
-          id?: string;
-          rowIndex: number;
-          resolvedName: string;
-          resolvedIndividuals: number | null;
-          resolvedDecreaseCount: number | null;
-          resolvedAddOrDeleteCount: number | null;
-          resolvedAddOrDeleteAction: string;
-          resolvedRowDate?: string;
-          notes?: string;
-          nameConfidence?: number;
-          numbersConfidence?: number;
-          zeroTrustConfirmed?: boolean;
-        }>;
-        history?: Array<{ role: 'user' | 'model'; text: string }>;
-      };
-
-      const message = String(body.message || '').trim().slice(0, 1200);
-      if (!message) {
-        res.status(400).json({ error: 'رسالة المساعد فارغة.' });
-        return;
-      }
-
       const ai = createGeminiClient();
       if (!ai) {
-        res.status(503).json({
-          error: 'مفتاح Gemini API غير مهيأ على الخادم لتشغيل المساعد الحي.',
+        const local = runLocalCopilotFallback(
+          message,
+          Array.isArray(body.draftRows) ? body.draftRows : [],
+          body.inferredMetadata
+        );
+        res.json({
+          ...local,
+          fallbackUsed: 'local',
         });
         return;
       }
@@ -1675,22 +2162,6 @@ async function startServer() {
         }
       }
 
-      const compactRows = (Array.isArray(body.draftRows) ? body.draftRows : [])
-        .slice(0, 180)
-        .map((r) => ({
-          rowIndex: r.rowIndex,
-          name: r.resolvedName,
-          individuals: r.resolvedIndividuals,
-          decreaseCount: r.resolvedDecreaseCount,
-          addOrDeleteCount: r.resolvedAddOrDeleteCount,
-          addOrDeleteAction: r.resolvedAddOrDeleteAction,
-          rowDate: r.resolvedRowDate || '',
-          notes: r.notes || '',
-          nameConfidence: r.nameConfidence,
-          numbersConfidence: r.numbersConfidence,
-          confirmed: Boolean(r.zeroTrustConfirmed),
-        }));
-
       const historyText = Array.isArray(body.history)
         ? body.history
             .slice(-8)
@@ -1702,6 +2173,7 @@ async function startServer() {
         text: [
           `ملخص المستند: ${body.documentSummary || 'غير محدد'}`,
           `الهوية المستنتجة من الترويسة: ${JSON.stringify(body.inferredMetadata || null)}`,
+          `إحصاءات دقيقة محسوبة لقاعدة الشك 1% والتعارضات: ${JSON.stringify(copilotStats)}`,
           `صفوف مسودة السحب الحالية (${compactRows.length} صف):\n${JSON.stringify(compactRows)}`,
           historyText ? `سياق المحادثة:\n${historyText}` : '',
           `طلب المستخدم الحالي:\n${message}`,
@@ -1723,6 +2195,7 @@ async function startServer() {
                   type: Type.STRING,
                   enum: [
                     'filter_blocked',
+                    'filter_large_families',
                     'filter_doubtful',
                     'filter_clear',
                     'highlight_row',
@@ -1756,13 +2229,14 @@ async function startServer() {
         required: ['reply', 'operations'],
       };
 
-      const copilotInstruction = `أنت المساعد الحي (Live Draft Copilot) وزميل العمل داخل مسودة السحب السريع.
+      const copilotInstruction = `أنت المساعد الحي (Live Draft Copilot) وزميل العمل داخل مختبر السحب الذكي.
 أنت متصل بصرياً بالصورة الأصلية المرفقة (إن وُجدت) وبالترويسة المستنتجة وبجدول مسودة السحب.
 قواعدك:
-1. أجب باللغة العربية باحترافية ووضوح واختصار عملي كزميل عمل.
-2. عند السؤال عن معلومة في الجدول أو الصورة (مثل: "ما هو تاريخ هذا الجدول؟" أو "من هو الشخص رقم 54؟")، استخرج الإجابة من الصورة/الترويسة/الصفوف بدقة واذكر رقم السطر. استخدم "highlight_row" مع rowIndex إن سأل عن شخص محدد لإبرازه بصرياً.
+1. أجب باللغة العربية باحترافية ووضوح واختصار عملي. التزم بكلمة «الأفراد» حصراً.
+2. عند السؤال عن معلومة في الجدول أو الصورة (مثل: "كم عدد الصفوف المشكوك فيها؟" أو "ما هو تاريخ هذا الجدول؟" أو "من هو الشخص رقم 54؟")، استخرج الإجابة بدقة واذكر رقم السطر. استخدم "highlight_row" مع rowIndex إن سأل عن شخص محدد لإبرازه على الصورة والجدول.
 3. عندما يطلب المستخدم تعديلاً أو تصفية على المسودة، أضف العمليات المناسبة في operations:
    - "قم بتصفية الأسماء التي لديها أفراد محجوبين فقط" / "أظهر النزول فقط" => filter_blocked
+   - "اسحب العائلات الكبيرة فقط" / "أظهر العائلات الكبيرة" => filter_large_families
    - "أظهر الصفوف المشكوك فيها" => filter_doubtful
    - "أظهر الكل" / "ألغ التصفية" => filter_clear
    - "قم بإخفاء الأعمدة الفارغة" => hide_empty_columns
@@ -1770,10 +2244,9 @@ async function startServer() {
    - "احذف السطر 54" => delete_row مع rowIndex: 54
    - "عدّل اسم السطر 5 إلى ..." أو تعديل عدد الأفراد/الملاحظات => update_row مع rowIndex والحقول المعدلة
    - تعديل اسم الوكالة أو التاريخ => update_metadata
-4. لا تقم أبداً بحفظ أو ترحيل البيانات نهائياً بدون ضغطة المستخدم، واقتصر على تعديل المسودة أو تصفيتها.`;
+4. لا تقم أبداً بحفظ أو ترحيل البيانات نهائياً بدون ضغطة المستخدم.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
         contents: [{ role: 'user', parts: contentParts }],
         config: {
           systemInstruction: copilotInstruction,
@@ -1790,13 +2263,17 @@ async function startServer() {
       res.json({
         reply: parsed.reply || 'تمت مراجعة المسودة.',
         operations: Array.isArray(parsed.operations) ? parsed.operations : [],
+        fallbackUsed,
       });
-    } catch (err) {
-      res.status(500).json({
-        error:
-          err instanceof Error
-            ? `تعذر تواصل المساعد الحي: ${err.message}`
-            : 'تعذر تواصل المساعد الحي.',
+    } catch {
+      const local = runLocalCopilotFallback(
+        message,
+        Array.isArray(body.draftRows) ? body.draftRows : [],
+        body.inferredMetadata
+      );
+      res.json({
+        ...local,
+        fallbackUsed: 'local',
       });
     }
   });
@@ -1823,20 +2300,39 @@ async function startServer() {
     if (!cloudContext || typeof cloudContext !== 'object') return '';
     const lw = cloudContext.liveWorkspace as Record<string, unknown> | undefined;
     if (!lw || typeof lw !== 'object') return '';
-    const agenciesList = Array.isArray(lw.agenciesBreakdown)
+    const rawAgencies = Array.isArray(lw.agenciesBreakdown)
       ? (lw.agenciesBreakdown as Array<Record<string, unknown>>)
-          .slice(0, 12)
-          .map(
-            (ag) =>
-              `- ${String(ag.name || '')} (ID:${ag.id}): ${Number(ag.activeHouseholds || 0)} عائلة نشطة، ${Number(ag.activeIndividuals || 0)} أفراد، محجوب ${Number(ag.blockedCount || 0)}، ${Number(ag.fullBags || 0)} كيس (${Number(ag.remainderKg || 0)} كغم متبقي)، إيراد ${Number(ag.revenueIqd || 0)} د.ع، مصروفات ${Number(ag.expensesIqd || 0)} د.ع، صافي ${Number(ag.profitIqd || 0)} د.ع`
-          )
-          .join('\n')
-      : '';
+      : [];
+    const agenciesList = rawAgencies
+      .slice(0, 12)
+      .map(
+        (ag) =>
+          `- ${String(ag.name || '')} (ID:${ag.id}): ${Number(ag.activeHouseholds || 0)} عائلة نشطة، ${Number(ag.activeIndividuals || 0)} أفراد، محجوب ${Number(ag.blockedCount || 0)}، ${Number(ag.fullBags || 0)} كيس (${Number(ag.remainderKg || 0)} كغم متبقي)، إيراد ${Number(ag.revenueIqd || 0)} د.ع، مصروفات ${Number(ag.expensesIqd || 0)} د.ع، صافي ${Number(ag.profitIqd || 0)} د.ع`
+      )
+      .join('\n');
+    const topByIndividuals = [...rawAgencies].sort(
+      (a, b) => Number(b.activeIndividuals || 0) - Number(a.activeIndividuals || 0)
+    )[0];
+    const readyListsArr = Array.isArray(cloudContext.readyLists)
+      ? (cloudContext.readyLists as Array<Record<string, unknown>>)
+      : [];
+    const readyListsLine =
+      readyListsArr.length > 0
+        ? `القوائم الجاهزة (${readyListsArr.length}): ${readyListsArr
+            .slice(0, 8)
+            .map((l) => `${String(l.name || '')} (#${l.id})`)
+            .join('، ')}`
+        : '';
+
     return [
       `الحصة الحالية: ${String(lw.periodName || 'الحصة الحالية')}`,
       `الإعدادات: رسم الفرد ${Number(lw.feePerIndividualIqd || 0)} د.ع | رسم البطاقة الثابت ${Number(lw.fixedCardFeeIqd || 0)} د.ع | كغم/فرد ${Number(lw.kgPerIndividual || 0)} | وزن الكيس ${Number(lw.kgPerBag || 50)} كغم | خصم ${Number(lw.discountPercent || 0)}%`,
       `الإجمالي الكلي: ${Number(lw.totalActiveHouseholds || 0)} عائلة نشطة (من أصل ${Number(lw.totalRegisteredHouseholds || 0)}) | ${Number(lw.totalActiveIndividuals || 0)} أفراد نشطين | محجوب ${Number(lw.totalBlockedCount || 0)} | ${Number(lw.totalFullBags || 0)} كيس | إيراد ${Number(lw.totalRevenueIqd || 0)} د.ع | مصروفات ${Number(lw.totalExpensesIqd || 0)} د.ع | صافي الربح ${Number(lw.totalProfitIqd || 0)} د.ع`,
+      topByIndividuals
+        ? `أكبر وكالة بالأفراد حالياً: ${String(topByIndividuals.name || '')} (${Number(topByIndividuals.activeIndividuals || 0)} أفراد · صافي ${Number(topByIndividuals.profitIqd || 0)} د.ع)`
+        : '',
       `الأرشيفات: ${Number(lw.archivesCount || 0)}${lw.latestArchiveName ? ` (آخر أرشيف: ${String(lw.latestArchiveName)})` : ''} | ملاحظات سريعة: ${Number(lw.quickNotesCount || 0)} | مسودات معلقة: ${Number(lw.pendingDraftsCount || 0)}`,
+      readyListsLine,
       agenciesList ? `تفصيل الوكالات:\n${agenciesList}` : '',
     ]
       .filter(Boolean)
@@ -1879,9 +2375,11 @@ async function startServer() {
           ? body.brainMode
           : 'auto';
 
-      const primaryModel = sanitizeAssistantModelId(
-        body.preferredModel || PRIMARY_FREE_GEMINI_MODEL
-      );
+      const requestedPreferred = String(body.preferredModel || '').trim().toLowerCase();
+      const primaryModel =
+        requestedPreferred === LITE_FALLBACK_GEMINI_MODEL
+          ? LITE_FALLBACK_GEMINI_MODEL
+          : sanitizeAssistantModelId(body.preferredModel || PRIMARY_FREE_GEMINI_MODEL);
       const secondaryModel = sanitizeAssistantModelId(
         body.fallbackModel ||
           (primaryModel === SECONDARY_FREE_GEMINI_MODEL
@@ -1898,11 +2396,17 @@ async function startServer() {
             .join('\n')
         : '';
 
-      const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المرتبط ارتباطاً جذرياً ومباشراً ببيانات وإجراءات تطبيق إدارة وكالات الكمية الغذائية.
+      const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المرتبط ارتباطاً جذرياً ومباشراً ببيانات وإجراءات تطبيق إدارة وكالات الكمية الغذائية (توزيع الطحين).
 قواعدك الصارمة:
-1. تحدث باللهجة العراقية المهنية المختصرة والواضحة.
+1. تحدث باللهجة العراقية المهنية المختصرة والواضحة وقدم تحليل عملي وذكي.
 2. التزم تماماً بكلمة «الأفراد» و«أفراد» و«فرد» حصرياً في جميع الردود والتقارير عند الإشارة لعدد الأشخاص.
-3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر الأداة المناسبة من Function Calling بالوسائط الدقيقة فور طلب المستخدم البحث أو الانتقال أو التصفية أو تجهيز تعديل أو إضافة.
+3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر الأداة المناسبة من Function Calling بالوسائط الدقيقة فور طلب المستخدم:
+   - للمقارنة أو ترتيب الوكالات: compare_agencies
+   - لحفظ ملاحظة سريعة وربطها بالعائلة: add_quick_note
+   - لفك الحظر عن مستفيد: update_person مع blockType='none'
+   - لنقل مستفيد بين الوكالات: update_person مع agencyId الجديد
+   - لإنشاء قائمة جاهزة أو إضافة اسم لها: manage_ready_list
+   - للبحث، التصفية، الإحصائيات، المصاريف، التصدير أو فحص التطبيق: استخدم أدواتها المخصصة مباشرة.
 4. أي عملية تعديل أو إضافة أو أرشفة أو مصروف أو إعدادات يجب أن تُجهَّز كمسودة للموافقة فقط عبر الأداة دون تخمين بيانات ناقصة.
 5. لا تقترح حذفاً نهائياً أبداً (استخدم archive_person فقط للأرشفة الآمنة).
 6. استند حصرياً إلى الأرقام الحية من «ملخص البيانات الحي» المرفق أدناه ولا تخترع أي رقم.
@@ -1991,14 +2495,25 @@ ${contextText}`;
         throw lastErr;
       };
 
-      // 3-Brain escalation chain + GEMINI_MODEL resilience fallback -> morrow_local
+      // 3-Brain escalation chain + GEMINI_MODEL & Flash-Lite resilience fallback -> morrow_local
       const orderedModels =
         mode === 'gemini_2_5_pro'
-          ? [SECONDARY_FREE_GEMINI_MODEL, PRIMARY_FREE_GEMINI_MODEL, GEMINI_MODEL]
-          : [primaryModel, secondaryModel, GEMINI_MODEL];
+          ? [
+              SECONDARY_FREE_GEMINI_MODEL,
+              PRIMARY_FREE_GEMINI_MODEL,
+              GEMINI_MODEL,
+              LITE_FALLBACK_GEMINI_MODEL,
+            ]
+          : [
+              primaryModel,
+              secondaryModel,
+              GEMINI_MODEL,
+              LITE_FALLBACK_GEMINI_MODEL,
+            ];
       const uniqueChain = Array.from(new Set(orderedModels));
 
       let hitQuota = false;
+      let hit503 = false;
       for (let i = 0; i < uniqueChain.length; i++) {
         const candidateModel = uniqueChain[i];
         try {
@@ -2006,16 +2521,21 @@ ${contextText}`;
           const isFallbackUsed = i > 0;
           const isPro = result.model === SECONDARY_FREE_GEMINI_MODEL;
           const isHydrogen = result.model === GEMINI_MODEL;
+          const isFlashLite = result.model === LITE_FALLBACK_GEMINI_MODEL;
           res.json({
             ok: true,
             engineUsed: isPro ? 'gemini_2_5_pro' : 'gemini_2_5_flash',
             modelId: result.model,
             fallbackUsed: isFallbackUsed,
-            engineLabel: isHydrogen
-              ? 'Gemini 4 Hydrogen · سحابي متقدم'
-              : isPro
-                ? 'Gemini 2.5 Pro · تحليل عميق'
-                : 'Gemini 2.5 Flash · لغوي سريع',
+            switchedToFlashLite: isFlashLite,
+            had503Retry: hit503,
+            engineLabel: isFlashLite
+              ? 'Gemini Flash Lite · استجابة احتياطية سريعة'
+              : isHydrogen
+                ? 'Gemini 4 Hydrogen · سحابي متقدم'
+                : isPro
+                  ? 'Gemini 2.5 Pro · تحليل عميق'
+                  : 'Gemini 2.5 Flash · لغوي سريع',
             text:
               result.text ||
               (result.toolCalls.length > 0
@@ -2026,8 +2546,9 @@ ${contextText}`;
           });
           return;
         } catch (err) {
-          const { isQuota } = classifyCloudError(err);
+          const { isQuota, isTransient } = classifyCloudError(err);
           if (isQuota) hitQuota = true;
+          if (isTransient) hit503 = true;
           // Escalate smoothly across cloud models without exposing raw SDK errors
         }
       }
@@ -2160,11 +2681,17 @@ ${contextText}`;
       const body = (req.body || {}) as {
         audioBase64?: string;
         mimeType?: string;
+        targetMode?: 'instruction' | 'quick_note' | 'draft_text';
+        agencies?: Array<{ id: number; name: string }>;
       };
       const cleanBase64 = String(body.audioBase64 || '')
         .replace(/^data:[^;]+;base64,/, '')
         .trim();
       const mimeType = String(body.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+      const targetMode =
+        body.targetMode === 'quick_note' || body.targetMode === 'draft_text'
+          ? body.targetMode
+          : 'instruction';
 
       if (!cleanBase64) {
         res.status(400).json({ ok: false, error: 'الملف الصوتي فارغ.' });
@@ -2181,6 +2708,30 @@ ${contextText}`;
         return;
       }
 
+      const agenciesHint = Array.isArray(body.agencies)
+        ? body.agencies
+            .slice(0, 12)
+            .map((a) => String(a.name || '').trim())
+            .filter(Boolean)
+            .join('، ')
+        : '';
+
+      const modeHint =
+        targetMode === 'quick_note'
+          ? 'الغرض: تسجيل ملاحظة سريعة متعلقة بعائلة أو وكالة.'
+          : targetMode === 'draft_text'
+            ? 'الغرض: تحويل الكلام إلى نص قابل للتحرير في مربع الكتابة.'
+            : 'الغرض: تعليمة أو أمر عمل لمساعد إدارة الوكالات.';
+
+      const transcribePrompt = [
+        'فرّغ هذا التسجيل الصوتي باللغة العربية أو اللهجة العراقية بدقة كاملة وأعد النص المفرّغ فقط بدون مقدمات أو شرح إضافي.',
+        'مصطلحات النظام الشائعة: الوكالات، الأفراد، كيس طحين، حجب، حظر، القوائم الجاهزة، الأرشيف، رسم الفرد، مصروف.',
+        agenciesHint ? `أسماء الوكالات المحتملة: ${agenciesHint}.` : '',
+        modeHint,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
       const response = await ai.models.generateContent({
         model: 'gemini-3.5-transcribe',
         contents: [
@@ -2194,7 +2745,7 @@ ${contextText}`;
                 },
               },
               {
-                text: 'فرّغ هذا التسجيل الصوتي باللغة العربية أو اللهجة العراقية بدقة كاملة وأعد النص المفرّغ فقط بدون مقدمات.',
+                text: transcribePrompt,
               },
             ],
           },
@@ -2210,10 +2761,16 @@ ${contextText}`;
         return;
       }
 
+      const looksLikeQuickNote = /^(?:ملاحظ[هة]|مذكر[هة]|تنبيه|لا تنسى|سجل ملاحظ[هة]|اكتب ملاحظ[هة])/i.test(
+        transcript
+      );
+
       res.json({
         ok: true,
         modelId: 'gemini-3.5-transcribe',
         transcript,
+        targetMode,
+        detectedTargetMode: looksLikeQuickNote ? 'quick_note' : targetMode,
       });
     } catch (err) {
       res.status(500).json({
@@ -2493,7 +3050,7 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
       ? (sessionCloudContext?.beneficiaryDirectory as Array<Record<string, unknown>>)
       : [];
 
-    const LIVE_TOOL_DECLARATIONS = [
+    const LIVE_TOOL_DECLARATIONS: FunctionDeclaration[] = [
       {
         name: 'get_live_workspace_stats',
         description: 'إرجاع إحصائيات الحصة الحالية والأفراد والأكياس وصافي الربح للجميع أو لوكالة محددة.',
@@ -2679,13 +3236,13 @@ ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتب�
                 const checked = validateToolCall({
                   name: 'navigate_focus',
                   args: {
-                    targetView: String(args.targetView || 'hub'),
+                    view: String(args.targetView || 'hub'),
                     ...(args.agencyId !== undefined ? { agencyId: Number(args.agencyId) } : {}),
                   },
                 });
                 if (checked.valid && checked.sanitized) {
                   uiToolCall = checked.sanitized;
-                  responseObj = { ok: true, navigatedTo: checked.sanitized.args.targetView };
+                  responseObj = { ok: true, navigatedTo: checked.sanitized.args.view };
                 }
               } else if (fc.name === 'search_live_beneficiary') {
                 const q = String(args.query || '').trim();
@@ -2718,7 +3275,7 @@ ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتب�
                     message: 'تم تجهيز مسودة الموافقة الآمنة على شاشة المستخدم.',
                   };
                 } else {
-                  responseObj = { ok: false, reason: checked.reason || 'وسائط غير مكتملة' };
+                  responseObj = { ok: false, reason: checked.error || 'وسائط غير مكتملة' };
                 }
               }
 
