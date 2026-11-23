@@ -71,6 +71,46 @@ test('hierarchyRegistry builds multi-level pyramid tree, resolves active nodes, 
 
   const hitsColumns = searchHierarchyNodes(tree, 'ترتيب الاعمدة');
   assert.ok(hitsColumns.some((h) => h.node.id === 'column_customizer_node'));
+
+  // Level 4 & Level 5 recursive capsules
+  const calcFeesCap = getHierarchyNodeById(tree, 'calc_fees_cap');
+  assert.ok(calcFeesCap);
+  assert.equal(calcFeesCap.level, 4);
+  assert.equal(calcFeesCap.parentId, 'settings_calculator_node');
+
+  const calcPreviewCap = getHierarchyNodeById(tree, 'calc_preview_cap');
+  assert.ok(calcPreviewCap);
+  assert.equal(calcPreviewCap.level, 4);
+
+  const modernThemesCap = getHierarchyNodeById(tree, 'appearance_themes_modern_cap');
+  assert.ok(modernThemesCap);
+  assert.equal(modernThemesCap.level, 5);
+  assert.equal(modernThemesCap.parentId, 'appearance_themes_cap');
+
+  const displayCap = getHierarchyNodeById(tree, 'general_display_cap');
+  assert.ok(displayCap);
+  assert.equal(displayCap.level, 4);
+
+  const recycleBinCap = getHierarchyNodeById(tree, 'sec_recycle_bin_cap');
+  assert.ok(recycleBinCap);
+  assert.equal(recycleBinCap.level, 4);
+
+  const activeCapsuleId = resolveActiveHierarchyNodeId({
+    activeView: 'settings',
+    settingsSection: 'calculator',
+    settingsScreenMode: 'detail',
+    settingsCapsuleId: 'calc_fees_cap',
+  });
+  assert.equal(activeCapsuleId, 'calc_fees_cap');
+
+  const hitsFee = searchHierarchyNodes(tree, 'رسم الفرد');
+  assert.ok(hitsFee.some((h) => h.node.id === 'calc_fees_cap'));
+
+  const hitsGlassTheme = searchHierarchyNodes(tree, 'المرمر الزجاجي');
+  assert.ok(hitsGlassTheme.some((h) => h.node.id === 'appearance_themes_modern_cap'));
+
+  const hitsFullscreen = searchHierarchyNodes(tree, 'ملء الشاشة');
+  assert.ok(hitsFullscreen.some((h) => h.node.id === 'general_display_cap'));
 });
 
 test('registerHierarchyExtension attaches and cleans up nested runtime nodes cleanly', () => {

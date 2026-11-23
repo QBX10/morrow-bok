@@ -80,7 +80,7 @@ test('partial and full block math computes eligible individuals, bags, and net p
 
   const eff1 = getEffectiveAllocationForPerson(persons[0], DEFAULT_CALCULATION_SETTINGS);
   assert.equal(eff1.eligibleIndividuals, 6);
-  assert.equal(eff1.priceIqd, 6 * 200 + 250);
+  assert.equal(eff1.priceIqd, 6 * 250 + 250);
 
   const eff2 = getEffectiveAllocationForPerson(persons[1], DEFAULT_CALCULATION_SETTINGS);
   assert.equal(eff2.eligibleIndividuals, 0);
@@ -92,10 +92,10 @@ test('partial and full block math computes eligible individuals, bags, and net p
   assert.equal(metrics.totalKg, 54);
   assert.equal(metrics.fullBags, 1);
   assert.equal(metrics.remainderKg, 4);
-  assert.equal(metrics.revenue, 1450);
+  assert.equal(metrics.revenue, 1750);
   assert.equal(metrics.workerWages, 500);
   assert.equal(metrics.generalExpenses, 250);
-  assert.equal(metrics.profit, 700);
+  assert.equal(metrics.profit, 1000);
 });
 
 test('Quick Extract safe rejection gate rejects blurry/low clarity PDFs', () => {
@@ -166,13 +166,23 @@ test('Mode permissions enforce beginner read-only and editor confirmation rules'
   assert.equal(pro.requireAddConfirm, false);
 });
 
-test('calculateAllocation computes exact bags and remainder', () => {
+test('calculateAllocation computes exact bags and remainder with default 250 IQD fee', () => {
+  assert.equal(DEFAULT_CALCULATION_SETTINGS.feePerIndividualIqd, 250);
+
+  const alloc5 = calculateAllocation(5, DEFAULT_CALCULATION_SETTINGS);
+  assert.deepEqual(alloc5, {
+    totalKg: 45,
+    fullBags: 0,
+    remainderKg: 45,
+    priceIqd: 1500, // 5 * 250 + 250 fixed
+  });
+
   const alloc = calculateAllocation(11, DEFAULT_CALCULATION_SETTINGS);
   assert.deepEqual(alloc, {
     totalKg: 99,
     fullBags: 1,
     remainderKg: 49,
-    priceIqd: 2450,
+    priceIqd: 3000, // 11 * 250 + 250 fixed
   });
 });
 

@@ -5,6 +5,7 @@ import {
   DEFAULT_QUICK_EXTRACT_PREFS,
   DEFAULT_RELATIONS_PREFS,
   DEFAULT_SECURITY_PREFS,
+  DEFAULT_WORKSPACE_COSMOS,
   INITIAL_DATABASE_STATE,
 } from '../data/seedData';
 import {
@@ -19,6 +20,7 @@ import {
   syncWorkspaceSummaryToFirestore,
 } from '../lib/firestoreSync';
 import type {
+  AccessibilityAndExperiencePrefs,
   Agency,
   AgencyExpense,
   AppearanceProfile,
@@ -26,11 +28,14 @@ import type {
   AppModeTier,
   BlockScope,
   CalculationSettings,
+  CustomThemePreset,
   ExpenseCategory,
   ExpertCustomColumn,
   ExpertTableConfig,
+  FeatureFlagsMap,
   FreeformHeaderConfig,
   GeneralAppPrefs,
+  MigrationSnapshotRecord,
   MonthlyArchiveRecord,
   PeriodQuotaMeta,
   Person,
@@ -51,6 +56,8 @@ import type {
   TopBarConfig,
   UcrsLearningRule,
   UcrsSession,
+  WorldChangeLogEntry,
+  WorkspaceCosmosState,
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic';
 import { applyDiagnosticAutoFixes } from '../utils/assistantDiagnostics';
@@ -89,6 +96,7 @@ interface DataSnapshot {
   readyListItems: ReadyListItem[];
   relations: RelationEntry[];
   tableHeaders: Record<string, SectionTableHeaderMeta>;
+  calculationSettings?: CalculationSettings;
 }
 
 function pickDataSnapshot(state: AppDatabaseState): DataSnapshot {
@@ -100,6 +108,7 @@ function pickDataSnapshot(state: AppDatabaseState): DataSnapshot {
     readyListItems: state.readyListItems,
     relations: state.relations,
     tableHeaders: state.tableHeaders,
+    calculationSettings: state.calculationSettings,
   };
 }
 
@@ -125,6 +134,38 @@ function normalizeReadyLists(
   }));
 }
 
+function mergeWorkspaceCosmos(raw?: Partial<WorkspaceCosmosState>): WorkspaceCosmosState {
+  return {
+    ...DEFAULT_WORKSPACE_COSMOS,
+    ...(raw || {}),
+    pinnedNodeIds: Array.isArray(raw?.pinnedNodeIds)
+      ? raw!.pinnedNodeIds
+      : DEFAULT_WORKSPACE_COSMOS.pinnedNodeIds,
+    recentNodeIds: Array.isArray(raw?.recentNodeIds)
+      ? raw!.recentNodeIds
+      : DEFAULT_WORKSPACE_COSMOS.recentNodeIds,
+    hiddenWorldIds: Array.isArray(raw?.hiddenWorldIds) ? raw!.hiddenWorldIds : [],
+    dismissedSuggestionIds: Array.isArray(raw?.dismissedSuggestionIds)
+      ? raw!.dismissedSuggestionIds
+      : [],
+    accessibility: {
+      ...DEFAULT_WORKSPACE_COSMOS.accessibility,
+      ...(raw?.accessibility || {}),
+    },
+    featureFlags: {
+      ...DEFAULT_WORKSPACE_COSMOS.featureFlags,
+      ...(raw?.featureFlags || {}),
+    },
+    changeLog: Array.isArray(raw?.changeLog) ? raw!.changeLog : [],
+    dismissedAiAlertIds: Array.isArray(raw?.dismissedAiAlertIds)
+      ? raw!.dismissedAiAlertIds
+      : [],
+    pinnedAiMessageIds: Array.isArray(raw?.pinnedAiMessageIds)
+      ? raw!.pinnedAiMessageIds
+      : [],
+  };
+}
+
 function loadInitialState(): AppDatabaseState {
   try {
     const raw = localStorage.getItem(DB_STORAGE_KEY);
@@ -134,9 +175,59 @@ function loadInitialState(): AppDatabaseState {
       Array.isArray(parsed.agencies) && parsed.agencies.length > 0
         ? parsed.agencies
         : INITIAL_DATABASE_STATE.agencies;
+
+    // Versioned Migration with automatic pre-migration snapshot (Zero-Loss Guard)
+    const CURRENT_STATE_VERSION = 3;
+    let migrationSnapshot: MigrationSnapshotRecord | undefined = parsed.migrationSnapshot;
+    if (!parsed.stateVersion || parsed.stateVersion < CURRENT_STATE_VERSION) {
+      migrationSnapshot = {
+        version: parsed.stateVersion || 1,
+        createdAt: new Date().toISOString(),
+        reason: 'لقطة احتياطية تلقائية قبل التوحيد إلى الوضع الموحد والإعدادات المنظمة v3',
+        modeTier: parsed.modeTier,
+        editorEnabled: parsed.editorEnabled,
+        calculationSettings: {
+          ...DEFAULT_CALCULATION_SETTINGS,
+          ...(parsed.calculationSettings || {}),
+        },
+        themePrefs: parsed.themePrefs,
+        generalPrefs: parsed.generalPrefs,
+        securityPrefs: parsed.securityPrefs,
+      };
+    }
+
+    const mergedGeneralPrefs: GeneralAppPrefs = {
+      ...DEFAULT_GENERAL_PREFS,
+      ...(parsed.generalPrefs || {}),
+      granularControls: {
+        ...DEFAULT_GENERAL_PREFS.granularControls!,
+        ...(parsed.generalPrefs?.granularControls || {}),
+        bypassEditConfirm:
+          parsed.generalPrefs?.granularControls?.bypassEditConfirm ??
+          Boolean(parsed.expertTableConfig?.allowDirectNoConfirmEdit),
+      },
+      hubShortcutIds:
+        Array.isArray(parsed.generalPrefs?.hubShortcutIds) &&
+        parsed.generalPrefs!.hubShortcutIds!.length > 0
+          ? parsed.generalPrefs!.hubShortcutIds!
+          : DEFAULT_GENERAL_PREFS.hubShortcutIds,
+      quickToggleIds:
+        Array.isArray(parsed.generalPrefs?.quickToggleIds) &&
+        parsed.generalPrefs!.quickToggleIds!.length > 0
+          ? parsed.generalPrefs!.quickToggleIds!
+          : DEFAULT_GENERAL_PREFS.quickToggleIds,
+      agencyAccentColors: {
+        ...DEFAULT_GENERAL_PREFS.agencyAccentColors,
+        ...(parsed.generalPrefs?.agencyAccentColors || {}),
+      },
+    };
+
     return {
       ...INITIAL_DATABASE_STATE,
       ...parsed,
+      stateVersion: CURRENT_STATE_VERSION,
+      migrationSnapshot,
+      workspaceCosmos: mergeWorkspaceCosmos(parsed.workspaceCosmos),
       agencies,
       persons: Array.isArray(parsed.persons)
         ? parsed.persons
@@ -161,8 +252,8 @@ function loadInitialState(): AppDatabaseState {
         parsed.topBarConfig && typeof parsed.topBarConfig === 'object'
           ? { ...INITIAL_DATABASE_STATE.topBarConfig, ...parsed.topBarConfig }
           : INITIAL_DATABASE_STATE.topBarConfig,
-      modeTier: parsed.modeTier || 'beginner',
-      editorEnabled: Boolean(parsed.editorEnabled),
+      modeTier: 'expert',
+      editorEnabled: true,
       darkTheme: Boolean(parsed.darkTheme),
       requireLoginOnStart: Boolean(parsed.requireLoginOnStart),
       calculationSettings: {
@@ -180,6 +271,9 @@ function loadInitialState(): AppDatabaseState {
           parsed.themePrefs!.savedProfiles!.length > 0
             ? parsed.themePrefs!.savedProfiles!
             : DEFAULT_APPEARANCE_PROFILES,
+        customSavedThemes: Array.isArray(parsed.themePrefs?.customSavedThemes)
+          ? parsed.themePrefs!.customSavedThemes!
+          : [],
         conditionalFormatting: {
           ...DEFAULT_THEME_PREFERENCES.conditionalFormatting!,
           ...(parsed.themePrefs?.conditionalFormatting || {}),
@@ -197,10 +291,7 @@ function loadInitialState(): AppDatabaseState {
         ...DEFAULT_RELATIONS_PREFS,
         ...(parsed.relationsPrefs || {}),
       },
-      generalPrefs: {
-        ...DEFAULT_GENERAL_PREFS,
-        ...(parsed.generalPrefs || {}),
-      },
+      generalPrefs: mergedGeneralPrefs,
       securityPrefs: {
         ...DEFAULT_SECURITY_PREFS,
         ...(parsed.securityPrefs || {}),
@@ -245,9 +336,21 @@ export function useAgencyStore() {
     ...(state.themePrefs || {}),
   };
 
+  const activeCosmos: WorkspaceCosmosState = mergeWorkspaceCosmos(state.workspaceCosmos);
+  const uiDensity = state.generalPrefs?.uiDensity || 'balanced';
+
   useEffect(() => {
-    applyThemePreferencesToDocument(activeThemePrefs);
+    applyThemePreferencesToDocument(activeThemePrefs, {
+      reduceMotion: activeCosmos.accessibility.reduceMotion,
+      oneHandedMode: activeCosmos.accessibility.oneHandedMode,
+      numeralSystem: activeCosmos.accessibility.numeralSystem,
+      calendarSystem: activeCosmos.accessibility.calendarSystem,
+    });
+    if (typeof document !== 'undefined') {
+      document.documentElement.dataset.uiDensity = uiDensity;
+    }
   }, [
+    uiDensity,
     activeThemePrefs.appTheme,
     activeThemePrefs.tableTheme,
     activeThemePrefs.fontFamily,
@@ -260,10 +363,16 @@ export function useAgencyStore() {
     activeThemePrefs.borderRadiusPx,
     activeThemePrefs.cardShadowLevel,
     activeThemePrefs.glassEffect,
+    activeThemePrefs.glassOpacityPct,
+    activeThemePrefs.themeColorMode,
     activeThemePrefs.customBgColor,
     activeThemePrefs.customSurfaceColor,
     activeThemePrefs.customTextColor,
     activeThemePrefs.customAccentColor,
+    activeCosmos.accessibility.reduceMotion,
+    activeCosmos.accessibility.oneHandedMode,
+    activeCosmos.accessibility.numeralSystem,
+    activeCosmos.accessibility.calendarSystem,
   ]);
 
   const maxUndo = Math.max(
@@ -370,12 +479,226 @@ export function useAgencyStore() {
       darkTheme: false,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
+        // Rule 1: Reset never touches saved profiles or custom saved themes
         savedProfiles:
           prev.themePrefs?.savedProfiles && prev.themePrefs.savedProfiles.length > 0
             ? prev.themePrefs.savedProfiles
             : DEFAULT_APPEARANCE_PROFILES,
+        customSavedThemes: prev.themePrefs?.customSavedThemes || [],
       },
     }));
+  }, []);
+
+  const saveCustomThemePreset = useCallback((preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => {
+    const newPreset: CustomThemePreset = {
+      ...preset,
+      id: `custom_theme_${Date.now().toString(36)}`,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    setState((prev) => {
+      const cur = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      const existing = cur.customSavedThemes || [];
+      return {
+        ...prev,
+        themePrefs: {
+          ...cur,
+          customSavedThemes: [newPreset, ...existing].slice(0, 20),
+          customBgColor: newPreset.bgMain,
+          customSurfaceColor: newPreset.bgSurface,
+          customTextColor: newPreset.textPrimary,
+          customAccentColor: newPreset.accent,
+          borderRadiusPx: newPreset.borderRadiusPx,
+          glassOpacityPct: newPreset.glassOpacityPct,
+          cardShadowLevel: newPreset.cardShadowLevel,
+          themeColorMode: newPreset.isDark ? 'dark' : 'light',
+        },
+      };
+    });
+  }, []);
+
+  const deleteCustomThemePreset = useCallback((presetId: string) => {
+    setState((prev) => {
+      const cur = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      return {
+        ...prev,
+        themePrefs: {
+          ...cur,
+          customSavedThemes: (cur.customSavedThemes || []).filter((c) => c.id !== presetId),
+        },
+      };
+    });
+  }, []);
+
+  const updateWorkspaceCosmos = useCallback(
+    (patch: Partial<WorkspaceCosmosState>) => {
+      setState((prev) => {
+        const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+        return {
+          ...prev,
+          workspaceCosmos: {
+            ...cur,
+            ...patch,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const updateAccessibilityPrefs = useCallback(
+    (patch: Partial<AccessibilityAndExperiencePrefs>) => {
+      setState((prev) => {
+        const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+        return {
+          ...prev,
+          workspaceCosmos: {
+            ...cur,
+            accessibility: {
+              ...cur.accessibility,
+              ...patch,
+            },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const updateFeatureFlags = useCallback((patch: Partial<FeatureFlagsMap>) => {
+    setState((prev) => {
+      const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+      return {
+        ...prev,
+        workspaceCosmos: {
+          ...cur,
+          featureFlags: {
+            ...cur.featureFlags,
+            ...patch,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const togglePinnedCosmosNode = useCallback((nodeId: string) => {
+    setState((prev) => {
+      const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+      const exists = cur.pinnedNodeIds.includes(nodeId);
+      const next = exists
+        ? cur.pinnedNodeIds.filter((id) => id !== nodeId)
+        : [nodeId, ...cur.pinnedNodeIds].slice(0, 12);
+      return {
+        ...prev,
+        workspaceCosmos: {
+          ...cur,
+          pinnedNodeIds: next,
+        },
+      };
+    });
+  }, []);
+
+  const recordRecentCosmosNode = useCallback((nodeId: string) => {
+    if (!nodeId || nodeId === 'cosmos_hub' || nodeId === 'root') return;
+    setState((prev) => {
+      const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+      const next = [nodeId, ...cur.recentNodeIds.filter((id) => id !== nodeId)].slice(0, 10);
+      return {
+        ...prev,
+        workspaceCosmos: {
+          ...cur,
+          recentNodeIds: next,
+        },
+      };
+    });
+  }, []);
+
+  const toggleHiddenCosmosWorld = useCallback((worldId: string) => {
+    setState((prev) => {
+      const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+      const hidden = cur.hiddenWorldIds.includes(worldId);
+      const next = hidden
+        ? cur.hiddenWorldIds.filter((id) => id !== worldId)
+        : [...cur.hiddenWorldIds, worldId];
+      return {
+        ...prev,
+        workspaceCosmos: {
+          ...cur,
+          hiddenWorldIds: next,
+        },
+      };
+    });
+  }, []);
+
+  const dismissCosmosSuggestion = useCallback((suggestionId: string) => {
+    setState((prev) => {
+      const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+      if (cur.dismissedSuggestionIds.includes(suggestionId)) return prev;
+      return {
+        ...prev,
+        workspaceCosmos: {
+          ...cur,
+          dismissedSuggestionIds: [...cur.dismissedSuggestionIds, suggestionId],
+        },
+      };
+    });
+  }, []);
+
+  const appendWorldChangeLog = useCallback(
+    (entry: Omit<WorldChangeLogEntry, 'id' | 'timestamp'>) => {
+      const item: WorldChangeLogEntry = {
+        ...entry,
+        id: `clog_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toISOString(),
+      };
+      setState((prev) => {
+        const cur = mergeWorkspaceCosmos(prev.workspaceCosmos);
+        return {
+          ...prev,
+          workspaceCosmos: {
+            ...cur,
+            changeLog: [item, ...cur.changeLog].slice(0, 80),
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const restorePreMigrationSnapshot = useCallback((): boolean => {
+    let restored = false;
+    setState((prev) => {
+      if (!prev.migrationSnapshot) return prev;
+      restored = true;
+      const snap = prev.migrationSnapshot;
+      return {
+        ...prev,
+        modeTier: snap.modeTier || prev.modeTier,
+        editorEnabled:
+          typeof snap.editorEnabled === 'boolean'
+            ? snap.editorEnabled
+            : prev.editorEnabled,
+        calculationSettings: snap.calculationSettings || prev.calculationSettings,
+        themePrefs: snap.themePrefs || prev.themePrefs,
+        generalPrefs: snap.generalPrefs
+          ? {
+              ...DEFAULT_GENERAL_PREFS,
+              ...snap.generalPrefs,
+              granularControls: {
+                ...DEFAULT_GENERAL_PREFS.granularControls!,
+                ...(snap.generalPrefs.granularControls || {}),
+              },
+            }
+          : prev.generalPrefs,
+        securityPrefs: snap.securityPrefs || prev.securityPrefs,
+      };
+    });
+    return restored;
   }, []);
 
   const saveAppearanceProfile = useCallback((name: string) => {
@@ -493,9 +816,9 @@ export function useAgencyStore() {
 
   const setCalculationSettings = useCallback(
     (calculationSettings: CalculationSettings) => {
-      setState((prev) => ({ ...prev, calculationSettings }));
+      commitDataMutation((prev) => ({ ...prev, calculationSettings }));
     },
-    []
+    [commitDataMutation]
   );
 
   const setTopBarConfig = useCallback((patch: Partial<TopBarConfig>) => {
@@ -686,14 +1009,33 @@ export function useAgencyStore() {
   );
 
   const setGeneralPrefs = useCallback((patch: Partial<GeneralAppPrefs>) => {
-    setState((prev) => ({
-      ...prev,
-      generalPrefs: {
+    setState((prev) => {
+      const cur = {
         ...DEFAULT_GENERAL_PREFS,
         ...(prev.generalPrefs || {}),
-        ...patch,
-      },
-    }));
+      };
+      return {
+        ...prev,
+        generalPrefs: {
+          ...cur,
+          ...patch,
+          granularControls: patch.granularControls
+            ? {
+                ...(DEFAULT_GENERAL_PREFS.granularControls || {}),
+                ...(cur.granularControls || {}),
+                ...patch.granularControls,
+              }
+            : cur.granularControls,
+          agencyAccentColors: patch.agencyAccentColors
+            ? {
+                ...(DEFAULT_GENERAL_PREFS.agencyAccentColors || {}),
+                ...(cur.agencyAccentColors || {}),
+                ...patch.agencyAccentColors,
+              }
+            : cur.agencyAccentColors,
+        },
+      };
+    });
   }, []);
 
   const setSecurityPrefs = useCallback((patch: Partial<SecurityPrefs>) => {
@@ -2224,6 +2566,7 @@ export function useAgencyStore() {
 
   return {
     state,
+    workspaceCosmos: activeCosmos,
     activePeriod,
     monthlyArchives: state.monthlyArchives || [],
     ucrsSessions: state.ucrsSessions || [],
@@ -2244,6 +2587,14 @@ export function useAgencyStore() {
     generalPrefs: {
       ...DEFAULT_GENERAL_PREFS,
       ...(state.generalPrefs || {}),
+      granularControls: {
+        ...DEFAULT_GENERAL_PREFS.granularControls!,
+        ...(state.generalPrefs?.granularControls || {}),
+      },
+      agencyAccentColors: {
+        ...(DEFAULT_GENERAL_PREFS.agencyAccentColors || {}),
+        ...(state.generalPrefs?.agencyAccentColors || {}),
+      },
     },
     securityPrefs: {
       ...DEFAULT_SECURITY_PREFS,
@@ -2259,6 +2610,17 @@ export function useAgencyStore() {
     setDarkTheme,
     setThemePrefs,
     resetThemePrefs,
+    saveCustomThemePreset,
+    deleteCustomThemePreset,
+    updateWorkspaceCosmos,
+    updateAccessibilityPrefs,
+    updateFeatureFlags,
+    togglePinnedCosmosNode,
+    recordRecentCosmosNode,
+    toggleHiddenCosmosWorld,
+    dismissCosmosSuggestion,
+    appendWorldChangeLog,
+    restorePreMigrationSnapshot,
     saveAppearanceProfile,
     applyAppearanceProfile,
     deleteAppearanceProfile,

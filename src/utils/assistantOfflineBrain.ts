@@ -669,6 +669,72 @@ function runSingleOfflineClause(params: {
     };
   }
 
+  // 1.9 Calculator & Fees Natural Commands ("خلّي رسم الفرد 250", "حصة الفرد 9", "وزن الكيس 50", "رسم البطاقة 0")
+  if (
+    /(رسم الفرد|رسوم الفرد|سعر الفرد|اجعل رسم|خلي رسم|غير رسم الفرد|حصه الفرد|حصة الفرد|وزن الكيس|رسم البطاقه|رسم البطاقة|نسبه الخصم|نسبة الخصم|تقريب المبلغ)/.test(
+      norm
+    )
+  ) {
+    const cleanDigits = convertArabicIndicDigits(rawFixed);
+    const decimalMatch = cleanDigits.match(/(\d+(?:\.\d+)?)/);
+    const numVal = decimalMatch ? Number(decimalMatch[1]) : extractFirstNumber(rawFixed);
+
+    if (numVal !== null && Number.isFinite(numVal)) {
+      const calcPatch: Record<string, unknown> = { action: 'update_calc' };
+      if (/(رسم البطاقه|رسم البطاقة)/.test(norm)) {
+        calcPatch.fixedCardFeeIqd = Math.max(0, numVal);
+      } else if (/(حصه الفرد|حصة الفرد)/.test(norm)) {
+        calcPatch.kgPerIndividual = Math.max(0.5, numVal);
+      } else if (/(وزن الكيس)/.test(norm)) {
+        calcPatch.kgPerBag = Math.max(1, numVal);
+      } else if (/(نسبه الخصم|نسبة الخصم)/.test(norm)) {
+        calcPatch.discountPercent = Math.max(0, Math.min(100, numVal));
+      } else if (/(تقريب المبلغ)/.test(norm)) {
+        calcPatch.roundingStepIqd = Math.max(0, numVal);
+      } else {
+        calcPatch.feePerIndividualIqd = Math.max(0, numVal);
+      }
+
+      const tc: AssistantToolCall = {
+        name: 'update_settings',
+        args: calcPatch,
+      };
+      const diff = buildBeforeAfterDiff(state, tc, uiContext.focusedPersonId);
+      if (!diff) {
+        return {
+          handled: true,
+          confidence: 0.95,
+          gracefulLevel: 'A',
+          replyText: `القيمة المطلوبة (${numVal}) مطبّقة بالفعل في إعدادات الحاسبة الحالية.`,
+          memoryPatch: { lastIntent: 'update_settings' },
+        };
+      }
+      return {
+        handled: true,
+        confidence: 0.96,
+        gracefulLevel: 'A',
+        replyText: 'جهّزت تعديل معادلات الحاسبة للمراجعة في بطاقة «قبل ← بعد»:',
+        toolCall: tc,
+        confirmationDiff: diff,
+        memoryPatch: { lastIntent: 'update_settings' },
+      };
+    }
+
+    return {
+      handled: true,
+      confidence: 0.6,
+      needsClarification: true,
+      gracefulLevel: 'B',
+      replyText: `رسم الفرد الحالي هو ${state.calculationSettings.feePerIndividualIqd} د.ع. اختر قيمة جديدة أو اكتب «خلّي رسم الفرد 250»:`,
+      choices: [200, 250, 300, 500].map((v) => ({
+        id: `calc_fee_${v}`,
+        label: `جعل رسم الفرد ${v} د.ع`,
+        actionType: 'send_prompt' as const,
+        payload: { prompt: `خلّي رسم الفرد ${v}` },
+      })),
+    };
+  }
+
   // 2. App Diagnostics & Health Check (with typo tolerance e.g. "افحس", "مكرين")
   if (
     /(افحص|فحص التطبيق|فحص|شيك|دقق صحة|المكررين|مكررين|تكرار|اخطاء السجل)/.test(

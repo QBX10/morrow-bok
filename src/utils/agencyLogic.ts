@@ -9,7 +9,7 @@ import type {
 export const DEFAULT_CALCULATION_SETTINGS: CalculationSettings = {
   kgPerIndividual: 9,
   kgPerBag: 50,
-  feePerIndividualIqd: 200,
+  feePerIndividualIqd: 250,
   fixedCardFeeIqd: 250,
   calculationMode: 'instant',
   includeBlockedInFees: false,

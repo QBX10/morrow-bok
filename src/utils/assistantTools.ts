@@ -219,17 +219,24 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'update_settings',
     description:
-      'تغيير وضع التطبيق أو الثيم أو الوضع الليلي/النهاري أو حفظ تفضيل دائم للمستخدم في الذاكرة.',
+      'تغيير وضع التطبيق أو الثيم أو الوضع الليلي/النهاري أو إعدادات الحاسبة (رسم الفرد، حصة الفرد، وزن الكيس) أو حفظ تفضيل دائم للمستخدم.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         action: {
           type: Type.STRING,
-          description: 'set_mode | set_theme | set_dark_theme | save_pref | delete_pref | toggle_cloud_names',
+          description:
+            'set_mode | set_theme | set_dark_theme | update_calc | save_pref | delete_pref | toggle_cloud_names',
         },
         key: { type: Type.STRING },
         label: { type: Type.STRING },
         value: { type: Type.STRING },
+        feePerIndividualIqd: { type: Type.NUMBER },
+        fixedCardFeeIqd: { type: Type.NUMBER },
+        kgPerIndividual: { type: Type.NUMBER },
+        kgPerBag: { type: Type.NUMBER },
+        roundingStepIqd: { type: Type.NUMBER },
+        discountPercent: { type: Type.NUMBER },
       },
       required: ['action'],
     },
@@ -573,6 +580,99 @@ export function buildBeforeAfterDiff(
           afterValue: 'تنظيف الفراغات + مزامنة حالات الحظر + ضبط القيم الشاذة',
         },
       ],
+    };
+  }
+
+  if (toolCall.name === 'update_settings' && toolCall.args.action === 'update_calc') {
+    const cur = state.calculationSettings;
+    const changes: AssistantBeforeAfterDiff['changes'] = [];
+
+    if (
+      toolCall.args.feePerIndividualIqd !== undefined &&
+      Number(toolCall.args.feePerIndividualIqd) !== cur.feePerIndividualIqd
+    ) {
+      const nextFee = Math.max(0, Number(toolCall.args.feePerIndividualIqd));
+      changes.push({
+        fieldLabel: 'رسم الفرد التلقائي',
+        beforeValue: formatIqd(cur.feePerIndividualIqd),
+        afterValue: formatIqd(nextFee),
+      });
+      changes.push({
+        fieldLabel: 'أثر المعادلة (عائلة 5 أفراد)',
+        beforeValue: formatIqd(5 * cur.feePerIndividualIqd + cur.fixedCardFeeIqd),
+        afterValue: formatIqd(5 * nextFee + cur.fixedCardFeeIqd),
+      });
+    }
+
+    if (
+      toolCall.args.fixedCardFeeIqd !== undefined &&
+      Number(toolCall.args.fixedCardFeeIqd) !== cur.fixedCardFeeIqd
+    ) {
+      const nextCardFee = Math.max(0, Number(toolCall.args.fixedCardFeeIqd));
+      changes.push({
+        fieldLabel: 'رسم البطاقة الثابت',
+        beforeValue: formatIqd(cur.fixedCardFeeIqd),
+        afterValue: formatIqd(nextCardFee),
+      });
+    }
+
+    if (
+      toolCall.args.kgPerIndividual !== undefined &&
+      Number(toolCall.args.kgPerIndividual) !== cur.kgPerIndividual
+    ) {
+      const nextKg = Math.max(0.5, Number(toolCall.args.kgPerIndividual));
+      changes.push({
+        fieldLabel: 'حصة الفرد (كغم)',
+        beforeValue: `${cur.kgPerIndividual} كغم`,
+        afterValue: `${nextKg} كغم`,
+      });
+    }
+
+    if (
+      toolCall.args.kgPerBag !== undefined &&
+      Number(toolCall.args.kgPerBag) !== cur.kgPerBag
+    ) {
+      const nextBag = Math.max(1, Number(toolCall.args.kgPerBag));
+      changes.push({
+        fieldLabel: 'وزن الكيس القياسي (كغم)',
+        beforeValue: `${cur.kgPerBag} كغم`,
+        afterValue: `${nextBag} كغم`,
+      });
+    }
+
+    if (
+      toolCall.args.roundingStepIqd !== undefined &&
+      Number(toolCall.args.roundingStepIqd) !== (cur.roundingStepIqd ?? 0)
+    ) {
+      const nextRound = Math.max(0, Number(toolCall.args.roundingStepIqd));
+      changes.push({
+        fieldLabel: 'خطوة تقريب المبلغ',
+        beforeValue: `${cur.roundingStepIqd ?? 0} د.ع`,
+        afterValue: `${nextRound} د.ع`,
+      });
+    }
+
+    if (
+      toolCall.args.discountPercent !== undefined &&
+      Number(toolCall.args.discountPercent) !== (cur.discountPercent ?? 0)
+    ) {
+      const nextDisc = Math.max(0, Math.min(100, Number(toolCall.args.discountPercent)));
+      changes.push({
+        fieldLabel: 'نسبة الخصم %',
+        beforeValue: `${cur.discountPercent ?? 0}%`,
+        afterValue: `${nextDisc}%`,
+      });
+    }
+
+    if (changes.length === 0) return null;
+    return {
+      id,
+      title: 'تأكيد تعديل إعدادات الحاسبة والرسوم',
+      summary:
+        'راجع مقارنة القيم قبل وبعد التعديل، وعند الموافقة ستنطبق على الحسابات مباشرة مع إمكانية التراجع.',
+      toolCall,
+      status: 'pending',
+      changes,
     };
   }
 

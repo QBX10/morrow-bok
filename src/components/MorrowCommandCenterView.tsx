@@ -1,19 +1,28 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   BookmarkCheck,
   Bot,
+  Calendar,
+  Camera,
   Check,
   CheckCircle2,
   ClipboardCheck,
+  Copy,
   Cpu,
+  Download,
+  FolderKanban,
   History,
   Link2,
   MessageSquare,
   Mic,
   MicOff,
   Navigation,
+  Pin,
   Plus,
+  RefreshCw,
   RotateCcw,
+  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -26,7 +35,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { Agency, Person } from '../types/agency.ts';
+import type { Agency, AppView, Person, SettingsSectionId } from '../types/agency.ts';
 import type {
   AssistantApprovalDraft,
   AssistantBrainMode,
@@ -39,8 +48,11 @@ import type {
   AssistantUserPref,
   MorrowCenterTab,
 } from '../types/assistant.ts';
+import { normalizeArabic } from '../utils/agencyLogic.ts';
 import { getEngineDisplayMeta } from '../utils/morrowRouter.ts';
 import { autoLinkQuickNoteToPerson } from '../utils/quickNotesMatcher.ts';
+import { BottomSheet } from './cosmos/BottomSheet';
+import { ResultCard } from './cosmos/ResultCard';
 
 interface MorrowCommandCenterViewProps {
   activeTab: MorrowCenterTab;
@@ -85,38 +97,59 @@ interface MorrowCommandCenterViewProps {
   onSyncQuickNoteToPerson: (noteId: string) => void;
   onDeleteQuickNote: (noteId: string) => void;
   onJumpToPerson: (person: Person) => void;
+  // New Cosmos enhancements (optional for full backward compatibility)
+  activeAgencyId?: number | null;
+  onSelectActiveAgency?: (agencyId: number) => void;
+  activePeriodLabel?: string;
+  onNavigateView?: (view: AppView, section?: SettingsSectionId) => void;
+  onTogglePinMessage?: (msgId: string) => void;
+  onExportChatHistory?: () => void;
 }
 
 const BRAIN_BUTTONS: Array<{
   id: AssistantBrainMode;
   label: string;
+  shortLabel: string;
   desc: string;
   icon: React.ReactNode;
 }> = [
   {
     id: 'auto',
     label: 'تلقائي (تصعيد ذكي)',
-    desc: 'يبدأ بـ Morrow المحلي ثم 2.5 Flash ثم 2.5 Pro',
-    icon: <Bot className="h-3.5 w-3.5" />,
+    shortLabel: 'تلقائي ذكي',
+    desc: 'يبدأ بـ Morrow المحلي ثم 2.5 Flash ثم 2.5 Pro عند الحاجة.',
+    icon: <Bot className="h-4 w-4" />,
   },
   {
     id: 'local',
     label: 'Morrow المحلي',
-    desc: 'استجابة فورية بدون إنترنت للبحث والحسابات',
-    icon: <Cpu className="h-3.5 w-3.5" />,
+    shortLabel: 'محلي 100%',
+    desc: 'استجابة فورية بدون إنترنت للبحث والحسابات والتشخيص.',
+    icon: <Cpu className="h-4 w-4" />,
   },
   {
     id: 'gemini_2_5_flash',
     label: 'Gemini 2.5 Flash',
-    desc: 'المهام اللغوية السريعة والصياغة اليومية',
-    icon: <Zap className="h-3.5 w-3.5" />,
+    shortLabel: '2.5 Flash',
+    desc: 'المهام اللغوية السريعة والصياغة اليومية.',
+    icon: <Zap className="h-4 w-4" />,
   },
   {
     id: 'gemini_2_5_pro',
     label: 'Gemini 2.5 Pro',
-    desc: 'التحليل الاستراتيجي والتقارير العميقة',
-    icon: <Sparkles className="h-3.5 w-3.5" />,
+    shortLabel: '2.5 Pro',
+    desc: 'التحليل الاستراتيجي والتقارير العميقة.',
+    icon: <Sparkles className="h-4 w-4" />,
   },
+];
+
+const COMMAND_LIBRARY_ITEMS = [
+  { id: 'cmd_fee_250', label: 'خلّي رسم الفرد 250', desc: 'تحديث رسم الفرد التلقائي مع مقارنة قبل ← بعد' },
+  { id: 'cmd_stats', label: 'احصائيات جميع الوكالات', desc: 'الأفراد والأكياس وصافي الأرباح بصرياً' },
+  { id: 'cmd_diag', label: 'افحص التطبيق', desc: 'تحليل شامل للأخطاء والمكررين والنسخ الاحتياطي' },
+  { id: 'cmd_dups', label: 'المكررين', desc: 'كشف السجلات المتطابقة أو المتشابهة' },
+  { id: 'cmd_blocked', label: 'اعرض المحجوبين', desc: 'فلترة صامتة للجدول على المحجوبين فقط' },
+  { id: 'cmd_excel', label: 'صدر تقرير اكسل', desc: 'تصدير معزول للقراءة فقط بصيغة RTL' },
 ];
 
 const MEMORY_PRESETS: Array<{ key: string; label: string; desc: string }> = [
@@ -187,8 +220,22 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   onSyncQuickNoteToPerson,
   onDeleteQuickNote,
   onJumpToPerson,
+  activeAgencyId,
+  onSelectActiveAgency,
+  activePeriodLabel,
+  onNavigateView,
+  onTogglePinMessage,
+  onExportChatHistory,
 }) => {
   const [chatInput, setChatInput] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [brainSheetOpen, setBrainSheetOpen] = useState(false);
+  const [librarySheetOpen, setLibrarySheetOpen] = useState(false);
+  const [contextSheetOpen, setContextSheetOpen] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+
   const [customMemoryInput, setCustomMemoryInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [noteSource, setNoteSource] = useState<'text' | 'voice'>('text');
@@ -197,10 +244,38 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     undefined
   );
   const [isRecording, setIsRecording] = useState(false);
+  const [isChatRecording, setIsChatRecording] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const chatTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = chatTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [chatInput]);
+
+  const activeBrain = useMemo(
+    () => BRAIN_BUTTONS.find((b) => b.id === brainMode) || BRAIN_BUTTONS[0],
+    [brainMode]
+  );
+
+  const activeAgency = useMemo(
+    () => agencies.find((a) => a.id === activeAgencyId) || agencies[0],
+    [agencies, activeAgencyId]
+  );
+
+  const filteredMessages = useMemo(() => {
+    const q = normalizeArabic(historySearch.trim());
+    return messages.filter((m) => {
+      if (showPinnedOnly && !m.isPinned) return false;
+      if (!q) return true;
+      return normalizeArabic(m.text).includes(q);
+    });
+  }, [messages, historySearch, showPinnedOnly]);
 
   const pendingDrafts = useMemo(
     () => approvalDrafts.filter((d) => d.status === 'pending'),
@@ -234,11 +309,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
 
-  const toggleVoiceDictation = () => {
+  const toggleVoiceDictation = (target: 'note' | 'chat') => {
     setVoiceError(null);
-    if (isRecording && recognitionRef.current) {
+    if ((isRecording || isChatRecording) && recognitionRef.current) {
       recognitionRef.current.stop();
       setIsRecording(false);
+      setIsChatRecording(false);
       return;
     }
 
@@ -248,7 +324,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     };
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) {
-      setVoiceError('الإملاء الصوتي غير مدعوم في هذا المتصفح، يمكنك كتابة الملاحظة مباشرة.');
+      setVoiceError('الإملاء الصوتي غير مدعوم في هذا المتصفح، يمكنك الكتابة نصياً.');
       return;
     }
 
@@ -264,22 +340,30 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         }
         const combined = transcriptParts.join(' ').trim();
         if (combined) {
-          setNoteInput(combined);
-          setNoteSource('voice');
+          if (target === 'chat') {
+            setChatInput(combined);
+          } else {
+            setNoteInput(combined);
+            setNoteSource('voice');
+          }
         }
       };
       rec.onerror = () => {
         setIsRecording(false);
-        setVoiceError('تعذر التقاط الصوت. تأكد من صلاحية الميكروفون أو اكتب الملاحظة نصياً.');
+        setIsChatRecording(false);
+        setVoiceError('تعذر التقاط الصوت. تأكد من صلاحية الميكروفون أو اكتب نصياً.');
       };
       rec.onend = () => {
         setIsRecording(false);
+        setIsChatRecording(false);
       };
       recognitionRef.current = rec;
-      setIsRecording(true);
+      if (target === 'chat') setIsChatRecording(true);
+      else setIsRecording(true);
       rec.start();
     } catch {
       setIsRecording(false);
+      setIsChatRecording(false);
       setVoiceError('تعذر بدء التسجيل الصوتي.');
     }
   };
@@ -297,6 +381,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     setNoteInput('');
     setNoteSource('text');
     setManualOverridePersonId(undefined);
+  };
+
+  const handleCopyMessage = (msgId: string, text: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(text).catch(() => {});
+      setCopiedMsgId(msgId);
+      window.setTimeout(() => setCopiedMsgId(null), 1800);
+    }
   };
 
   const tabs: Array<{
@@ -330,63 +422,97 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     },
   ];
 
+  const submitChatPrompt = () => {
+    if (!chatInput.trim() || isThinking) return;
+    onSendMessage(chatInput.trim());
+    setChatInput('');
+  };
+
   return (
     <main
       data-testid="morrow-command-center"
-      className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20"
+      className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-3.5 pb-28 sm:p-6 sm:pb-24"
     >
-      {/* Header & Single-Level Segmented Tab Bar */}
-      <header
-        className="rounded-2xl border p-4 sm:p-5 space-y-4"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Slim Glass Header + Editable Context Chips */}
+      <header className="cosmos-glass-panel border p-4 sm:p-5 space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--border-color)',
+                borderColor: 'color-mix(in srgb, var(--accent) 30%, var(--border-color))',
                 color: 'var(--accent)',
               }}
             >
               <Bot className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h1 className="text-lg font-extrabold sm:text-xl">مركز Morrow</h1>
-              <div
-                className="mt-0.5 flex flex-wrap items-center gap-2 text-xs"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <span>الدماغ الثلاثي الحصري: Morrow المحلي · Gemini 2.5 Flash · Gemini 2.5 Pro</span>
-                <span aria-hidden="true">/</span>
-                <span className="inline-flex items-center gap-1 font-semibold">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-extrabold sm:text-xl">مركز Morrow الذكي</h1>
+                <span
+                  className="inline-flex items-center gap-1 rounded-xl border px-2 py-0.5 text-[11px] font-bold"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: connectivity === 'online' ? 'var(--success)' : 'var(--warning)',
+                  }}
+                >
                   {connectivity === 'online' ? (
-                    <Wifi className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
+                    <Wifi className="h-3 w-3" />
                   ) : (
-                    <WifiOff className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
+                    <WifiOff className="h-3 w-3" />
                   )}
                   <span>
                     {connectivity === 'online'
-                      ? 'متصل بالسحابة'
+                      ? 'متصل'
                       : connectivity === 'quota_exhausted'
-                      ? 'الحصة مؤقتة — يعمل محلياً'
-                      : 'وضع محلي (Offline)'}
+                      ? 'حصة مؤقتة'
+                      : 'محلي'}
                   </span>
                 </span>
               </div>
+              <p className="mt-0.5 text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                {activeBrain.label} — مسودات الموافقة وسجل العمليات والملاحظات الصوتية
+              </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Editable Context Chips */}
+            <button
+              type="button"
+              onClick={() => setContextSheetOpen(true)}
+              className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold hover:border-[var(--accent)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <FolderKanban className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <span>{activeAgency?.name || 'الوكالة'}</span>
+            </button>
+
+            {activePeriodLabel && (
+              <button
+                type="button"
+                onClick={() => onNavigateView?.('data_archives')}
+                className="cosmos-touch-target hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Calendar className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>{activePeriodLabel}</span>
+              </button>
+            )}
+
             {hasUndoableAction && (
               <button
                 type="button"
                 onClick={() => onUndoLastAction()}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold whitespace-nowrap shrink-0"
+                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--warning)',
@@ -394,16 +520,16 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 }}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                <span>تراجع عن آخر تعديل</span>
+                <span>تراجع</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* 4 Workspace Tabs */}
+        {/* 4 Segmented Workspace Tabs */}
         <nav
           aria-label="تبويبات مركز Morrow"
-          className="flex flex-wrap items-center gap-1.5 rounded-xl border p-1.5"
+          className="flex flex-wrap items-center gap-1.5 rounded-2xl border p-1.5"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -417,7 +543,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 type="button"
                 data-testid={`morrow-tab-${tab.id}`}
                 onClick={() => onChangeTab(tab.id)}
-                className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold whitespace-nowrap shrink-0 transition-colors"
+                className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold whitespace-nowrap shrink-0 transition-all"
                 style={{
                   backgroundColor: isActive ? 'var(--bg-surface)' : 'transparent',
                   color: isActive ? 'var(--accent)' : 'var(--text-muted)',
@@ -442,282 +568,367 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         </nav>
       </header>
 
+      {/* Thin Dismissible Alert Strip for Pending Drafts */}
+      {!bannerDismissed && pendingDrafts.length > 0 && activeTab !== 'approvals' && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-2 text-xs"
+          style={{
+            backgroundColor: 'var(--warning-bg)',
+            borderColor: 'var(--warning)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => onChangeTab('approvals')}
+            className="flex items-center gap-2 font-bold text-right hover:underline"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: 'var(--warning)' }} />
+            <span>لديك {pendingDrafts.length} مسودة تعديل تنتظر موافقتك — اضغط للمراجعة</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBannerDismissed(true)}
+            aria-label="إخفاء التنبيه"
+            className="rounded-lg p-1 hover:opacity-75"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* TAB 1: المحادثة (Chat) */}
       {activeTab === 'chat' && (
         <section
           aria-label="محادثة Morrow الذكية"
-          className="rounded-2xl border overflow-hidden flex flex-col"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-            minHeight: '62vh',
-          }}
+          className="cosmos-glass-panel border overflow-hidden flex flex-col"
+          style={{ minHeight: '62vh' }}
         >
-          {/* 3-Brain Switcher Strip */}
+          {/* Searchable History & Quick Export Bar */}
           <div
-            className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+            className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
             }}
           >
-            <div className="flex flex-wrap items-center gap-1.5">
-              {BRAIN_BUTTONS.map((btn) => {
-                const active = brainMode === btn.id;
-                return (
-                  <button
-                    key={btn.id}
-                    type="button"
-                    title={btn.desc}
-                    onClick={() => onChangeBrainMode(btn.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap shrink-0 transition-colors"
-                    style={{
-                      backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
-                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                      color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
-                    }}
-                  >
-                    {btn.icon}
-                    <span>{btn.label}</span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-1 items-center gap-2 min-w-[200px]">
+              <Search className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} />
+              <input
+                type="search"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="بحث في سجل المحادثات..."
+                className="w-full bg-transparent text-xs outline-none"
+              />
             </div>
-            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {BRAIN_BUTTONS.find((b) => b.id === brainMode)?.desc}
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowPinnedOnly((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold"
+                style={{
+                  backgroundColor: showPinnedOnly ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                  borderColor: showPinnedOnly ? 'var(--accent)' : 'var(--border-color)',
+                  color: showPinnedOnly ? 'var(--accent)' : 'var(--text-muted)',
+                }}
+              >
+                <Pin className="h-3 w-3" />
+                <span>المثبتة</span>
+              </button>
+
+              {onExportChatHistory && (
+                <button
+                  type="button"
+                  onClick={onExportChatHistory}
+                  className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <Download className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                  <span>تصدير السجل</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Messages Stream */}
-          <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-5 text-sm">
-            {messages.map((msg) => {
-              const isUser = msg.role === 'user';
-              const meta = getEngineDisplayMeta(msg.engineUsed);
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col gap-1.5 ${
-                    isUser ? 'items-start' : 'items-stretch'
-                  }`}
-                >
+          <div className="flex-1 space-y-3.5 overflow-y-auto p-4 sm:p-5 text-sm">
+            {filteredMessages.length === 0 ? (
+              <div className="py-10 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                لا توجد رسائل مطابقة للفلتر الحالي.
+              </div>
+            ) : (
+              filteredMessages.map((msg) => {
+                const isUser = msg.role === 'user';
+                const meta = getEngineDisplayMeta(msg.engineUsed);
+                return (
                   <div
-                    className="rounded-xl border px-4 py-3 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line"
-                    style={{
-                      backgroundColor: isUser
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                      borderColor: isUser ? 'var(--accent)' : 'var(--border-color)',
-                      maxWidth: isUser ? '82%' : '100%',
-                    }}
+                    key={msg.id}
+                    className={`flex flex-col gap-1.5 ${isUser ? 'items-start' : 'items-stretch'}`}
                   >
-                    {!isUser && (
-                      <div
-                        className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px]"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        <span
-                          className="inline-flex items-center gap-1.5 font-bold"
-                          style={{ color: 'var(--accent)' }}
+                    <div
+                      className="rounded-[20px] border px-4 py-3 text-xs sm:text-[13px] leading-relaxed whitespace-pre-line shadow-sm"
+                      style={{
+                        backgroundColor: isUser ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                        borderColor: isUser ? 'var(--accent)' : 'var(--border-color)',
+                        maxWidth: isUser ? '84%' : '100%',
+                      }}
+                    >
+                      {!isUser && (
+                        <div
+                          className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
                         >
-                          <EngineAttributionIcon engine={msg.engineUsed} />
-                          <span>{msg.engineLabel || meta.badgeLabel}</span>
-                        </span>
-                        <span className="tabular-nums">
-                          {msg.modelId || meta.modelId}
-                          {typeof msg.confidence === 'number'
-                            ? ` · ثقة ${Math.round(msg.confidence * 100)}%`
-                            : ''}
-                          {msg.fromCache ? ' · ذاكرة سريعة' : ''}
-                        </span>
-                      </div>
-                    )}
-
-                    <div>{msg.text}</div>
-
-                    {msg.sandboxNotice && (
-                      <div
-                        className="mt-2 border-t pt-2 text-[11px] font-semibold"
-                        style={{
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--success)',
-                        }}
-                      >
-                        {msg.sandboxNotice}
-                      </div>
-                    )}
-
-                    {msg.spotlightAction && (
-                      <div className="mt-2.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onTriggerSpotlight({
-                              view: msg.spotlightAction!.view,
-                              settingsSection: msg.spotlightAction!.settingsSection,
-                              targetId: msg.spotlightAction!.targetId,
-                              title: msg.spotlightAction!.label,
-                              description: 'انتقال ذكي إلى العنصر المحدد',
-                            })
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap"
-                          style={{
-                            backgroundColor: 'var(--accent)',
-                            color: 'var(--accent-fg)',
-                          }}
-                        >
-                          <Navigation className="h-3.5 w-3.5" />
-                          <span>{msg.spotlightAction.label}</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {msg.choices && msg.choices.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                        {msg.choices.map((ch) => (
-                          <button
-                            key={ch.id}
-                            type="button"
-                            onClick={() => onChoiceClick(ch)}
-                            className="rounded-lg border px-3 py-1.5 text-right text-xs font-bold whitespace-nowrap transition-colors hover:opacity-90"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              borderColor:
-                                ch.tone === 'warning'
-                                  ? 'var(--warning)'
-                                  : 'var(--accent)',
-                              color: 'var(--text-primary)',
-                            }}
+                          <span
+                            className="inline-flex items-center gap-1.5 font-bold"
+                            style={{ color: 'var(--accent)' }}
                           >
-                            {ch.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {msg.diagnosticsReport && (
-                      <div
-                        className="mt-3 space-y-2 border-t pt-3 text-xs"
-                        style={{ borderColor: 'var(--border-color)' }}
-                      >
-                        <div className="flex items-center justify-between font-bold">
-                          <span>تقرير الفحص والتدقيق</span>
-                          <span className="tabular-nums">
-                            {msg.diagnosticsReport.healthScore}% · {msg.diagnosticsReport.totalIssues} ملاحظة
+                            <EngineAttributionIcon engine={msg.engineUsed} />
+                            <span>{msg.engineLabel || meta.badgeLabel}</span>
                           </span>
-                        </div>
-                        {msg.diagnosticsReport.issues.slice(0, 6).map((issue) => (
-                          <div
-                            key={issue.id}
-                            className="rounded-lg border px-3 py-2"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              borderColor:
-                                issue.severity === 'high'
-                                  ? 'var(--danger)'
-                                  : 'var(--border-color)',
-                            }}
-                          >
-                            <div className="font-bold">{issue.title}</div>
-                            <div style={{ color: 'var(--text-muted)' }}>
-                              {issue.detail}
-                            </div>
-                          </div>
-                        ))}
-                        {msg.diagnosticsReport.autoFixableCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold"
-                            style={{
-                              backgroundColor: 'var(--accent)',
-                              color: 'var(--accent-fg)',
-                            }}
-                          >
-                            <Wrench className="h-3.5 w-3.5" />
-                            <span>
-                              تجهيز مسودة إصلاح ({msg.diagnosticsReport.autoFixableCount})
-                            </span>
-                          </button>
-                        )}
-                      </div>
-                    )}
 
-                    {msg.confirmationDiff && (
-                      <div
-                        className="mt-3 space-y-2 border-t pt-3 text-xs"
-                        style={{ borderColor: 'var(--border-color)' }}
-                      >
-                        <div className="font-bold" style={{ color: 'var(--accent)' }}>
-                          {msg.confirmationDiff.title}
-                        </div>
-                        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                          {msg.confirmationDiff.changes.map((c, idx) => (
-                            <div
-                              key={idx}
-                              className="rounded-lg border px-3 py-2"
+                          <div className="flex items-center gap-1.5">
+                            <span className="tabular-nums text-[10px]">
+                              {msg.modelId || meta.modelId}
+                              {typeof msg.confidence === 'number'
+                                ? ` · ثقة ${Math.round(msg.confidence * 100)}%`
+                                : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyMessage(msg.id, msg.text)}
+                              title="نسخ الرد"
+                              className="rounded-lg p-1 hover:opacity-75"
+                            >
+                              {copiedMsgId === msg.id ? (
+                                <Check className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            {onTogglePinMessage && (
+                              <button
+                                type="button"
+                                onClick={() => onTogglePinMessage(msg.id)}
+                                title={msg.isPinned ? 'إلغاء التثبيت' : 'تثبيت الرسالة'}
+                                className="rounded-lg p-1 hover:opacity-75"
+                                style={{
+                                  color: msg.isPinned ? 'var(--accent)' : 'var(--text-muted)',
+                                }}
+                              >
+                                <Pin className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSendMessage(`أعد صياغة هذه النتيجة بأسلوب مختصر ورسمي:\n${msg.text.slice(0, 180)}`)
+                              }
+                              title="أعد الصياغة"
+                              className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold hover:border-[var(--accent)]"
                               style={{
                                 backgroundColor: 'var(--bg-surface)',
                                 borderColor: 'var(--border-color)',
                               }}
                             >
-                              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                {c.fieldLabel}
-                              </div>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-bold">
-                                <span className="line-through opacity-75">
-                                  {c.beforeValue}
-                                </span>
-                                <span style={{ color: 'var(--accent)' }}>←</span>
-                                <span style={{ color: 'var(--success)' }}>
-                                  {c.afterValue}
-                                </span>
-                              </div>
-                            </div>
+                              <RefreshCw className="h-3 w-3" />
+                              <span>أعد الصياغة</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>{msg.text}</div>
+
+                      {msg.resultCard && (
+                        <div className="mt-3">
+                          <ResultCard
+                            title={msg.resultCard.title}
+                            summary={msg.resultCard.summary}
+                            scorePercent={msg.resultCard.scorePercent}
+                            scoreLabel={msg.resultCard.scoreLabel}
+                            tone={msg.resultCard.tone}
+                            bars={msg.resultCard.bars}
+                            details={msg.resultCard.details}
+                          />
+                        </div>
+                      )}
+
+                      {msg.sandboxNotice && (
+                        <div
+                          className="mt-2 border-t pt-2 text-[11px] font-semibold"
+                          style={{
+                            borderColor: 'var(--border-color)',
+                            color: 'var(--success)',
+                          }}
+                        >
+                          {msg.sandboxNotice}
+                        </div>
+                      )}
+
+                      {msg.spotlightAction && (
+                        <div className="mt-2.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onTriggerSpotlight({
+                                view: msg.spotlightAction!.view,
+                                settingsSection: msg.spotlightAction!.settingsSection,
+                                targetId: msg.spotlightAction!.targetId,
+                                title: msg.spotlightAction!.label,
+                                description: 'انتقال ذكي إلى العنصر المحدد',
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+                            style={{
+                              backgroundColor: 'var(--accent)',
+                              color: 'var(--accent-fg)',
+                            }}
+                          >
+                            <Navigation className="h-3.5 w-3.5" />
+                            <span>{msg.spotlightAction.label}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {msg.choices && msg.choices.length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                          {msg.choices.map((ch) => (
+                            <button
+                              key={ch.id}
+                              type="button"
+                              onClick={() => onChoiceClick(ch)}
+                              className="rounded-xl border px-3 py-1.5 text-right text-xs font-bold whitespace-nowrap transition-colors hover:opacity-90"
+                              style={{
+                                backgroundColor: 'var(--bg-surface)',
+                                borderColor:
+                                  ch.tone === 'warning' ? 'var(--warning)' : 'var(--accent)',
+                                color: 'var(--text-primary)',
+                              }}
+                            >
+                              {ch.label}
+                            </button>
                           ))}
                         </div>
-                        {msg.confirmationDiff.status === 'pending' ? (
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => onResolveDiff(msg.id, true)}
-                              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+                      )}
+
+                      {msg.diagnosticsReport && msg.diagnosticsReport.issues.length > 0 && (
+                        <div
+                          className="mt-3 space-y-2 border-t pt-3 text-xs"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          {msg.diagnosticsReport.issues.slice(0, 6).map((issue) => (
+                            <div
+                              key={issue.id}
+                              className="rounded-xl border px-3 py-2"
                               style={{
-                                backgroundColor: 'var(--success)',
-                                color: 'var(--success-fg)',
+                                backgroundColor: 'var(--bg-surface)',
+                                borderColor:
+                                  issue.severity === 'high'
+                                    ? 'var(--danger)'
+                                    : 'var(--border-color)',
                               }}
                             >
-                              <Check className="h-3.5 w-3.5" />
-                              <span>موافقة وتنفيذ</span>
-                            </button>
+                              <div className="font-bold">{issue.title}</div>
+                              <div style={{ color: 'var(--text-muted)' }}>{issue.detail}</div>
+                            </div>
+                          ))}
+                          {msg.diagnosticsReport.autoFixableCount > 0 && (
                             <button
                               type="button"
-                              onClick={() => onResolveDiff(msg.id, false)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold whitespace-nowrap"
+                              onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
+                              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold"
                               style={{
-                                borderColor: 'var(--danger)',
-                                color: 'var(--danger)',
+                                backgroundColor: 'var(--accent)',
+                                color: 'var(--accent-fg)',
                               }}
                             >
-                              <X className="h-3.5 w-3.5" />
-                              <span>إلغاء</span>
+                              <Wrench className="h-3.5 w-3.5" />
+                              <span>
+                                تجهيز مسودة إصلاح ({msg.diagnosticsReport.autoFixableCount})
+                              </span>
                             </button>
+                          )}
+                        </div>
+                      )}
+
+                      {msg.confirmationDiff && (
+                        <div
+                          className="mt-3 space-y-2 border-t pt-3 text-xs"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
+                            {msg.confirmationDiff.title}
                           </div>
-                        ) : (
-                          <div className="text-xs font-bold" style={{ color: 'var(--success)' }}>
-                            {msg.confirmationDiff.status === 'approved'
-                              ? 'تمت الموافقة والتنفيذ'
-                              : 'ملغى'}
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {msg.confirmationDiff.changes.map((c, idx) => (
+                              <div
+                                key={idx}
+                                className="rounded-xl border px-3 py-2"
+                                style={{
+                                  backgroundColor: 'var(--bg-surface)',
+                                  borderColor: 'var(--border-color)',
+                                }}
+                              >
+                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  {c.fieldLabel}
+                                </div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-bold">
+                                  <span className="line-through opacity-75">{c.beforeValue}</span>
+                                  <span style={{ color: 'var(--accent)' }}>←</span>
+                                  <span style={{ color: 'var(--success)' }}>{c.afterValue}</span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        )}
-                      </div>
-                    )}
+                          {msg.confirmationDiff.status === 'pending' ? (
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => onResolveDiff(msg.id, true)}
+                                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap"
+                                style={{
+                                  backgroundColor: 'var(--success)',
+                                  color: 'var(--success-fg)',
+                                }}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                <span>موافقة وتنفيذ</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onResolveDiff(msg.id, false)}
+                                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold whitespace-nowrap"
+                                style={{
+                                  borderColor: 'var(--danger)',
+                                  color: 'var(--danger)',
+                                }}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                <span>إلغاء</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-xs font-bold" style={{ color: 'var(--success)' }}>
+                              {msg.confirmationDiff.status === 'approved'
+                                ? 'تمت الموافقة والتنفيذ'
+                                : 'ملغى'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
+
             {isThinking && (
               <div
-                className="rounded-xl border px-4 py-3 text-xs font-semibold"
+                className="rounded-2xl border px-4 py-3 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -730,67 +941,137 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             <div ref={chatScrollRef} />
           </div>
 
-          {/* Contextual Suggestions + Composer */}
-          {smartSuggestions.length > 0 && (
-            <div
-              className="flex items-center gap-2 overflow-x-auto border-t px-4 py-2"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              {smartSuggestions.map((sug) => (
-                <button
-                  key={sug.id}
-                  type="button"
-                  onClick={() => onSendMessage(sug.prompt)}
-                  className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  {sug.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!chatInput.trim()) return;
-              onSendMessage(chatInput.trim());
-              setChatInput('');
+          {/* Single Horizontal Quick Commands Strip + '+' Command Library */}
+          <div
+            className="flex items-center gap-2 overflow-x-auto border-t px-4 py-2"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
             }}
-            className="flex items-center gap-2.5 border-t p-3.5"
+          >
+            <button
+              type="button"
+              onClick={() => setLibrarySheetOpen(true)}
+              title="مكتبة الأوامر السريعة"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border font-extrabold"
+              style={{
+                backgroundColor: 'var(--bg-nav-active)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            {smartSuggestions.map((sug) => (
+              <button
+                key={sug.id}
+                type="button"
+                onClick={() => onSendMessage(sug.prompt)}
+                className="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                {sug.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Composer with Brain Picker Pill + Iraqi Voice + Quick Extract Shortcut */}
+          <div
+            className="border-t p-3.5 space-y-2"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
             }}
           >
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="اكتب أمرك أو سؤالك التحليلي (مثال: الرقم غريب، اعرض المحجوبين، حلل أداء الوكالات)..."
-              className="min-w-0 flex-1 rounded-xl border px-3.5 py-2.5 text-xs sm:text-sm"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setBrainSheetOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1 font-bold hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                {activeBrain.icon}
+                <span>الدماغ: {activeBrain.shortLabel}</span>
+              </button>
+
+              {onNavigateView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateView('quick_extract')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1 font-bold hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <Camera className="h-3.5 w-3.5" style={{ color: '#0ea5e9' }} />
+                  <span>فتح السحب الذكي (كاميرا / PDF)</span>
+                </button>
+              )}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitChatPrompt();
               }}
-            />
-            <button
-              type="submit"
-              disabled={!chatInput.trim() || isThinking}
-              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0 disabled:opacity-45"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
+              className="flex items-end gap-2"
             >
-              <Send className="h-4 w-4" />
-              <span>إرسال</span>
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={() => toggleVoiceDictation('chat')}
+                title="إملاء صوتي باللهجة العراقية"
+                aria-label="إملاء صوتي"
+                className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl border px-3"
+                style={{
+                  backgroundColor: isChatRecording ? 'var(--danger)' : 'var(--bg-surface)',
+                  borderColor: isChatRecording ? 'var(--danger)' : 'var(--border-color)',
+                  color: isChatRecording ? '#fff' : 'var(--text-primary)',
+                }}
+              >
+                {isChatRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+
+              <textarea
+                ref={chatTextareaRef}
+                rows={1}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submitChatPrompt();
+                  }
+                }}
+                placeholder="اكتب أمرك باللهجة العراقية (مثال: خلّي رسم الفرد 250، الرقم غريب، اعرض المحجوبين)..."
+                className="min-w-0 flex-1 resize-none rounded-xl border px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+
+              <button
+                type="submit"
+                disabled={!chatInput.trim() || isThinking}
+                className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold whitespace-nowrap shrink-0 disabled:opacity-45"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <Send className="h-4 w-4" />
+                <span>إرسال</span>
+              </button>
+            </form>
+          </div>
         </section>
       )}
 
@@ -801,26 +1082,20 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           data-testid="morrow-approvals-panel"
           className="space-y-5"
         >
-          <div
-            className="rounded-2xl border p-4 sm:p-5 space-y-4"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+          <div className="cosmos-glass-panel border p-4 sm:p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-extrabold">
                   مسودات بانتظار موافقتك ({pendingDrafts.length})
                 </h2>
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  لا يعدّل المساعد أي سجل أو مصروف بشكل مباشر — كل عملية تصل هنا للمراجعة أولاً وتُنفذ فقط بعد الضغط على «موافقة وتنفيذ».
+                  لا يعدّل المساعد أي سجل أو مصروف أو معادلة حاسبة بشكل مباشر — كل عملية تصل هنا للمراجعة أولاً وتُنفذ فقط بعد موافقتك.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold whitespace-nowrap"
+                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -833,7 +1108,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
             {pendingDrafts.length === 0 ? (
               <div
-                className="rounded-xl border px-4 py-8 text-center text-xs space-y-2"
+                className="rounded-2xl border px-4 py-8 text-center text-xs space-y-2"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -843,7 +1118,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 <ClipboardCheck className="mx-auto h-7 w-7 opacity-60" />
                 <div className="font-bold">لا توجد مسودات معلقة حالياً</div>
                 <div>
-                  عند طلب إضافة أو تعديل أو أرشفة من المحادثة أو Ctrl + K، ستظهر المسودة هنا جاهزة للتدقيق والتنفيذ.
+                  عند طلب إضافة أو تعديل أو تغيير رسم الفرد، ستظهر المسودة هنا جاهزة للتدقيق والتنفيذ.
                 </div>
               </div>
             ) : (
@@ -851,7 +1126,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 {pendingDrafts.map((draft) => (
                   <article
                     key={draft.id}
-                    className="rounded-xl border p-4 space-y-3"
+                    className="rounded-2xl border p-4 space-y-3"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--accent)',
@@ -860,10 +1135,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h3 className="text-sm font-extrabold">{draft.diff.title}</h3>
-                        <div
-                          className="mt-0.5 text-[11px]"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
+                        <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                           المصدر: {draft.sourceLabel}
                           {draft.promptOrigin ? ` · الطلب: «${draft.promptOrigin}»` : ''}
                         </div>
@@ -883,7 +1155,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       {draft.diff.changes.map((c, idx) => (
                         <div
                           key={idx}
-                          className="rounded-lg border px-3 py-2 text-xs"
+                          className="rounded-xl border px-3 py-2 text-xs"
                           style={{
                             backgroundColor: 'var(--bg-surface)',
                             borderColor: 'var(--border-color)',
@@ -893,13 +1165,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                             {c.fieldLabel}
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5 font-bold">
-                            <span className="line-through opacity-75">
-                              {c.beforeValue}
-                            </span>
+                            <span className="line-through opacity-75">{c.beforeValue}</span>
                             <span style={{ color: 'var(--accent)' }}>←</span>
-                            <span style={{ color: 'var(--success)' }}>
-                              {c.afterValue}
-                            </span>
+                            <span style={{ color: 'var(--success)' }}>{c.afterValue}</span>
                           </div>
                         </div>
                       ))}
@@ -910,19 +1178,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         type="button"
                         data-testid={`approve-draft-${draft.id}`}
                         onClick={() => onApproveDraft(draft.id)}
-                        className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+                        className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap"
                         style={{
                           backgroundColor: 'var(--success)',
                           color: 'var(--success-fg)',
                         }}
                       >
                         <Check className="h-4 w-4" />
-                        <span>موافقة وتنفيذ</span>
+                        <span>موافق وتنفيذ</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => onRejectDraft(draft.id)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold whitespace-nowrap"
+                        className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold whitespace-nowrap"
                         style={{
                           backgroundColor: 'var(--bg-surface)',
                           borderColor: 'var(--danger)',
@@ -940,13 +1208,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           </div>
 
           {resolvedDrafts.length > 0 && (
-            <div
-              className="rounded-2xl border p-4 sm:p-5 space-y-3"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
+            <div className="cosmos-glass-panel border p-4 sm:p-5 space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold">
                 <History className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
                 <span>سجل المسودات المنفذة / الملغاة ({resolvedDrafts.length})</span>
@@ -955,7 +1217,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 {resolvedDrafts.slice(0, 8).map((draft) => (
                   <div
                     key={draft.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -972,10 +1234,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     <span
                       className="font-bold whitespace-nowrap"
                       style={{
-                        color:
-                          draft.status === 'approved'
-                            ? 'var(--success)'
-                            : 'var(--text-muted)',
+                        color: draft.status === 'approved' ? 'var(--success)' : 'var(--text-muted)',
                       }}
                     >
                       {draft.status === 'approved' ? 'مُنفّذ' : 'ملغى'}
@@ -993,11 +1252,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         <section
           aria-label="قواعد الذاكرة الدائمة"
           data-testid="morrow-memory-panel"
-          className="rounded-2xl border p-4 sm:p-5 space-y-5"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
+          className="cosmos-glass-panel border p-4 sm:p-5 space-y-5"
         >
           <div>
             <h2 className="text-base font-extrabold">الذاكرة والقواعد الدائمة</h2>
@@ -1006,7 +1261,6 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </p>
           </div>
 
-          {/* Preset Quick Rules */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {MEMORY_PRESETS.map((preset) => {
               const enabled = preferences.some(
@@ -1015,7 +1269,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               return (
                 <div
                   key={preset.key}
-                  className="flex flex-col justify-between gap-3 rounded-xl border p-3.5 text-xs"
+                  className="flex flex-col justify-between gap-3 rounded-2xl border p-4 text-xs"
                   style={{
                     backgroundColor: enabled ? 'var(--bg-nav-active)' : 'var(--bg-main)',
                     borderColor: enabled ? 'var(--accent)' : 'var(--border-color)',
@@ -1037,7 +1291,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         onSaveMemoryRule(preset.label, preset.key);
                       }
                     }}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-bold whitespace-nowrap"
+                    className="cosmos-touch-target inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 font-bold whitespace-nowrap"
                     style={{
                       backgroundColor: enabled ? 'var(--accent)' : 'var(--bg-surface)',
                       borderColor: enabled ? 'var(--accent)' : 'var(--border-color)',
@@ -1061,7 +1315,6 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             })}
           </div>
 
-          {/* Custom Memory Rule Form */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1069,7 +1322,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               onSaveMemoryRule(customMemoryInput.trim());
               setCustomMemoryInput('');
             }}
-            className="flex flex-wrap items-center gap-2 rounded-xl border p-3"
+            className="flex flex-wrap items-center gap-2 rounded-2xl border p-3"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -1079,8 +1332,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               type="text"
               value={customMemoryInput}
               onChange={(e) => setCustomMemoryInput(e.target.value)}
-              placeholder="أضف قاعدة ذاكرة مخصصة (مثال: دائماً أخفي المبلغ في التقارير)..."
-              className="min-w-[220px] flex-1 rounded-lg border px-3 py-2 text-xs"
+              placeholder="أضف قاعدة جديدة في الذاكرة (مثال: دائماً أخفي الملاحظات في التقرير)..."
+              className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-xs sm:text-sm"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -1089,54 +1342,51 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             <button
               type="submit"
               disabled={!customMemoryInput.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-45"
+              className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-45"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
               }}
             >
-              <Plus className="h-3.5 w-3.5" />
-              <span>حفظ في الذاكرة</span>
+              <Plus className="h-4 w-4" />
+              <span>حفظ بالذاكرة</span>
             </button>
           </form>
 
-          {/* Active Preferences List */}
           <div className="space-y-2">
-            <div className="text-xs font-bold">
-              القواعد النشطة ({preferences.length})
-            </div>
+            <div className="text-xs font-bold">القواعد النشطة ({preferences.length})</div>
             {preferences.length === 0 ? (
               <div
-                className="rounded-xl border px-4 py-6 text-center text-xs"
+                className="rounded-2xl border px-4 py-6 text-center text-xs"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                لا توجد قواعد محفوظة حالياً. فعّل إحدى القواعد الجاهزة أو أضف قاعدة مخصصة أعلاه.
+                لم تقم بتفعيل أي قاعدة ذاكرة دائمة حتى الآن.
               </div>
             ) : (
               preferences.map((pref) => (
                 <div
                   key={pref.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-xs"
+                  className="flex items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-xs"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate font-bold">{pref.label}</div>
-                    <div className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                      المفتاح: {pref.key} · مضافة بتاريخ {pref.createdAt}
+                  <div>
+                    <div className="font-bold">{pref.label}</div>
+                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      أُضيفت بتاريخ {pref.createdAt}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => onDeleteMemoryRule(pref.id)}
                     aria-label={`حذف قاعدة ${pref.label}`}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+                    className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 font-bold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--danger)',
@@ -1158,11 +1408,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         <section
           aria-label="الملاحظات السريعة والإملاء الصوتي"
           data-testid="morrow-quick-notes-panel"
-          className="rounded-2xl border p-4 sm:p-5 space-y-5"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
+          className="cosmos-glass-panel border p-4 sm:p-5 space-y-5"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1175,8 +1421,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </div>
             <button
               type="button"
-              onClick={toggleVoiceDictation}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+              onClick={() => toggleVoiceDictation('note')}
+              className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: isRecording ? 'var(--danger)' : 'var(--bg-main)',
                 borderColor: isRecording ? 'var(--danger)' : 'var(--border-color)',
@@ -1191,9 +1437,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               ) : (
                 <>
                   <Mic className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                  <span>
-                    {speechSupported ? 'إملاء صوتي عربي' : 'إدخال صوتي (فحص الدعم)'}
-                  </span>
+                  <span>{speechSupported ? 'إملاء صوتي عربي' : 'إدخال صوتي'}</span>
                 </>
               )}
             </button>
@@ -1213,7 +1457,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
           <form
             onSubmit={handleSaveNote}
-            className="rounded-xl border p-4 space-y-3"
+            className="rounded-2xl border p-4 space-y-3"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -1234,14 +1478,11 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               }}
             />
 
-            {/* Live Fuzzy Match Preview Bar */}
             <div
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
               style={{
                 backgroundColor: 'var(--bg-surface)',
-                borderColor: effectivePreviewPerson
-                  ? 'var(--accent)'
-                  : 'var(--border-color)',
+                borderColor: effectivePreviewPerson ? 'var(--accent)' : 'var(--border-color)',
               }}
             >
               <div className="flex items-center gap-2 min-w-0">
@@ -1263,15 +1504,13 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               <select
                 aria-label="تخصيص المستفيد المرتبط بالملاحظة"
                 value={
-                  manualOverridePersonId === null
-                    ? ''
-                    : effectivePreviewPerson?.id ?? ''
+                  manualOverridePersonId === null ? '' : effectivePreviewPerson?.id ?? ''
                 }
                 onChange={(e) => {
                   const val = e.target.value;
                   setManualOverridePersonId(val ? Number(val) : null);
                 }}
-                className="rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                className="rounded-xl border px-2.5 py-1.5 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -1299,7 +1538,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               <button
                 type="submit"
                 disabled={!noteInput.trim()}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-45"
+                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-45"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -1311,14 +1550,11 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </div>
           </form>
 
-          {/* Saved Quick Notes Feed */}
           <div className="space-y-2.5">
-            <div className="text-xs font-bold">
-              الملاحظات المحفوظة ({quickNotes.length})
-            </div>
+            <div className="text-xs font-bold">الملاحظات المحفوظة ({quickNotes.length})</div>
             {quickNotes.length === 0 ? (
               <div
-                className="rounded-xl border px-4 py-6 text-center text-xs"
+                className="rounded-2xl border px-4 py-6 text-center text-xs"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -1335,16 +1571,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 return (
                   <article
                     key={note.id}
-                    className="rounded-xl border p-3.5 text-xs space-y-2"
+                    className="rounded-2xl border p-3.5 text-xs space-y-2"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="font-semibold leading-relaxed">
-                        {note.text}
-                      </div>
+                      <div className="font-semibold leading-relaxed">{note.text}</div>
                       <span
                         className="text-[11px] tabular-nums shrink-0"
                         style={{ color: 'var(--text-muted)' }}
@@ -1360,7 +1594,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                           <button
                             type="button"
                             onClick={() => onJumpToPerson(matchedPerson)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-bold whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-bold whitespace-nowrap"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
                               borderColor: 'var(--accent)',
@@ -1383,7 +1617,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                                 e.target.value ? Number(e.target.value) : null
                               )
                             }
-                            className="rounded-lg border px-2 py-1 text-[11px]"
+                            className="rounded-xl border px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
                               borderColor: 'var(--border-color)',
@@ -1402,7 +1636,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                           <button
                             type="button"
                             onClick={() => onSyncQuickNoteToPerson(note.id)}
-                            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold whitespace-nowrap"
+                            className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 font-bold whitespace-nowrap"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
                               borderColor: 'var(--success)',
@@ -1415,10 +1649,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         )}
 
                         {note.syncedToPersonNotes && (
-                          <span
-                            className="text-[11px] font-bold"
-                            style={{ color: 'var(--success)' }}
-                          >
+                          <span className="text-[11px] font-bold" style={{ color: 'var(--success)' }}>
                             مُزامنة مع سجل العائلة
                           </span>
                         )}
@@ -1428,7 +1659,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         type="button"
                         onClick={() => onDeleteQuickNote(note.id)}
                         aria-label="حذف الملاحظة السريعة"
-                        className="rounded-lg border p-1.5"
+                        className="rounded-xl border p-1.5"
                         style={{
                           backgroundColor: 'var(--bg-surface)',
                           borderColor: 'var(--border-color)',
@@ -1445,6 +1676,119 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           </div>
         </section>
       )}
+
+      {/* Brain Picker BottomSheet */}
+      <BottomSheet
+        open={brainSheetOpen}
+        onClose={() => setBrainSheetOpen(false)}
+        title="اختيار دماغ المعالجة"
+        subtitle="بدّل بين المعالجة المحلية الصامتة ونماذج Gemini السحابية"
+        icon={<Cpu className="h-5 w-5" />}
+      >
+        <div className="space-y-2.5">
+          {BRAIN_BUTTONS.map((btn) => {
+            const active = brainMode === btn.id;
+            return (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => {
+                  onChangeBrainMode(btn.id);
+                  setBrainSheetOpen(false);
+                }}
+                className="flex w-full items-start justify-between gap-3 rounded-2xl border p-4 text-right transition-all"
+                style={{
+                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                }}
+              >
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-extrabold">
+                    {btn.icon}
+                    <span>{btn.label}</span>
+                  </div>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {btn.desc}
+                  </p>
+                </div>
+                {active && (
+                  <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: 'var(--accent)' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
+
+      {/* Command Library BottomSheet */}
+      <BottomSheet
+        open={librarySheetOpen}
+        onClose={() => setLibrarySheetOpen(false)}
+        title="مكتبة أوامر Morrow الكاملة"
+        subtitle="اضغط على أي أمر لإرساله إلى غرفة المحادثة مباشرة"
+        icon={<Sparkles className="h-5 w-5" />}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {COMMAND_LIBRARY_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setLibrarySheetOpen(false);
+                onSendMessage(item.label);
+              }}
+              className="rounded-2xl border p-3.5 text-right transition-all hover:border-[var(--accent)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="text-xs font-extrabold">{item.label}</div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {item.desc}
+              </div>
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
+
+      {/* Active Agency Context Picker BottomSheet */}
+      <BottomSheet
+        open={contextSheetOpen}
+        onClose={() => setContextSheetOpen(false)}
+        title="تغيير سياق الوكالة النشطة للمساعد"
+        subtitle="الوكالة التي يركّز عليها المساعد عند تنفيذ الفلترة والإضافة"
+        icon={<FolderKanban className="h-5 w-5" />}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {agencies.map((ag) => {
+            const active = activeAgency?.id === ag.id;
+            return (
+              <button
+                key={ag.id}
+                type="button"
+                onClick={() => {
+                  onSelectActiveAgency?.(ag.id);
+                  setContextSheetOpen(false);
+                }}
+                className="flex items-center justify-between gap-2 rounded-2xl border p-3.5 text-right transition-all"
+                style={{
+                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                }}
+              >
+                <span className="flex items-center gap-2 font-extrabold text-xs sm:text-sm">
+                  <span>{ag.icon}</span>
+                  <span>{ag.name}</span>
+                </span>
+                {active && (
+                  <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
     </main>
   );
 };

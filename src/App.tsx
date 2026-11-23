@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, Unlock } from 'lucide-react';
 import { AgenciesHubView } from './components/AgenciesHubView';
 import { AgencyRosterView } from './components/AgencyRosterView';
@@ -22,11 +22,13 @@ import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
 import { HierarchyBreadcrumbBar } from './components/HierarchyBreadcrumbBar';
 import { ToastHost } from './components/ToastHost';
+import { Switcher } from './components/cosmos/Switcher';
+import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
 import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
 import { getStoredSession } from './lib/authClient';
-import type { AssistantExternalTableCommand } from './types/assistant';
+import type { AssistantExternalTableCommand, MorrowCenterTab } from './types/assistant';
 import type {
   AgencyExpense,
   AppView,
@@ -41,13 +43,38 @@ import type {
 } from './types/agency';
 import { auditAgencyPersons } from './utils/agencyLogic';
 import {
+  buildCosmosRegistry,
+  getCosmosNodeById,
+  getCosmosPath,
+  recordCosmosNodeVisit,
+  resolveCosmosNodeForTarget,
+  type CosmosNode,
+} from './utils/cosmosRegistry';
+import {
   buildMorrowHierarchyTree,
   resolveActiveHierarchyNodeId,
   type HierarchyBadgeContext,
   type HierarchyTarget,
 } from './utils/hierarchyRegistry';
 import { getModeCapabilities } from './utils/modePermissions';
-import { APP_THEMES, resolveAppThemeId } from './utils/themes';
+import {
+  ALL_APP_THEMES,
+  ARABIC_FONTS,
+  DEFAULT_APPEARANCE_PROFILES,
+  resolveAppThemeId,
+  resolveTableThemeId,
+  TABLE_THEMES,
+} from './utils/themes';
+import { playTactileFeedback } from './utils/tactileFeedback';
+
+type AppNavSnapshot = {
+  view: AppView;
+  selectedAgencyId: number;
+  settingsSection: SettingsSectionId;
+  settingsScreenMode: 'hub' | 'detail';
+  settingsCapsuleId: string | null;
+  morrowTab: MorrowCenterTab;
+};
 
 type DeleteTarget =
   | { kind: 'person'; item: Person }
@@ -59,6 +86,7 @@ type DeleteTarget =
 export default function App() {
   const {
     state,
+    workspaceCosmos,
     activePeriod,
     monthlyArchives,
     themePrefs,
@@ -77,6 +105,17 @@ export default function App() {
     setDarkTheme,
     setThemePrefs,
     resetThemePrefs,
+    saveCustomThemePreset,
+    deleteCustomThemePreset,
+    updateWorkspaceCosmos,
+    updateAccessibilityPrefs,
+    updateFeatureFlags,
+    togglePinnedCosmosNode,
+    recordRecentCosmosNode,
+    toggleHiddenCosmosWorld,
+    dismissCosmosSuggestion,
+    appendWorldChangeLog,
+    restorePreMigrationSnapshot,
     saveAppearanceProfile,
     applyAppearanceProfile,
     deleteAppearanceProfile,
@@ -146,6 +185,10 @@ export default function App() {
   const [settingsScreenMode, setSettingsScreenMode] = useState<'hub' | 'detail'>(
     'hub'
   );
+  const [settingsCapsuleId, setSettingsCapsuleId] = useState<string | null>(
+    null
+  );
+  const [spotlightNodeId, setSpotlightNodeId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -392,6 +435,8 @@ export default function App() {
       if (activeView !== 'settings') {
         setPreviousView(activeView);
       }
+      setSettingsCapsuleId(null);
+      setSpotlightNodeId(null);
       if (nextSettingsSection) {
         setSettingsSection(nextSettingsSection);
         setSettingsScreenMode('detail');
@@ -407,6 +452,13 @@ export default function App() {
     [state.agencies]
   );
 
+  const cosmosRoot = useMemo(
+    () => buildCosmosRegistry(state.agencies),
+    [state.agencies]
+  );
+
+  const [worldSwitcherOpen, setWorldSwitcherOpen] = useState(false);
+
   const auditIssuesCount = useMemo(
     () => auditAgencyPersons(state.persons).length,
     [state.persons]
@@ -414,10 +466,24 @@ export default function App() {
 
   const activeThemeLabel = useMemo(() => {
     const resolvedId = resolveAppThemeId(themePrefs.appTheme);
-    return APP_THEMES.find((t) => t.id === resolvedId)?.name || 'كلاسيكي';
+    return ALL_APP_THEMES.find((t) => t.id === resolvedId)?.name || 'كلاسيكي';
   }, [themePrefs.appTheme]);
 
-  const handleNavigateHierarchyTarget = (target: HierarchyTarget) => {
+  const activeTableThemeLabel = useMemo(() => {
+    const resolvedId = resolveTableThemeId(themePrefs.tableTheme);
+    return TABLE_THEMES.find((t) => t.id === resolvedId)?.name || 'الزجاجي';
+  }, [themePrefs.tableTheme]);
+
+  const activeFontLabel = useMemo(
+    () =>
+      ARABIC_FONTS.find((f) => f.id === themePrefs.fontFamily)?.name || 'Cairo',
+    [themePrefs.fontFamily]
+  );
+
+  const handleNavigateHierarchyTarget = (
+    target: HierarchyTarget,
+    nodeId?: string
+  ) => {
     if (typeof target.agencyId === 'number') {
       setSelectedAgencyId(target.agencyId);
     }
@@ -431,6 +497,10 @@ export default function App() {
       } else {
         setSettingsScreenMode(target.settingsScreenMode || 'hub');
       }
+      setSettingsCapsuleId(target.settingsCapsuleId ?? null);
+      setSpotlightNodeId(
+        target.controlAnchorId || target.settingsCapsuleId || nodeId || null
+      );
       setColumnCustomizerOpen(false);
       setActiveView('settings');
       return;
@@ -446,6 +516,7 @@ export default function App() {
       setColumnCustomizerOpen(false);
     }
 
+    setSpotlightNodeId(null);
     setActiveView(target.view);
   };
 
@@ -509,11 +580,33 @@ export default function App() {
   const { toasts, dismissToast } = useToastQueue();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
+  const handleSelectCosmosNode = (node: CosmosNode) => {
+    playTactileFeedback('tap', {
+      haptic: workspaceCosmos.accessibility.hapticFeedback,
+      sound: workspaceCosmos.accessibility.soundFeedback,
+      reduceMotion: workspaceCosmos.accessibility.reduceMotion,
+    });
+    recordCosmosNodeVisit(node.id);
+    if (node.id !== 'cosmos_hub') {
+      recordRecentCosmosNode(node.id);
+    }
+    handleNavigateHierarchyTarget(node.target, node.id);
+    try {
+      const nextHash = node.id === 'cosmos_hub' ? '#hub' : `#node=${encodeURIComponent(node.id)}`;
+      window.history.replaceState(null, '', nextHash);
+    } catch {
+      // ignore history API failures in restricted frames
+    }
+  };
+
   useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        setWorldSwitcherOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', onGlobalKey);
@@ -561,6 +654,7 @@ export default function App() {
       setDarkTheme,
       setAllowCloudNames: (allowed) =>
         setSecurityPrefs({ allowCloudBeneficiaryNames: allowed }),
+      saveCalculationSettings: setCalculationSettings,
       applyAutoFixes: applyAssistantAutoFixes,
       archiveCurrentPeriod: () => {
         archiveCurrentPeriod({ isClosed: true, archiveSource: 'manual' });
@@ -571,6 +665,146 @@ export default function App() {
     onUndoAppAction: undo,
   });
 
+  // Restore deep-linked Cosmos node on initial mount if URL hash is set
+  const hashBootstrappedRef = useRef(false);
+  useEffect(() => {
+    if (hashBootstrappedRef.current) return;
+    hashBootstrappedRef.current = true;
+    try {
+      const hash = window.location.hash || '';
+      if (hash.startsWith('#node=')) {
+        const nodeId = decodeURIComponent(hash.slice('#node='.length));
+        const node = getCosmosNodeById(cosmosRoot, nodeId);
+        if (node && node.id !== 'cosmos_hub') {
+          handleNavigateHierarchyTarget(node.target, node.id);
+        }
+      }
+    } catch {
+      // ignore invalid hash
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 10-step Back/Forward Navigation History
+  const [navHistory, setNavHistory] = useState<{
+    stack: AppNavSnapshot[];
+    index: number;
+  }>(() => ({
+    stack: [
+      {
+        view: 'hub',
+        selectedAgencyId: state.agencies[0]?.id ?? 1,
+        settingsSection: 'appearance',
+        settingsScreenMode: 'hub',
+        settingsCapsuleId: null,
+        morrowTab: 'chat',
+      },
+    ],
+    index: 0,
+  }));
+  const isRestoringHistoryRef = useRef(false);
+
+  useEffect(() => {
+    if (isRestoringHistoryRef.current) {
+      isRestoringHistoryRef.current = false;
+      return;
+    }
+    const snap: AppNavSnapshot = {
+      view: activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      settingsCapsuleId,
+      morrowTab: assistant.activeCommandCenterTab,
+    };
+    setNavHistory((prev) => {
+      const cur = prev.stack[prev.index];
+      if (
+        cur &&
+        cur.view === snap.view &&
+        cur.selectedAgencyId === snap.selectedAgencyId &&
+        cur.settingsSection === snap.settingsSection &&
+        cur.settingsScreenMode === snap.settingsScreenMode &&
+        cur.settingsCapsuleId === snap.settingsCapsuleId &&
+        cur.morrowTab === snap.morrowTab
+      ) {
+        return prev;
+      }
+      const trimmed = prev.stack.slice(0, prev.index + 1);
+      const nextStack = [...trimmed, snap].slice(-10);
+      return {
+        stack: nextStack,
+        index: nextStack.length - 1,
+      };
+    });
+  }, [
+    activeView,
+    selectedAgencyId,
+    settingsSection,
+    settingsScreenMode,
+    settingsCapsuleId,
+    assistant.activeCommandCenterTab,
+  ]);
+
+  const applyNavSnapshot = (snap: AppNavSnapshot) => {
+    isRestoringHistoryRef.current = true;
+    setSelectedAgencyId(snap.selectedAgencyId);
+    setSettingsSection(snap.settingsSection);
+    setSettingsScreenMode(snap.settingsScreenMode);
+    setSettingsCapsuleId(snap.settingsCapsuleId);
+    assistant.setActiveCommandCenterTab(snap.morrowTab);
+    setActiveView(snap.view);
+  };
+
+  const goBackHistory = () => {
+    if (navHistory.index <= 0) return;
+    const nextIdx = navHistory.index - 1;
+    const targetSnap = navHistory.stack[nextIdx];
+    if (!targetSnap) return;
+    setNavHistory((prev) => ({ ...prev, index: nextIdx }));
+    applyNavSnapshot(targetSnap);
+  };
+
+  const goForwardHistory = () => {
+    if (navHistory.index >= navHistory.stack.length - 1) return;
+    const nextIdx = navHistory.index + 1;
+    const targetSnap = navHistory.stack[nextIdx];
+    if (!targetSnap) return;
+    setNavHistory((prev) => ({ ...prev, index: nextIdx }));
+    applyNavSnapshot(targetSnap);
+  };
+
+  const activeCosmosNode = useMemo(
+    () =>
+      resolveCosmosNodeForTarget(cosmosRoot, {
+        view: activeView,
+        agencyId: activeView === 'agency_roster' ? selectedAgencyId : undefined,
+        settingsSection: activeView === 'settings' ? settingsSection : undefined,
+        settingsScreenMode: activeView === 'settings' ? settingsScreenMode : undefined,
+        settingsCapsuleId: activeView === 'settings' ? settingsCapsuleId || undefined : undefined,
+        morrowTab:
+          activeView === 'morrow_center' ? assistant.activeCommandCenterTab : undefined,
+      }),
+    [
+      cosmosRoot,
+      activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      settingsCapsuleId,
+      assistant.activeCommandCenterTab,
+    ]
+  );
+
+  const activeCosmosTrail = useMemo(
+    () =>
+      getCosmosPath(cosmosRoot, activeCosmosNode.id).map((n) => ({
+        id: n.id,
+        title: n.title,
+      })),
+    [cosmosRoot, activeCosmosNode.id]
+  );
+
   const activeHierarchyNodeId = useMemo(
     () =>
       resolveActiveHierarchyNodeId({
@@ -578,6 +812,7 @@ export default function App() {
         selectedAgencyId,
         settingsSection,
         settingsScreenMode,
+        settingsCapsuleId,
         morrowTab: assistant.activeCommandCenterTab,
         columnCustomizerOpen,
       }),
@@ -586,6 +821,7 @@ export default function App() {
       selectedAgencyId,
       settingsSection,
       settingsScreenMode,
+      settingsCapsuleId,
       assistant.activeCommandCenterTab,
       columnCustomizerOpen,
     ]
@@ -602,7 +838,19 @@ export default function App() {
       pendingDraftsCount: assistant.pendingDraftsCount,
       recycleBinCount: recycleBin.length,
       activeThemeName: activeThemeLabel,
+      activeTableThemeName: activeTableThemeLabel,
+      activeFontName: activeFontLabel,
+      fontSizePx: themePrefs.fontSizePx ?? 15,
       modeLabel: capabilities.label,
+      feePerIndividualIqd: state.calculationSettings.feePerIndividualIqd,
+      kgPerIndividual: state.calculationSettings.kgPerIndividual,
+      settingsDisplayMode: generalPrefs.settingsDisplayMode || 'fullscreen',
+      savedProfilesCount:
+        themePrefs.savedProfiles?.length ?? DEFAULT_APPEARANCE_PROFILES.length,
+      quickExtractFieldsCount: quickExtractPrefs.focusedFields.length,
+      clarityThreshold: quickExtractPrefs.clarityThreshold,
+      autoHideTopBar: state.topBarConfig.autoFocus,
+      privacyLocked: securityPrefs.privacyLocked,
     }),
     [
       state.agencies.length,
@@ -614,7 +862,18 @@ export default function App() {
       assistant.pendingDraftsCount,
       recycleBin.length,
       activeThemeLabel,
+      activeTableThemeLabel,
+      activeFontLabel,
+      themePrefs.fontSizePx,
+      themePrefs.savedProfiles,
       capabilities.label,
+      state.calculationSettings.feePerIndividualIqd,
+      state.calculationSettings.kgPerIndividual,
+      generalPrefs.settingsDisplayMode,
+      quickExtractPrefs.focusedFields.length,
+      quickExtractPrefs.clarityThreshold,
+      state.topBarConfig.autoFocus,
+      securityPrefs.privacyLocked,
     ]
   );
 
@@ -673,6 +932,16 @@ export default function App() {
           onOpenMobileSidebar={() => setDrawerOpen(true)}
           onRequestReveal={() => setManualReveal(true)}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          canGoBack={navHistory.index > 0}
+          canGoForward={navHistory.index < navHistory.stack.length - 1}
+          onGoBack={goBackHistory}
+          onGoForward={goForwardHistory}
+          cosmosTrail={activeCosmosTrail}
+          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
+          onSelectCosmosTrailNode={(nodeId) => {
+            const targetNode = getCosmosNodeById(cosmosRoot, nodeId);
+            if (targetNode) handleSelectCosmosNode(targetNode);
+          }}
         />
       )}
 
@@ -704,7 +973,7 @@ export default function App() {
           />
         )}
 
-        <div key={activeView} className="flex-1 min-w-0 flex flex-col tabrix-view-enter">
+        <div key={activeView} className="flex-1 min-w-0 flex flex-col pb-20 md:pb-0 tabrix-view-enter">
           {activeView !== 'settings' && renderedHierarchyBar}
 
           {activeView === 'hub' && (
@@ -728,6 +997,15 @@ export default function App() {
               onNavigateView={(v, sec) => handleNavigate(v, sec)}
               onAddAgency={addAgencyDirect}
               onUpdateAgencyDetails={updateAgencyDetails}
+              rootCosmos={cosmosRoot}
+              workspaceCosmos={workspaceCosmos}
+              onSelectCosmosNode={handleSelectCosmosNode}
+              onTogglePinnedNode={togglePinnedCosmosNode}
+              onDismissSuggestion={dismissCosmosSuggestion}
+              onCompleteOnboarding={() =>
+                updateAccessibilityPrefs({ onboardingCompleted: true })
+              }
+              onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
             />
           )}
 
@@ -1000,6 +1278,12 @@ export default function App() {
               nonce: Date.now(),
             });
           }}
+          activeAgencyId={selectedAgencyId}
+          onSelectActiveAgency={(agId) => setSelectedAgencyId(agId)}
+          activePeriodLabel={activePeriod?.quotaName}
+          onNavigateView={handleNavigate}
+          onTogglePinMessage={assistant.togglePinMessage}
+          onExportChatHistory={assistant.exportChatHistoryJson}
         />
       )}
 
@@ -1007,8 +1291,21 @@ export default function App() {
         <SettingsView
           activeSection={settingsSection}
           screenMode={settingsScreenMode}
-          onChangeScreenMode={setSettingsScreenMode}
-          onChangeSection={setSettingsSection}
+          onChangeScreenMode={(mode) => {
+            setSettingsScreenMode(mode);
+            if (mode === 'hub') setSettingsCapsuleId(null);
+          }}
+          onChangeSection={(sec) => {
+            setSettingsSection(sec);
+            setSettingsCapsuleId(null);
+          }}
+          activeCapsuleId={settingsCapsuleId}
+          onChangeCapsuleId={setSettingsCapsuleId}
+          spotlightNodeId={spotlightNodeId}
+          hierarchyTree={hierarchyTree}
+          badgeContext={hierarchyBadgeContext}
+          onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           onBackToApp={() =>
             setActiveView(previousView === 'settings' ? 'hub' : previousView)
           }
@@ -1060,6 +1357,23 @@ export default function App() {
           onResetAssistantQuota={assistant.resetQuotaStats}
           onClearAssistantCache={assistant.clearResponseCache}
           hierarchyBar={renderedHierarchyBar}
+          workspaceCosmos={workspaceCosmos}
+          rootCosmos={cosmosRoot}
+          migrationSnapshot={state.migrationSnapshot}
+          onUpdateAccessibilityPrefs={updateAccessibilityPrefs}
+          onUpdateFeatureFlags={updateFeatureFlags}
+          onUpdateCosmosExperienceMode={(mode) =>
+            updateAccessibilityPrefs({ experienceMode: mode })
+          }
+          onTogglePinnedNode={togglePinnedCosmosNode}
+          onSaveCustomTheme={saveCustomThemePreset}
+          onDeleteCustomTheme={deleteCustomThemePreset}
+          onToggleHiddenWorld={toggleHiddenCosmosWorld}
+          onRestoreMigrationSnapshot={restorePreMigrationSnapshot}
+          onAppendChangeLog={appendWorldChangeLog}
+          onRunAutoFix={() => applyAssistantAutoFixes()}
+          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
+          onSelectCosmosNode={handleSelectCosmosNode}
         />
       )}
         </div>
@@ -1226,10 +1540,20 @@ export default function App() {
           onUndoLastAction={assistant.undoLastAssistantAction}
           pendingDraftsCount={assistant.pendingDraftsCount}
           onOpenCommandCenter={assistant.openCommandCenter}
+          onQuickCameraExtract={() => {
+            if (capabilities.canUseQuickExtract) {
+              assistant.setIsOpen(false);
+              handleNavigate('quick_extract');
+            }
+          }}
+          onQuickBackupJson={() => handleDownloadBackupJson(false)}
+          onTogglePinMessage={assistant.togglePinMessage}
+          onExportChatHistory={assistant.exportChatHistoryJson}
           onOpenAssistantSettings={() => {
             assistant.setIsOpen(false);
             setPreviousView(activeView);
             setSettingsSection('security_data');
+            setSettingsCapsuleId('sec_ai_assistant_cap');
             setSettingsScreenMode('detail');
             setActiveView('settings');
           }}
@@ -1247,6 +1571,10 @@ export default function App() {
           pendingDraftsCount={assistant.pendingDraftsCount}
           hierarchyTree={hierarchyTree}
           onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
+          cosmosTree={cosmosRoot}
+          onSelectCosmosNode={handleSelectCosmosNode}
+          onToggleDarkTheme={setDarkTheme}
+          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
           onClose={() => setCommandPaletteOpen(false)}
           onChangeBrainMode={assistant.setBrainMode}
           onNavigateView={handleNavigate}
@@ -1266,6 +1594,36 @@ export default function App() {
           onSendAssistantPrompt={(prompt) => {
             void assistant.sendMessage(prompt, { fromFloatingWidget: true });
           }}
+        />
+      )}
+
+      {/* Fast Cosmos World Switcher & Orbital Map */}
+      {!isAuthGateLocked && !securityPrefs.privacyLocked && (
+        <Switcher
+          open={worldSwitcherOpen}
+          onClose={() => setWorldSwitcherOpen(false)}
+          root={cosmosRoot}
+          activeWorldId={activeCosmosNode.worldId}
+          hiddenWorldIds={workspaceCosmos.hiddenWorldIds}
+          enableOrbitalMode={workspaceCosmos.featureFlags.orbitalMapView}
+          onSelectNode={handleSelectCosmosNode}
+          onToggleHiddenWorld={toggleHiddenCosmosWorld}
+        />
+      )}
+
+      {/* Mobile One-Thumb Bottom Navigation Bar */}
+      {!isAuthGateLocked && !securityPrefs.privacyLocked && (
+        <CosmosBottomNav
+          activeView={activeView}
+          canAddPerson={capabilities.canEditRecords}
+          canUseQuickExtract={capabilities.canUseQuickExtract}
+          onNavigateView={handleNavigate}
+          onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
+          onQuickAddPerson={() => {
+            setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
+            setAddPersonOpen(true);
+          }}
+          onOpenAssistant={() => assistant.setIsOpen(true)}
         />
       )}
 

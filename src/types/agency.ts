@@ -616,7 +616,7 @@ export interface AuditIssue {
   message: string;
 }
 
-export type AppThemeId =
+export type ClassicAppThemeId =
   | 'obsidian-gold'
   | 'aurora'
   | 'cyberpunk'
@@ -625,6 +625,14 @@ export type AppThemeId =
   | 'emerald-forest'
   | 'royal-crimson'
   | 'zen-minimal';
+
+export type ModernAppThemeId =
+  | 'alabaster-glass'
+  | 'nordic-dusk'
+  | 'sage-linen'
+  | 'midnight-indigo';
+
+export type AppThemeId = ClassicAppThemeId | ModernAppThemeId;
 
 export type TableThemeId =
   | 'glass'
@@ -675,6 +683,22 @@ export interface AppearanceProfile {
   createdAt?: string;
 }
 
+export type ThemeColorMode = 'dark' | 'light' | 'auto';
+
+export interface CustomThemePreset {
+  id: string;
+  name: string;
+  isDark: boolean;
+  bgMain: string;
+  bgSurface: string;
+  textPrimary: string;
+  accent: string;
+  borderRadiusPx: number;
+  glassOpacityPct: number;
+  cardShadowLevel: CardShadowLevel;
+  createdAt: string;
+}
+
 export interface ThemePreferences {
   appTheme: AppThemeId;
   tableTheme: TableThemeId;
@@ -688,10 +712,13 @@ export interface ThemePreferences {
   borderRadiusPx?: number;
   cardShadowLevel?: CardShadowLevel;
   glassEffect?: boolean;
+  glassOpacityPct?: number;
+  themeColorMode?: ThemeColorMode;
   customBgColor?: string;
   customSurfaceColor?: string;
   customTextColor?: string;
   customAccentColor?: string;
+  customSavedThemes?: CustomThemePreset[];
   conditionalFormatting?: ConditionalFormattingPrefs;
   savedProfiles?: AppearanceProfile[];
   activeProfileId?: string | null;
@@ -712,7 +739,28 @@ export type SettingsSectionId =
   | 'general'
   | 'quick_extract_settings'
   | 'relations_lists'
-  | 'security_data';
+  | 'security_data'
+  | 'ai_assistant'
+  | 'system_map';
+
+export type UiDensity = 'comfortable' | 'balanced' | 'compact';
+
+export interface GranularControlPrefs {
+  readonlyPdfMode: boolean;
+  enableSortAndFilter: boolean;
+  enableFinance: boolean;
+  enableManageFinance: boolean;
+  enableQuickExtract: boolean;
+  enableEditRecords: boolean;
+  enableReadyListBuilder: boolean;
+  enableAgencyManagement: boolean;
+  enableSmartAudit: boolean;
+  enableExcelTools: boolean;
+  enableColumnCustomization: boolean;
+  enableCustomCategories: boolean;
+  enableBulkEdit: boolean;
+  bypassEditConfirm: boolean;
+}
 
 export interface RelationsReadyListsPrefs {
   defaultExportFormat: 'excel' | 'pdf' | 'text' | 'image';
@@ -728,6 +776,13 @@ export interface GeneralAppPrefs {
   undoLimit: number;
   showActionAlerts: boolean;
   compactNumbers: boolean;
+  settingsDisplayMode?: 'fullscreen' | 'contained';
+  uiDensity?: UiDensity;
+  granularControls?: GranularControlPrefs;
+  hubShortcutIds?: string[];
+  quickToggleIds?: string[];
+  agencyAccentColors?: Record<number, string>;
+  dismissedAttentionIds?: string[];
 }
 
 export interface SecurityPrefs {
@@ -735,6 +790,8 @@ export interface SecurityPrefs {
   privacyLocked: boolean;
   offlineCacheEnabled: boolean;
   allowCloudBeneficiaryNames?: boolean;
+  autoLockMinutes?: 0 | 5 | 15 | 30;
+  quickUnlockHintEnabled?: boolean;
 }
 
 export type RecycleBinItemKind =
@@ -786,7 +843,86 @@ export interface MonthlyArchiveRecord {
   summary: MonthlyArchiveSummary;
 }
 
+export type CosmosNumeralSystem = 'western' | 'hindi';
+export type CosmosCalendarSystem = 'gregorian' | 'hijri';
+export type CosmosExperienceMode = 'simple' | 'expert';
+export type CosmosWorldId =
+  | 'world_agencies_tables'
+  | 'world_themes'
+  | 'world_calculator'
+  | 'world_fonts_typography'
+  | 'world_quick_extract'
+  | 'world_ready_lists'
+  | 'world_relations_finance'
+  | 'world_archives'
+  | 'world_morrow_ai'
+  | 'world_google'
+  | 'world_security_backup'
+  | 'world_general_access'
+  | 'world_health_kpi'
+  | 'world_legacy_archive';
+
+export interface AccessibilityAndExperiencePrefs {
+  experienceMode: CosmosExperienceMode;
+  reduceMotion: boolean;
+  hapticFeedback: boolean;
+  soundFeedback: boolean;
+  oneHandedMode: boolean;
+  numeralSystem: CosmosNumeralSystem;
+  calendarSystem: CosmosCalendarSystem;
+  simpleCalculatorTestIndividuals: number;
+  developerMode: boolean;
+  onboardingCompleted: boolean;
+}
+
+export interface WorldChangeLogEntry {
+  id: string;
+  worldId: string;
+  settingId?: string;
+  label: string;
+  beforeValue?: string;
+  afterValue?: string;
+  timestamp: string;
+}
+
+export interface FeatureFlagsMap {
+  orbitalMapView: boolean;
+  smartUsageSuggestions: boolean;
+  longPressPeek: boolean;
+  safeTrialTenSeconds: boolean;
+  voiceCommandsIq: boolean;
+  tactileAudioCues: boolean;
+}
+
+export interface WorkspaceCosmosState {
+  pinnedNodeIds: string[];
+  recentNodeIds: string[];
+  hiddenWorldIds: string[];
+  dismissedSuggestionIds: string[];
+  accessibility: AccessibilityAndExperiencePrefs;
+  featureFlags: FeatureFlagsMap;
+  changeLog: WorldChangeLogEntry[];
+  activeCalcPresetId?: string | null;
+  dismissedAiAlertIds?: string[];
+  pinnedAiMessageIds?: string[];
+}
+
+export interface MigrationSnapshotRecord {
+  version: number;
+  createdAt: string;
+  reason: string;
+  modeTier?: AppModeTier;
+  editorEnabled?: boolean;
+  calculationSettings: CalculationSettings;
+  themePrefs?: ThemePreferences;
+  generalPrefs?: GeneralAppPrefs;
+  securityPrefs?: SecurityPrefs;
+}
+
 export interface AppDatabaseState {
+  stateVersion?: number;
+  migrationSnapshot?: MigrationSnapshotRecord;
+  workspaceCosmos?: WorkspaceCosmosState;
   agencies: Agency[];
   persons: Person[];
   expenses: AgencyExpense[];

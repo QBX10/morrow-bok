@@ -6,8 +6,41 @@ import type {
   QuickExtractPrefs,
   RelationsReadyListsPrefs,
   SecurityPrefs,
+  WorkspaceCosmosState,
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS } from '../utils/agencyLogic';
+import { DEFAULT_GRANULAR_CONTROLS } from '../utils/modePermissions';
+
+export const DEFAULT_WORKSPACE_COSMOS: WorkspaceCosmosState = {
+  pinnedNodeIds: ['cap_master_roster_portal', 'cap_calc_fees', 'cap_themes_classic'],
+  recentNodeIds: ['world_agencies_tables', 'world_calculator', 'world_themes'],
+  hiddenWorldIds: [],
+  dismissedSuggestionIds: [],
+  accessibility: {
+    experienceMode: 'expert',
+    reduceMotion: false,
+    hapticFeedback: true,
+    soundFeedback: false,
+    oneHandedMode: false,
+    numeralSystem: 'western',
+    calendarSystem: 'gregorian',
+    simpleCalculatorTestIndividuals: 5,
+    developerMode: false,
+    onboardingCompleted: false,
+  },
+  featureFlags: {
+    orbitalMapView: true,
+    smartUsageSuggestions: true,
+    longPressPeek: true,
+    safeTrialTenSeconds: true,
+    voiceCommandsIq: true,
+    tactileAudioCues: true,
+  },
+  changeLog: [],
+  activeCalcPresetId: 'calc_preset_default',
+  dismissedAiAlertIds: [],
+  pinnedAiMessageIds: [],
+};
 
 export const DEFAULT_EXPERT_COLUMN_PRESETS: ExpertColumnPreset[] = [
   {
@@ -168,12 +201,39 @@ export const DEFAULT_RELATIONS_PREFS: RelationsReadyListsPrefs = {
   defaultDeliveryNotePrefix: 'خط التوزيع:',
 };
 
+export const DEFAULT_HUB_SHORTCUT_IDS = [
+  'archives',
+  'add_agency',
+  'master_roster',
+  'quick_extract',
+  'finance',
+];
+
+export const DEFAULT_QUICK_TOGGLE_IDS = [
+  'qt_dark_mode',
+  'qt_fullscreen',
+  'qt_fee_250',
+  'qt_confirm_delete',
+  'qt_readonly_pdf',
+];
+
 export const DEFAULT_GENERAL_PREFS: GeneralAppPrefs = {
   confirmBeforeDelete: true,
   confirmBeforeEdit: true,
   undoLimit: 35,
   showActionAlerts: true,
   compactNumbers: false,
+  settingsDisplayMode: 'fullscreen',
+  uiDensity: 'balanced',
+  granularControls: { ...DEFAULT_GRANULAR_CONTROLS },
+  hubShortcutIds: [...DEFAULT_HUB_SHORTCUT_IDS],
+  quickToggleIds: [...DEFAULT_QUICK_TOGGLE_IDS],
+  agencyAccentColors: {
+    1: '#2563eb',
+    2: '#059669',
+    3: '#d97706',
+  },
+  dismissedAttentionIds: [],
 };
 
 export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
@@ -184,8 +244,10 @@ export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
 };
 
 export const INITIAL_DATABASE_STATE: AppDatabaseState = {
-  modeTier: 'beginner',
-  editorEnabled: false,
+  stateVersion: 3,
+  workspaceCosmos: { ...DEFAULT_WORKSPACE_COSMOS },
+  modeTier: 'expert',
+  editorEnabled: true,
   darkTheme: false,
   requireLoginOnStart: false,
   calculationSettings: { ...DEFAULT_CALCULATION_SETTINGS },

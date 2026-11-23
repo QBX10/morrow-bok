@@ -5,20 +5,28 @@ import {
   Calculator,
   CalendarDays,
   Check,
+  Clock,
+  Compass,
   Edit3,
   FileSearch,
   GitCompareArrows,
+  Globe2,
   ImagePlus,
   LayoutGrid,
   ListChecks,
+  Lock,
+  Orbit,
   Plus,
   ShieldAlert,
   Sliders,
+  Sparkles,
+  Star,
   Trash2,
   Wallet,
   X,
 } from 'lucide-react';
 import { compressImageFileToDataUrl } from '../lib/imageUpload';
+import { DEFAULT_WORKSPACE_COSMOS } from '../data/seedData';
 import type {
   Agency,
   AgencyExpense,
@@ -27,6 +35,7 @@ import type {
   PeriodQuotaMeta,
   Person,
   SettingsSectionId,
+  WorkspaceCosmosState,
 } from '../types/agency';
 import {
   auditAgencyPersons,
@@ -36,12 +45,25 @@ import {
   formatNumberCompact,
   formatQuota,
 } from '../utils/agencyLogic';
-import type { ModeCapabilities } from '../utils/modePermissions';
+import {
+  buildCosmosRegistry,
+  COSMOS_TAG_LABELS,
+  getCosmosNodeById,
+  getSmartCosmosSuggestions,
+  loadCosmosUsageMap,
+  searchCosmosNodes,
+  type CosmosNode,
+  type CosmosTagId,
+} from '../utils/cosmosRegistry';
 import type {
   HierarchyBadgeContext,
   HierarchyNode,
   HierarchyTarget,
 } from '../utils/hierarchyRegistry';
+import type { ModeCapabilities } from '../utils/modePermissions';
+import { GalaxyCard } from './cosmos/GalaxyCard';
+import { OrbitalMapView } from './cosmos/OrbitalMapView';
+import { SectionLogo } from './settings/sectionLogos';
 
 interface AgenciesHubViewProps {
   agencies: Agency[];
@@ -63,6 +85,13 @@ interface AgenciesHubViewProps {
     agencyId: number,
     patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
   ) => void;
+  rootCosmos?: CosmosNode;
+  workspaceCosmos?: WorkspaceCosmosState;
+  onSelectCosmosNode?: (node: CosmosNode) => void;
+  onTogglePinnedNode?: (nodeId: string) => void;
+  onDismissSuggestion?: (suggestionId: string) => void;
+  onCompleteOnboarding?: () => void;
+  onOpenWorldSwitcher?: () => void;
 }
 
 export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
@@ -82,6 +111,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   onNavigateView,
   onAddAgency,
   onUpdateAgencyDetails,
+  rootCosmos,
+  workspaceCosmos,
+  onSelectCosmosNode,
+  onTogglePinnedNode,
+  onDismissSuggestion,
+  onCompleteOnboarding,
+  onOpenWorldSwitcher,
 }) => {
   const [newAgencyName, setNewAgencyName] = useState('');
   const [showAddAgency, setShowAddAgency] = useState(false);
@@ -92,8 +128,20 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     undefined
   );
   const [logoError, setLogoError] = useState('');
-  const [bentoCalcCount, setBentoCalcCount] = useState('6');
+  const [bentoCalcCount, setBentoCalcCount] = useState('5');
+  const [selectedTag, setSelectedTag] = useState<CosmosTagId | null>(null);
+  const [showOrbitalInHub, setShowOrbitalInHub] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const resolvedCosmosRoot = useMemo(
+    () => rootCosmos || buildCosmosRegistry(agencies),
+    [rootCosmos, agencies]
+  );
+
+  const effectiveCosmos: WorkspaceCosmosState = useMemo(
+    () => workspaceCosmos || DEFAULT_WORKSPACE_COSMOS,
+    [workspaceCosmos]
+  );
 
   const allMetrics = useMemo(
     () => computeAgencyMetrics(persons, expenses, calculationSettings),
@@ -101,6 +149,64 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   );
 
   const auditIssues = useMemo(() => auditAgencyPersons(persons), [persons]);
+
+  const visibleWorlds = useMemo(() => {
+    const base = resolvedCosmosRoot.children.filter(
+      (w) => !effectiveCosmos.hiddenWorldIds.includes(w.worldId)
+    );
+    if (!selectedTag) return base;
+    const hitIds = new Set(
+      searchCosmosNodes(resolvedCosmosRoot, '', { tagFilter: selectedTag })
+        .filter((h) => h.node.nodeType === 'world')
+        .map((h) => h.node.id)
+    );
+    return base.filter((w) => hitIds.has(w.id) || w.tags.includes(selectedTag));
+  }, [resolvedCosmosRoot, effectiveCosmos.hiddenWorldIds, selectedTag]);
+
+  const pinnedNodes = useMemo(
+    () =>
+      effectiveCosmos.pinnedNodeIds
+        .map((id) => getCosmosNodeById(resolvedCosmosRoot, id))
+        .filter((n): n is CosmosNode => Boolean(n)),
+    [effectiveCosmos.pinnedNodeIds, resolvedCosmosRoot]
+  );
+
+  const recentNodes = useMemo(
+    () =>
+      effectiveCosmos.recentNodeIds
+        .filter((id) => !effectiveCosmos.pinnedNodeIds.includes(id))
+        .slice(0, 4)
+        .map((id) => getCosmosNodeById(resolvedCosmosRoot, id))
+        .filter((n): n is CosmosNode => Boolean(n)),
+    [effectiveCosmos.recentNodeIds, effectiveCosmos.pinnedNodeIds, resolvedCosmosRoot]
+  );
+
+  const smartSuggestions = useMemo(() => {
+    if (!effectiveCosmos.featureFlags.smartUsageSuggestions) return [];
+    return getSmartCosmosSuggestions({
+      root: resolvedCosmosRoot,
+      usageMap: loadCosmosUsageMap(),
+      pinnedNodeIds: effectiveCosmos.pinnedNodeIds,
+      dismissedIds: effectiveCosmos.dismissedSuggestionIds,
+      auditIssuesCount: auditIssues.length,
+      feePerIndividualIqd: calculationSettings.feePerIndividualIqd,
+    });
+  }, [
+    effectiveCosmos.featureFlags.smartUsageSuggestions,
+    effectiveCosmos.pinnedNodeIds,
+    effectiveCosmos.dismissedSuggestionIds,
+    resolvedCosmosRoot,
+    auditIssues.length,
+    calculationSettings.feePerIndividualIqd,
+  ]);
+
+  const handleOpenCosmosNode = (node: CosmosNode) => {
+    if (onSelectCosmosNode) {
+      onSelectCosmosNode(node);
+    } else if (onNavigateHierarchyTarget) {
+      onNavigateHierarchyTarget(node.target, node.id);
+    }
+  };
 
   const agencyBreakdown = useMemo(() => {
     const totalInd = Math.max(1, allMetrics.activeIndividuals);
@@ -229,6 +335,22 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             <span>المطابقة والأرشفة</span>
           </button>
 
+          {onOpenWorldSwitcher && (
+            <button
+              type="button"
+              onClick={onOpenWorldSwitcher}
+              className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-extrabold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+              }}
+            >
+              <Globe2 className="h-4 w-4" />
+              <span>مبدّل العوالم ({resolvedCosmosRoot.children.length})</span>
+            </button>
+          )}
+
           {capabilities.canManageAgencies && (
             <button
               type="button"
@@ -245,6 +367,146 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           )}
         </div>
       </header>
+
+      {/* First-Time Onboarding Tour Card */}
+      {!effectiveCosmos.accessibility.onboardingCompleted && onCompleteOnboarding && (
+        <section
+          aria-label="جولة تعريفية سريعة بنظام الأكوان"
+          className="cosmos-glass-panel border p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4"
+          style={{
+            borderColor: 'var(--accent)',
+            backgroundImage:
+              'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(16,185,129,0.06))',
+          }}
+        >
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <Compass className="h-6 w-6 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+            <div className="space-y-1">
+              <h2 className="text-sm sm:text-base font-extrabold">
+                مرحباً بك في نظام الأكوان والعوالم الجديد — Morrow
+              </h2>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                كل الإعدادات والميزات أصبحت معزولة في 14 عالماً واضحاً (مركز ◂ عالم ◂ مجرة ◂ كبسولة)، مع بقاء الجداول الشاملة والوكالات والثيمات محمية 100% بلا أي حذف.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCompleteOnboarding}
+            className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold shrink-0"
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+          >
+            <Check className="h-4 w-4" />
+            <span>فهمت، لنبدأ</span>
+          </button>
+        </section>
+      )}
+
+      {/* Quick Favorites, Recently Opened & Dismissible Smart Suggestions */}
+      {(pinnedNodes.length > 0 || recentNodes.length > 0 || smartSuggestions.length > 0) && (
+        <section aria-label="المفضلة وآخر ما فتحته والاقتراحات الذكية" className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {pinnedNodes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-500">
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                  <span>المفضلة:</span>
+                </span>
+                {pinnedNodes.slice(0, 6).map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => handleOpenCosmosNode(node)}
+                    className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors hover:border-[var(--accent)]"
+                    style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
+                  >
+                    <SectionLogo icon={node.icon} tone={node.accentTone} size="xs" />
+                    <span>{node.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {recentNodes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] font-bold"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>آخر ما فتحته:</span>
+                </span>
+                {recentNodes.map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => handleOpenCosmosNode(node)}
+                    className="cosmos-touch-target inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-semibold hover:border-[var(--accent)]"
+                    style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+                  >
+                    <span>{node.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {smartSuggestions.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {smartSuggestions.slice(0, 2).map((sug) => {
+                const targetNode = getCosmosNodeById(resolvedCosmosRoot, sug.targetNodeId);
+                return (
+                  <div
+                    key={sug.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 text-xs"
+                    style={{
+                      backgroundColor:
+                        sug.tone === 'warning' ? 'var(--warning-bg)' : 'var(--bg-surface)',
+                      borderColor:
+                        sug.tone === 'warning' ? 'var(--warning)' : 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <Sparkles
+                        className="h-4 w-4 shrink-0 mt-0.5"
+                        style={{
+                          color: sug.tone === 'warning' ? 'var(--warning)' : 'var(--accent)',
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <div className="font-extrabold">{sug.title}</div>
+                        <div style={{ color: 'var(--text-muted)' }}>{sug.subtitle}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {targetNode && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCosmosNode(targetNode)}
+                          className="rounded-xl px-3 py-1.5 font-extrabold"
+                          style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                        >
+                          {sug.ctaLabel}
+                        </button>
+                      )}
+                      {onDismissSuggestion && (
+                        <button
+                          type="button"
+                          onClick={() => onDismissSuggestion(sug.id)}
+                          aria-label="إخفاء الاقتراح"
+                          className="rounded-lg p-1.5 opacity-70 hover:opacity-100"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Inline Add Agency Form */}
       {showAddAgency && capabilities.canManageAgencies && (
@@ -442,27 +704,38 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           <div className="space-y-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div
-                  className="text-xs font-semibold"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  البطاقة الرئيسية · السجل الشامل
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className="text-xs font-semibold"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    البطاقة الرئيسية · السجل الشامل
+                  </div>
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] font-bold"
+                    style={{ color: 'var(--warning)' }}
+                  >
+                    <Lock className="h-3 w-3" />
+                    <span>نطاق محمي (Frozen Zone)</span>
+                  </span>
                 </div>
                 <h2 className="mt-1 text-xl font-bold">جميع الوكالات</h2>
               </div>
 
-              <button
-                type="button"
-                onClick={onOpenMasterRoster}
-                className="tabrix-btn inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-90"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                <span>فتح الجدول الشامل</span>
-                <ArrowLeft className="h-4 w-4" />
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenMasterRoster}
+                  className="tabrix-btn inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  <span>فتح الجدول الشامل بملء الشاشة</span>
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div
@@ -1017,6 +1290,91 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </section>
       )}
+
+      {/* Cosmos Major Worlds Matrix + Tag Filter + Orbital Toggle */}
+      <section aria-label="أكوان وعوالم Morrow الرئيسية" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base sm:text-lg font-extrabold">
+              العوالم الكبرى — استوديوهات النظام ({visibleWorlds.length})
+            </h2>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              كل عالم معزول ومستقل بخريطته وأدواته، مع بحث يصل لأي أداة مباشرة.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {effectiveCosmos.featureFlags.orbitalMapView && (
+              <button
+                type="button"
+                onClick={() => setShowOrbitalInHub((v) => !v)}
+                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold"
+                style={
+                  showOrbitalInHub
+                    ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', borderColor: 'var(--accent)' }
+                    : { backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }
+                }
+              >
+                <Orbit className="h-4 w-4" />
+                <span>{showOrbitalInHub ? 'عرض بطاقات العوالم' : 'الخريطة المدارية الحية'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Cross-World Tags Filter Strip */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setSelectedTag(null)}
+            className="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold"
+            style={
+              selectedTag === null
+                ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', borderColor: 'var(--accent)' }
+                : { backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }
+            }
+          >
+            الكل ({resolvedCosmosRoot.children.length - effectiveCosmos.hiddenWorldIds.length})
+          </button>
+          {(Object.keys(COSMOS_TAG_LABELS) as CosmosTagId[]).map((tagId) => (
+            <button
+              key={tagId}
+              type="button"
+              onClick={() => setSelectedTag((prev) => (prev === tagId ? null : tagId))}
+              className="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold"
+              style={
+                selectedTag === tagId
+                  ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', borderColor: 'var(--accent)' }
+                  : { backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }
+              }
+            >
+              {COSMOS_TAG_LABELS[tagId]}
+            </button>
+          ))}
+        </div>
+
+        {showOrbitalInHub ? (
+          <OrbitalMapView
+            root={resolvedCosmosRoot}
+            hiddenWorldIds={effectiveCosmos.hiddenWorldIds}
+            enableOrbitalMode
+            onSelectNode={handleOpenCosmosNode}
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleWorlds.map((world) => (
+              <GalaxyCard
+                key={world.id}
+                node={world}
+                badgeContext={hierarchyBadgeContext}
+                isPinned={effectiveCosmos.pinnedNodeIds.includes(world.id)}
+                onOpen={handleOpenCosmosNode}
+                onTogglePin={onTogglePinnedNode}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Level 1 Hierarchical Pyramid Hub: Nested Level 2 & Level 3 Workspaces */}
       {hierarchyTree && hierarchyBadgeContext && onNavigateHierarchyTarget && (

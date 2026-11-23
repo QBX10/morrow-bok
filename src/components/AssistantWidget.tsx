@@ -1,15 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  Bot,
+  Bookmark,
   BookmarkCheck,
+  Bot,
+  Camera,
   Check,
   CheckCircle2,
   Clock,
+  Copy,
   Cpu,
+  Download,
   ExternalLink,
   FileSpreadsheet,
+  Maximize2,
+  Mic,
+  MicOff,
+  Minimize2,
+  MoreHorizontal,
   Navigation,
+  Pin,
+  Plus,
   RotateCcw,
   Search,
   Send,
@@ -38,6 +49,8 @@ import type {
 } from '../types/assistant';
 import type { QuotaCheckResult } from '../utils/assistantQuota';
 import { getEngineDisplayMeta } from '../utils/morrowRouter';
+import { BottomSheet } from './cosmos/BottomSheet';
+import { ResultCard } from './cosmos/ResultCard';
 
 interface AssistantWidgetProps {
   isOpen: boolean;
@@ -79,18 +92,119 @@ interface AssistantWidgetProps {
   onOpenAssistantSettings?: () => void;
   pendingDraftsCount?: number;
   onOpenCommandCenter?: (tab?: MorrowCenterTab) => void;
+  onQuickCameraExtract?: () => void;
+  onQuickBackupJson?: () => void;
+  onTogglePinMessage?: (messageId: string) => void;
+  onExportChatHistory?: () => void;
 }
 
 const BRAIN_MODES: Array<{
   id: AssistantBrainMode;
   label: string;
+  shortLabel: string;
   desc: string;
 }> = [
-  { id: 'auto', label: 'تلقائي', desc: 'Morrow المحلي أولاً ثم 2.5 Flash ثم 2.5 Pro عند الحاجة' },
-  { id: 'local', label: 'Morrow محلي', desc: 'ردود وحسابات وفحص فوري بدون إنترنت' },
-  { id: 'gemini_2_5_flash', label: '2.5 Flash', desc: 'Gemini 2.5 Flash للمهام اللغوية السريعة' },
-  { id: 'gemini_2_5_pro', label: '2.5 Pro', desc: 'Gemini 2.5 Pro للتحليل العميق والتقارير' },
+  {
+    id: 'auto',
+    label: 'تلقائي ذكي',
+    shortLabel: 'تلقائي',
+    desc: 'يبدأ بـ Morrow المحلي، ويصعّد إلى Gemini 2.5 Flash أو 2.5 Pro عند الحاجة.',
+  },
+  {
+    id: 'local',
+    label: 'Morrow المحلي',
+    shortLabel: 'محلي',
+    desc: 'ردود وحسابات وفحص فوري بدون إنترنت 100%.',
+  },
+  {
+    id: 'gemini_2_5_flash',
+    label: 'Gemini 2.5 Flash',
+    shortLabel: '2.5 Flash',
+    desc: 'نموذج سريع للصياغة والأسئلة اللغوية اليومية.',
+  },
+  {
+    id: 'gemini_2_5_pro',
+    label: 'Gemini 2.5 Pro',
+    shortLabel: '2.5 Pro',
+    desc: 'نموذج التحليل العميق والتقارير الاستراتيجية.',
+  },
 ];
+
+const COMMAND_LIBRARY: Array<{
+  id: string;
+  title: string;
+  subtitle: string;
+  prompt: string;
+  category: string;
+}> = [
+  {
+    id: 'lib_stats',
+    title: 'إحصائيات وصافي الأرباح',
+    subtitle: 'احصائيات شاملة مع رسم بياني وتفاصيل الأكياس',
+    prompt: 'احصائيات جميع الوكالات',
+    category: 'مالية وبيانات',
+  },
+  {
+    id: 'lib_calc_250',
+    title: 'ضبط رسم الفرد إلى 250 د.ع',
+    subtitle: 'يعرض بطاقة قبل ← بعد للتأكيد الفوري',
+    prompt: 'خلّي رسم الفرد 250',
+    category: 'الحاسبة',
+  },
+  {
+    id: 'lib_diag',
+    title: 'فحص صحة البيانات والتكرارات',
+    subtitle: 'يكشف الأسماء المكررة والأرقام غير المنطقية',
+    prompt: 'افحص التطبيق',
+    category: 'سلامة وجودة',
+  },
+  {
+    id: 'lib_dups',
+    title: 'فحص المكررين فقط',
+    subtitle: 'يعرض قائمة التكرارات في جميع الوكالات',
+    prompt: 'المكررين',
+    category: 'سلامة وجودة',
+  },
+  {
+    id: 'lib_blocked',
+    title: 'اعرض المحجوبين فقط',
+    subtitle: 'تصفية صامتة للجدول على المحجوبين',
+    prompt: 'اعرض المحجوبين',
+    category: 'فلترة الجدول',
+  },
+  {
+    id: 'lib_excel',
+    title: 'تصدير كشف Excel معزول',
+    subtitle: 'يعمل في الخلفية ضمن Sandbox للقراءة فقط',
+    prompt: 'صدر تقرير اكسل',
+    category: 'تصدير',
+  },
+  {
+    id: 'lib_pdf',
+    title: 'طباعة تقرير PDF رسمي',
+    subtitle: 'يطبّق قواعد الذاكرة التلقائية على الأعمدة',
+    prompt: 'اطبع تقرير pdf',
+    category: 'تصدير',
+  },
+  {
+    id: 'lib_guide_calc',
+    title: 'وين إعدادات الحاسبة؟',
+    subtitle: 'إرشاد مرئي spotlight إلى كبسولة الحاسبة',
+    prompt: 'وريني الحاسبة',
+    category: 'إرشاد',
+  },
+];
+
+type BrowserSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((ev: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
 export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   isOpen,
@@ -122,13 +236,35 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onOpenAssistantSettings,
   pendingDraftsCount = 0,
   onOpenCommandCenter,
+  onQuickCameraExtract,
+  onQuickBackupJson,
+  onTogglePinMessage,
+  onExportChatHistory,
 }) => {
   const [inputValue, setInputValue] = useState('');
-  const [showPrefs, setShowPrefs] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
+  const [brainSheetOpen, setBrainSheetOpen] = useState(false);
+  const [librarySheetOpen, setLibrarySheetOpen] = useState(false);
   const [tipDismissed, setTipDismissed] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const [savedPromptSet, setSavedPromptSet] = useState<Set<string>>(() => new Set());
+
+  // Draggable Floating Launcher position offset (x, y from bottom-left anchor)
+  const [fabOffset, setFabOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragInfoRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  }>({ active: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -136,22 +272,25 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     }
   }, [messages.length, isOpen, isThinking]);
 
-  // Apply visual spotlight class to matching DOM target when "وريني" is active
   useEffect(() => {
     if (!spotlight?.targetId) return;
-    const el = document.querySelector(
-      `[data-assistant-target="${spotlight.targetId}"]`
-    );
+    const el = document.querySelector(`[data-assistant-target="${spotlight.targetId}"]`);
     if (el instanceof HTMLElement) {
       el.classList.add('assistant-spotlight-active');
-      return () => {
-        el.classList.remove('assistant-spotlight-active');
-      };
+      return () => el.classList.remove('assistant-spotlight-active');
     }
   }, [spotlight]);
 
-  const activeBrainLabel = useMemo(
-    () => BRAIN_MODES.find((b) => b.id === brainMode)?.label || 'تلقائي',
+  // Auto-grow textarea cleanly
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 108)}px`;
+  }, [inputValue]);
+
+  const activeBrain = useMemo(
+    () => BRAIN_MODES.find((b) => b.id === brainMode) || BRAIN_MODES[0],
     [brainMode]
   );
 
@@ -159,39 +298,91 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     if (connectivity === 'online') {
       return {
         label: 'أونلاين',
-        bg: 'var(--success-bg)',
-        border: 'var(--success)',
         color: 'var(--success)',
         title: `متصل (${assistantSettings?.preferredModelId || 'gemini-2.5-flash'})`,
       };
     }
     if (connectivity === 'quota_exhausted') {
       return {
-        label: 'الحصة خلصت',
-        bg: 'var(--danger-bg, var(--warning-bg))',
-        border: 'var(--danger)',
+        label: 'حصة مؤقتة',
         color: 'var(--danger)',
-        title: 'انتهت حصة السحابة مؤقتاً — يعمل الآن بمحرك Morrow المحلي',
+        title: 'انتهت الحصة السحابية — التحويل التلقائي لمحرك Morrow المحلي فعّال',
       };
     }
     return {
       label: 'أوفلاين',
-      bg: 'var(--warning-bg)',
-      border: 'var(--warning)',
       color: 'var(--warning)',
       title: assistantSettings?.onlineDisabled
-        ? 'معطّل من الإعدادات — وضع أوفلاين صارم'
-        : 'يعمل حالياً بمحرك Morrow المحلي بدون إنترنت',
+        ? 'وضع أوفلاين صارم من الإعدادات'
+        : 'يعمل بمحرك Morrow المحلي بدون إنترنت',
     };
   }, [connectivity, assistantSettings]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCopyMessage = (msgId: string, text: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(text).catch(() => {});
+      setCopiedMsgId(msgId);
+      window.setTimeout(() => setCopiedMsgId(null), 1800);
+    }
+  };
+
+  const toggleVoiceInput = () => {
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      return;
+    }
+    const w = window as unknown as {
+      SpeechRecognition?: new () => BrowserSpeechRecognition;
+      webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+    };
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    try {
+      const rec = new Ctor();
+      rec.lang = 'ar-IQ';
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.onresult = (ev) => {
+        const parts: string[] = [];
+        for (let i = 0; i < ev.results.length; i++) {
+          parts.push(ev.results[i][0]?.transcript || '');
+        }
+        const text = parts.join(' ').trim();
+        if (text) setInputValue(text);
+      };
+      rec.onerror = () => setIsRecording(false);
+      rec.onend = () => setIsRecording(false);
+      recognitionRef.current = rec;
+      setIsRecording(true);
+      rec.start();
+    } catch {
+      setIsRecording(false);
+    }
+  };
+
+  const submitCurrentPrompt = () => {
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
+    if (!trimmed || isThinking) return;
     setInputValue('');
     onSendMessage(trimmed, { fromFloatingWidget: true });
   };
+
+  const thinAlertText = useMemo(() => {
+    if (
+      quotaInfo &&
+      !assistantSettings?.onlineDisabled &&
+      (quotaInfo.quotaExhausted || quotaInfo.nearDailyLimit)
+    ) {
+      return quotaInfo.quotaExhausted
+        ? 'خلصت حصة السحابة — التحويل للمحلي فعّال تلقائياً'
+        : `تنبيه الحصة: ${quotaInfo.dailyUsed}/${quotaInfo.dailyLimit} طلب (${quotaInfo.dailyPercent}%)`;
+    }
+    if (proactiveTip && !tipDismissed) {
+      return proactiveTip;
+    }
+    return null;
+  }, [quotaInfo, assistantSettings?.onlineDisabled, proactiveTip, tipDismissed]);
 
   return (
     <>
@@ -200,7 +391,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         <aside
           role="status"
           aria-live="polite"
-          className="no-print fixed top-[78px] left-1/2 z-50 flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
+          className="no-print fixed top-[78px] left-1/2 z-[var(--z-toast)] flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--accent)',
@@ -223,7 +414,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             type="button"
             onClick={onDismissSpotlight}
             aria-label="إغلاق مؤشر الإرشاد"
-            className="rounded-lg border px-2 py-1 text-[11px] font-bold shrink-0"
+            className="rounded-lg border px-2.5 py-1 text-[11px] font-bold shrink-0"
             style={{ borderColor: 'var(--border-color)' }}
           >
             فهمت
@@ -231,43 +422,86 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         </aside>
       )}
 
-      {/* Floating Launcher Button */}
+      {/* Draggable Floating Launcher Button */}
       {!isOpen && (
         <button
           type="button"
-          onClick={() => onToggleOpen(true)}
+          onPointerDown={(e) => {
+            dragInfoRef.current = {
+              active: true,
+              moved: false,
+              startX: e.clientX,
+              startY: e.clientY,
+              origX: fabOffset.x,
+              origY: fabOffset.y,
+            };
+          }}
+          onPointerMove={(e) => {
+            if (!dragInfoRef.current.active) return;
+            const dx = e.clientX - dragInfoRef.current.startX;
+            const dy = e.clientY - dragInfoRef.current.startY;
+            if (Math.hypot(dx, dy) > 6) {
+              dragInfoRef.current.moved = true;
+              const maxX = Math.max(0, window.innerWidth - 180);
+              const maxY = Math.max(0, window.innerHeight - 140);
+              setFabOffset({
+                x: Math.max(0, Math.min(maxX, dragInfoRef.current.origX + dx)),
+                y: Math.max(-maxY, Math.min(40, dragInfoRef.current.origY + dy)),
+              });
+            }
+          }}
+          onPointerUp={() => {
+            const wasDrag = dragInfoRef.current.moved;
+            dragInfoRef.current.active = false;
+            if (!wasDrag) {
+              onToggleOpen(true);
+            }
+          }}
           aria-label="فتح المساعد الذكي Morrow"
-          title={proactiveTip || 'فتح المساعد الذكي Morrow'}
-          className="no-print assistant-glow-btn fixed bottom-3 left-3 z-40 inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2.5 text-[11px] font-bold whitespace-nowrap transition-transform hover:scale-[1.03] sm:bottom-4 sm:left-4 sm:gap-2 sm:px-4 sm:py-3 sm:text-xs"
+          title={proactiveTip || 'اسحب للتحريك أو اضغط لفتح المساعد الذكي Morrow'}
+          className="no-print assistant-glow-btn fixed bottom-20 left-3 md:bottom-4 md:left-4 z-[var(--z-floating-assistant)] inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-extrabold whitespace-nowrap shadow-xl cursor-grab active:cursor-grabbing touch-none transition-shadow hover:shadow-2xl"
           style={{
             backgroundColor: 'var(--accent)',
             borderColor: 'var(--accent)',
             color: 'var(--accent-fg)',
+            transform: `translate3d(${fabOffset.x}px, ${fabOffset.y}px, 0)`,
           }}
         >
+          <span className="relative flex h-2.5 w-2.5">
+            <span
+              className="inline-flex h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: statusMeta.color }}
+            />
+          </span>
           <Bot className="h-4 w-4 shrink-0" />
-          <span>المساعد الذكي</span>
+          <span>Morrow</span>
           {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
-            <span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
+            <span className="rounded-lg bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
               {pendingDraftsCount + queuedTasks.length}
             </span>
           )}
         </button>
       )}
 
-      {/* Non-Blocking Side Drawer Panel */}
+      {/* Non-Blocking Drawer or Fullscreen Studio Panel */}
       {isOpen && (
         <aside
           aria-label="لوحة المساعد الذكي — Morrow"
-          className="no-print fixed top-14 bottom-3 left-3 z-40 flex w-[min(430px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border shadow-2xl"
+          className={`no-print fixed z-[var(--z-sheet)] flex flex-col overflow-hidden border shadow-2xl transition-all duration-200 ${
+            isFullscreen
+              ? 'inset-2 sm:inset-4 rounded-[26px]'
+              : 'top-14 bottom-20 left-3 md:bottom-4 md:left-4 w-[min(450px,calc(100vw-1.5rem))] rounded-[24px]'
+          }`}
           style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--accent)',
+            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 95%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
             color: 'var(--text-primary)',
-            boxShadow: '0 18px 48px rgba(0, 0, 0, 0.28)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            boxShadow: '0 22px 54px rgba(0, 0, 0, 0.30)',
           }}
         >
-          {/* Header: Identity + Online/Offline/Quota Badge + Undo + Settings + Close */}
+          {/* Slim Header */}
           <div
             className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5"
             style={{
@@ -277,23 +511,22 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
           >
             <div className="flex items-center gap-2 min-w-0">
               <div
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
                 }}
               >
-                <Bot className="h-4 w-4" />
+                <Bot className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h2 className="text-xs font-bold whitespace-nowrap">Morrow</h2>
+                  <h2 className="text-xs sm:text-sm font-extrabold whitespace-nowrap">Morrow</h2>
                   <span
                     title={statusMeta.title}
-                    className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap"
+                    className="inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-bold"
                     style={{
-                      backgroundColor: statusMeta.bg,
-                      borderColor: statusMeta.border,
+                      borderColor: 'var(--border-color)',
                       color: statusMeta.color,
                     }}
                   >
@@ -306,13 +539,31 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   </span>
                 </div>
                 <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  الوضع: {activeBrainLabel}
-                  {focusedPersonName ? ` · المحدد: ${focusedPersonName}` : ''}
+                  {activeBrain.shortLabel}
+                  {focusedPersonName ? ` · ${focusedPersonName}` : ''}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
+              {hasUndoableAction && onUndoLastAction && (
+                <button
+                  type="button"
+                  onClick={() => onUndoLastAction()}
+                  aria-label="تراجع عن آخر عملية للمساعد"
+                  title="تراجع"
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-2 text-[11px] font-bold"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--warning)',
+                    color: 'var(--warning)',
+                  }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">تراجع</span>
+                </button>
+              )}
+
               {onOpenCommandCenter && (
                 <button
                   type="button"
@@ -320,8 +571,8 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                     onOpenCommandCenter(pendingDraftsCount > 0 ? 'approvals' : 'chat')
                   }
                   aria-label="فتح مركز Morrow الكامل"
-                  title="فتح مركز Morrow الكامل (الموافقات والذاكرة والملاحظات)"
-                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-bold whitespace-nowrap"
+                  title="المركز الكامل"
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-2 text-[11px] font-bold"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor:
@@ -329,115 +580,66 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                     color: pendingDraftsCount > 0 ? 'var(--accent)' : 'var(--text-primary)',
                   }}
                 >
-                  <ExternalLink className="h-3 w-3" />
-                  <span>
-                    المركز{pendingDraftsCount > 0 ? ` (${pendingDraftsCount})` : ''}
-                  </span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {pendingDraftsCount > 0 && (
+                    <span className="tabular-nums">{pendingDraftsCount}</span>
+                  )}
                 </button>
               )}
-              {hasUndoableAction && onUndoLastAction && (
-                <button
-                  type="button"
-                  onClick={() => onUndoLastAction()}
-                  aria-label="تراجع عن آخر عملية للمساعد"
-                  title="تراجع عن آخر عملية نفذها المساعد"
-                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--warning)',
-                    color: 'var(--warning)',
-                  }}
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  <span>تراجع</span>
-                </button>
-              )}
-              {onOpenAssistantSettings && (
-                <button
-                  type="button"
-                  onClick={onOpenAssistantSettings}
-                  aria-label="إعدادات المساعد الذكي والحصة"
-                  title="إعدادات النموذج والحصة والخصوصية"
-                  className="rounded-lg border p-1.5 text-[11px]"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                </button>
-              )}
+
               <button
                 type="button"
-                onClick={() => setShowPrefs((v) => !v)}
-                aria-label="تفضيلات المساعد المحفوظة"
-                title="التفضيلات المحفوظة والطلبات المؤجلة"
-                className="rounded-lg border p-1.5 text-[11px]"
-                style={{
-                  backgroundColor: showPrefs ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
-                  borderColor: showPrefs ? 'var(--accent)' : 'var(--border-color)',
-                  color: showPrefs ? 'var(--accent)' : 'var(--text-muted)',
-                }}
-              >
-                <BookmarkCheck className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleOpen(false)}
-                aria-label="إغلاق لوحة المساعد"
-                className="rounded-lg border p-1.5"
+                onClick={() => setToolsSheetOpen(true)}
+                aria-label="أدوات وتفضيلات المساعد"
+                title="التفضيلات والإعدادات وسجل المحادثة"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                <X className="h-3.5 w-3.5" />
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsFullscreen((v) => !v)}
+                aria-label={isFullscreen ? 'تصغير النافذة' : 'ملء الشاشة'}
+                title={isFullscreen ? 'تصغير' : 'ملء الشاشة'}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onToggleOpen(false)}
+                aria-label="إغلاق لوحة المساعد"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {/* Brain / Model Switcher (All 5 modes preserved) */}
+          {/* Single Horizontal Quick Commands Strip + '+' Command Library */}
           <div
-            className="border-b px-3 py-2"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="mb-1 flex items-center justify-between gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              <span className="inline-flex items-center gap-1 font-bold">
-                <Cpu className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                <span>محرك الذكاء:</span>
-              </span>
-              <span className="truncate">{BRAIN_MODES.find((b) => b.id === brainMode)?.desc}</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {BRAIN_MODES.map((m) => {
-                const active = brainMode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => onChangeBrainMode(m.id)}
-                    className="rounded-lg border px-2 py-1 text-[11px] font-bold whitespace-nowrap transition-colors"
-                    style={{
-                      backgroundColor: active ? 'var(--accent)' : 'var(--bg-main)',
-                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                      color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
-                    }}
-                  >
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Quick Offline Action Bar (All 4 core instant buttons preserved) */}
-          <div
-            className="grid grid-cols-4 gap-1.5 border-b px-3 py-2"
+            className="flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -447,171 +649,73 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               type="button"
               onClick={() => {
                 setInputValue('ابحث ');
-                inputRef.current?.focus();
+                textareaRef.current?.focus();
               }}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Search className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+              <Search className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
               <span>بحث</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('صدر تقرير اكسل', { fromFloatingWidget: true })}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <FileSpreadsheet className="h-3 w-3" style={{ color: 'var(--success)' }} />
+              <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
               <span>تقرير</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('المكررين', { fromFloatingWidget: true })}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Users className="h-3 w-3" style={{ color: 'var(--warning)' }} />
+              <Users className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
               <span>المكررين</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('افحص التطبيق', { fromFloatingWidget: true })}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-bold whitespace-nowrap"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <ShieldCheck className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+              <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
               <span>افحص</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLibrarySheetOpen(true)}
+              aria-label="مكتبة الأوامر السريعة"
+              title="المزيد من الأوامر الجاهزة"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-xs font-extrabold"
+              style={{
+                backgroundColor: 'var(--bg-nav-active)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+              }}
+            >
+              <Plus className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Quota Alert Strip */}
-          {quotaInfo &&
-            !assistantSettings?.onlineDisabled &&
-            (quotaInfo.quotaExhausted || quotaInfo.nearDailyLimit) && (
-              <div
-                className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
-                style={{
-                  backgroundColor: 'var(--warning-bg)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                <span className="truncate font-semibold">
-                  {quotaInfo.quotaExhausted
-                    ? 'خلصت حصة السحابة — التحويل التلقائي للمحلي فعّال'
-                    : `تنبيه الحصة: ${quotaInfo.dailyUsed}/${quotaInfo.dailyLimit} طلب اليوم (${quotaInfo.dailyPercent}%)`}
-                </span>
-                {onOpenAssistantSettings && (
-                  <button
-                    type="button"
-                    onClick={onOpenAssistantSettings}
-                    className="shrink-0 font-bold underline"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    الإعدادات
-                  </button>
-                )}
-              </div>
-            )}
-
-          {/* Saved Memory Preferences & Offline Queue Inspector */}
-          {showPrefs && (
+          {/* Thin Dismissible Alert Banner */}
+          {thinAlertText && (
             <div
-              className="max-h-56 space-y-2.5 overflow-y-auto border-b p-3 text-xs"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <div className="space-y-1.5">
-                <div className="font-bold">تفضيلاتك المحفوظة ({preferences.length})</div>
-                {preferences.length === 0 ? (
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    لا توجد تفضيلات محفوظة بعد. قل مثلاً: «اخفي عمود الحالة في التقرير».
-                  </p>
-                ) : (
-                  preferences.map((pref) => (
-                    <div
-                      key={pref.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <span className="truncate font-semibold">{pref.label}</span>
-                      <button
-                        type="button"
-                        onClick={() => onDeletePref(pref.id)}
-                        aria-label={`حذف تفضيل ${pref.label}`}
-                        className="rounded p-1 hover:opacity-75"
-                        style={{ color: 'var(--danger)' }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {queuedTasks.length > 0 && (
-                <div className="space-y-1.5 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="font-bold">طلبات محفوظة بانتظار الإنترنت ({queuedTasks.length})</div>
-                  {queuedTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <span className="truncate text-[11px]">{task.prompt}</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onRunQueuedTask(task)}
-                          className="rounded px-2 py-0.5 text-[10px] font-bold"
-                          style={{
-                            backgroundColor: 'var(--accent)',
-                            color: 'var(--accent-fg)',
-                          }}
-                        >
-                          تنفيذ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveQueuedTask(task.id)}
-                          aria-label="حذف الطلب المحفوظ"
-                          className="p-0.5"
-                          style={{ color: 'var(--danger)' }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Proactive Health Notice inside Drawer */}
-          {proactiveTip && !tipDismissed && !showPrefs && (
-            <div
-              className="flex items-center justify-between gap-2 border-b px-3 py-2 text-[11px]"
+              className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
               style={{
                 backgroundColor: 'var(--warning-bg)',
                 borderColor: 'var(--border-color)',
@@ -627,24 +731,23 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   className="h-3.5 w-3.5 shrink-0"
                   style={{ color: 'var(--warning)' }}
                 />
-                <span className="truncate">{proactiveTip}</span>
+                <span className="truncate">{thinAlertText}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setTipDismissed(true)}
                 aria-label="إخفاء التنبيه"
-                className="rounded p-0.5 hover:opacity-75"
-                style={{ color: 'var(--text-muted)' }}
+                className="rounded p-1 hover:opacity-75"
               >
                 <X className="h-3 w-3" />
               </button>
             </div>
           )}
 
-          {/* Queued Offline Requests Ready Banner when back Online */}
-          {connectivity === 'online' && queuedTasks.length > 0 && !showPrefs && (
+          {/* Queued Offline Ready Strip */}
+          {connectivity === 'online' && queuedTasks.length > 0 && (
             <div
-              className="flex items-center justify-between gap-2 border-b px-3 py-2 text-[11px]"
+              className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent)',
@@ -652,12 +755,12 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             >
               <span className="inline-flex items-center gap-1 font-bold" style={{ color: 'var(--accent)' }}>
                 <Clock className="h-3.5 w-3.5" />
-                <span>عندك {queuedTasks.length} طلب محفوظ جاهز للتنفيذ</span>
+                <span>{queuedTasks.length} طلب محفوظ جاهز للتنفيذ</span>
               </span>
               <button
                 type="button"
                 onClick={() => onRunQueuedTask(queuedTasks[0])}
-                className="rounded-md px-2.5 py-1 font-bold whitespace-nowrap"
+                className="rounded-lg px-2.5 py-1 font-bold whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -669,31 +772,25 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
           )}
 
           {/* Chat Messages Feed */}
-          <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
+          <div className="flex-1 space-y-3 overflow-y-auto p-3.5 text-xs sm:text-[13px]">
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
               return (
                 <div
                   key={msg.id}
-                  className={`flex flex-col gap-1.5 ${
-                    isUser ? 'items-start' : 'items-stretch'
-                  }`}
+                  className={`flex flex-col gap-1.5 ${isUser ? 'items-start' : 'items-stretch'}`}
                 >
                   <div
-                    className="rounded-xl border px-3 py-2.5 leading-relaxed whitespace-pre-line"
+                    className="rounded-[20px] border px-3.5 py-3 leading-relaxed whitespace-pre-line shadow-sm"
                     style={{
-                      backgroundColor: isUser
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                      borderColor: isUser
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
+                      backgroundColor: isUser ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      borderColor: isUser ? 'var(--accent)' : 'var(--border-color)',
                       maxWidth: isUser ? '88%' : '100%',
                     }}
                   >
                     {!isUser && (msg.engineLabel || msg.engineUsed) && (
                       <div
-                        className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold"
+                        className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-bold"
                         style={{ color: 'var(--accent)' }}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -708,23 +805,64 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                             {msg.engineLabel || getEngineDisplayMeta(msg.engineUsed).badgeLabel}
                           </span>
                         </span>
-                        {typeof msg.confidence === 'number' && (
-                          <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                            ثقة {Math.round(msg.confidence * 100)}%
-                          </span>
-                        )}
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyMessage(msg.id, msg.text)}
+                            title="نسخ الرد"
+                            aria-label="نسخ الرد"
+                            className="rounded-lg p-1 hover:opacity-75"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {copiedMsgId === msg.id ? (
+                              <Check className="h-3 w-3" style={{ color: 'var(--success)' }} />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </button>
+                          {onTogglePinMessage && (
+                            <button
+                              type="button"
+                              onClick={() => onTogglePinMessage(msg.id)}
+                              title={msg.isPinned ? 'إلغاء تثبيت الرسالة' : 'تثبيت الرسالة'}
+                              aria-label="تثبيت الرسالة"
+                              className="rounded-lg p-1 hover:opacity-75"
+                              style={{
+                                color: msg.isPinned ? 'var(--accent)' : 'var(--text-muted)',
+                              }}
+                            >
+                              <Pin className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
 
                     <div>{msg.text}</div>
 
-                    {/* Inline Undo Button on Executed Assistant Mutation */}
+                    {/* Visual Result Card */}
+                    {msg.resultCard && (
+                      <div className="mt-2.5">
+                        <ResultCard
+                          title={msg.resultCard.title}
+                          summary={msg.resultCard.summary}
+                          scorePercent={msg.resultCard.scorePercent}
+                          scoreLabel={msg.resultCard.scoreLabel}
+                          tone={msg.resultCard.tone}
+                          bars={msg.resultCard.bars}
+                          details={msg.resultCard.details}
+                        />
+                      </div>
+                    )}
+
+                    {/* Inline Undo */}
                     {msg.canUndo && !msg.undoUsed && hasUndoableAction && onUndoLastAction && (
                       <div className="mt-2">
                         <button
                           type="button"
                           onClick={() => onUndoLastAction(msg.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                          className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
                           style={{
                             backgroundColor: 'var(--bg-surface)',
                             borderColor: 'var(--warning)',
@@ -745,10 +883,10 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       </div>
                     )}
 
-                    {/* Sandbox Read-Only Confirmation */}
+                    {/* Sandbox Read-Only Notice */}
                     {msg.sandboxNotice && (
                       <div
-                        className="mt-2 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold"
+                        className="mt-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold"
                         style={{
                           backgroundColor: 'var(--success-bg)',
                           borderColor: 'var(--success)',
@@ -759,7 +897,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       </div>
                     )}
 
-                    {/* Spotlight "وريني" Navigation Button */}
+                    {/* Spotlight "وريني" */}
                     {msg.spotlightAction && (
                       <button
                         type="button"
@@ -772,7 +910,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                             description: 'شاهد الموضع المحدد باللون المميز داخل الشاشة',
                           })
                         }
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold"
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold"
                         style={{
                           backgroundColor: 'var(--accent)',
                           color: 'var(--accent-fg)',
@@ -783,7 +921,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       </button>
                     )}
 
-                    {/* Interactive Slot-Filling & Disambiguation Choice Buttons */}
+                    {/* Choices */}
                     {msg.choices && msg.choices.length > 0 && (
                       <div className="mt-2.5 flex flex-wrap gap-1.5">
                         {msg.choices.map((ch) => (
@@ -791,19 +929,20 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                             key={ch.id}
                             type="button"
                             onClick={() => onChoiceClick(ch)}
-                            className="rounded-lg border px-2.5 py-1.5 text-right text-[11px] font-bold transition-colors hover:opacity-90"
+                            className="rounded-xl border px-2.5 py-1.5 text-right text-[11px] font-bold transition-colors hover:opacity-90"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
                               borderColor:
-                                ch.tone === 'warning'
-                                  ? 'var(--warning)'
-                                  : 'var(--accent)',
+                                ch.tone === 'warning' ? 'var(--warning)' : 'var(--accent)',
                               color: 'var(--text-primary)',
                             }}
                           >
                             <div>{ch.label}</div>
                             {ch.sublabel && (
-                              <div className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                              <div
+                                className="text-[10px] font-normal"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
                                 {ch.sublabel}
                               </div>
                             )}
@@ -812,33 +951,19 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       </div>
                     )}
 
-                    {/* Diagnostics Health Report Card */}
-                    {msg.diagnosticsReport && (
+                    {/* Compact Diagnostics Details */}
+                    {msg.diagnosticsReport && msg.diagnosticsReport.issues.length > 0 && (
                       <div
-                        className="mt-2.5 space-y-2 rounded-lg border p-2.5 text-[11px]"
+                        className="mt-2.5 space-y-1.5 rounded-xl border p-2.5 text-[11px]"
                         style={{
                           backgroundColor: 'var(--bg-surface)',
                           borderColor: 'var(--border-color)',
                         }}
                       >
-                        <div className="flex items-center justify-between font-bold">
-                          <span>نسبة سلامة البيانات</span>
-                          <span
-                            className="tabular-nums"
-                            style={{
-                              color:
-                                msg.diagnosticsReport.healthScore >= 85
-                                  ? 'var(--success)'
-                                  : 'var(--warning)',
-                            }}
-                          >
-                            {msg.diagnosticsReport.healthScore}%
-                          </span>
-                        </div>
-                        {msg.diagnosticsReport.issues.slice(0, 6).map((issue) => (
+                        {msg.diagnosticsReport.issues.slice(0, 4).map((issue) => (
                           <div
                             key={issue.id}
-                            className="rounded border px-2 py-1"
+                            className="rounded-lg border px-2 py-1"
                             style={{
                               borderColor:
                                 issue.severity === 'high'
@@ -854,7 +979,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                           <button
                             type="button"
                             onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-bold"
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 font-bold"
                             style={{
                               backgroundColor: 'var(--accent)',
                               color: 'var(--accent-fg)',
@@ -862,23 +987,23 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                           >
                             <Wrench className="h-3.5 w-3.5" />
                             <span>
-                              إصلاح التلقائي ({msg.diagnosticsReport.autoFixableCount})
+                              إصلاح تلقائي ({msg.diagnosticsReport.autoFixableCount})
                             </span>
                           </button>
                         )}
                       </div>
                     )}
 
-                    {/* Before -> After Confirmation Diff Card */}
+                    {/* Before <- After Confirmation Diff Card */}
                     {msg.confirmationDiff && (
                       <div
-                        className="mt-2.5 space-y-2 rounded-xl border p-2.5 text-[11px]"
+                        className="mt-2.5 space-y-2 rounded-2xl border p-3 text-[11px]"
                         style={{
                           backgroundColor: 'var(--bg-surface)',
                           borderColor: 'var(--accent)',
                         }}
                       >
-                        <div className="font-bold" style={{ color: 'var(--accent)' }}>
+                        <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
                           {msg.confirmationDiff.title}
                         </div>
                         <div style={{ color: 'var(--text-muted)' }}>
@@ -889,13 +1014,16 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                           {msg.confirmationDiff.changes.map((c, idx) => (
                             <div
                               key={idx}
-                              className="grid grid-cols-1 gap-0.5 rounded-lg border px-2 py-1.5"
+                              className="grid grid-cols-1 gap-0.5 rounded-xl border px-2.5 py-1.5"
                               style={{
                                 backgroundColor: 'var(--bg-main)',
                                 borderColor: 'var(--border-color)',
                               }}
                             >
-                              <div className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                              <div
+                                className="text-[10px] font-bold"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
                                 {c.fieldLabel}
                               </div>
                               <div className="flex flex-wrap items-center gap-1.5 font-semibold">
@@ -912,19 +1040,19 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                             <button
                               type="button"
                               onClick={() => onResolveDiff(msg.id, true)}
-                              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-1.5 font-bold"
+                              className="cosmos-touch-target inline-flex flex-1 items-center justify-center gap-1 rounded-xl px-3 py-2 font-bold"
                               style={{
                                 backgroundColor: 'var(--success)',
                                 color: 'var(--success-fg)',
                               }}
                             >
                               <Check className="h-3.5 w-3.5" />
-                              <span>موافق</span>
+                              <span>موافق وتنفيذ</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => onResolveDiff(msg.id, false)}
-                              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-bold"
+                              className="cosmos-touch-target inline-flex flex-1 items-center justify-center gap-1 rounded-xl border px-3 py-2 font-bold"
                               style={{
                                 borderColor: 'var(--danger)',
                                 color: 'var(--danger)',
@@ -955,7 +1083,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                       </div>
                     )}
 
-                    {/* Level C Offline Queue Save Button */}
+                    {/* Offline Queue CTA */}
                     {msg.queuePrompt && (
                       <div className="mt-2">
                         {savedPromptSet.has(msg.id) ? (
@@ -973,7 +1101,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                               onSaveToQueue(msg.queuePrompt!.prompt, 'بانتظار السحابة');
                               setSavedPromptSet((prev) => new Set(prev).add(msg.id));
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold"
+                            className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
                             style={{
                               backgroundColor: 'var(--bg-surface)',
                               borderColor: 'var(--accent)',
@@ -993,23 +1121,23 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
 
             {isThinking && (
               <div
-                className="rounded-xl border px-3 py-2 text-[11px] font-semibold"
+                className="rounded-2xl border px-3.5 py-2.5 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                جاري التفكير والتحقق من الأدوات...
+                جاري المعالجة عبر سلسلة Morrow...
               </div>
             )}
             <div ref={scrollEndRef} />
           </div>
 
-          {/* Screen-Aware Smart Suggestions Strip */}
+          {/* Screen-Aware Contextual Suggestions */}
           {smartSuggestions.length > 0 && (
             <div
-              className="flex items-center gap-1.5 overflow-x-auto border-t px-2.5 py-1.5"
+              className="flex items-center gap-1.5 overflow-x-auto border-t px-3 py-1.5"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -1021,7 +1149,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   key={sug.id}
                   type="button"
                   onClick={() => onSendMessage(sug.prompt, { fromFloatingWidget: true })}
-                  className="shrink-0 rounded-lg border px-2 py-1 text-[10px] font-bold whitespace-nowrap transition-colors hover:opacity-90"
+                  className="shrink-0 rounded-xl border px-2.5 py-1 text-[10px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -1034,43 +1162,315 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </div>
           )}
 
-          {/* Input Composer */}
-          <form
-            onSubmit={handleSubmit}
-            className="flex items-center gap-2 border-t p-2.5"
+          {/* Auto-growing Composer Bar with Brain Picker + Voice + Camera/Backup shortcuts */}
+          <div
+            className="border-t p-2.5 space-y-2"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
             }}
           >
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="اكتب طلبك باللهجة العراقية (مثال: ضيف علي وحسن واطبع تقرير)..."
-              aria-label="اكتب أمرك للمساعد الذكي"
-              className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-xs"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setBrainSheetOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-bold hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Cpu className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>الدماغ: {activeBrain.shortLabel}</span>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {onQuickCameraExtract && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleOpen(false);
+                      onQuickCameraExtract();
+                    }}
+                    title="السحب الذكي بالكاميرا أو PDF"
+                    aria-label="فتح السحب الذكي"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border hover:border-[var(--accent)]"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Camera className="h-3.5 w-3.5" style={{ color: '#0ea5e9' }} />
+                  </button>
+                )}
+                {onQuickBackupJson && (
+                  <button
+                    type="button"
+                    onClick={onQuickBackupJson}
+                    title="تنزيل نسخة احتياطية JSON"
+                    aria-label="نسخة احتياطية سريعة"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border hover:border-[var(--accent)]"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" style={{ color: '#10b981' }} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitCurrentPrompt();
               }}
-            />
-            <button
-              type="submit"
-              disabled={!inputValue.trim() || isThinking}
-              aria-label="إرسال الطلب للمساعد"
-              className="inline-flex shrink-0 items-center justify-center rounded-xl p-2.5 disabled:opacity-40"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
+              className="flex items-end gap-2"
             >
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                title="إملاء صوتي عربي (ar-IQ)"
+                aria-label="إملاء صوتي"
+                className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl border px-2.5"
+                style={{
+                  backgroundColor: isRecording ? 'var(--danger)' : 'var(--bg-surface)',
+                  borderColor: isRecording ? 'var(--danger)' : 'var(--border-color)',
+                  color: isRecording ? '#fff' : 'var(--text-muted)',
+                }}
+              >
+                {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submitCurrentPrompt();
+                  }
+                }}
+                placeholder="اكتب باللهجة العراقية (مثال: خلّي رسم الفرد 250)..."
+                aria-label="اكتب أمرك للمساعد الذكي"
+                className="min-w-0 flex-1 resize-none rounded-xl border px-3 py-2.5 text-xs outline-none focus:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+
+              <button
+                type="submit"
+                disabled={!inputValue.trim() || isThinking}
+                aria-label="إرسال الطلب للمساعد"
+                className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl px-3 disabled:opacity-40"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
         </aside>
       )}
+
+      {/* Brain Picker BottomSheet */}
+      <BottomSheet
+        open={brainSheetOpen}
+        onClose={() => setBrainSheetOpen(false)}
+        title="اختر محرك الذكاء — Morrow"
+        subtitle="التصعيد التلقائي يبدأ محلياً مجاناً ثم يصعّد للسحابة عند الحاجة فقط"
+        icon={<Cpu className="h-5 w-5" />}
+      >
+        <div className="space-y-2.5">
+          {BRAIN_MODES.map((m) => {
+            const active = brainMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  onChangeBrainMode(m.id);
+                  setBrainSheetOpen(false);
+                }}
+                className="flex w-full items-start justify-between gap-3 rounded-2xl border p-3.5 text-right transition-all"
+                style={{
+                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                }}
+              >
+                <div>
+                  <div className="text-xs sm:text-sm font-extrabold">{m.label}</div>
+                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {m.desc}
+                  </div>
+                </div>
+                {active && (
+                  <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: 'var(--accent)' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
+
+      {/* Full Command Library BottomSheet */}
+      <BottomSheet
+        open={librarySheetOpen}
+        onClose={() => setLibrarySheetOpen(false)}
+        title="مكتبة أوامر Morrow الجاهزة"
+        subtitle="انقر على أي أمر لتنفيذه مباشرة أو معاينته في بطاقة قبل ← بعد"
+        icon={<Sparkles className="h-5 w-5" />}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {COMMAND_LIBRARY.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setLibrarySheetOpen(false);
+                onSendMessage(item.prompt, { fromFloatingWidget: true });
+              }}
+              className="rounded-2xl border p-3.5 text-right transition-all hover:border-[var(--accent)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-extrabold">{item.title}</span>
+                <span className="text-[10px] font-bold" style={{ color: 'var(--accent)' }}>
+                  {item.category}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {item.subtitle}
+              </p>
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
+
+      {/* Assistant Tools & Memory BottomSheet */}
+      <BottomSheet
+        open={toolsSheetOpen}
+        onClose={() => setToolsSheetOpen(false)}
+        title="أدوات المساعد والذاكرة الدائمة"
+        subtitle="التفضيلات المحفوظة، الطلبات المؤجلة، وتصدير المحادثة"
+        icon={<BookmarkCheck className="h-5 w-5" />}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {onOpenAssistantSettings && (
+              <button
+                type="button"
+                onClick={() => {
+                  setToolsSheetOpen(false);
+                  onOpenAssistantSettings();
+                }}
+                className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold"
+                style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              >
+                <Settings2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <span>إعدادات الحصة والخصوصية</span>
+              </button>
+            )}
+            {onExportChatHistory && (
+              <button
+                type="button"
+                onClick={onExportChatHistory}
+                className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold"
+                style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              >
+                <Download className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <span>تصدير سجل المحادثة JSON</span>
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="text-xs font-extrabold flex items-center gap-1.5">
+              <Bookmark className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <span>قواعد الذاكرة المحفوظة ({preferences.length})</span>
+            </h4>
+            {preferences.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                لا توجد قواعد محفوظة بعد. قل مثلاً: «اخفي عمود الحالة في التقرير».
+              </p>
+            ) : (
+              preferences.map((pref) => (
+                <div
+                  key={pref.id}
+                  className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <span className="font-semibold">{pref.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => onDeletePref(pref.id)}
+                    aria-label={`حذف ${pref.label}`}
+                    className="rounded-lg p-1.5"
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {queuedTasks.length > 0 && (
+            <div className="space-y-2 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+              <h4 className="text-xs font-extrabold">الطلبات المؤجلة ({queuedTasks.length})</h4>
+              {queuedTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <span className="truncate">{task.prompt}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setToolsSheetOpen(false);
+                        onRunQueuedTask(task);
+                      }}
+                      className="rounded-lg px-2.5 py-1 text-[11px] font-bold"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      تنفيذ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveQueuedTask(task.id)}
+                      className="p-1"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BottomSheet>
     </>
   );
 };

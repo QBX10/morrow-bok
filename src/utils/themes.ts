@@ -10,6 +10,8 @@ import type {
   ThemePreferences,
 } from '../types/agency';
 
+export type ThemeCapsuleGroupId = 'classic' | 'modern' | 'glass';
+
 export interface AppThemeDefinition {
   id: AppThemeId;
   name: string;
@@ -17,6 +19,7 @@ export interface AppThemeDefinition {
   description: string;
   mood: string;
   isDark: boolean;
+  capsuleGroup?: ThemeCapsuleGroupId;
   swatches: [string, string, string];
   vars: {
     '--bg-main': string;
@@ -319,6 +322,180 @@ export const APP_THEMES: AppThemeDefinition[] = [
   },
 ];
 
+export const MODERN_APP_THEMES: AppThemeDefinition[] = [
+  {
+    id: 'alabaster-glass',
+    name: 'المرمر الزجاجي',
+    englishName: 'Alabaster Glass',
+    mood: 'زجاجية نهارية هادئة وتباين ناصع',
+    description:
+      'سطح خزفي شفاف ناعم مع لمسات زرقاء هادئة يمنح الكبسولات عمقاً زجاجياً مريحاً للعين.',
+    isDark: false,
+    capsuleGroup: 'glass',
+    swatches: ['#eef3f9', '#ffffff', '#2563eb'],
+    vars: {
+      '--bg-main': '#eef3f9',
+      '--bg-surface': '#fbfdff',
+      '--bg-header': '#0f172a',
+      '--bg-table-header': '#e5edf7',
+      '--bg-nav-active': '#e0ecff',
+      '--bg-zebra': 'rgba(226, 236, 248, 0.55)',
+      '--bg-numeric': 'rgba(37, 99, 235, 0.04)',
+      '--row-hover-bg': 'rgba(37, 99, 235, 0.08)',
+      '--text-primary': '#0f172a',
+      '--text-muted': '#475569',
+      '--border-color': '#d2deec',
+      '--grid-color': '#dde7f2',
+      '--accent': '#2563eb',
+      '--accent-fg': '#ffffff',
+      '--success': '#15803d',
+      '--success-fg': '#ffffff',
+      '--success-bg': '#ecfdf5',
+      '--warning': '#b45309',
+      '--warning-bg': '#fffbeb',
+      '--danger': '#dc2626',
+      '--danger-fg': '#ffffff',
+      '--danger-bg': '#fef2f2',
+    },
+  },
+  {
+    id: 'sage-linen',
+    name: 'الكتان الحكيم',
+    englishName: 'Sage Linen',
+    mood: 'هدوء طبيعي دافئ للقراءة والتركيز',
+    description:
+      'خلفية كتانية دافئة بلمسات خضراء حريرية تخفف إجهاد النظر أثناء مراجعة القوائم الطويلة.',
+    isDark: false,
+    capsuleGroup: 'modern',
+    swatches: ['#f3f5f1', '#fcfdfb', '#0d9488'],
+    vars: {
+      '--bg-main': '#f3f5f1',
+      '--bg-surface': '#fcfdfb',
+      '--bg-header': '#172826',
+      '--bg-table-header': '#e7ece6',
+      '--bg-nav-active': '#dcf0ec',
+      '--bg-zebra': 'rgba(231, 236, 230, 0.54)',
+      '--bg-numeric': 'rgba(13, 148, 136, 0.045)',
+      '--row-hover-bg': 'rgba(13, 148, 136, 0.085)',
+      '--text-primary': '#1a2523',
+      '--text-muted': '#526360',
+      '--border-color': '#d3dcd4',
+      '--grid-color': '#dfe6e0',
+      '--accent': '#0d9488',
+      '--accent-fg': '#ffffff',
+      '--success': '#15803d',
+      '--success-fg': '#ffffff',
+      '--success-bg': '#ecfdf5',
+      '--warning': '#b45309',
+      '--warning-bg': '#fef7e6',
+      '--danger': '#be123c',
+      '--danger-fg': '#ffffff',
+      '--danger-bg': '#fff1f2',
+    },
+  },
+  {
+    id: 'nordic-dusk',
+    name: 'غسق الشمال',
+    englishName: 'Nordic Dusk',
+    mood: 'ليلي هادئ بدون حدة بصرية',
+    description:
+      'أردواز ليلي معتدل العمق مع تمييز فيروزي ناعم لتجربة إعدادات وجداول مريحة ليلاً.',
+    isDark: true,
+    capsuleGroup: 'modern',
+    swatches: ['#0f1722', '#172232', '#2dd4bf'],
+    vars: {
+      '--bg-main': '#0f1722',
+      '--bg-surface': '#172232',
+      '--bg-header': '#091019',
+      '--bg-table-header': '#1f2e42',
+      '--bg-nav-active': 'rgba(45, 212, 191, 0.15)',
+      '--bg-zebra': 'rgba(31, 46, 66, 0.42)',
+      '--bg-numeric': 'rgba(45, 212, 191, 0.06)',
+      '--row-hover-bg': 'rgba(45, 212, 191, 0.11)',
+      '--text-primary': '#f1f5f9',
+      '--text-muted': '#94a3b8',
+      '--border-color': '#26364d',
+      '--grid-color': '#213044',
+      '--accent': '#2dd4bf',
+      '--accent-fg': '#042f2e',
+      '--success': '#34d399',
+      '--success-fg': '#022c22',
+      '--success-bg': 'rgba(52, 211, 153, 0.16)',
+      '--warning': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.16)',
+      '--danger': '#fb7185',
+      '--danger-fg': '#4c0519',
+      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+    },
+  },
+  {
+    id: 'midnight-indigo',
+    name: 'نيلي منتصف الليل',
+    englishName: 'Midnight Indigo',
+    mood: 'زجاجية ليلية عصرية بعمق متدرج',
+    description:
+      'خلفية نيلية عميقة مع طبقات زجاجية مصقولة وبنفسجي هادئ للوحات التحكم المتقدمة.',
+    isDark: true,
+    capsuleGroup: 'glass',
+    swatches: ['#0b1021', '#141b34', '#818cf8'],
+    vars: {
+      '--bg-main': '#0b1021',
+      '--bg-surface': '#141b34',
+      '--bg-header': '#070b18',
+      '--bg-table-header': '#1d2749',
+      '--bg-nav-active': 'rgba(129, 140, 248, 0.16)',
+      '--bg-zebra': 'rgba(29, 39, 73, 0.4)',
+      '--bg-numeric': 'rgba(129, 140, 248, 0.065)',
+      '--row-hover-bg': 'rgba(129, 140, 248, 0.12)',
+      '--text-primary': '#eef2ff',
+      '--text-muted': '#a5b4fc',
+      '--border-color': '#293561',
+      '--grid-color': '#232e54',
+      '--accent': '#818cf8',
+      '--accent-fg': '#0f172a',
+      '--success': '#34d399',
+      '--success-fg': '#022c22',
+      '--success-bg': 'rgba(52, 211, 153, 0.15)',
+      '--warning': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.15)',
+      '--danger': '#fb7185',
+      '--danger-fg': '#4c0519',
+      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+    },
+  },
+];
+
+export const ALL_APP_THEMES: AppThemeDefinition[] = [
+  ...APP_THEMES,
+  ...MODERN_APP_THEMES,
+];
+
+export const APP_THEME_CAPSULES: Array<{
+  id: ThemeCapsuleGroupId;
+  title: string;
+  subtitle: string;
+  themes: AppThemeDefinition[];
+}> = [
+  {
+    id: 'classic',
+    title: 'الثيمات الكلاسيكية الأصيلة',
+    subtitle: 'الثيمات الثمانية الأصلية بألوانها الكاملة المحمية',
+    themes: APP_THEMES,
+  },
+  {
+    id: 'modern',
+    title: 'ثيمات عصرية هادئة',
+    subtitle: 'لوحات لونية معاصرة مريحة للعمل الطويل',
+    themes: MODERN_APP_THEMES.filter((t) => t.capsuleGroup === 'modern'),
+  },
+  {
+    id: 'glass',
+    title: 'ثيمات زجاجية مصقولة',
+    subtitle: 'شفافية وطبقات عمق ناعمة لنظام الكبسولات',
+    themes: MODERN_APP_THEMES.filter((t) => t.capsuleGroup === 'glass'),
+  },
+];
+
 const LEGACY_THEME_MAP: Record<string, AppThemeId> = {
   'midnight-slate': 'obsidian-gold',
   'warm-paper': 'desert-mirage',
@@ -330,7 +507,7 @@ const LEGACY_THEME_MAP: Record<string, AppThemeId> = {
 
 export function resolveAppThemeId(rawId?: string | null): AppThemeId {
   if (!rawId) return 'arctic-snow';
-  if (APP_THEMES.some((t) => t.id === rawId)) return rawId as AppThemeId;
+  if (ALL_APP_THEMES.some((t) => t.id === rawId)) return rawId as AppThemeId;
   return LEGACY_THEME_MAP[rawId] || 'arctic-snow';
 }
 
@@ -542,13 +719,16 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   fontSizePx: 15,
   rowHeightPx: 42,
   colWidthScale: 100,
-  borderRadiusPx: 12,
+  borderRadiusPx: 14,
   cardShadowLevel: 'soft',
   glassEffect: false,
+  glassOpacityPct: 86,
+  themeColorMode: 'auto',
   customBgColor: '',
   customSurfaceColor: '',
   customTextColor: '',
   customAccentColor: '',
+  customSavedThemes: [],
   conditionalFormatting: {
     highlightBlockedRows: true,
     highlightDuplicateNames: true,
@@ -567,13 +747,29 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
 
 export function getAppThemeById(id?: string | null): AppThemeDefinition {
   const resolved = resolveAppThemeId(id);
-  return APP_THEMES.find((t) => t.id === resolved) || APP_THEMES[4];
+  return ALL_APP_THEMES.find((t) => t.id === resolved) || APP_THEMES[4];
 }
 
-export function applyThemePreferencesToDocument(prefs: ThemePreferences): void {
+export function applyThemePreferencesToDocument(
+  prefs: ThemePreferences,
+  accessibility?: {
+    reduceMotion?: boolean;
+    oneHandedMode?: boolean;
+    numeralSystem?: 'western' | 'hindi';
+    calendarSystem?: 'gregorian' | 'hijri';
+  }
+): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  const theme = getAppThemeById(prefs.appTheme);
+  let theme = getAppThemeById(prefs.appTheme);
+
+  // Honor themeColorMode ('auto' follows OS prefers-color-scheme if user hasn't forced dark/light theme choice explicitly via classic override)
+  if (prefs.themeColorMode === 'dark' && !theme.isDark) {
+    theme = getAppThemeById('midnight-indigo');
+  } else if (prefs.themeColorMode === 'light' && theme.isDark) {
+    theme = getAppThemeById('arctic-snow');
+  }
+
   const fontId = resolveArabicFontId(prefs.fontFamily);
   const font = ARABIC_FONTS.find((f) => f.id === fontId) || ARABIC_FONTS[0];
   const sizeStep = FONT_SIZE_MAP[prefs.fontSize] || FONT_SIZE_MAP.md;
@@ -626,9 +822,16 @@ export function applyThemePreferencesToDocument(prefs: ThemePreferences): void {
   const radiusPx =
     typeof prefs.borderRadiusPx === 'number' &&
     prefs.borderRadiusPx >= 2 &&
-    prefs.borderRadiusPx <= 24
+    prefs.borderRadiusPx <= 28
       ? prefs.borderRadiusPx
-      : 12;
+      : 14;
+
+  const glassOpacity =
+    typeof prefs.glassOpacityPct === 'number' &&
+    prefs.glassOpacityPct >= 40 &&
+    prefs.glassOpacityPct <= 100
+      ? prefs.glassOpacityPct / 100
+      : 0.86;
 
   const shadowCss =
     SHADOW_LEVEL_CSS[prefs.cardShadowLevel || 'soft'] || SHADOW_LEVEL_CSS.soft;
@@ -640,6 +843,48 @@ export function applyThemePreferencesToDocument(prefs: ThemePreferences): void {
   root.style.setProperty('--table-line-height', density.lineHeight);
   root.style.setProperty('--table-col-scale', String(colWidthScale));
   root.style.setProperty('--card-radius', `${radiusPx}px`);
+  root.style.setProperty('--glass-opacity', String(glassOpacity));
   root.style.setProperty('--card-shadow', shadowCss);
   root.dataset.glass = prefs.glassEffect ? '1' : '0';
+  root.dataset.reduceMotion = accessibility?.reduceMotion ? '1' : '0';
+  root.dataset.oneHanded = accessibility?.oneHandedMode ? '1' : '0';
+  root.dataset.numerals = accessibility?.numeralSystem || 'western';
+  root.dataset.calendar = accessibility?.calendarSystem || 'gregorian';
+}
+
+const HINDI_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+
+export function formatCosmosNumerals(
+  input: string | number,
+  numeralSystem: 'western' | 'hindi' = 'western'
+): string {
+  const str = String(input);
+  if (numeralSystem !== 'hindi') return str;
+  return str.replace(/\d/g, (d) => HINDI_DIGITS[Number(d)] || d);
+}
+
+export function formatCosmosDate(
+  dateInput: string | Date,
+  calendarSystem: 'gregorian' | 'hijri' = 'gregorian',
+  numeralSystem: 'western' | 'hindi' = 'western'
+): string {
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(d.getTime())) return String(dateInput);
+  try {
+    const locale =
+      calendarSystem === 'hijri'
+        ? numeralSystem === 'hindi'
+          ? 'ar-SA-u-ca-islamic-umalqura-nu-arab'
+          : 'ar-IQ-u-ca-islamic-umalqura-nu-latn'
+        : numeralSystem === 'hindi'
+        ? 'ar-IQ-u-nu-arab'
+        : 'ar-IQ-u-nu-latn';
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(d);
+  } catch {
+    return formatCosmosNumerals(d.toISOString().slice(0, 10), numeralSystem);
+  }
 }

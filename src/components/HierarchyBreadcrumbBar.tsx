@@ -15,8 +15,10 @@ import type {
 } from '../utils/hierarchyRegistry';
 import {
   getHierarchyPath,
+  resolveHierarchyNodeBadge,
   searchHierarchyNodes,
 } from '../utils/hierarchyRegistry';
+import { SectionLogo } from './settings/sectionLogos';
 
 interface HierarchyBreadcrumbBarProps {
   tree: HierarchyNode;
@@ -135,22 +137,32 @@ export const HierarchyBreadcrumbBar: React.FC<HierarchyBreadcrumbBarProps> = ({
                     {isLast ? (
                       <span
                         aria-current="location"
-                        className="truncate max-w-[200px] sm:max-w-[280px] rounded-md px-2 py-1 font-extrabold"
+                        className="inline-flex items-center gap-1.5 truncate max-w-[210px] sm:max-w-[300px] rounded-md px-2 py-1 font-extrabold"
                         style={{
                           backgroundColor: 'var(--bg-nav-active)',
                           color: 'var(--accent)',
                         }}
                       >
-                        {node.title}
+                        <SectionLogo
+                          icon={node.logo || node.icon}
+                          tone={node.accentTone}
+                          size="xs"
+                        />
+                        <span className="truncate">{node.title}</span>
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => onNavigateTarget(node.target, node.id)}
-                        className="truncate max-w-[160px] rounded-md px-2 py-1 font-semibold transition-colors hover:underline"
+                        className="inline-flex items-center gap-1.5 truncate max-w-[175px] rounded-md px-2 py-1 font-semibold transition-colors hover:underline"
                         style={{ color: 'var(--text-muted)' }}
                       >
-                        {node.title}
+                        <SectionLogo
+                          icon={node.logo || node.icon}
+                          tone={node.accentTone}
+                          size="xs"
+                        />
+                        <span className="truncate">{node.title}</span>
                       </button>
                     )}
                   </li>
@@ -222,7 +234,10 @@ export const HierarchyBreadcrumbBar: React.FC<HierarchyBreadcrumbBarProps> = ({
                   </div>
                 ) : (
                   searchHits.slice(0, 10).map((hit) => {
-                    const badge = hit.node.getBadge?.(badgeContext);
+                    const badge = resolveHierarchyNodeBadge(
+                      hit.node,
+                      badgeContext
+                    );
                     return (
                       <button
                         key={hit.node.id}
@@ -234,13 +249,20 @@ export const HierarchyBreadcrumbBar: React.FC<HierarchyBreadcrumbBarProps> = ({
                         }}
                         className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-right text-xs transition-colors hover:bg-[var(--bg-main)]"
                       >
-                        <div className="min-w-0">
-                          <div className="truncate font-bold">{hit.node.title}</div>
-                          <div
-                            className="truncate text-[10px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {hit.path.map((n) => n.title).join(' › ')}
+                        <div className="flex min-w-0 items-center gap-2">
+                          <SectionLogo
+                            icon={hit.node.logo || hit.node.icon}
+                            tone={hit.node.accentTone}
+                            size="xs"
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate font-bold">{hit.node.title}</div>
+                            <div
+                              className="truncate text-[10px]"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {hit.path.map((n) => n.title).join(' ◂ ')}
+                            </div>
                           </div>
                         </div>
                         {badge && (
@@ -283,7 +305,7 @@ export const HierarchyBreadcrumbBar: React.FC<HierarchyBreadcrumbBarProps> = ({
             </span>
             {quickDrillNodes.nodes.map((child) => {
               const isCurrent = child.id === activeNode.id;
-              const badge = child.getBadge?.(badgeContext);
+              const badge = resolveHierarchyNodeBadge(child, badgeContext);
               return (
                 <button
                   key={child.id}
@@ -300,6 +322,11 @@ export const HierarchyBreadcrumbBar: React.FC<HierarchyBreadcrumbBarProps> = ({
                     color: isCurrent ? 'var(--accent-fg)' : 'var(--text-primary)',
                   }}
                 >
+                  <SectionLogo
+                    icon={child.logo || child.icon}
+                    tone={child.accentTone}
+                    size="xs"
+                  />
                   <span>{child.title}</span>
                   {badge && (
                     <span

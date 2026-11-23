@@ -821,6 +821,7 @@ export function useAssistantEngine(params: {
             sandboxNotice: resolved.sandboxNotice,
             diagnosticsReport:
               resolved.diagnosticsReport || outcome.diagnosticsReport,
+            resultCard: resolved.resultCard,
           });
 
           if (stealth) {
@@ -1046,6 +1047,7 @@ export function useAssistantEngine(params: {
                 spotlightAction: resolved.spotlightAction,
                 sandboxNotice: resolved.sandboxNotice,
                 diagnosticsReport: resolved.diagnosticsReport,
+                resultCard: resolved.resultCard,
               });
               if (resolved.stealthExecuted && options?.fromFloatingWidget && resolved.autoCloseChat) {
                 emitAppToast({ title: 'تنفيذ فوري — Morrow', description: resolved.replyText, tone: 'success' });
@@ -1186,6 +1188,7 @@ export function useAssistantEngine(params: {
               spotlightAction: resolved.spotlightAction,
               sandboxNotice: resolved.sandboxNotice,
               diagnosticsReport: resolved.diagnosticsReport,
+              resultCard: resolved.resultCard,
             });
             if (resolved.stealthExecuted) {
               emitAppToast({
@@ -1633,6 +1636,44 @@ export function useAssistantEngine(params: {
     [removeQueuedTask, sendMessage]
   );
 
+  const togglePinMessage = useCallback((messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, isPinned: !m.isPinned } : m))
+    );
+  }, []);
+
+  const exportChatHistoryJson = useCallback(() => {
+    try {
+      const payload = JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          messagesCount: messages.length,
+          messages,
+        },
+        null,
+        2
+      );
+      const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `morrow-chat-history-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      emitAppToast({
+        title: 'تم تصدير سجل محادثة Morrow',
+        tone: 'success',
+      });
+    } catch {
+      emitAppToast({
+        title: 'تعذر تصدير السجل حالياً',
+        tone: 'error',
+      });
+    }
+  }, [messages]);
+
   return {
     isOpen,
     setIsOpen,
@@ -1645,6 +1686,8 @@ export function useAssistantEngine(params: {
     cloudConfigured,
     isThinking,
     messages,
+    togglePinMessage,
+    exportChatHistoryJson,
     proactiveTip,
     preferences,
     saveCustomMemoryPref,

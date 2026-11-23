@@ -66,6 +66,7 @@ export interface AssistantActionRuntime {
   setAppTheme: (themeId: AppThemeId) => void;
   setDarkTheme: (dark: boolean) => void;
   setAllowCloudNames: (allowed: boolean) => void;
+  saveCalculationSettings?: (calc: CalculationSettings) => void;
   saveUserPref: (key: string, label: string, value: string | boolean | number) => void;
   deleteUserPref: (prefId: string) => void;
   applyAutoFixes: (issueIds?: string[]) => { fixedCount: number; summaryLines: string[] };
@@ -82,6 +83,7 @@ export interface ToolExecutionResolution {
   spotlightAction?: AssistantMessage['spotlightAction'];
   sandboxNotice?: string;
   diagnosticsReport?: DiagnosticSummary;
+  resultCard?: AssistantMessage['resultCard'];
   switchedToOffline?: boolean;
   stealthExecuted?: boolean;
   autoCloseChat?: boolean;
@@ -355,6 +357,12 @@ export function resolveToolExecution(
         state.calculationSettings
       );
       const scopeName = ag ? ag.name : 'جميع الوكالات';
+      const activePct =
+        m.registeredHouseholds > 0
+          ? Math.round((m.activeHouseholds / m.registeredHouseholds) * 100)
+          : 100;
+      const maxMoney = Math.max(m.revenue, m.totalExpenses, Math.abs(m.profit), 1);
+
       return {
         gracefulLevel: 'A',
         replyText: [
@@ -365,6 +373,43 @@ export function resolveToolExecution(
           `• الإيرادات: ${formatIqd(m.revenue)} | المصاريف: ${formatIqd(m.totalExpenses)}`,
           `• صافي الربح: ${formatIqd(m.profit)}`,
         ].join('\n'),
+        resultCard: {
+          title: `ملخص ${scopeName}`,
+          summary: `${m.activeIndividuals} فرد نشط · ${formatTotalQuota(
+            m.totalKg,
+            state.calculationSettings
+          )} (${m.fullBags} كيس)`,
+          scorePercent: activePct,
+          scoreLabel: 'نسبة العائلات النشطة',
+          tone: m.profit >= 0 ? 'success' : 'warning',
+          bars: [
+            {
+              label: 'الإيرادات المتوقعة',
+              value: m.revenue,
+              max: maxMoney,
+              displayValue: formatIqd(m.revenue),
+              color: 'var(--accent)',
+            },
+            {
+              label: 'المصاريف المسجلة',
+              value: m.totalExpenses,
+              max: maxMoney,
+              displayValue: formatIqd(m.totalExpenses),
+              color: 'var(--warning)',
+            },
+            {
+              label: 'صافي الربح',
+              value: Math.max(0, m.profit),
+              max: maxMoney,
+              displayValue: formatIqd(m.profit),
+              color: m.profit >= 0 ? 'var(--success)' : 'var(--danger)',
+            },
+          ],
+          details: [
+            `رسم الفرد المطبق: ${formatIqd(state.calculationSettings.feePerIndividualIqd)}`,
+            `العائلات المحجوبة/الموقوفة: ${m.blockedCount}`,
+          ],
+        },
       };
     }
 
@@ -692,6 +737,20 @@ export function resolveToolExecution(
             : 'تم حجب إرسال أسماء المستفيدين للسحابة (الوضع الآمن الافتراضي).',
         };
       }
+      if (action === 'update_calc') {
+        const diff = buildBeforeAfterDiff(state, toolCall, uiContext.focusedPersonId);
+        if (!diff) {
+          return {
+            gracefulLevel: 'B',
+            replyText: 'إعدادات الحاسبة الحالية تطابق القيمة المطلوبة بالفعل دون تغيير.',
+          };
+        }
+        return {
+          gracefulLevel: 'A',
+          replyText: 'جهّزت تعديل معادلات الحاسبة للمراجعة في بطاقة «قبل ← بعد»:',
+          confirmationDiff: diff,
+        };
+      }
       runtime.navigate('settings', 'general');
       return {
         gracefulLevel: 'A',
@@ -726,17 +785,46 @@ export function resolveToolExecution(
     case 'run_diagnostics': {
       const report = runAppDiagnostics(state, uiContext.lastBackupAt);
       const autoFix = Boolean(toolCall.args.autoFix);
+      const diagResultCard: AssistantMessage['resultCard'] = {
+        title: 'مؤشر سلامة وصحة البيانات',
+        summary:
+          report.totalIssues === 0
+            ? 'جميع الجداول والمعادلات والنسخ الاحتياطية في حالة ممتازة.'
+            : `تم رصد ${report.totalIssues} ملاحظة (${report.highCount} مهمة · ${report.autoFixableCount} قابلة للإصلاح الآمن).`,
+        scorePercent: report.healthScore,
+        scoreLabel: 'درجة السلامة',
+        tone: report.healthScore >= 85 ? 'success' : report.healthScore >= 60 ? 'warning' : 'danger',
+        bars: [
+          {
+            label: 'الملاحظات الحرجة',
+            value: report.highCount,
+            max: Math.max(report.totalIssues, 1),
+            displayValue: String(report.highCount),
+            color: 'var(--danger)',
+          },
+          {
+            label: 'قابلة للإصلاح الآمن',
+            value: report.autoFixableCount,
+            max: Math.max(report.totalIssues, 1),
+            displayValue: String(report.autoFixableCount),
+            color: 'var(--accent)',
+          },
+        ],
+      };
+
       if (autoFix && report.autoFixableCount > 0) {
         return {
           gracefulLevel: 'A',
           replyText: `لقيت ${report.autoFixableCount} مشكلة قابلة للإصلاح الآمن. راجع بطاقة «قبل ← بعد» ووافق:`,
           diagnosticsReport: report,
+          resultCard: diagResultCard,
           confirmationDiff: buildBeforeAfterDiff(state, toolCall, uiContext.focusedPersonId),
         };
       }
       return {
         gracefulLevel: 'A',
         diagnosticsReport: report,
+        resultCard: diagResultCard,
         replyText:
           report.totalIssues === 0
             ? `فحص التطبيق مكتمل (${report.healthScore}%): ما لقيت أي مشاكل أو تكرارات.`
@@ -845,6 +933,40 @@ export function executeApprovedToolMutation(
     mutations.createReadyList({ agencyId, name: listName });
     runtime.navigate('ready_lists');
     return `تم إنشاء القائمة الجاهزة «${listName}» وفتح قسم القوائم.`;
+  }
+
+  if (toolCall.name === 'update_settings' && toolCall.args.action === 'update_calc') {
+    const cur = state.calculationSettings;
+    const nextCalc: CalculationSettings = {
+      ...cur,
+      ...(toolCall.args.feePerIndividualIqd !== undefined
+        ? { feePerIndividualIqd: Math.max(0, Number(toolCall.args.feePerIndividualIqd)) }
+        : {}),
+      ...(toolCall.args.fixedCardFeeIqd !== undefined
+        ? { fixedCardFeeIqd: Math.max(0, Number(toolCall.args.fixedCardFeeIqd)) }
+        : {}),
+      ...(toolCall.args.kgPerIndividual !== undefined
+        ? { kgPerIndividual: Math.max(0.5, Number(toolCall.args.kgPerIndividual)) }
+        : {}),
+      ...(toolCall.args.kgPerBag !== undefined
+        ? { kgPerBag: Math.max(1, Number(toolCall.args.kgPerBag)) }
+        : {}),
+      ...(toolCall.args.roundingStepIqd !== undefined
+        ? { roundingStepIqd: Math.max(0, Number(toolCall.args.roundingStepIqd)) }
+        : {}),
+      ...(toolCall.args.discountPercent !== undefined
+        ? {
+            discountPercent: Math.max(
+              0,
+              Math.min(100, Number(toolCall.args.discountPercent))
+            ),
+          }
+        : {}),
+    };
+    runtime.saveCalculationSettings?.(nextCalc);
+    return `تم تحديث معادلات الحاسبة بنجاح (رسم الفرد: ${formatIqd(
+      nextCalc.feePerIndividualIqd
+    )} · حصة الفرد: ${nextCalc.kgPerIndividual} كغم). يمكنك التراجع بأي لحظة.`;
   }
 
   if (toolCall.name === 'run_diagnostics' && toolCall.args.autoFix) {

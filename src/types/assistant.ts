@@ -160,11 +160,30 @@ export interface AssistantSlotSession {
   originalPrompt: string;
 }
 
+export interface AssistantResultCardBar {
+  label: string;
+  value: number;
+  max: number;
+  displayValue: string;
+  color?: string;
+}
+
+export interface AssistantResultCardPayload {
+  title: string;
+  summary: string;
+  scorePercent?: number;
+  scoreLabel?: string;
+  tone?: 'accent' | 'success' | 'warning' | 'danger';
+  bars?: AssistantResultCardBar[];
+  details?: string[];
+}
+
 export interface AssistantMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   createdAt: string;
+  isPinned?: boolean;
   engineUsed?: AssistantEngineSource;
   engineLabel?: string;
   modelId?: string;
@@ -185,6 +204,7 @@ export interface AssistantMessage {
   };
   sandboxNotice?: string;
   diagnosticsReport?: DiagnosticSummary;
+  resultCard?: AssistantResultCardPayload;
   queuePrompt?: {
     prompt: string;
     saved: boolean;

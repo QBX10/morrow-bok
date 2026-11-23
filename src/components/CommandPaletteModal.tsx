@@ -4,6 +4,7 @@ import {
   Bot,
   Cpu,
   FileSpreadsheet,
+  Globe2,
   Moon,
   Search,
   ShieldAlert,
@@ -18,10 +19,15 @@ import type { Agency, AppView, Person, SettingsSectionId } from '../types/agency
 import type { AssistantBrainMode, MorrowCenterTab } from '../types/assistant.ts';
 import { normalizeArabic } from '../utils/agencyLogic.ts';
 import {
+  type CosmosNode,
+  searchCosmosNodes,
+} from '../utils/cosmosRegistry.ts';
+import {
   type HierarchyNode,
   type HierarchyTarget,
   searchHierarchyNodes,
 } from '../utils/hierarchyRegistry.ts';
+import { SectionLogo } from './settings/sectionLogos';
 
 interface CommandPaletteModalProps {
   open: boolean;
@@ -32,6 +38,10 @@ interface CommandPaletteModalProps {
   pendingDraftsCount: number;
   hierarchyTree?: HierarchyNode;
   onNavigateHierarchyTarget?: (target: HierarchyTarget, nodeId: string) => void;
+  cosmosTree?: CosmosNode;
+  onSelectCosmosNode?: (node: CosmosNode) => void;
+  onToggleDarkTheme?: (dark: boolean) => void;
+  onOpenWorldSwitcher?: () => void;
   onClose: () => void;
   onChangeBrainMode: (mode: AssistantBrainMode) => void;
   onNavigateView: (view: AppView, section?: SettingsSectionId) => void;
@@ -41,15 +51,15 @@ interface CommandPaletteModalProps {
   onSendAssistantPrompt: (prompt: string) => void;
 }
 
-type PaletteEntry =
-  | {
-      id: string;
-      group: string;
-      label: string;
-      sublabel: string;
-      icon: React.ReactNode;
-      onRun: () => void;
-    };
+type PaletteEntry = {
+  id: string;
+  group: string;
+  label: string;
+  sublabel: string;
+  icon: React.ReactNode;
+  quickActionLabel?: string;
+  onRun: () => void;
+};
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   open,
@@ -60,6 +70,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   pendingDraftsCount,
   hierarchyTree,
   onNavigateHierarchyTarget,
+  cosmosTree,
+  onSelectCosmosNode,
+  onToggleDarkTheme,
+  onOpenWorldSwitcher,
   onClose,
   onChangeBrainMode,
   onNavigateView,
@@ -131,13 +145,33 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         id: 'cmd_theme_toggle',
         group: 'تنفيذ صامت فوري',
         label: darkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي',
-        sublabel: 'تغيير سمة الشاشة فوراً دون إزعاج',
+        sublabel: 'تبديل فوري بنقرة واحدة مع حفظ السمة المختارة',
         icon: darkTheme ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />,
+        quickActionLabel: darkTheme ? 'نهاري الآن' : 'ليلي الآن',
         onRun: () => {
-          onSendAssistantPrompt(darkTheme ? 'الوضع النهاري' : 'الوضع الليلي');
+          if (onToggleDarkTheme) {
+            onToggleDarkTheme(!darkTheme);
+          } else {
+            onSendAssistantPrompt(darkTheme ? 'الوضع النهاري' : 'الوضع الليلي');
+          }
           onClose();
         },
       },
+      ...(onOpenWorldSwitcher
+        ? [
+            {
+              id: 'cmd_world_switcher',
+              group: 'الأكوان والعوالم',
+              label: 'مبدّل العوالم الـ14 والخريطة المدارية',
+              sublabel: 'الانتقال السريع بين كل عوالم التطبيق وإدارة ظهورها',
+              icon: <Globe2 className="h-4 w-4" />,
+              onRun: () => {
+                onClose();
+                onOpenWorldSwitcher();
+              },
+            },
+          ]
+        : []),
       {
         id: 'cmd_export_excel',
         group: 'تصدير بالخلفية',
@@ -160,13 +194,38 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onClose();
         },
       },
+      {
+        id: 'cmd_settings_hub',
+        group: 'الإعدادات الهرمية',
+        label: 'فتح الإعدادات الشاملة (ملء الشاشة — نظام الكبسولات)',
+        sublabel: 'استوديو المظهر، الخطوط، الحاسبة (250 د.ع)، السحب الذكي، والأمان',
+        icon: <Zap className="h-4 w-4" />,
+        onRun: () => {
+          onNavigateView('settings');
+          onClose();
+        },
+      },
+      {
+        id: 'cmd_settings_calc',
+        group: 'الإعدادات الهرمية',
+        label: 'ضبط حاسبة الجدول (رسم الفرد: 250 د.ع)',
+        sublabel: 'الانتقال مباشرة إلى كبسولة الحاسبة ومعادلات الحصص',
+        icon: <ArrowLeft className="h-4 w-4" />,
+        onRun: () => {
+          onNavigateView('settings', 'calculator');
+          onClose();
+        },
+      },
     ],
     [
       darkTheme,
       pendingDraftsCount,
       onClose,
+      onNavigateView,
       onOpenCommandCenterTab,
+      onOpenWorldSwitcher,
       onSendAssistantPrompt,
+      onToggleDarkTheme,
     ]
   );
 
@@ -203,15 +262,51 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       }
     }
 
+    const seenTitles = new Set<string>(results.map((r) => normalizeArabic(r.label)));
+
+    if (cosmosTree && onSelectCosmosNode) {
+      const cosmosHits = searchCosmosNodes(cosmosTree, qRaw);
+      for (const hit of cosmosHits.slice(0, 10)) {
+        const labelNorm = normalizeArabic(hit.node.title);
+        seenTitles.add(labelNorm);
+        results.push({
+          id: `cosmos_${hit.node.id}`,
+          group: `أكوان وعوالم · ${hit.matchedReason}`,
+          label: hit.node.title,
+          sublabel: hit.path.map((n) => n.title).join(' ◂ '),
+          icon: (
+            <SectionLogo
+              icon={hit.node.icon}
+              tone={hit.node.accentTone}
+              size="xs"
+            />
+          ),
+          onRun: () => {
+            onSelectCosmosNode(hit.node);
+            onClose();
+          },
+        });
+      }
+    }
+
     if (hierarchyTree && onNavigateHierarchyTarget) {
       const hHits = searchHierarchyNodes(hierarchyTree, qRaw);
-      for (const hit of hHits.slice(0, 6)) {
+      for (const hit of hHits.slice(0, 10)) {
+        const labelNorm = normalizeArabic(hit.node.title);
+        if (seenTitles.has(labelNorm)) continue;
+        seenTitles.add(labelNorm);
         results.push({
           id: `hierarchy_${hit.node.id}`,
           group: `الأقسام الهرمية · مستوى ${hit.node.level}`,
           label: hit.node.title,
-          sublabel: hit.path.map((n) => n.title).join(' › '),
-          icon: <ArrowLeft className="h-4 w-4" />,
+          sublabel: hit.path.map((n) => n.title).join(' ◂ '),
+          icon: (
+            <SectionLogo
+              icon={hit.node.logo || hit.node.icon}
+              tone={hit.node.accentTone}
+              size="xs"
+            />
+          ),
           onRun: () => {
             onNavigateHierarchyTarget(hit.node.target, hit.node.id);
             onClose();
@@ -236,7 +331,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             onClose();
           },
         });
-        if (results.length >= 16) break;
+        if (results.length >= 18) break;
       }
     }
 
@@ -258,6 +353,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     query,
     quickCommands,
     agencies,
+    cosmosTree,
+    onSelectCosmosNode,
     hierarchyTree,
     onNavigateHierarchyTarget,
     persons,
@@ -430,11 +527,25 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                     </span>
                   </span>
                 </span>
-                <span
-                  className="shrink-0 text-[10px] font-semibold whitespace-nowrap"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {item.group}
+                <span className="flex shrink-0 items-center gap-2">
+                  {item.quickActionLabel && (
+                    <span
+                      className="rounded-lg border px-2 py-0.5 text-[10px] font-extrabold"
+                      style={{
+                        backgroundColor: 'var(--bg-nav-active)',
+                        borderColor: 'var(--accent)',
+                        color: 'var(--accent)',
+                      }}
+                    >
+                      {item.quickActionLabel}
+                    </span>
+                  )}
+                  <span
+                    className="shrink-0 text-[10px] font-semibold whitespace-nowrap"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {item.group}
+                  </span>
                 </span>
               </button>
             );

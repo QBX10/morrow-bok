@@ -1,0 +1,835 @@
+import React, { useState } from 'react';
+import {
+  CheckCircle2,
+  Lock,
+  RotateCcw,
+  Sliders,
+  Tag,
+  Type,
+  Unlock,
+} from 'lucide-react';
+import type {
+  AppModeTier,
+  ArabicFontId,
+  ExpertTableConfig,
+  FontSizeStep,
+  FontWeightStep,
+  RowDensityStep,
+  ThemePreferences,
+} from '../../../types/agency';
+import type {
+  HierarchyBadgeContext,
+  HierarchyNode,
+} from '../../../utils/hierarchyRegistry';
+import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
+import { MODE_TIER_META } from '../../../utils/modePermissions';
+import {
+  ARABIC_FONTS,
+  DEFAULT_THEME_PREFERENCES,
+  FONT_SIZE_MAP,
+  FONT_WEIGHT_MAP,
+  ROW_DENSITY_MAP,
+} from '../../../utils/themes';
+import { NodeCard } from '../NodeCard';
+import { NodeView } from '../NodeView';
+
+/* ─── FONTS & SPACING CAPSULES (Level 3 -> Level 4) ───────────────────────── */
+
+interface FontsCapsulesProps {
+  sectionNode: HierarchyNode;
+  activeNode: HierarchyNode;
+  activeCapsuleId: string | null;
+  displayMode: 'fullscreen' | 'contained';
+  badgeContext: HierarchyBadgeContext;
+  themePrefs: ThemePreferences;
+  onUpdateThemePrefs: (patch: Partial<ThemePreferences>) => void;
+  onOpenCapsule: (capsuleId: string | null) => void;
+  onNotifySuccess: (msg: string) => void;
+}
+
+export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
+  sectionNode,
+  activeNode,
+  activeCapsuleId,
+  displayMode,
+  badgeContext,
+  themePrefs,
+  onUpdateThemePrefs,
+  onOpenCapsule,
+  onNotifySuccess,
+}) => {
+  const activeFont =
+    ARABIC_FONTS.find((f) => f.id === themePrefs.fontFamily) || ARABIC_FONTS[0];
+
+  // Level 3 Hub
+  if (!activeCapsuleId) {
+    return (
+      <NodeView
+        node={sectionNode}
+        displayMode={displayMode}
+        liveStatusText={`${activeFont.name} · ${FONT_SIZE_MAP[themePrefs.fontSize].label}`}
+        onResetBranch={() => {
+          onUpdateThemePrefs({
+            fontFamily: DEFAULT_THEME_PREFERENCES.fontFamily,
+            fontSize: DEFAULT_THEME_PREFERENCES.fontSize,
+            fontWeight: DEFAULT_THEME_PREFERENCES.fontWeight,
+            rowDensity: DEFAULT_THEME_PREFERENCES.rowDensity,
+            tabularNumerals: DEFAULT_THEME_PREFERENCES.tabularNumerals,
+            rowHoverHighlight: DEFAULT_THEME_PREFERENCES.rowHoverHighlight,
+          });
+          onNotifySuccess('تمت استعادة إعدادات الخطوط والتباعد الافتراضية فقط.');
+        }}
+        resetBranchLabel="استعادة افتراضي الخطوط"
+      >
+        {/* Live Typography Specimen Banner */}
+        <section
+          aria-label="معاينة فورية للخطوط والأرقام"
+          className="capsule-glass-card border p-5 space-y-2"
+          style={{
+            borderColor: 'var(--border-color)',
+            fontFamily: activeFont.cssFamily,
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-extrabold" style={{ color: 'var(--accent)' }}>
+              معاينة الخط الحي: {activeFont.name}
+            </span>
+            <span className="font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+              {FONT_SIZE_MAP[themePrefs.fontSize].label} ·{' '}
+              {FONT_WEIGHT_MAP[themePrefs.fontWeight].label} ·{' '}
+              {ROW_DENSITY_MAP[themePrefs.rowDensity].label}
+            </span>
+          </div>
+          <div className="text-base sm:text-lg font-extrabold tabular-nums">
+            وكالة منذر الحلو · 5 أفراد = 45 كغم · الرسم التلقائي 1,500 د.ع
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {sectionNode.children.map((child) => {
+            const badge = resolveHierarchyNodeBadge(child, badgeContext);
+            const preview =
+              child.id === 'fonts_family_cap' ? (
+                <div
+                  className="flex items-center justify-between font-bold"
+                  style={{ fontFamily: activeFont.cssFamily }}
+                >
+                  <span>{activeFont.name}</span>
+                  <span style={{ color: 'var(--accent)' }}>6 خطوط عربية</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between font-bold tabular-nums">
+                  <span>{FONT_SIZE_MAP[themePrefs.fontSize].label}</span>
+                  <span>{ROW_DENSITY_MAP[themePrefs.rowDensity].label}</span>
+                </div>
+              );
+
+            return (
+              <NodeCard
+                key={child.id}
+                node={child}
+                badge={badge}
+                preview={preview}
+                actionLabel="فتح الكبسولة"
+                onOpen={(n) => onOpenCapsule(n.id)}
+              />
+            );
+          })}
+        </div>
+      </NodeView>
+    );
+  }
+
+  // Level 4A: 6 Arabic Fonts
+  if (activeCapsuleId === 'fonts_family_cap') {
+    return (
+      <NodeView
+        node={activeNode}
+        displayMode={displayMode}
+        liveStatusText={activeFont.name}
+        onResetBranch={() => {
+          onUpdateThemePrefs({
+            fontFamily: DEFAULT_THEME_PREFERENCES.fontFamily,
+          });
+          onNotifySuccess('تمت استعادة الخط العربي الافتراضي.');
+        }}
+        resetBranchLabel="استعادة الخط الافتراضي"
+      >
+        <section
+          aria-label="الخطوط العربية الاحترافية"
+          className="capsule-glass-card border p-5 space-y-4"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="flex items-center gap-2">
+            <Type className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+            <h2 className="text-base font-extrabold">
+              الخطوط العربية الاحترافية (6 خطوط)
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {ARABIC_FONTS.map((font) => {
+              const selected = themePrefs.fontFamily === font.id;
+              return (
+                <button
+                  key={font.id}
+                  type="button"
+                  onClick={() => {
+                    onUpdateThemePrefs({
+                      fontFamily: font.id as ArabicFontId,
+                    });
+                    onNotifySuccess(`تم اختيار الخط: ${font.name}`);
+                  }}
+                  className="flex min-h-[120px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
+                  style={{
+                    fontFamily: font.cssFamily,
+                    backgroundColor: selected
+                      ? 'var(--bg-nav-active)'
+                      : 'var(--bg-main)',
+                    borderColor: selected
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <span
+                      className="text-sm font-extrabold"
+                      style={{
+                        color: selected
+                          ? 'var(--accent)'
+                          : 'var(--text-primary)',
+                      }}
+                    >
+                      {font.name}
+                    </span>
+                    {selected && (
+                      <CheckCircle2
+                        className="h-4 w-4 shrink-0"
+                        style={{ color: 'var(--accent)' }}
+                      />
+                    )}
+                  </div>
+                  <p
+                    className="mt-1 text-xs"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {font.description}
+                  </p>
+                  <div className="mt-2.5 text-xs font-bold tabular-nums">
+                    معاينة: Morrow · 5 أفراد · 45 كغم · 1,500 د.ع
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </NodeView>
+    );
+  }
+
+  // Level 4B: Size, Weight, Row Density & Numeric Alignment
+  return (
+    <NodeView
+      node={activeNode}
+      displayMode={displayMode}
+      liveStatusText={`${FONT_SIZE_MAP[themePrefs.fontSize].label} · ${
+        ROW_DENSITY_MAP[themePrefs.rowDensity].label
+      }`}
+      onResetBranch={() => {
+        onUpdateThemePrefs({
+          fontSize: DEFAULT_THEME_PREFERENCES.fontSize,
+          fontWeight: DEFAULT_THEME_PREFERENCES.fontWeight,
+          rowDensity: DEFAULT_THEME_PREFERENCES.rowDensity,
+          tabularNumerals: DEFAULT_THEME_PREFERENCES.tabularNumerals,
+          rowHoverHighlight: DEFAULT_THEME_PREFERENCES.rowHoverHighlight,
+        });
+        onNotifySuccess('تمت استعادة مقاسات الخط والتباعد الافتراضية.');
+      }}
+      resetBranchLabel="استعادة المقاسات الافتراضية"
+    >
+      <section
+        aria-label="الخطوط العربية وأدوات الوضوح"
+        className="capsule-glass-card border p-5 space-y-5"
+        style={{ borderColor: 'var(--border-color)' }}
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div
+            className="rounded-2xl border p-4"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="mb-2.5 text-xs font-extrabold">حجم الخط</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(Object.keys(FONT_SIZE_MAP) as FontSizeStep[]).map((key) => {
+                const active = themePrefs.fontSize === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onUpdateThemePrefs({ fontSize: key })}
+                    className="min-h-[40px] rounded-xl border px-2.5 py-1.5 text-xs font-bold"
+                    style={{
+                      backgroundColor: active
+                        ? 'var(--accent)'
+                        : 'var(--bg-surface)',
+                      borderColor: active
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                      color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {FONT_SIZE_MAP[key].label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            className="rounded-2xl border p-4"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="mb-2.5 text-xs font-extrabold">وزن الخط</div>
+            <div className="flex flex-col gap-1.5">
+              {(Object.keys(FONT_WEIGHT_MAP) as FontWeightStep[]).map((key) => {
+                const active = themePrefs.fontWeight === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onUpdateThemePrefs({ fontWeight: key })}
+                    className="min-h-[38px] rounded-xl border px-2.5 py-1.5 text-xs font-bold"
+                    style={{
+                      backgroundColor: active
+                        ? 'var(--accent)'
+                        : 'var(--bg-surface)',
+                      borderColor: active
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                      color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {FONT_WEIGHT_MAP[key].label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            className="rounded-2xl border p-4"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <div className="mb-2.5 text-xs font-extrabold">
+              ارتفاع الصف وتباعد الأسطر
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {(Object.keys(ROW_DENSITY_MAP) as RowDensityStep[]).map((key) => {
+                const active = themePrefs.rowDensity === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onUpdateThemePrefs({ rowDensity: key })}
+                    className="min-h-[38px] rounded-xl border px-2.5 py-1.5 text-xs font-bold"
+                    style={{
+                      backgroundColor: active
+                        ? 'var(--accent)'
+                        : 'var(--bg-surface)',
+                      borderColor: active
+                        ? 'var(--accent)'
+                        : 'var(--border-color)',
+                      color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {ROW_DENSITY_MAP[key].label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label
+            className="flex min-h-[60px] cursor-pointer items-start gap-2.5 rounded-2xl border p-4 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: themePrefs.tabularNumerals
+                ? 'var(--accent)'
+                : 'var(--border-color)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={themePrefs.tabularNumerals}
+              onChange={(e) =>
+                onUpdateThemePrefs({ tabularNumerals: e.target.checked })
+              }
+              className="mt-0.5"
+            />
+            <div>
+              <div className="font-extrabold">
+                وضوح الأرقام المتساوي (Tabular Numerals)
+              </div>
+              <div style={{ color: 'var(--text-muted)' }}>
+                محاذاة عمودية دقيقة للأرقام والكميات والمبالغ تحت بعضها البعض.
+              </div>
+            </div>
+          </label>
+
+          <label
+            className="flex min-h-[60px] cursor-pointer items-start gap-2.5 rounded-2xl border p-4 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: themePrefs.rowHoverHighlight
+                ? 'var(--accent)'
+                : 'var(--border-color)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={themePrefs.rowHoverHighlight}
+              onChange={(e) =>
+                onUpdateThemePrefs({ rowHoverHighlight: e.target.checked })
+              }
+              className="mt-0.5"
+            />
+            <div>
+              <div className="font-extrabold">مؤشر تتبع السطر عند المرور/اللمس</div>
+              <div style={{ color: 'var(--text-muted)' }}>
+                تظليل خفيف للسطر بأكمله لقراءة صحيحة من الاسم إلى المبلغ.
+              </div>
+            </div>
+          </label>
+        </div>
+      </section>
+    </NodeView>
+  );
+};
+
+/* ─── MODES & EXPERT CONTROL CAPSULES (Level 3 -> Level 4) ────────────────── */
+
+interface ModesCapsulesProps {
+  sectionNode: HierarchyNode;
+  activeNode: HierarchyNode;
+  activeCapsuleId: string | null;
+  displayMode: 'fullscreen' | 'contained';
+  badgeContext: HierarchyBadgeContext;
+  modeTier: AppModeTier;
+  editorEnabled: boolean;
+  expertTableConfig: ExpertTableConfig;
+  onChangeModeTier: (tier: AppModeTier) => void;
+  onToggleEditor: (enabled: boolean) => void;
+  onUpdateExpertTableConfig: (patch: Partial<ExpertTableConfig>) => void;
+  onResetExpertTableConfig: () => void;
+  onOpenCapsule: (capsuleId: string | null) => void;
+  onNotifySuccess: (msg: string) => void;
+}
+
+export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
+  sectionNode,
+  activeNode,
+  activeCapsuleId,
+  displayMode,
+  badgeContext,
+  modeTier,
+  editorEnabled,
+  expertTableConfig,
+  onChangeModeTier,
+  onToggleEditor,
+  onUpdateExpertTableConfig,
+  onResetExpertTableConfig,
+  onOpenCapsule,
+  onNotifySuccess,
+}) => {
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const currentTierMeta =
+    MODE_TIER_META.find((m) => m.tier === modeTier) || MODE_TIER_META[0];
+
+  // Level 3 Hub
+  if (!activeCapsuleId) {
+    return (
+      <NodeView
+        node={sectionNode}
+        displayMode={displayMode}
+        liveStatusText={currentTierMeta.title}
+        onResetBranch={() => {
+          onResetExpertTableConfig();
+          onNotifySuccess('تمت استعادة ترتيب وأسماء الأعمدة الافتراضية فقط.');
+        }}
+        resetBranchLabel="إعادة ضبط تخطيط الجدول"
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {sectionNode.children.map((child) => {
+            const badge = resolveHierarchyNodeBadge(child, badgeContext);
+            const preview =
+              child.id === 'modes_tier_cap' ? (
+                <div className="flex items-center justify-between font-bold">
+                  <span>المستوى النشط:</span>
+                  <span style={{ color: 'var(--accent)' }}>
+                    {currentTierMeta.title}
+                  </span>
+                </div>
+              ) : child.id === 'modes_editor_cap' ? (
+                <div className="flex items-center justify-between font-bold">
+                  <span>حالة المحرر:</span>
+                  <span
+                    style={{
+                      color: editorEnabled ? 'var(--success)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {modeTier === 'beginner'
+                      ? 'مقفل في المبتدئ'
+                      : editorEnabled
+                      ? 'مفعّل'
+                      : 'متوقف'}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between font-bold tabular-nums">
+                  <span>الفئات المخصصة</span>
+                  <span style={{ color: 'var(--accent)' }}>
+                    {expertTableConfig.customCategories.length} فئات
+                  </span>
+                </div>
+              );
+
+            return (
+              <NodeCard
+                key={child.id}
+                node={child}
+                badge={badge}
+                preview={preview}
+                actionLabel="فتح الكبسولة"
+                onOpen={(n) => onOpenCapsule(n.id)}
+              />
+            );
+          })}
+        </div>
+      </NodeView>
+    );
+  }
+
+  // Level 4A: Mode Tiers
+  if (activeCapsuleId === 'modes_tier_cap') {
+    return (
+      <NodeView
+        node={activeNode}
+        displayMode={displayMode}
+        liveStatusText={currentTierMeta.title}
+      >
+        <section
+          aria-label="قسم الأوضاع"
+          className="capsule-glass-card border p-5 space-y-4"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="flex items-center gap-2">
+            <Sliders className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+            <h2 className="text-base font-extrabold">
+              الأوضاع (تدرج مستويات التحكم والقدرات)
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {MODE_TIER_META.map((item) => {
+              const selected = modeTier === item.tier;
+              return (
+                <button
+                  key={item.tier}
+                  type="button"
+                  onClick={() => {
+                    onChangeModeTier(item.tier);
+                    onNotifySuccess(`تم التبديل إلى: ${item.title}`);
+                  }}
+                  className="flex min-h-[110px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
+                  style={{
+                    backgroundColor: selected
+                      ? 'var(--bg-nav-active)'
+                      : 'var(--bg-main)',
+                    borderColor: selected
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <span
+                      className="text-sm font-extrabold"
+                      style={{
+                        color: selected
+                          ? 'var(--accent)'
+                          : 'var(--text-primary)',
+                      }}
+                    >
+                      {item.title}
+                    </span>
+                    {selected && (
+                      <CheckCircle2
+                        className="h-4 w-4 shrink-0"
+                        style={{ color: 'var(--accent)' }}
+                      />
+                    )}
+                  </div>
+                  <p
+                    className="mt-1.5 text-xs leading-relaxed"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {item.subtitle}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </NodeView>
+    );
+  }
+
+  // Level 4B: Editor Mode
+  if (activeCapsuleId === 'modes_editor_cap') {
+    return (
+      <NodeView
+        node={activeNode}
+        displayMode={displayMode}
+        liveStatusText={editorEnabled ? 'المحرر مفعّل' : 'القراءة فقط'}
+      >
+        <section
+          aria-label="قسم المحرر"
+          className="capsule-glass-card border p-5 space-y-4"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {editorEnabled ? (
+                <Unlock
+                  className="h-4 w-4"
+                  style={{ color: 'var(--success)' }}
+                />
+              ) : (
+                <Lock
+                  className="h-4 w-4"
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              )}
+              <h2 className="text-base font-extrabold">
+                وضع «المحرر» وقواعد التأكيد
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              disabled={modeTier === 'beginner'}
+              onClick={() => {
+                onToggleEditor(!editorEnabled);
+                onNotifySuccess(
+                  !editorEnabled ? 'تم تفعيل وضع المحرر.' : 'تم إيقاف وضع المحرر.'
+                );
+              }}
+              className="min-h-[44px] rounded-xl px-4 py-2 text-xs font-extrabold whitespace-nowrap disabled:opacity-45"
+              style={{
+                backgroundColor: editorEnabled
+                  ? 'var(--success)'
+                  : 'var(--accent)',
+                color: editorEnabled
+                  ? 'var(--success-fg)'
+                  : 'var(--accent-fg)',
+              }}
+            >
+              {modeTier === 'beginner'
+                ? 'مقفل في الوضع المبتدئ'
+                : editorEnabled
+                ? 'المحرر مفعّل (انقر للتعطيل)'
+                : 'تفعيل المحرر الآن'}
+            </button>
+          </div>
+
+          <div
+            className="space-y-1.5 text-xs leading-relaxed"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <div>
+              • <strong>الإضافة:</strong> تتم مباشرة لسرعة الإدخال.
+            </div>
+            <div>
+              • <strong>التعديل والحذف:</strong> يخضع لإعدادات الحماية أو الحرية المطلقة للخبير.
+            </div>
+          </div>
+        </section>
+      </NodeView>
+    );
+  }
+
+  // Level 4C: Expert Freedom & Custom Categories
+  return (
+    <NodeView
+      node={activeNode}
+      displayMode={displayMode}
+      liveStatusText={`${expertTableConfig.customCategories.length} فئات`}
+      onResetBranch={() => {
+        onResetExpertTableConfig();
+        onNotifySuccess('تمت استعادة ترتيب وأسماء الأعمدة الافتراضية.');
+      }}
+      resetBranchLabel="إعادة ضبط تخطيط الجدول"
+    >
+      <section
+        aria-label="تحكم الخبير المطلق"
+        className="capsule-glass-card border p-5 space-y-4"
+        style={{
+          borderColor:
+            modeTier === 'expert' ? 'var(--accent)' : 'var(--border-color)',
+        }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-extrabold">
+              الحرية المطلقة وتخصيص الجدول (لوحة الخبير)
+            </h2>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {modeTier === 'expert'
+                ? 'وضع الخبير مفعّل: يمكنك إدارة الحرية المباشرة، الفئات المخصصة، وإعادة ضبط أعمدة الجداول.'
+                : 'فعّل «الوضع الخبير» أعلاه لتشغيل أدوات التخصيص المتقدمة داخل الجداول.'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onResetExpertTableConfig();
+              onNotifySuccess('تمت استعادة ترتيب وأسماء الأعمدة الافتراضية.');
+            }}
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>إعادة ضبط تخطيط الجدول</span>
+          </button>
+        </div>
+
+        <label
+          className="flex min-h-[60px] cursor-pointer items-start gap-2.5 rounded-2xl border p-4 text-xs"
+          style={{
+            backgroundColor: 'var(--bg-main)',
+            borderColor: expertTableConfig.allowDirectNoConfirmEdit
+              ? 'var(--accent)'
+              : 'var(--border-color)',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={expertTableConfig.allowDirectNoConfirmEdit}
+            onChange={(e) => {
+              onUpdateExpertTableConfig({
+                allowDirectNoConfirmEdit: e.target.checked,
+              });
+              onNotifySuccess(
+                e.target.checked
+                  ? 'تم تفعيل التحرير والحفظ الفوري بدون نوافذ تأكيد في وضع الخبير.'
+                  : 'تمت إعادة تفعيل خطوة التأكيد عند التعديل والحذف.'
+              );
+            }}
+            className="mt-0.5"
+          />
+          <div>
+            <div className="font-extrabold">
+              تحرير وحفظ فوري بدون قيود أو نوافذ تأكيد (في وضع الخبير)
+            </div>
+            <div style={{ color: 'var(--text-muted)' }}>
+              يسمح للخبير بتعديل الأسماء والأعداد والأعمدة المخصصة وحذف الصفوف فوراً دون نوافذ تأكيد، مع استمرار حفظ المحذوفات في سلة الاسترجاع.
+            </div>
+          </div>
+        </label>
+
+        {/* Custom Categories Manager */}
+        <div
+          className="rounded-2xl border p-4 space-y-3 text-xs"
+          style={{
+            backgroundColor: 'var(--bg-main)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          <div className="flex items-center gap-1.5 font-extrabold">
+            <Tag className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+            <span>إدارة الفئات المخصصة للمستفيدين</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {expertTableConfig.customCategories.map((cat) => (
+              <span
+                key={cat}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-semibold"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <span>{cat}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateExpertTableConfig({
+                      customCategories: expertTableConfig.customCategories.filter(
+                        (c) => c !== cat
+                      ),
+                    })
+                  }
+                  aria-label={`حذف الفئة ${cat}`}
+                  className="text-[11px] font-bold hover:opacity-75"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="أضف فئة جديدة (مثال: توصيل مستعجل)..."
+              className="min-h-[44px] min-w-[200px] flex-1 rounded-xl border px-3 py-1.5"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const trimmed = newCategoryName.trim();
+                if (!trimmed) return;
+                if (!expertTableConfig.customCategories.includes(trimmed)) {
+                  onUpdateExpertTableConfig({
+                    customCategories: [
+                      ...expertTableConfig.customCategories,
+                      trimmed,
+                    ],
+                  });
+                  onNotifySuccess(`تمت إضافة الفئة: ${trimmed}`);
+                }
+                setNewCategoryName('');
+              }}
+              className="min-h-[44px] rounded-xl px-4 py-1.5 font-extrabold whitespace-nowrap"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
+            >
+              إضافة فئة
+            </button>
+          </div>
+        </div>
+      </section>
+    </NodeView>
+  );
+};
