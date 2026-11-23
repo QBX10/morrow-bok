@@ -1,3 +1,4 @@
+import type { AiTaskKey, AiTaskRouteConfigItem } from '../aiConfig.ts';
 import type {
   AppModeTier,
   AppThemeId,
@@ -10,22 +11,37 @@ import type {
 } from './agency.ts';
 
 /**
- * Strictly restricted to the 3 Morrow brains:
- * - auto: Morrow Local -> Gemini 2.5 Flash -> Gemini 2.5 Pro escalation chain
+ * AI Orchestration Brain Modes:
+ * - auto: Strongest-to-Weakest Cloud Cascade -> Dedicated Backup -> Final Morrow Local Anchor
  * - local: Morrow (Local/Offline) only
- * - gemini_2_5_flash: Fast cloud model (gemini-2.5-flash)
- * - gemini_2_5_pro: Deep analytical cloud model (gemini-2.5-pro)
+ * - gemini_3_8_flash: Heavy PDF / Vision / Deep Extraction & Reasoning
+ * - gemini_3_5_flash: Balanced Multi-step / Excel & Structured Data Processing
+ * - gemini_3_5_flash_lite: Ultra-fast Daily Commands / Low Latency
+ * - nemotron_free: nvidia/nemotron-3.5-super-vl:free (OpenRouter Document Intelligence)
+ * - openrouter_free: openrouter/free (OpenRouter Smart Auto-Router)
  */
 export type AssistantBrainMode =
   | 'auto'
   | 'local'
-  | 'gemini_2_5_flash'
-  | 'gemini_2_5_pro';
+  | 'gemini_3_8_flash'
+  | 'gemini_3_5_flash'
+  | 'gemini_3_5_flash_lite'
+  | 'nemotron_free'
+  | 'openrouter_free';
 
 export type AssistantEngineSource =
   | 'morrow_local'
-  | 'gemini_2_5_flash'
-  | 'gemini_2_5_pro';
+  | 'gemini_3_8_flash'
+  | 'gemini_3_8_live'
+  | 'gemini_3_5_flash'
+  | 'gemini_3_5_flash_lite'
+  | 'whisper_large_v3_turbo'
+  | 'nemotron_free'
+  | 'openrouter_free';
+
+export type AiRoutingStrategy = 'strongest_first' | 'local_first_economy';
+
+export type AiTaskRoutingMap = Record<AiTaskKey, AiTaskRouteConfigItem>;
 
 export type MorrowCenterTab = 'chat' | 'approvals' | 'memory' | 'quick_notes';
 
@@ -34,6 +50,8 @@ export type AssistantConnectivityState = 'online' | 'offline' | 'quota_exhausted
 export interface AssistantSettingsConfig {
   preferredModelId: string;
   fallbackModelId: string;
+  routingStrategy: AiRoutingStrategy;
+  taskRouting: AiTaskRoutingMap;
   onlineDisabled: boolean;
   cacheEnabled: boolean;
   dailyRequestLimit: number;
@@ -189,6 +207,8 @@ export interface AssistantMessage {
   engineUsed?: AssistantEngineSource;
   engineLabel?: string;
   modelId?: string;
+  specialtyTitle?: string;
+  latencyMs?: number;
   fromCache?: boolean;
   confidence?: number;
   canUndo?: boolean;
@@ -441,6 +461,8 @@ export interface MorrowTextAnalysisResult {
   rawText: string;
   analyzedAt: string;
   usedCloudAi: boolean;
+  executedModelId?: string;
+  executedModelLabel?: string;
   summary: string;
   entries: MorrowTextExtractedEntry[];
 }

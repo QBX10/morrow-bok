@@ -246,9 +246,13 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
                     %) — يُرجى المراجعة
                   </span>
                 )}
-                {meta.fallbackUsed === 'flash-lite' && (
+                {meta.executedModelId && (
                   <span style={{ color: 'var(--accent)' }}>
-                    مسار الاستجابة السريعة (Flash Lite)
+                    النموذج المنفّذ:{' '}
+                    <span dir="ltr" className="font-mono font-bold">
+                      {meta.executedModelId}
+                    </span>
+                    {meta.fallbackUsed === true ? ' (احتياطي تلقائي)' : ''}
                   </span>
                 )}
                 {meta.headerSnippet && (

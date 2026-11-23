@@ -36,6 +36,7 @@ import type {
   Person,
 } from '../../types/agency.ts';
 import type {
+  AiTaskRoutingMap,
   AssistantToolCall,
   MorrowCanvasMode,
   MorrowEditableRowDraft,
@@ -77,6 +78,7 @@ interface DynamicWorkspaceCanvasProps {
   onOpenAgencyRoster: (agencyId: number) => void;
   onSendPrompt: (prompt: string) => void;
   cloudConfigured?: boolean;
+  taskRouting?: AiTaskRoutingMap;
 }
 
 const CANVAS_TABS: Array<{
@@ -112,6 +114,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
   onOpenAgencyRoster,
   onSendPrompt,
   cloudConfigured,
+  taskRouting,
 }) => {
   // Chart metric focus
   const [chartMetric, setChartMetric] = useState<'individuals' | 'bags' | 'profit'>('individuals');
@@ -269,6 +272,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
         body: JSON.stringify({
           rawText: rawTextToAnalyze,
           agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+          taskRouting,
         }),
       });
       if (!res.ok) {
@@ -277,6 +281,8 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
       }
       const data = (await res.json()) as {
         ok?: boolean;
+        modelId?: string;
+        modelLabel?: string;
         summary?: string;
         items?: Array<{
           line: string;
@@ -297,6 +303,8 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
           ...mergedLocal,
           rawText: rawTextToAnalyze,
           usedCloudAi: true,
+          executedModelId: data.modelId,
+          executedModelLabel: data.modelLabel,
           summary: data.summary || mergedLocal.summary,
         });
       } else {
@@ -1321,7 +1329,23 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <div className="text-xs font-extrabold">{textAnalysis.summary}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-extrabold">{textAnalysis.summary}</div>
+                  {textAnalysis.executedModelId && (
+                    <span
+                      dir="ltr"
+                      className="rounded-lg border px-2 py-0.5 font-mono text-[10px] font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--accent)',
+                      }}
+                      title={textAnalysis.executedModelLabel || textAnalysis.executedModelId}
+                    >
+                      {textAnalysis.executedModelId}
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-2">
                   {textAnalysis.entries.map((entry) => (
                     <div

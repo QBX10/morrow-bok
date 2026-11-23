@@ -13,6 +13,7 @@ import type {
   InferredDocumentMetadata,
   QuickExtractEvaluatedRow,
 } from '../../types/agency';
+import type { AiTaskRoutingMap } from '../../types/assistant';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
 
 export interface CopilotOperation {
@@ -57,6 +58,7 @@ interface LiveDraftCopilotProps {
   onApplyOperations: (ops: CopilotOperation[]) => string[];
   onCloseMobile?: () => void;
   defaultCollapsed?: boolean;
+  taskRouting?: AiTaskRoutingMap;
 }
 
 function runClientFallbackCopilot(
@@ -135,6 +137,7 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
   onApplyOperations,
   onCloseMobile,
   defaultCollapsed = false,
+  taskRouting,
 }) => {
   const firstDoubtRowIndex =
     draftRows.find((r) => !r.zeroTrustConfirmed)?.rowIndex ??
@@ -219,23 +222,30 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
             mathIssuesCount: r.mathIssues.length,
           })),
           history: nextHistory.slice(-6).map((m) => ({ role: m.role, text: m.text })),
+          taskRouting,
         }),
       });
 
       const data = (await resp.json()) as {
         reply?: string;
         operations?: CopilotOperation[];
-        fallbackUsed?: 'primary' | 'flash-lite' | 'local';
+        modelId?: string;
+        modelLabel?: string;
+        fallbackUsed?: boolean | 'primary' | 'local' | string;
       };
 
       if (!resp.ok) {
         throw new Error('cloud_busy');
       }
 
-      if (data.fallbackUsed === 'flash-lite') {
-        setResilienceNote('تمت المعالجة عبر المسار السريع البديل (Flash Lite).');
-      } else if (data.fallbackUsed === 'local') {
-        setResilienceNote('تم التنفيذ محلياً بدون انقطاع.');
+      if (data.fallbackUsed === 'local' || data.modelId === 'morrow-local') {
+        setResilienceNote('تم التنفيذ محلياً (morrow-local) بدون انقطاع.');
+      } else if (data.modelId) {
+        setResilienceNote(
+          data.fallbackUsed
+            ? `تم التحويل التلقائي والرد عبر: ${data.modelId}`
+            : `النموذج المنفّذ: ${data.modelId}`
+        );
       }
 
       const ops = Array.isArray(data.operations) ? data.operations : [];

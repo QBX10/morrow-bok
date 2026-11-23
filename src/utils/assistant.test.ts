@@ -1,6 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INITIAL_DATABASE_STATE } from '../data/seedData';
+import {
+  AI_FREE_MODELS,
+  AI_ROUTING_PIPELINES,
+  ALL_REGISTERED_CLOUD_MODELS,
+  DEFAULT_TASK_ROUTING,
+  MORROW_LOCAL_MODEL_ID,
+  SIX_FREE_CLOUD_MODELS,
+  formatMatrixAsCsvMarkdown,
+  resolveOrderedTaskChain,
+} from '../aiConfig';
+import {
+  CORE_SIX_SPECIALIZED_MODELS,
+  SAFETY_FALLBACK_MODELS,
+  classifyPromptSpecialtyAndPriority,
+  executeWithSmartFallback,
+  getModelHealthSnapshot,
+  markModelSuccess,
+  resetModelHealthRegistry,
+} from '../lib/aiConfig';
 import type { AssistantUiContext } from '../types/assistant';
 import {
   buildAssistantCacheKey,
@@ -30,6 +49,7 @@ import {
   deriveAssistantConnectivity,
   evaluateOnlineQuota,
   markQuotaExhausted,
+  normalizeAssistantSettings,
   PRIMARY_FREE_GEMINI_MODEL,
   recordOnlineRequest,
   sanitizeAssistantModelId,
@@ -379,8 +399,9 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
     {
       key,
       text: 'سعر الكيس يظهر حسب إعدادات الحساب.',
-      engineUsed: 'gemini_2_5_flash',
-      engineLabel: 'Gemini 2.5 Flash',
+      engineUsed: 'gemini_3_5_flash',
+      engineLabel: 'Gemini 3.5 Flash',
+      modelId: 'gemini-3.5-flash',
     },
     now
   );
@@ -394,8 +415,9 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
     {
       key: 'mutating-key',
       text: 'تمت الإضافة',
-      engineUsed: 'gemini_2_5_flash',
-      engineLabel: 'Gemini 2.5 Flash',
+      engineUsed: 'gemini_3_8_flash',
+      engineLabel: 'Gemini 3.8 Flash',
+      modelId: 'gemini-3.8-flash',
       toolCalls: [{ name: 'add_person', args: { name: 'علي' } }],
     },
     now
@@ -403,13 +425,39 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
   assert.equal(mutatingCache.some((c) => c.key === 'mutating-key'), false);
 });
 
-test('assistantQuota sanitizes banned/legacy models to gemini-2.5-flash and permits only 2.5-flash / 2.5-pro', () => {
+test('aiConfig and assistantQuota register 6 free models, sanitize legacy models, and format CSV/Markdown', () => {
+  assert.equal(SIX_FREE_CLOUD_MODELS.length, 6);
+  assert.ok(ALL_REGISTERED_CLOUD_MODELS.some((m) => m.id === 'gemini-3.8-flash'));
+  assert.ok(ALL_REGISTERED_CLOUD_MODELS.some((m) => m.id === 'gemini-3.8-live'));
+  const googleCount = SIX_FREE_CLOUD_MODELS.filter((m) => m.provider === 'google').length;
+  const externalCount = SIX_FREE_CLOUD_MODELS.filter((m) => m.provider !== 'google').length;
+  assert.equal(googleCount, 3);
+  assert.equal(externalCount, 3);
+
   assert.equal(sanitizeAssistantModelId('gemini-2.0-flash'), PRIMARY_FREE_GEMINI_MODEL);
   assert.equal(sanitizeAssistantModelId('gemini-1.5-pro'), PRIMARY_FREE_GEMINI_MODEL);
+  assert.equal(sanitizeAssistantModelId('gemini-2.5-flash'), PRIMARY_FREE_GEMINI_MODEL);
+  assert.equal(sanitizeAssistantModelId('gemini-2.5-pro'), PRIMARY_FREE_GEMINI_MODEL);
   assert.equal(sanitizeAssistantModelId('gemini-3.1-flash-lite'), PRIMARY_FREE_GEMINI_MODEL);
   assert.equal(sanitizeAssistantModelId('gemini-4-hydrogen'), PRIMARY_FREE_GEMINI_MODEL);
-  assert.equal(sanitizeAssistantModelId('gemini-2.5-flash'), 'gemini-2.5-flash');
-  assert.equal(sanitizeAssistantModelId('gemini-2.5-pro'), 'gemini-2.5-pro');
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-transcribe'), PRIMARY_FREE_GEMINI_MODEL);
+
+  assert.equal(sanitizeAssistantModelId('gemini-3.8-flash'), AI_FREE_MODELS.GEMINI_3_8_FLASH);
+  assert.equal(sanitizeAssistantModelId('gemini-3.8-live'), AI_FREE_MODELS.GEMINI_3_8_LIVE);
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash'), AI_FREE_MODELS.GEMINI_3_5_FLASH);
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash-lite'), AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE);
+  assert.equal(sanitizeAssistantModelId('whisper-large-v3-turbo'), AI_FREE_MODELS.GROQ_WHISPER_TURBO);
+  assert.equal(sanitizeAssistantModelId('nvidia/nemotron-3.5-super-vl:free'), AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL);
+  assert.equal(sanitizeAssistantModelId('openrouter/free'), AI_FREE_MODELS.OPENROUTER_FREE_AUTO);
+
+  const md = formatMatrixAsCsvMarkdown([
+    ['الاسم', 'الافراد'],
+    ['علي حسن', '5'],
+  ]);
+  assert.ok(md.includes('### Markdown Table Preview'));
+  assert.ok(md.includes('### Full CSV Data'));
+  assert.ok(md.includes('| الاسم | الافراد |'));
+  assert.ok(md.includes('علي حسن,5'));
 
   const now = 1_700_000_000_000;
   let stats = createInitialQuotaStats(now);
@@ -446,38 +494,141 @@ test('assistantQuota sanitizes banned/legacy models to gemini-2.5-flash and perm
   assert.equal(connectivityHardOffline, 'offline');
 });
 
-test('strict 3-brain escalation router routes Morrow Local -> gemini-2.5-flash -> gemini-2.5-pro cleanly', () => {
+test('priority-ordered AI router preserves Morrow Local and escalates across the 6 free models by task', () => {
   const localMeta = getEngineDisplayMeta('morrow_local');
-  const flashMeta = getEngineDisplayMeta('gemini_2_5_flash');
-  const proMeta = getEngineDisplayMeta('gemini_2_5_pro');
-  assert.equal(localMeta.modelId, 'morrow-local');
-  assert.equal(flashMeta.modelId, 'gemini-2.5-flash');
-  assert.equal(proMeta.modelId, 'gemini-2.5-pro');
+  const heavyMeta = getEngineDisplayMeta('gemini_3_8_flash');
+  const balancedMeta = getEngineDisplayMeta('gemini_3_5_flash');
+  const liteMeta = getEngineDisplayMeta('gemini_3_5_flash_lite');
+  const nemotronMeta = getEngineDisplayMeta('nemotron_free');
+  const orMeta = getEngineDisplayMeta('openrouter_free');
+  const whisperMeta = getEngineDisplayMeta('whisper_large_v3_turbo');
 
-  const localHandledPlan = planBrainEscalation({
+  assert.equal(localMeta.modelId, 'morrow-local');
+  assert.equal(heavyMeta.modelId, 'gemini-3.8-flash');
+  assert.equal(balancedMeta.modelId, 'gemini-3.5-flash');
+  assert.equal(liteMeta.modelId, 'gemini-3.5-flash-lite');
+  assert.equal(nemotronMeta.modelId, 'nvidia/nemotron-3.5-super-vl:free');
+  assert.equal(orMeta.modelId, 'openrouter/free');
+  assert.equal(whisperMeta.modelId, 'whisper-large-v3-turbo');
+
+  assert.equal(AI_ROUTING_PIPELINES.audio[0], 'whisper-large-v3-turbo');
+  assert.deepEqual(AI_ROUTING_PIPELINES.heavy_extraction.slice(0, 3), [
+    'gemini-3.8-flash',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'gemini-3.5-flash',
+  ]);
+  assert.deepEqual(AI_ROUTING_PIPELINES.data_processing.slice(0, 3), [
+    'gemini-3.5-flash',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'openrouter/free',
+  ]);
+  assert.deepEqual(AI_ROUTING_PIPELINES.fast_assistant.slice(0, 2), [
+    'gemini-3.5-flash-lite',
+    'openrouter/free',
+  ]);
+
+  // Default routingStrategy ('strongest_first'): commands escalate Strongest Cloud -> Backup -> Descending -> Morrow Local anchor
+  const strongestDefaultPlan = planBrainEscalation({
     prompt: 'اعرض المحجوبين',
     brainMode: 'auto',
     localHandled: true,
     offlineOnly: false,
   });
-  assert.equal(localHandledPlan.cloudChain.length, 0);
+  assert.equal(strongestDefaultPlan.tryLocalFirst, false);
+  assert.equal(strongestDefaultPlan.taskKey, 'command_orchestration');
+  assert.equal(strongestDefaultPlan.finalAnchorModel, MORROW_LOCAL_MODEL_ID);
+  assert.equal(strongestDefaultPlan.cloudChain[0], 'gemini-3.8-flash');
+  assert.deepEqual(strongestDefaultPlan.cloudChain.slice(0, 3), [
+    'gemini-3.8-flash',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'gemini-3.5-flash',
+  ]);
 
-  const flashEscalation = planBrainEscalation({
-    prompt: 'اكتب رسالة رسمية قصيرة للمستفيدين',
+  const strongestFastPrompt = planBrainEscalation({
+    prompt: 'اكتب رسالة رسمية قصيرة',
     brainMode: 'auto',
     localHandled: false,
     offlineOnly: false,
   });
-  assert.deepEqual(flashEscalation.cloudChain, ['gemini-2.5-flash', 'gemini-2.5-pro']);
+  assert.equal(strongestFastPrompt.cloudChain[0], 'gemini-3.8-flash');
+  assert.equal(strongestFastPrompt.finalAnchorModel, 'morrow-local');
+
+  // Custom per-task primary & backup routing override
+  const customNormalized = normalizeAssistantSettings({
+    routingStrategy: 'strongest_first',
+    taskRouting: {
+      ...DEFAULT_TASK_ROUTING,
+      command_orchestration: {
+        primaryModelId: 'gemini-3.5-flash',
+        backupModelId: 'openrouter/free',
+        finalLocalFallback: true,
+      },
+    },
+  });
+  const customChain = resolveOrderedTaskChain('command_orchestration', customNormalized.taskRouting);
+  assert.equal(customChain.cloudChain[0], 'gemini-3.5-flash');
+  assert.equal(customChain.cloudChain[1], 'openrouter/free');
+  assert.equal(customChain.finalAnchorModel, 'morrow-local');
+
+  const customPlan = planBrainEscalation({
+    prompt: 'اكتب رسالة رسمية قصيرة',
+    brainMode: 'auto',
+    localHandled: false,
+    offlineOnly: false,
+    routingStrategy: customNormalized.routingStrategy,
+    taskRouting: customNormalized.taskRouting,
+  });
+  assert.equal(customPlan.cloudChain[0], 'gemini-3.5-flash');
+  assert.equal(customPlan.cloudChain[1], 'openrouter/free');
+
+  // Explicit Economy Mode ('local_first_economy'): local handles zero-latency deterministic commands first
+  const localHandledEconomyPlan = planBrainEscalation({
+    prompt: 'اعرض المحجوبين',
+    brainMode: 'auto',
+    localHandled: true,
+    offlineOnly: false,
+    routingStrategy: 'local_first_economy',
+  });
+  assert.equal(localHandledEconomyPlan.tryLocalFirst, true);
+  assert.equal(localHandledEconomyPlan.cloudChain.length, 0);
+
+  const economyFastEscalation = planBrainEscalation({
+    prompt: 'اكتب رسالة رسمية قصيرة',
+    brainMode: 'auto',
+    localHandled: false,
+    offlineOnly: false,
+    routingStrategy: 'local_first_economy',
+  });
+  assert.equal(economyFastEscalation.pipeline, 'fast_assistant');
+  assert.deepEqual(economyFastEscalation.cloudChain.slice(0, 2), ['gemini-3.5-flash-lite', 'openrouter/free']);
+
+  const excelEscalation = planBrainEscalation({
+    prompt: 'نظم جدول excel لبيانات الوكالات',
+    brainMode: 'auto',
+    localHandled: false,
+    offlineOnly: false,
+  });
+  assert.equal(excelEscalation.pipeline, 'data_processing');
+  assert.equal(excelEscalation.taskKey, 'structured_excel_csv');
+  assert.deepEqual(excelEscalation.cloudChain.slice(0, 3), [
+    'gemini-3.5-flash',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'gemini-3.8-flash',
+  ]);
 
   assert.equal(isDeepAnalyticalPrompt('اعطنا تحليل عميق وتقييم أداء الوكالات وتوصيات استراتيجية'), true);
-  const proEscalation = planBrainEscalation({
+  const deepEscalation = planBrainEscalation({
     prompt: 'اعطنا تحليل عميق وتقييم أداء الوكالات وتوصيات استراتيجية',
     brainMode: 'auto',
     localHandled: false,
     offlineOnly: false,
   });
-  assert.deepEqual(proEscalation.cloudChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
+  assert.equal(deepEscalation.pipeline, 'deep_assistant');
+  assert.deepEqual(deepEscalation.cloudChain.slice(0, 3), [
+    'gemini-3.8-flash',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'gemini-3.5-flash',
+  ]);
 });
 
 test('semantic anomaly detection triggers on "الرقم غريب" and stealth filters emit stealthAutoExecute', () => {
@@ -681,4 +832,143 @@ test('offline brain supports agency comparison, quick notes recording, unblockin
   const morrowSug = getScreenAwareSuggestions('morrow_center');
   assert.ok(morrowSug.some((s) => s.prompt.includes('قارن بين الوكالات')));
 });
+
+test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks and ranks priorities by specialty', () => {
+  resetModelHealthRegistry();
+
+  const coreIds = CORE_SIX_SPECIALIZED_MODELS.map((m) => m.id);
+  assert.equal(coreIds.length, 6);
+  assert.deepEqual(coreIds, [
+    'gemini-3.8-flash',
+    'gemini-3.8-live',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'whisper-large-v3-turbo',
+    'nvidia/nemotron-3.5-super-vl:free',
+  ]);
+  assert.ok(SAFETY_FALLBACK_MODELS.some((m) => m.id === 'openrouter/free'));
+  assert.ok(SAFETY_FALLBACK_MODELS.some((m) => m.id === 'morrow-local'));
+
+  const audioRouting = classifyPromptSpecialtyAndPriority({
+    prompt: 'فرغ الرسالة الصوتية',
+    modality: 'audio',
+    brainMode: 'auto',
+  });
+  assert.equal(audioRouting.specialty, 'audio_transcription');
+  assert.equal(audioRouting.primaryModelId, 'whisper-large-v3-turbo');
+
+  const liveRouting = classifyPromptSpecialtyAndPriority({
+    prompt: 'جلسة صوتية حية',
+    modality: 'live_session',
+    brainMode: 'auto',
+  });
+  assert.equal(liveRouting.specialty, 'live_realtime_session');
+  assert.equal(liveRouting.primaryModelId, 'gemini-3.8-live');
+
+  const pdfRouting = classifyPromptSpecialtyAndPriority({
+    prompt: 'اقرأ ملف PDF هذا واستخرج الجداول',
+    modality: 'pdf_vision',
+    brainMode: 'auto',
+  });
+  assert.equal(pdfRouting.specialty, 'heavy_pdf_vision');
+  assert.equal(pdfRouting.primaryModelId, 'gemini-3.8-flash');
+  assert.equal(pdfRouting.backupModelId, 'nvidia/nemotron-3.5-super-vl:free');
+
+  const sheetRouting = classifyPromptSpecialtyAndPriority({
+    prompt: 'نظم بيانات Excel وأخرج ملخص CSV',
+    modality: 'spreadsheet',
+    brainMode: 'auto',
+  });
+  assert.equal(sheetRouting.specialty, 'structured_excel_csv');
+  assert.equal(sheetRouting.primaryModelId, 'gemini-3.5-flash');
+
+  const fastGreeting = classifyPromptSpecialtyAndPriority({
+    prompt: 'مرحبا',
+    modality: 'chat',
+    brainMode: 'auto',
+  });
+  assert.equal(fastGreeting.specialty, 'fast_copilot_actions');
+  assert.equal(fastGreeting.primaryModelId, 'gemini-3.5-flash-lite');
+
+  const deepOrchestration = classifyPromptSpecialtyAndPriority({
+    prompt: 'اعطنا تحليل استراتيجي شامل لأداء جميع الوكالات والمقارنة المالية',
+    modality: 'chat',
+    brainMode: 'auto',
+  });
+  assert.equal(deepOrchestration.specialty, 'command_orchestration');
+  assert.equal(deepOrchestration.primaryModelId, 'gemini-3.8-flash');
+});
+
+test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-breaker cooldowns, and stops on user abort', async () => {
+  resetModelHealthRegistry();
+
+  const switches: string[] = [];
+  const res = await executeWithSmartFallback({
+    priorityModels: [
+      'gemini-3.8-flash',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'gemini-3.5-flash',
+    ],
+    onFallbackSwitch: ({ fromModelId, toModelId }) => {
+      switches.push(`${fromModelId}->${toModelId}`);
+    },
+    executor: async (modelId) => {
+      if (modelId === 'gemini-3.8-flash') {
+        throw new Error('503 Service Unavailable - high demand');
+      }
+      if (modelId === 'nvidia/nemotron-3.5-super-vl:free') {
+        throw new Error('429 Rate limit reached');
+      }
+      return { value: `ok:${modelId}` };
+    },
+  });
+
+  assert.equal(res.ok, true);
+  assert.equal(res.data, 'ok:gemini-3.5-flash');
+  assert.equal(res.usedModelId, 'gemini-3.5-flash');
+  assert.equal(res.fallbackUsed, true);
+  assert.equal(res.quotaOrRateLimited, true);
+  assert.equal(res.attempts.length, 3);
+  assert.deepEqual(switches, [
+    'gemini-3.8-flash->nvidia/nemotron-3.5-super-vl:free',
+    'nvidia/nemotron-3.5-super-vl:free->gemini-3.5-flash',
+  ]);
+
+  // Circuit-breaker puts failed models in cooldown so healthy model is prioritized first
+  assert.equal(getModelHealthSnapshot('gemini-3.8-flash').status, 'cooldown');
+  assert.equal(getModelHealthSnapshot('nvidia/nemotron-3.5-super-vl:free').status, 'cooldown');
+  assert.equal(getModelHealthSnapshot('gemini-3.5-flash').status, 'healthy');
+
+  const nextDecision = classifyPromptSpecialtyAndPriority({
+    prompt: 'حلل أداء الوكالات وتوزيع الحصص بالتفصيل',
+    brainMode: 'auto',
+  });
+  assert.equal(nextDecision.healthyPriorityOrder[0], 'gemini-3.5-flash');
+
+  // Recover primary model health via markModelSuccess
+  markModelSuccess('gemini-3.8-flash', 280);
+  assert.equal(getModelHealthSnapshot('gemini-3.8-flash').status, 'healthy');
+
+  // External abort stops immediately without invoking backup models
+  const controller = new AbortController();
+  const attemptedOnAbort: string[] = [];
+  const abortRes = await executeWithSmartFallback({
+    priorityModels: ['gemini-3.8-flash', 'gemini-3.5-flash'],
+    externalSignal: controller.signal,
+    executor: async (modelId, signal) => {
+      attemptedOnAbort.push(modelId);
+      controller.abort();
+      if (signal.aborted) {
+        throw new DOMException('aborted', 'AbortError');
+      }
+      return { value: 'unreachable' };
+    },
+  });
+  assert.equal(abortRes.ok, false);
+  assert.equal(abortRes.abortedByUser, true);
+  assert.deepEqual(attemptedOnAbort, ['gemini-3.8-flash']);
+
+  resetModelHealthRegistry();
+});
+
 

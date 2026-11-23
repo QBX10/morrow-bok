@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   Compass,
+  Cpu,
   FileSearch,
   FileText,
   FileWarning,
@@ -57,6 +58,7 @@ import type {
   UcrsSession,
   UcrsSourceRecord,
 } from '../types/agency';
+import type { AiTaskRoutingMap } from '../types/assistant';
 import { normalizeArabic } from '../utils/agencyLogic';
 import type { BurstFusionSummary } from '../utils/ledgerImageProcessor';
 import {
@@ -141,6 +143,8 @@ interface QuickExtractViewProps {
   onDoneNavigateToAgency: (agencyId: number) => void;
   onNavigateToView: (view: AppView) => void;
   initialQueuedFiles?: { files: File[]; nonce: number } | null;
+  taskRouting?: AiTaskRoutingMap;
+  onOpenAiModelsStudio?: () => void;
 }
 
 type IntakeTabMode = 'pdf' | 'camera_burst' | 'universal_files';
@@ -244,6 +248,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   onDoneNavigateToAgency,
   onNavigateToView,
   initialQueuedFiles,
+  taskRouting,
+  onOpenAiModelsStudio,
 }) => {
   const fallbackAgencyId = agencies[0]?.id ?? 1;
   const initialAgencyId = agencies.some((a) => a.id === defaultAgencyId)
@@ -767,6 +773,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             regions: activeReferenceTemplate.regions,
           }
         : undefined,
+      taskRouting,
     });
 
     const backoffDelays = [900, 1600];
@@ -812,9 +819,12 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
         if (data?.resilienceNotice) {
           setResilienceStatus(String(data.resilienceNotice));
-        } else if (data?.fallbackUsed === 'flash-lite') {
+        } else if (data?.executedModelId || data?.modelId) {
+          const usedModel = String(data.executedModelId || data.modelId);
           setResilienceStatus(
-            'تمت القراءة والاستخراج عبر المسار السريع البديل بنجاح.'
+            data?.fallbackUsed
+              ? `تمت القراءة عبر النموذج الاحتياطي (${usedModel}) لضمان الاستمرارية.`
+              : `تمت المعالجة عبر النموذج (${usedModel}).`
           );
         } else {
           setResilienceStatus('');
@@ -877,7 +887,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           mimeType: 'application/pdf',
           base64Pdf,
         },
-        agencies
+        agencies,
+        taskRouting
       ).then((meta) => {
         if (meta) setPendingMetadata(meta);
         return meta;
@@ -944,7 +955,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           filename: label,
           frames: framesPayload,
         },
-        agencies
+        agencies,
+        taskRouting
       ).then((meta) => {
         if (meta) setPendingMetadata(meta);
         return meta;
@@ -1098,7 +1110,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             mimeType: 'application/pdf',
             base64Pdf,
           },
-          agencies
+          agencies,
+          taskRouting
         ).then((meta) => {
           if (meta && mode === 'new') setPendingMetadata(meta);
           return meta;
@@ -1201,7 +1214,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           filename: label,
           frames,
         },
-        agencies
+        agencies,
+        taskRouting
       ).then((meta) => {
         if (meta && mode === 'new') setPendingMetadata(meta);
         return meta;
@@ -1338,7 +1352,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           focusedFields,
           customCommand,
         }),
-        performMetadataInference(pastedText, agencies),
+        performMetadataInference(pastedText, agencies, taskRouting),
       ]);
       const resolvedTextMeta = parsed.inferredMetadata ?? inferredHeader;
       if (resolvedTextMeta) {
@@ -2111,6 +2125,17 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onOpenAiModelsStudio && (
+              <button
+                type="button"
+                onClick={onOpenAiModelsStudio}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <Cpu className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>معمارية النماذج</span>
+              </button>
+            )}
             {activeSession && (
               <button
                 type="button"
@@ -2926,6 +2951,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             highlightedRowIndex={copilotHighlightRowIdx}
             labOpen={smartLabOpen}
             onToggleLabOpen={() => setSmartLabOpen((v) => !v)}
+            taskRouting={taskRouting}
             canUndo={pastRows.length > 0}
             canRedo={futureRows.length > 0}
             onUndo={handleLocalUndo}

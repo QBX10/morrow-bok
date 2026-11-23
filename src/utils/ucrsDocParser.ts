@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { formatMatrixAsCsvMarkdown } from '../aiConfig.ts';
 import type {
   Agency,
   InferredDocumentMetadata,
@@ -399,9 +400,7 @@ export async function parseLocalStructuredDocument(params: {
       rows = built.rows;
       colCount = built.colCount;
       headerColumns = built.headerColumns;
-      rawText = matrix
-        .map((r) => r.map((c) => String(c ?? '')).join(' | '))
-        .join('\n');
+      rawText = formatMatrixAsCsvMarkdown(matrix);
     } else if (lower.endsWith('.docx')) {
       const buf = await params.file.arrayBuffer();
       rawText = await extractTextFromDocxBuffer(buf);

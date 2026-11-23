@@ -22,12 +22,14 @@ import {
   Navigation,
   Pin,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Send,
   Settings2,
   ShieldCheck,
   Sparkles,
+  Square,
   Trash2,
   Users,
   Wifi,
@@ -36,6 +38,11 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import {
+  CORE_SIX_SPECIALIZED_MODELS,
+  type ApprovedCloudModelId,
+  type ModelHealthRecord,
+} from '../lib/aiConfig';
 import type {
   AssistantBrainMode,
   AssistantChoiceChip,
@@ -103,6 +110,12 @@ interface AssistantWidgetProps {
   onQuickBackupJson?: () => void;
   onTogglePinMessage?: (messageId: string) => void;
   onExportChatHistory?: () => void;
+  onCancelRequest?: () => void;
+  onClearMessages?: () => void;
+  onRetryLastPrompt?: (prompt?: string) => void;
+  modelHealthSnapshots?: Array<
+    ModelHealthRecord & { status: 'healthy' | 'cooldown' }
+  >;
   hideLauncher?: boolean;
 }
 
@@ -114,9 +127,9 @@ const BRAIN_MODES: Array<{
 }> = [
   {
     id: 'auto',
-    label: 'تلقائي ذكي',
+    label: 'تلقائي ذكي (6+1)',
     shortLabel: 'تلقائي',
-    desc: 'يبدأ بـ Morrow المحلي، ويصعّد إلى Gemini 2.5 Flash أو 2.5 Pro عند الحاجة.',
+    desc: 'يبدأ بـ Morrow المحلي ثم يوجّه للأقوى حسب نوع المهمة عبر النماذج الستة المجانية.',
   },
   {
     id: 'local',
@@ -125,16 +138,34 @@ const BRAIN_MODES: Array<{
     desc: 'ردود وحسابات وفحص فوري بدون إنترنت 100%.',
   },
   {
-    id: 'gemini_2_5_flash',
-    label: 'Gemini 2.5 Flash',
-    shortLabel: '2.5 Flash',
-    desc: 'نموذج سريع للصياغة والأسئلة اللغوية اليومية.',
+    id: 'gemini_3_8_flash',
+    label: 'Gemini 3.8 Flash',
+    shortLabel: '3.8 Flash',
+    desc: 'الأقوى للمهام الثقيلة، PDF المعقد، الفهم البصري والاستنتاج.',
   },
   {
-    id: 'gemini_2_5_pro',
-    label: 'Gemini 2.5 Pro',
-    shortLabel: '2.5 Pro',
-    desc: 'نموذج التحليل العميق والتقارير الاستراتيجية.',
+    id: 'gemini_3_5_flash',
+    label: 'Gemini 3.5 Flash',
+    shortLabel: '3.5 Flash',
+    desc: 'متوازن للبيانات المنظمة (Excel/CSV) والأوامر متعددة الخطوات.',
+  },
+  {
+    id: 'gemini_3_5_flash_lite',
+    label: 'Gemini 3.5 Flash Lite',
+    shortLabel: '3.5 Lite',
+    desc: 'فائق السرعة للأوامر السريعة والردود اليومية.',
+  },
+  {
+    id: 'nemotron_free',
+    label: 'Nemotron 3.5 VL',
+    shortLabel: 'Nemotron',
+    desc: 'ذكاء المستندات والاستنتاج المستقل عبر OpenRouter المجاني.',
+  },
+  {
+    id: 'openrouter_free',
+    label: 'OpenRouter Free',
+    shortLabel: 'OR Auto',
+    desc: 'بوابة الاحتياط التلقائي لأقوى نموذج مجاني متاح لحظياً.',
   },
 ];
 
@@ -248,6 +279,10 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onQuickBackupJson,
   onTogglePinMessage,
   onExportChatHistory,
+  onCancelRequest,
+  onClearMessages,
+  onRetryLastPrompt,
+  modelHealthSnapshots = [],
   hideLauncher = false,
 }) => {
   const [inputValue, setInputValue] = useState('');
@@ -310,7 +345,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
       return {
         label: 'أونلاين',
         color: 'var(--success)',
-        title: `متصل (${assistantSettings?.preferredModelId || 'gemini-2.5-flash'})`,
+        title: `متصل (${assistantSettings?.preferredModelId || 'gemini-3.8-flash'})`,
       };
     }
     if (connectivity === 'quota_exhausted') {
@@ -510,17 +545,11 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               color: 'var(--accent-fg)',
             }}
           >
-            <span className="relative flex h-2.5 w-2.5">
-              <span
-                className="inline-flex h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: statusMeta.color }}
-              />
-            </span>
             <Bot className="h-4 w-4 shrink-0" />
             <span>Morrow</span>
             {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
-              <span className="rounded-lg bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
-                {pendingDraftsCount + queuedTasks.length}
+              <span className="font-mono text-[11px] font-black tabular-nums opacity-90">
+                · {pendingDraftsCount + queuedTasks.length}
               </span>
             )}
           </button>
@@ -553,7 +582,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               : 'top-14 bottom-4 left-3 md:left-4 w-[min(450px,calc(100vw-1.5rem))] rounded-[24px]'
           }`}
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 95%, transparent)',
+            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 96%, transparent)',
             borderColor: 'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
             color: 'var(--text-primary)',
             backdropFilter: 'blur(20px)',
@@ -577,28 +606,26 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   color: 'var(--accent-fg)',
                 }}
               >
-                <Bot className="h-4.5 w-4.5" />
+                <Bot className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <h2 className="text-xs sm:text-sm font-extrabold whitespace-nowrap">Morrow</h2>
+                  <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
                   <span
                     title={statusMeta.title}
-                    className="inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-bold"
-                    style={{
-                      borderColor: 'var(--border-color)',
-                      color: statusMeta.color,
-                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap"
+                    style={{ color: statusMeta.color }}
                   >
                     {connectivity === 'online' ? (
-                      <Wifi className="h-2.5 w-2.5" />
+                      <Wifi className="h-3 w-3 shrink-0" />
                     ) : (
-                      <WifiOff className="h-2.5 w-2.5" />
+                      <WifiOff className="h-3 w-3 shrink-0" />
                     )}
                     <span>{statusMeta.label}</span>
                   </span>
                 </div>
-                <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {activeBrain.shortLabel}
                   {focusedPersonName ? ` · ${focusedPersonName}` : ''}
                 </div>
@@ -644,6 +671,23 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   {pendingDraftsCount > 0 && (
                     <span className="tabular-nums">{pendingDraftsCount}</span>
                   )}
+                </button>
+              )}
+
+              {onClearMessages && messages.length > 1 && (
+                <button
+                  type="button"
+                  onClick={onClearMessages}
+                  aria-label="محادثة جديدة"
+                  title="محادثة جديدة"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </button>
               )}
 
@@ -850,23 +894,51 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   >
                     {!isUser && (msg.engineLabel || msg.engineUsed) && (
                       <div
-                        className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-bold"
-                        style={{ color: 'var(--accent)' }}
+                        className="mb-1.5 flex items-center justify-between gap-2 text-[11px]"
+                        style={{ color: 'var(--text-muted)' }}
                       >
-                        <span className="inline-flex items-center gap-1">
-                          {msg.engineUsed === 'gemini_2_5_pro' ? (
-                            <Sparkles className="h-3 w-3 shrink-0" />
-                          ) : msg.engineUsed === 'gemini_2_5_flash' ? (
-                            <Zap className="h-3 w-3 shrink-0" />
-                          ) : (
-                            <Cpu className="h-3 w-3 shrink-0" />
-                          )}
-                          <span>
-                            {msg.engineLabel || getEngineDisplayMeta(msg.engineUsed).badgeLabel}
+                        <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                          <span className="inline-flex items-center gap-1 font-bold" style={{ color: 'var(--accent)' }}>
+                            {msg.engineUsed === 'gemini_3_8_flash' ||
+                            msg.engineUsed === 'gemini_3_8_live' ||
+                            msg.engineUsed === 'nemotron_free' ? (
+                              <Sparkles className="h-3 w-3 shrink-0" />
+                            ) : msg.engineUsed === 'gemini_3_5_flash' ||
+                              msg.engineUsed === 'gemini_3_5_flash_lite' ||
+                              msg.engineUsed === 'openrouter_free' ? (
+                              <Zap className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <Cpu className="h-3 w-3 shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {msg.engineLabel || getEngineDisplayMeta(msg.engineUsed, msg.modelId).badgeLabel}
+                            </span>
                           </span>
+                          {msg.modelId && (
+                            <span dir="ltr" className="hidden sm:inline font-mono text-[10px] opacity-80">
+                              · {msg.modelId}
+                            </span>
+                          )}
+                          {typeof msg.latencyMs === 'number' && msg.latencyMs > 0 && (
+                            <span dir="ltr" className="font-mono text-[10px] tabular-nums opacity-75">
+                              · {(msg.latencyMs / 1000).toFixed(1)}s
+                            </span>
+                          )}
                         </span>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {onRetryLastPrompt && (
+                            <button
+                              type="button"
+                              onClick={() => onRetryLastPrompt()}
+                              title="إعادة توليد الرد"
+                              aria-label="إعادة توليد الرد"
+                              className="rounded-lg p-1 hover:opacity-75"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleCopyMessage(msg.id, msg.text)}
@@ -1014,79 +1086,78 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                     {/* Compact Diagnostics Details */}
                     {msg.diagnosticsReport && msg.diagnosticsReport.issues.length > 0 && (
                       <div
-                        className="mt-2.5 space-y-1.5 rounded-xl border p-2.5 text-[11px]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                        }}
+                        className="mt-2.5 divide-y border-t pt-2 text-[11px]"
+                        style={{ borderColor: 'var(--border-color)' }}
                       >
                         {msg.diagnosticsReport.issues.slice(0, 4).map((issue) => (
-                          <div
-                            key={issue.id}
-                            className="rounded-lg border px-2 py-1"
-                            style={{
-                              borderColor:
-                                issue.severity === 'high'
-                                  ? 'var(--danger)'
-                                  : 'var(--border-color)',
-                            }}
-                          >
-                            <div className="font-bold">{issue.title}</div>
+                          <div key={issue.id} className="py-1.5">
+                            <div
+                              className="font-bold"
+                              style={{
+                                color:
+                                  issue.severity === 'high' ? 'var(--danger)' : 'var(--text-primary)',
+                              }}
+                            >
+                              {issue.title}
+                            </div>
                             <div style={{ color: 'var(--text-muted)' }}>{issue.detail}</div>
                           </div>
                         ))}
                         {msg.diagnosticsReport.autoFixableCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 font-bold"
-                            style={{
-                              backgroundColor: 'var(--accent)',
-                              color: 'var(--accent-fg)',
-                            }}
-                          >
-                            <Wrench className="h-3.5 w-3.5" />
-                            <span>
-                              إصلاح تلقائي ({msg.diagnosticsReport.autoFixableCount})
-                            </span>
-                          </button>
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
+                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 font-bold"
+                              style={{
+                                backgroundColor: 'var(--accent)',
+                                color: 'var(--accent-fg)',
+                              }}
+                            >
+                              <Wrench className="h-3.5 w-3.5" />
+                              <span>
+                                إصلاح تلقائي ({msg.diagnosticsReport.autoFixableCount})
+                              </span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     )}
 
-                    {/* Before <- After Confirmation Diff Card */}
+                    {/* Before <- After Confirmation Diff Section (Flat Hairline Table) */}
                     {msg.confirmationDiff && (
                       <div
-                        className="mt-2.5 space-y-2 rounded-2xl border p-3 text-[11px]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--accent)',
-                        }}
+                        className="mt-2.5 space-y-2 border-t pt-2.5 text-[11px]"
+                        style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' }}
                       >
-                        <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
-                          {msg.confirmationDiff.title}
-                        </div>
-                        <div style={{ color: 'var(--text-muted)' }}>
-                          {msg.confirmationDiff.summary}
+                        <div>
+                          <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
+                            {msg.confirmationDiff.title}
+                          </div>
+                          <div style={{ color: 'var(--text-muted)' }}>
+                            {msg.confirmationDiff.summary}
+                          </div>
                         </div>
 
-                        <div className="space-y-1">
+                        <div
+                          className="divide-y rounded-xl border"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
                           {msg.confirmationDiff.changes.map((c, idx) => (
                             <div
                               key={idx}
-                              className="grid grid-cols-1 gap-0.5 rounded-xl border px-2.5 py-1.5"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                              }}
+                              className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5"
                             >
-                              <div
+                              <span
                                 className="text-[10px] font-bold"
                                 style={{ color: 'var(--text-muted)' }}
                               >
                                 {c.fieldLabel}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-1.5 font-semibold">
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5 font-semibold tabular-nums">
                                 <span className="line-through opacity-75">{c.beforeValue}</span>
                                 <span style={{ color: 'var(--accent)' }}>←</span>
                                 <span style={{ color: 'var(--success)' }}>{c.afterValue}</span>
@@ -1181,14 +1252,29 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
 
             {isThinking && (
               <div
-                className="rounded-2xl border px-3.5 py-2.5 text-xs font-semibold"
+                className="flex items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                جاري المعالجة عبر سلسلة Morrow...
+                <span>جاري اختيار النموذج الأنسب ومعالجة الطلب...</span>
+                {onCancelRequest && (
+                  <button
+                    type="button"
+                    onClick={onCancelRequest}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--danger)',
+                      color: 'var(--danger)',
+                    }}
+                  >
+                    <Square className="h-3 w-3" />
+                    <span>إيقاف</span>
+                  </button>
+                )}
               </div>
             )}
             <div ref={scrollEndRef} />
@@ -1323,18 +1409,34 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 }}
               />
 
-              <button
-                type="submit"
-                disabled={!inputValue.trim() || isThinking}
-                aria-label="إرسال الطلب للمساعد"
-                className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl px-3 disabled:opacity-40"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                <Send className="h-4 w-4" />
-              </button>
+              {isThinking && onCancelRequest ? (
+                <button
+                  type="button"
+                  onClick={onCancelRequest}
+                  aria-label="إيقاف المعالجة"
+                  className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl border px-3"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  <Square className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || isThinking}
+                  aria-label="إرسال الطلب للمساعد"
+                  className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl px-3 disabled:opacity-40"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
             </form>
           </div>
         </aside>
@@ -1344,39 +1446,78 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
       <BottomSheet
         open={brainSheetOpen}
         onClose={() => setBrainSheetOpen(false)}
-        title="اختر محرك الذكاء — Morrow"
-        subtitle="التصعيد التلقائي يبدأ محلياً مجاناً ثم يصعّد للسحابة عند الحاجة فقط"
+        title="محركات الذكاء وتوجيه الأولويات — Morrow"
+        subtitle="اختيار التوجيه التلقائي حسب التخصص أو تثبيت نموذج محدد مع التحويل الذكي"
         icon={<Cpu className="h-5 w-5" />}
       >
-        <div className="space-y-2.5">
-          {BRAIN_MODES.map((m) => {
-            const active = brainMode === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  onChangeBrainMode(m.id);
-                  setBrainSheetOpen(false);
-                }}
-                className="flex w-full items-start justify-between gap-3 rounded-2xl border p-3.5 text-right transition-all"
-                style={{
-                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                }}
-              >
-                <div>
-                  <div className="text-xs sm:text-sm font-extrabold">{m.label}</div>
-                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {m.desc}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            {BRAIN_MODES.map((m) => {
+              const active = brainMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    onChangeBrainMode(m.id);
+                    setBrainSheetOpen(false);
+                  }}
+                  className="flex w-full items-start justify-between gap-3 rounded-2xl border p-3.5 text-right transition-all"
+                  style={{
+                    backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                    borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                  }}
+                >
+                  <div>
+                    <div className="text-xs sm:text-sm font-extrabold">{m.label}</div>
+                    <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {m.desc}
+                    </div>
                   </div>
-                </div>
-                {active && (
-                  <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: 'var(--accent)' }} />
-                )}
-              </button>
-            );
-          })}
+                  {active && (
+                    <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: 'var(--accent)' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="border-t pt-3 space-y-2" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
+              خريطة النماذج الستة المعتمدة وحالة الجاهزية
+            </div>
+            <div className="divide-y rounded-2xl border text-xs" style={{ borderColor: 'var(--border-color)' }}>
+              {CORE_SIX_SPECIALIZED_MODELS.map((spec) => {
+                const snap = modelHealthSnapshots.find(
+                  (h) => h.modelId === (spec.id as ApprovedCloudModelId)
+                );
+                const cooling = snap?.status === 'cooldown';
+                return (
+                  <div key={spec.id} className="flex items-start justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="font-bold">{spec.shortLabel}</div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {spec.specialty}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-left font-mono text-[10px] tabular-nums">
+                      <span
+                        className="font-bold"
+                        style={{ color: cooling ? 'var(--warning)' : 'var(--success)' }}
+                      >
+                        {cooling ? 'تبريد مؤقت' : 'جاهز'}
+                      </span>
+                      {snap?.avgLatencyMs ? (
+                        <div style={{ color: 'var(--text-muted)' }}>
+                          {(snap.avgLatencyMs / 1000).toFixed(1)}s
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </BottomSheet>
 

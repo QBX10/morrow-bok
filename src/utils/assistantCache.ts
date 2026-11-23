@@ -34,11 +34,13 @@ export function buildAssistantCacheKey(params: {
   modelId: string;
   activeView: string;
   selectedAgencyId: number | null;
+  chainSignature?: string;
 }): string {
   const normalizedPrompt = normalizeIraqiDialect(params.prompt).slice(0, 300);
   return [
     params.brainMode,
     params.modelId,
+    params.chainSignature || 'default',
     params.activeView,
     String(params.selectedAgencyId ?? 'all'),
     normalizedPrompt,

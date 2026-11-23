@@ -315,7 +315,10 @@ export interface InferredDocumentMetadata {
   detectedColumns?: string[];
   semanticMapping?: SemanticColumnMapping[];
   proactivePrompt?: string;
-  fallbackUsed?: 'primary' | 'flash-lite' | 'local';
+  fallbackUsed?: boolean | 'primary' | 'flash-lite' | 'local' | string;
+  executedModelId?: string;
+  executedProvider?: string;
+  executedModelLabel?: string;
   confirmedByUser: boolean;
 }
 
@@ -383,7 +386,10 @@ export interface QuickExtractAnalysisResult {
   sourceImageUrls?: Record<number, string>;
   sourcePdfUrl?: string;
   inferredMetadata?: InferredDocumentMetadata | null;
-  fallbackUsed?: 'primary' | 'flash-lite' | 'local';
+  fallbackUsed?: boolean | 'primary' | 'flash-lite' | 'local' | string;
+  executedModelId?: string;
+  executedProvider?: string;
+  executedModelLabel?: string;
   resilienceNotice?: string;
 }
 

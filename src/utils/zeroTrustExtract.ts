@@ -6,6 +6,7 @@ import type {
   SemanticColumnMapping,
   ZeroTrustCellStatus,
 } from '../types/agency.ts';
+import type { AiTaskRoutingMap } from '../types/assistant.ts';
 import { normalizeArabic } from './agencyLogic.ts';
 
 export const ZERO_TRUST_CONFIDENCE_THRESHOLD = 0.99;
@@ -562,6 +563,9 @@ export function normalizeInferredMetadata(
     semanticMapping,
     proactivePrompt,
     fallbackUsed: raw.fallbackUsed,
+    executedModelId: raw.executedModelId,
+    executedProvider: raw.executedProvider,
+    executedModelLabel: raw.executedModelLabel,
     confirmedByUser: Boolean(raw.confirmedByUser),
   };
 }
@@ -609,7 +613,8 @@ function isBrowserFile(val: unknown): val is File {
  */
 export async function performMetadataInference(
   fileContent: MetadataInferenceInput,
-  agencies: Agency[] = []
+  agencies: Agency[] = [],
+  taskRouting?: AiTaskRoutingMap
 ): Promise<InferredDocumentMetadata | null> {
   let payload: {
     filename?: string;
@@ -690,6 +695,7 @@ export async function performMetadataInference(
         imageDataUrl: payload.imageDataUrl,
         frames: payload.frames?.slice(0, 1),
         rawText: payload.rawText?.slice(0, 6000),
+        taskRouting,
       }),
     });
     if (timer) clearTimeout(timer);
@@ -697,9 +703,23 @@ export async function performMetadataInference(
     if (!res.ok) return localFallback;
     const data = (await res.json()) as {
       ok?: boolean;
+      modelId?: string;
+      modelLabel?: string;
+      fallbackUsed?: boolean;
       metadata?: Partial<InferredDocumentMetadata> | null;
     };
-    const normalized = normalizeInferredMetadata(data.metadata, agencies);
+    const mergedMeta = data.metadata
+      ? {
+          ...data.metadata,
+          executedModelId: data.metadata.executedModelId || data.modelId,
+          executedModelLabel: data.metadata.executedModelLabel || data.modelLabel,
+          fallbackUsed:
+            data.metadata.fallbackUsed !== undefined
+              ? data.metadata.fallbackUsed
+              : data.fallbackUsed,
+        }
+      : null;
+    const normalized = normalizeInferredMetadata(mergedMeta, agencies);
     return normalized ? { ...normalized, confirmedByUser: false } : localFallback;
   } catch {
     return localFallback;

@@ -15,6 +15,7 @@ import type {
   InferredDocumentMetadata,
   QuickExtractEvaluatedRow,
 } from '../../types/agency';
+import type { AiTaskRoutingMap } from '../../types/assistant';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
 import { ContextualRowSnippet } from './ContextualRowSnippetModal';
 import { LiveDraftCopilot, type CopilotOperation } from './LiveDraftCopilot';
@@ -58,6 +59,7 @@ export interface SmartExtractionLabProps {
   presetPrompt?: string | null;
   onClearPresetPrompt?: () => void;
   copilotSectionRef?: React.RefObject<HTMLDivElement | null>;
+  taskRouting?: AiTaskRoutingMap;
 }
 
 export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
@@ -81,6 +83,7 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
   presetPrompt = null,
   onClearPresetPrompt,
   copilotSectionRef,
+  taskRouting,
 }) => {
   const [internalOpen, setInternalOpen] = useState(true);
   const isOpen = controlledOpen ?? internalOpen;
@@ -1034,6 +1037,7 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
                 onClearPresetPrompt={onClearPresetPrompt}
                 onApplyOperations={onApplyCopilotOperations}
                 defaultCollapsed={false}
+                taskRouting={taskRouting}
               />
             </div>
           </div>

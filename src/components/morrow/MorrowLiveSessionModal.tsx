@@ -491,8 +491,19 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
               <Radio className="h-4.5 w-4.5" />
             </span>
             <div>
-              <div className="flex items-center gap-2 text-sm font-extrabold">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-extrabold">
                 <span>المحادثة المباشرة لايف</span>
+                <span
+                  dir="ltr"
+                  className="rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  gemini-3.8-live
+                </span>
                 <span className="font-mono text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
                   {mins}:{secs}
                 </span>

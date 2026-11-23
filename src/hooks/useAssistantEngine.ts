@@ -48,22 +48,34 @@ import {
   normalizeIraqiDialect,
 } from '../utils/assistantPrivacy.ts';
 import {
+  AI_FREE_MODELS,
+  classifyPromptSpecialtyAndPriority,
+  executeWithSmartFallback,
+  getAllModelHealthSnapshots,
+  markModelFailure,
+  markModelSuccess,
+  type ApprovedCloudModelId,
+} from '../lib/aiConfig.ts';
+import {
   createInitialQuotaStats,
   DEFAULT_ASSISTANT_SETTINGS,
   deriveAssistantConnectivity,
   evaluateOnlineQuota,
-  GEMINI_FLASH_MODEL,
-  GEMINI_PRO_MODEL,
+  GEMINI_HEAVY_MODEL,
   markQuotaExhausted,
+  normalizeAssistantSettings,
+  OPENROUTER_NEMOTRON_MODEL,
   recordOnlineRequest,
   sanitizeAssistantModelId,
 } from '../utils/assistantQuota.ts';
 import { buildBeforeAfterDiff, validateToolCall } from '../utils/assistantTools.ts';
-import { getEngineDisplayMeta, planBrainEscalation } from '../utils/morrowRouter.ts';
+import {
+  getEngineDisplayMeta,
+  mapModelIdToEngineSource,
+} from '../utils/morrowRouter.ts';
 import { autoLinkQuickNoteToPerson } from '../utils/quickNotesMatcher.ts';
 import { emitAppToast } from './useToastQueue.ts';
 
-const FLASH_LITE_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const PREFS_STORAGE_KEY = 'tabrex_assistant_prefs_v1';
 const QUEUE_STORAGE_KEY = 'tabrex_assistant_queue_v1';
 const LAST_BACKUP_STORAGE_KEY = 'tabrex_last_backup_at';
@@ -120,18 +132,14 @@ export function useAssistantEngine(params: {
     useState<AssistantConversationMemory>({});
   const [pendingCompoundQueue, setPendingCompoundQueue] = useState<string[]>([]);
   const [responseCache, setResponseCache] = useState<AssistantCacheEntry[]>([]);
+  const [healthTick, setHealthTick] = useState(0);
+  const activeRequestControllerRef = useRef<AbortController | null>(null);
+  const lastUserPromptRef = useRef<string>('');
 
   const [assistantSettings, setAssistantSettingsState] = useState<AssistantSettingsConfig>(
     () => {
       const loaded = readStoredObject(SETTINGS_STORAGE_KEY, DEFAULT_ASSISTANT_SETTINGS);
-      return {
-        ...loaded,
-        preferredModelId: sanitizeAssistantModelId(loaded.preferredModelId),
-        fallbackModelId:
-          sanitizeAssistantModelId(loaded.fallbackModelId) === GEMINI_FLASH_MODEL
-            ? GEMINI_PRO_MODEL
-            : sanitizeAssistantModelId(loaded.fallbackModelId),
-      };
+      return normalizeAssistantSettings(loaded);
     }
   );
   const [quotaStats, setQuotaStats] = useState<AssistantQuotaStats>(() =>
@@ -163,34 +171,42 @@ export function useAssistantEngine(params: {
     [runtime.state.persons.length, runtime.state.monthlyArchives?.length, lastBackupAt]
   );
 
-  const [messages, setMessages] = useState<AssistantMessage[]>(() => {
+  const createWelcomeMessage = useCallback((): AssistantMessage => {
     const localMeta = getEngineDisplayMeta('morrow_local');
-    return [
-      {
-        id: 'welcome_msg',
-        role: 'assistant',
-        createdAt: new Date().toISOString(),
-        engineUsed: 'morrow_local',
-        engineLabel: localMeta.badgeLabel,
-        modelId: localMeta.modelId,
-        text: 'أهلاً بك في مساعد Morrow الثلاثي الذكاء. أبدأ محلياً بالردود والحسابات والتنفيذ الصامت فوراً، وأصعّد إلى Gemini 2.5 Flash أو 2.5 Pro عند المهام اللغوية والتحليل العميق — وكل تعديل للبيانات يمر بمسودة موافقة آمنة.',
-        choices: [
-          {
-            id: 'welcome_check_health',
-            label: 'فحص سلامة الجداول',
-            actionType: 'send_prompt',
-            payload: { prompt: 'افحص التطبيق' },
-          },
-          {
-            id: 'welcome_open_center',
-            label: 'فتح مركز Morrow',
-            actionType: 'open_command_center_tab',
-            payload: { tab: 'approvals' },
-          },
-        ],
-      },
-    ];
-  });
+    return {
+      id: `welcome_msg_${Date.now().toString(36)}`,
+      role: 'assistant',
+      createdAt: new Date().toISOString(),
+      engineUsed: 'morrow_local',
+      engineLabel: localMeta.badgeLabel,
+      modelId: localMeta.modelId,
+      text: 'أهلاً بك في مساعد Morrow الذكي. يتم توجيه كل مهمة تلقائياً وفق تخصص النماذج الستة وأولويتها (3.8 Flash للمهام الثقيلة والرؤية · 3.8 Live للمباشر · 3.5 Flash للبيانات · 3.5 Lite للاستجابة الفورية · Groq Whisper للصوت · Nemotron للاستنتاج المستقل) مع التحويل الذكي التلقائي وبقاء Morrow المحلي كمرجع صامد.',
+      choices: [
+        {
+          id: 'welcome_check_health',
+          label: 'فحص سلامة الجداول',
+          actionType: 'send_prompt',
+          payload: { prompt: 'افحص التطبيق' },
+        },
+        {
+          id: 'welcome_open_center',
+          label: 'فتح مركز Morrow',
+          actionType: 'open_command_center_tab',
+          payload: { tab: 'approvals' },
+        },
+      ],
+    };
+  }, []);
+
+  const [messages, setMessages] = useState<AssistantMessage[]>(() => [
+    createWelcomeMessage(),
+  ]);
+
+  useEffect(() => {
+    return () => {
+      activeRequestControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -292,18 +308,15 @@ export function useAssistantEngine(params: {
 
   const updateAssistantSettings = useCallback(
     (patch: Partial<AssistantSettingsConfig>) => {
-      setAssistantSettingsState((prev) => ({
-        ...prev,
-        ...patch,
-        preferredModelId:
-          patch.preferredModelId !== undefined
-            ? sanitizeAssistantModelId(patch.preferredModelId)
-            : prev.preferredModelId,
-        fallbackModelId:
-          patch.fallbackModelId !== undefined
-            ? sanitizeAssistantModelId(patch.fallbackModelId)
-            : prev.fallbackModelId,
-      }));
+      setAssistantSettingsState((prev) =>
+        normalizeAssistantSettings({
+          ...prev,
+          ...patch,
+          taskRouting: patch.taskRouting
+            ? { ...prev.taskRouting, ...patch.taskRouting }
+            : prev.taskRouting,
+        })
+      );
     },
     []
   );
@@ -1005,11 +1018,43 @@ export function useAssistantEngine(params: {
     [fullRuntime, slotSession, conversationMemory, presentOfflineOutcome]
   );
 
+  const cancelActiveRequest = useCallback(() => {
+    if (activeRequestControllerRef.current) {
+      activeRequestControllerRef.current.abort();
+      activeRequestControllerRef.current = null;
+    }
+    setIsThinking(false);
+    appendMessage({
+      role: 'assistant',
+      text: 'تم إيقاف الطلب الحالي. يمكنك تعديل رسالتك أو إرسال أمر جديد متى شئت.',
+      engineUsed: 'morrow_local',
+      gracefulLevel: 'B',
+    });
+  }, [appendMessage]);
+
+  const clearMessages = useCallback(() => {
+    if (activeRequestControllerRef.current) {
+      activeRequestControllerRef.current.abort();
+      activeRequestControllerRef.current = null;
+    }
+    setIsThinking(false);
+    setSlotSession(null);
+    setPendingCompoundQueue([]);
+    lastUserPromptRef.current = '';
+    setMessages([createWelcomeMessage()]);
+  }, [createWelcomeMessage]);
+
+  const modelHealthSnapshots = useMemo(
+    () => getAllModelHealthSnapshots(),
+    [healthTick, connectivity]
+  );
+
   const sendMessage = useCallback(
-    async (rawPrompt: string, options?: { fromFloatingWidget?: boolean }) => {
+    async (rawPrompt: string, options?: { fromFloatingWidget?: boolean; bypassCache?: boolean }) => {
       const cleanPrompt = enforceSafeArabicTerminology(rawPrompt.trim());
       if (!cleanPrompt || isThinking) return;
 
+      lastUserPromptRef.current = cleanPrompt;
       appendMessage({ role: 'user', text: cleanPrompt });
 
       const offlineNow =
@@ -1058,11 +1103,13 @@ export function useAssistantEngine(params: {
         }
       }
 
-      const escalation = planBrainEscalation({
+      const specialtyDecision = classifyPromptSpecialtyAndPriority({
         prompt: cleanPrompt,
+        modality: 'chat',
         brainMode,
+        routingStrategy: assistantSettings.routingStrategy,
         localHandled: localProbe.handled,
-        offlineOnly: offlineNow,
+        taskRouting: assistantSettings.taskRouting,
       });
 
       if (offlineNow) {
@@ -1079,27 +1126,37 @@ export function useAssistantEngine(params: {
         return;
       }
 
-      if (brainMode === 'auto' && localProbe.handled) {
+      // Economy mode OR deterministic instant UI stealth actions run immediately locally without cloud latency
+      if (
+        (brainMode === 'auto' && specialtyDecision.bypassCloudSuggested) ||
+        (brainMode === 'auto' &&
+          localProbe.handled &&
+          localProbe.stealthAutoExecute &&
+          localProbe.confidence >= 0.92)
+      ) {
         presentOfflineOutcome(localProbe, cleanPrompt, undefined, options);
         return;
       }
 
-      const activeModel =
-        escalation.cloudChain[0] ||
-        (brainMode === 'gemini_2_5_pro'
-          ? GEMINI_PRO_MODEL
-          : sanitizeAssistantModelId(assistantSettings.preferredModelId));
-      const fallbackModel = escalation.cloudChain[1] || GEMINI_PRO_MODEL;
+      const fallbackChain: ApprovedCloudModelId[] =
+        specialtyDecision.healthyPriorityOrder.length > 0
+          ? specialtyDecision.healthyPriorityOrder
+          : [
+              sanitizeAssistantModelId(assistantSettings.preferredModelId || GEMINI_HEAVY_MODEL),
+              sanitizeAssistantModelId(assistantSettings.fallbackModelId || OPENROUTER_NEMOTRON_MODEL),
+            ];
+      const activeModel = fallbackChain[0];
 
       const cacheKey = buildAssistantCacheKey({
         prompt: cleanPrompt,
         brainMode,
         modelId: activeModel,
+        chainSignature: `${assistantSettings.routingStrategy}:${specialtyDecision.specialty}:${fallbackChain.join('>')}`,
         activeView: fullRuntime.uiContext.activeView,
         selectedAgencyId: fullRuntime.uiContext.selectedAgencyId,
       });
 
-      if (assistantSettings.cacheEnabled) {
+      if (assistantSettings.cacheEnabled && !options?.bypassCache) {
         const cached = getCachedAssistantResponse(responseCache, cacheKey);
         if (cached) {
           if (cached.toolCalls && cached.toolCalls.length > 0) {
@@ -1139,6 +1196,7 @@ export function useAssistantEngine(params: {
                 engineUsed: cached.engineUsed,
                 engineLabel: `${cached.engineLabel} · ذاكرة سريعة`,
                 modelId: cached.modelId,
+                specialtyTitle: specialtyDecision.specialtyTitle,
                 fromCache: true,
                 stealthExecuted: resolved.stealthExecuted,
                 gracefulLevel: resolved.gracefulLevel,
@@ -1163,6 +1221,7 @@ export function useAssistantEngine(params: {
             engineUsed: cached.engineUsed,
             engineLabel: `${cached.engineLabel} · ذاكرة سريعة`,
             modelId: cached.modelId,
+            specialtyTitle: specialtyDecision.specialtyTitle,
             fromCache: true,
             gracefulLevel: 'A',
           });
@@ -1176,125 +1235,135 @@ export function useAssistantEngine(params: {
         return;
       }
 
+      const requestController = new AbortController();
+      activeRequestControllerRef.current = requestController;
       setIsThinking(true);
       setQuotaStats((prev) => recordOnlineRequest(prev, activeModel));
+      const requestStartedAt = Date.now();
+
       try {
         const { cloudContext, cloudHistory } = liveCloudPayload;
-        const resolvedBrainMode =
-          brainMode === 'auto' && escalation.complexity === 'deep'
-            ? 'gemini_2_5_pro'
-            : brainMode;
 
         type ChatApiPayload = {
           ok?: boolean;
           fallbackToOffline?: boolean;
           quotaExhausted?: boolean;
-          switchedToFlashLite?: boolean;
-          had503Retry?: boolean;
+          fallbackUsed?: boolean;
           reason?: string;
           error?: string;
           engineUsed?: AssistantEngineSource;
           engineLabel?: string;
           modelId?: string;
+          latencyMs?: number;
+          attempts?: Array<{
+            modelId?: string;
+            status?: string;
+            latencyMs?: number;
+            detail?: string;
+          }>;
           text?: string;
           toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
         };
 
-        let res: Response | null = null;
-        let data: ChatApiPayload = {};
-        let notified503Switch = false;
-        const maxAttempts = 3;
+        let notifiedFallback = false;
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          const currentModel =
-            attempt === 0 ? activeModel : FLASH_LITE_FALLBACK_MODEL;
-          const controller = new AbortController();
-          const timer = window.setTimeout(() => controller.abort(), 11500);
-          try {
-            res = await fetch('/api/assistant/chat', {
+        const fallbackResult = await executeWithSmartFallback<ChatApiPayload>({
+          priorityModels: fallbackChain,
+          externalSignal: requestController.signal,
+          perModelTimeoutMs: specialtyDecision.recommendedTimeoutMs,
+          onFallbackSwitch: ({ toModelId }) => {
+            if (!notifiedFallback) {
+              notifiedFallback = true;
+              const nextSpec = getEngineDisplayMeta(mapModelIdToEngineSource(toModelId), toModelId);
+              emitAppToast({
+                title: `تحويل تلقائي ذكي إلى ${nextSpec.shortLabel}`,
+                description:
+                  'واجه النموذج الأول ضغطاً مؤقتاً — تم التوجيه تلقائياً للنموذج البديل.',
+                tone: 'info',
+              });
+            }
+          },
+          executor: async (candidateModelId, signal, attemptIndex) => {
+            const remainingChain = fallbackChain.slice(attemptIndex);
+            const res = await fetch('/api/assistant/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              signal: controller.signal,
+              signal,
               body: JSON.stringify({
                 prompt: cleanPrompt,
-                brainMode: resolvedBrainMode,
-                preferredModel: currentModel,
-                fallbackModel:
-                  attempt === 0 ? fallbackModel : FLASH_LITE_FALLBACK_MODEL,
+                brainMode,
+                routingStrategy: assistantSettings.routingStrategy,
+                taskKey: specialtyDecision.specialty,
+                taskRouting: assistantSettings.taskRouting,
+                pipeline: specialtyDecision.pipeline,
+                preferredModel: candidateModelId,
+                fallbackModel: remainingChain[1] || OPENROUTER_NEMOTRON_MODEL,
+                preferredChain: remainingChain,
                 cloudContext,
                 cloudHistory,
               }),
             });
-            window.clearTimeout(timer);
 
             const parsedData = (await res.json().catch(() => ({}))) as ChatApiPayload;
-            data = parsedData;
 
-            const isServiceUnavailable503 =
-              res.status === 503 ||
+            // Mirror server attempt health telemetry into client circuit-breaker registry
+            if (Array.isArray(parsedData.attempts)) {
+              for (const att of parsedData.attempts) {
+                const attId = att.modelId as ApprovedCloudModelId | undefined;
+                if (!attId) continue;
+                if (att.status === 'ok') {
+                  markModelSuccess(attId, att.latencyMs ?? 800);
+                } else if (att.status === 'rate_limited_429') {
+                  markModelFailure(attId, new Error(att.detail || '429 rate limit'), 429);
+                } else if (att.status === 'timeout_503') {
+                  markModelFailure(attId, new Error(att.detail || '503 service unavailable'), 503);
+                }
+              }
+            }
+
+            if (
+              res.status === 429 ||
               res.status === 502 ||
-              res.status === 504 ||
-              String(parsedData?.error || parsedData?.reason || '').includes('503');
-
-            if (isServiceUnavailable503 && attempt < maxAttempts - 1) {
-              if (!notified503Switch) {
-                notified503Switch = true;
-                emitAppToast({
-                  title: 'تبديل تلقائي هادئ لنموذج Flash Lite',
-                  description:
-                    'الخادم مزدحم مؤقتاً (503) — جارٍ إعادة المحاولة بسلاسة عبر Flash Lite دون مقاطعة عملك.',
-                  tone: 'info',
-                });
-              }
-              await new Promise((resolve) =>
-                window.setTimeout(resolve, 650 * (attempt + 1))
-              );
-              continue;
+              res.status === 503 ||
+              res.status === 504
+            ) {
+              const statusErr = new Error(
+                parsedData?.error || parsedData?.reason || `HTTP ${res.status}`
+              ) as Error & { status?: number };
+              statusErr.status = res.status;
+              throw statusErr;
             }
-            break;
-          } catch (attemptErr) {
-            window.clearTimeout(timer);
-            const msg =
-              attemptErr instanceof Error
-                ? attemptErr.message.toLowerCase()
-                : String(attemptErr || '').toLowerCase();
-            const isTransientRetryable =
-              attempt < maxAttempts - 1 &&
-              (msg.includes('503') ||
-                msg.includes('abort') ||
-                msg.includes('network') ||
-                msg.includes('fetch') ||
-                msg.includes('timeout'));
 
-            if (isTransientRetryable) {
-              if (!notified503Switch) {
-                notified503Switch = true;
-                emitAppToast({
-                  title: 'إعادة محاولة تلقائية عبر Flash Lite',
-                  description:
-                    'حدث ضغط مؤقت أثناء الاتصال — تمت متابعة الطلب تلقائياً دون انقطاع.',
-                  tone: 'info',
-                });
-              }
-              await new Promise((resolve) =>
-                window.setTimeout(resolve, 650 * (attempt + 1))
-              );
-              continue;
+            if (!res.ok) {
+              throw new Error(parsedData?.error || `HTTP ${res.status}`);
             }
-            throw attemptErr;
-          }
+
+            return {
+              value: parsedData,
+              usedModelId: (parsedData.modelId && parsedData.modelId !== 'morrow-local'
+                ? parsedData.modelId
+                : candidateModelId) as ApprovedCloudModelId,
+            };
+          },
+        });
+
+        setHealthTick((t) => t + 1);
+
+        if (fallbackResult.abortedByUser) {
+          return;
         }
 
-        if (!res || !res.ok || !data.ok || data.fallbackToOffline) {
-          if (data.quotaExhausted) {
+        const data = fallbackResult.data || {};
+        if (!fallbackResult.ok || !data.ok || data.fallbackToOffline) {
+          if (data.quotaExhausted || fallbackResult.quotaOrRateLimited) {
             setQuotaStats((prev) => markQuotaExhausted(prev, 90_000));
           }
-          if (!notified503Switch) {
+          if (!notifiedFallback) {
             emitAppToast({
               title: 'متابعة تلقائية بمحرك Morrow المحلي',
               description:
                 data.reason ||
-                'الخدمة السحابية مشغولة حالياً — تم إكمال عملك محلياً بهدوء ودون توقف.',
+                'النماذج السحابية غير متاحة أو مزدحمة حالياً — تم إكمال عملك محلياً بهدوء ودون توقف.',
               tone: 'info',
             });
           }
@@ -1302,22 +1371,19 @@ export function useAssistantEngine(params: {
           return;
         }
 
-        if ((data.switchedToFlashLite || data.had503Retry) && !notified503Switch) {
+        const resolvedModelId = data.modelId || fallbackResult.usedModelId || activeModel;
+        const resolvedEngine: AssistantEngineSource =
+          data.engineUsed || mapModelIdToEngineSource(resolvedModelId);
+        const engineMeta = getEngineDisplayMeta(resolvedEngine, resolvedModelId);
+        const elapsedMs = data.latencyMs ?? (Date.now() - requestStartedAt);
+
+        if ((data.fallbackUsed || fallbackResult.fallbackUsed) && !notifiedFallback) {
           emitAppToast({
-            title: 'تم التبديل التلقائي إلى Flash Lite',
-            description:
-              'استمر التنفيذ بسلاسة عبر النموذج الخفيف البديل بعد خطأ مؤقت دون مقاطعة عملك.',
+            title: `تم التحويل التلقائي إلى ${engineMeta.shortLabel}`,
+            description: `نُفّذ الطلب بسلاسة عبر (${resolvedModelId}) بعد تعذر أو ازدحام النموذج الأول.`,
             tone: 'info',
           });
         }
-
-        const resolvedEngine: AssistantEngineSource =
-          data.engineUsed === 'gemini_2_5_pro' || data.engineUsed === 'gemini_2_5_flash'
-            ? data.engineUsed
-            : activeModel === GEMINI_PRO_MODEL
-            ? 'gemini_2_5_pro'
-            : 'gemini_2_5_flash';
-        const engineMeta = getEngineDisplayMeta(resolvedEngine);
 
         const validatedTools = Array.isArray(data.toolCalls)
           ? data.toolCalls
@@ -1370,6 +1436,8 @@ export function useAssistantEngine(params: {
             engineUsed: resolvedEngine,
             engineLabel: data.engineLabel || engineMeta.badgeLabel,
             modelId: data.modelId || engineMeta.modelId,
+            specialtyTitle: specialtyDecision.specialtyTitle,
+            latencyMs: elapsedMs,
             stealthExecuted: resolved.stealthExecuted,
             gracefulLevel: resolved.gracefulLevel,
             choices: [
@@ -1405,6 +1473,26 @@ export function useAssistantEngine(params: {
           return;
         }
 
+        if (
+          validatedTools.length === 0 &&
+          localProbe.handled &&
+          localProbe.stealthAutoExecute &&
+          localProbe.toolCall
+        ) {
+          const stealthResolved = resolveToolExecution(
+            localProbe.toolCall,
+            fullRuntime,
+            data.text
+          );
+          if (stealthResolved.stealthExecuted) {
+            emitAppToast({
+              title: `تنفيذ صامت عبر ${engineMeta.shortLabel}`,
+              description: stealthResolved.replyText,
+              tone: 'success',
+            });
+          }
+        }
+
         const replyText =
           data.text ||
           'وصلتني الفكرة، تقدر توضح لي أكثر حتى أساعدك بدقة؟';
@@ -1427,6 +1515,8 @@ export function useAssistantEngine(params: {
           engineUsed: resolvedEngine,
           engineLabel: data.engineLabel || engineMeta.badgeLabel,
           modelId: data.modelId || engineMeta.modelId,
+          specialtyTitle: specialtyDecision.specialtyTitle,
+          latencyMs: elapsedMs,
           gracefulLevel: 'A',
           choices: [
             {
@@ -1437,11 +1527,16 @@ export function useAssistantEngine(params: {
             },
           ],
         });
-      } catch {
+      } catch (err) {
+        if (requestController.signal.aborted) {
+          return;
+        }
         emitAppToast({
           title: 'استمرارية ذكية دون مقاطعة',
           description:
-            'تعذر الوصول للسحابة مؤقتاً — تم تحويل الطلب تلقائياً إلى محرك Morrow المحلي.',
+            err instanceof Error && err.message
+              ? `تعذر السحابة مؤقتاً — تم التحويل تلقائياً لمحرك Morrow المحلي.`
+              : 'تعذر الوصول للسحابة مؤقتاً — تم تحويل الطلب تلقائياً إلى محرك Morrow المحلي.',
           tone: 'info',
         });
         presentOfflineOutcome(
@@ -1451,6 +1546,9 @@ export function useAssistantEngine(params: {
           options
         );
       } finally {
+        if (activeRequestControllerRef.current === requestController) {
+          activeRequestControllerRef.current = null;
+        }
         setIsThinking(false);
       }
     },
@@ -1473,6 +1571,15 @@ export function useAssistantEngine(params: {
     ]
   );
 
+  const retryLastPrompt = useCallback(
+    (explicitPrompt?: string) => {
+      const target = (explicitPrompt || lastUserPromptRef.current).trim();
+      if (!target || isThinking) return;
+      void sendMessage(target, { bypassCache: true });
+    },
+    [isThinking, sendMessage]
+  );
+
   const handleLiveVoiceToolAction = useCallback(
     (rawTool: AssistantToolCall): string => {
       const checked = validateToolCall(rawTool);
@@ -1484,15 +1591,15 @@ export function useAssistantEngine(params: {
       if (resolved.confirmationDiff) {
         const draftId = registerDraftFromDiff(
           resolved.confirmationDiff,
-          'gemini_2_5_flash',
+          'gemini_3_8_live',
           'أمر صوتي مباشر (Live)'
         );
         appendMessage({
           role: 'assistant',
           text: `من المحادثة المباشرة لايف — جهّزت مسودة «${resolved.confirmationDiff.title}» للمراجعة:`,
-          engineUsed: 'gemini_2_5_flash',
+          engineUsed: 'gemini_3_8_live',
           engineLabel: 'Gemini 3.8 Live · أمر مباشر',
-          modelId: 'gemini-3.8-live',
+          modelId: AI_FREE_MODELS.GEMINI_3_8_LIVE,
           gracefulLevel: 'A',
           confirmationDiff: resolved.confirmationDiff,
           pendingDraftId: draftId,
@@ -1509,9 +1616,9 @@ export function useAssistantEngine(params: {
         appendMessage({
           role: 'assistant',
           text: resolved.replyText,
-          engineUsed: 'gemini_2_5_flash',
+          engineUsed: 'gemini_3_8_live',
           engineLabel: 'Gemini 3.8 Live · تنفيذ مباشر',
-          modelId: 'gemini-3.8-live',
+          modelId: AI_FREE_MODELS.GEMINI_3_8_LIVE,
           gracefulLevel: resolved.gracefulLevel,
           spotlightAction: resolved.spotlightAction,
           resultCard: resolved.resultCard,
@@ -1589,24 +1696,38 @@ export function useAssistantEngine(params: {
       if (res.ok) {
         const statusJson = (await res.json()) as {
           cloudConfigured?: boolean;
+          providers?: { google?: boolean; groq?: boolean; openrouter?: boolean };
+          models?: Array<{ id: string; provider: string; configured: boolean }>;
           defaultModel?: string;
           fallbackModel?: string;
           liveModel?: string;
           multimodalModel?: string;
         };
         setCloudConfigured(Boolean(statusJson.cloudConfigured));
+        const allModels = statusJson.models || [];
+        const activeModels = allModels
+          .filter((m) => m.configured)
+          .map((m) => m.id);
+        const totalCount = allModels.length || 7;
+        const missingProviders: string[] = [];
+        if (!statusJson.providers?.google) missingProviders.push('GEMINI_API_KEY');
+        if (!statusJson.providers?.groq) missingProviders.push('GROQ_API_KEY');
+        if (!statusJson.providers?.openrouter) missingProviders.push('OPENROUTER_API_KEY');
+
         checks.push({
           id: 'cloud_and_live_status',
-          label: 'النماذج السحابية + لايف + المرفقات',
-          status: statusJson.cloudConfigured ? 'ok' : 'warning',
+          label: 'النماذج السحابية + المباشر لايف + الصوتي + Morrow المحلي',
+          status: statusJson.cloudConfigured && missingProviders.length === 0 ? 'ok' : 'warning',
           detail: statusJson.cloudConfigured
-            ? `متصل: ${statusJson.defaultModel || 'gemini-2.5-flash'} · ${statusJson.fallbackModel || 'gemini-2.5-pro'} · ${statusJson.liveModel || 'gemini-3.8-live'} · ${statusJson.multimodalModel || 'gemini-4-hydrogen'}`
-            : 'مفتاح السحابة غير مهيأ — يعتمد التطبيق بكفاءة على Morrow المحلي.',
+            ? activeModels.length === totalCount
+              ? `متصل بالكامل (${activeModels.length}/${totalCount} نماذج مجانية): ${activeModels.join(' · ')}`
+              : `متصل جزئياً (${activeModels.length}/${totalCount}): ${activeModels.join(' · ')}${missingProviders.length > 0 ? ` — مفاتيح ناقصة: ${missingProviders.join(', ')}` : ''}`
+            : `مفاتيح السحابة غير مهيأة (${missingProviders.join(', ')}) — يعتمد التطبيق بكفاءة على Morrow المحلي.`,
         });
       } else {
         checks.push({
           id: 'cloud_and_live_status',
-          label: 'النماذج السحابية + لايف + المرفقات',
+          label: 'النماذج السحابية الستة + الصوتي + Morrow المحلي',
           status: 'warning',
           detail: 'تعذر الوصول لحالة الخادم السحابي حالياً (HTTP ' + res.status + ').',
         });
@@ -1614,7 +1735,7 @@ export function useAssistantEngine(params: {
     } catch {
       checks.push({
         id: 'cloud_and_live_status',
-        label: 'النماذج السحابية + لايف + المرفقات',
+        label: 'النماذج السحابية الستة + الصوتي + Morrow المحلي',
         status: 'warning',
         detail: 'وضع العمل بدون اتصال — محرك Morrow المحلي يعمل بالكامل.',
       });
@@ -1623,11 +1744,17 @@ export function useAssistantEngine(params: {
     const activeMeta =
       brainMode === 'local'
         ? 'Morrow المحلي'
-        : brainMode === 'gemini_2_5_flash'
-          ? 'Gemini 2.5 Flash'
-          : brainMode === 'gemini_2_5_pro'
-            ? 'Gemini 2.5 Pro'
-            : 'التصعيد التلقائي المتكامل';
+        : brainMode === 'gemini_3_8_flash'
+          ? 'Gemini 3.8 Flash'
+          : brainMode === 'gemini_3_5_flash'
+            ? 'Gemini 3.5 Flash'
+            : brainMode === 'gemini_3_5_flash_lite'
+              ? 'Gemini 3.5 Flash Lite'
+              : brainMode === 'nemotron_free'
+                ? 'Nemotron 3.5 Super VL'
+                : brainMode === 'openrouter_free'
+                  ? 'OpenRouter Free'
+                  : 'التصعيد التلقائي المتكامل (6+1)';
 
     return {
       checkedAt: new Date().toISOString(),
@@ -2100,5 +2227,9 @@ export function useAssistantEngine(params: {
     liveCloudContext: liveCloudPayload.cloudContext,
     handleLiveVoiceToolAction,
     verifyMorrowSystemIntegrity,
+    cancelActiveRequest,
+    clearMessages,
+    retryLastPrompt,
+    modelHealthSnapshots,
   };
 }

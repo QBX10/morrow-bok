@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Bot,
   CloudUpload,
-  Cpu,
   Download,
   FileJson,
   Lock,
@@ -10,7 +8,6 @@ import {
   RotateCcw,
   Trash2,
   Upload,
-  WifiOff,
 } from 'lucide-react';
 import { DEFAULT_SECURITY_PREFS } from '../../../data/seedData';
 import type {
@@ -25,7 +22,6 @@ import type {
 } from '../../../types/assistant';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
-  FREE_GEMINI_MODEL_OPTIONS,
   type QuotaCheckResult,
 } from '../../../utils/assistantQuota';
 import type {
@@ -35,6 +31,7 @@ import type {
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
+import { AiModelsArchitectureStudio } from './AiModelsArchitectureStudio';
 
 interface SecurityCapsulesProps {
   sectionNode: HierarchyNode;
@@ -415,7 +412,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
     );
   }
 
-  // Level 4C: AI Assistant Settings & Quota
+  // Level 4C: AI Models Architecture & Task Routing Studio
   if (activeCapsuleId === 'sec_ai_assistant_cap') {
     return (
       <NodeView
@@ -429,295 +426,21 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
             : 'أوفلاين (محلي)'
         }
         onResetBranch={() => {
-          onUpdateAssistantSettings?.(DEFAULT_ASSISTANT_SETTINGS);
-          onNotifySuccess('تمت استعادة إعدادات المساعد الافتراضية.');
+          onUpdateAssistantSettings?.(structuredClone(DEFAULT_ASSISTANT_SETTINGS));
+          onNotifySuccess('تمت استعادة معمارية النماذج والتوجيه الافتراضية.');
         }}
       >
-        <section
-          data-testid="assistant-settings-section"
-          className="capsule-glass-card border p-5 space-y-4"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-              <div>
-                <h2 className="text-base font-extrabold">
-                  إعدادات المساعد الذكي Morrow (النموذج المجاني والحصة)
-                </h2>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  التسلسل التلقائي المجاني: Flash-Lite ← النموذج الاحتياطي ← المحرك المحلي بدون توقف
-                </p>
-              </div>
-            </div>
-            <span
-              className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
-              style={{
-                backgroundColor:
-                  assistantConnectivity === 'online'
-                    ? 'var(--success-bg)'
-                    : 'var(--warning-bg)',
-                borderColor:
-                  assistantConnectivity === 'online'
-                    ? 'var(--success)'
-                    : assistantConnectivity === 'quota_exhausted'
-                    ? 'var(--danger)'
-                    : 'var(--warning)',
-                color:
-                  assistantConnectivity === 'online'
-                    ? 'var(--success)'
-                    : assistantConnectivity === 'quota_exhausted'
-                    ? 'var(--danger)'
-                    : 'var(--warning)',
-              }}
-            >
-              {assistantConnectivity === 'online'
-                ? 'متصل (أونلاين)'
-                : assistantConnectivity === 'quota_exhausted'
-                ? 'الحصة خلصت — يعمل محلياً'
-                : 'أوفلاين (محلي)'}
-            </span>
-          </div>
-
-          <label
-            className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-3.5 text-xs font-bold"
-            style={{
-              backgroundColor: assistantSettings.onlineDisabled
-                ? 'var(--warning-bg)'
-                : 'var(--bg-main)',
-              borderColor: assistantSettings.onlineDisabled
-                ? 'var(--warning)'
-                : 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <WifiOff
-                className="h-4 w-4 shrink-0"
-                style={{
-                  color: assistantSettings.onlineDisabled
-                    ? 'var(--warning)'
-                    : 'var(--text-muted)',
-                }}
-              />
-              <div>
-                <div>تعطيل الأونلاين كلياً (وضع أوفلاين 100%)</div>
-                <div
-                  className="text-[11px] font-normal"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  يمنع أي اتصال خارجي للمساعد ويشغّل كل الأوامر والبحث محلياً داخل جهازك فقط.
-                </div>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={assistantSettings.onlineDisabled}
-              onChange={(e) =>
-                onUpdateAssistantSettings?.({
-                  onlineDisabled: e.target.checked,
-                })
-              }
-            />
-          </label>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 text-xs">
-            <div
-              className="rounded-2xl border p-4 space-y-2"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <label
-                htmlFor="assistant-model-select"
-                className="flex items-center gap-1.5 font-extrabold"
-              >
-                <Cpu className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>نموذج السحابة الافتراضي (ضمن الدماغ الثلاثي)</span>
-              </label>
-              <select
-                id="assistant-model-select"
-                value={assistantSettings.preferredModelId}
-                onChange={(e) =>
-                  onUpdateAssistantSettings?.({
-                    preferredModelId: e.target.value,
-                  })
-                }
-                className="min-h-[40px] w-full rounded-xl border px-2.5 py-2 text-xs font-bold"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                {FREE_GEMINI_MODEL_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p
-                className="pt-1 text-[11px] leading-relaxed"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                التسلسل الحصري: يبدأ المساعد بمحرك Morrow المحلي، ويصعّد عند الحاجة اللغوية إلى{' '}
-                <span dir="ltr" className="font-mono font-bold">
-                  gemini-2.5-flash
-                </span>{' '}
-                ثم إلى{' '}
-                <span dir="ltr" className="font-mono font-bold">
-                  gemini-2.5-pro
-                </span>{' '}
-                للتحليل العميق.
-              </p>
-            </div>
-
-            <div
-              className="rounded-2xl border p-4 space-y-2"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <div className="flex items-center justify-between font-extrabold">
-                <span>عداد الطلبات السحابية اليومي</span>
-                <span className="tabular-nums" style={{ color: 'var(--accent)' }}>
-                  {assistantQuotaInfo?.dailyUsed ?? 0} /{' '}
-                  {assistantSettings.dailyRequestLimit}
-                </span>
-              </div>
-              <div
-                className="h-2 w-full overflow-hidden rounded-full"
-                style={{ backgroundColor: 'var(--bg-surface)' }}
-              >
-                <div
-                  className="h-full transition-all"
-                  style={{
-                    width: `${assistantQuotaInfo?.dailyPercent ?? 0}%`,
-                    backgroundColor:
-                      (assistantQuotaInfo?.dailyPercent ?? 0) >=
-                      assistantSettings.quotaWarningPercent
-                        ? 'var(--warning)'
-                        : 'var(--success)',
-                  }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div>
-                  <label
-                    htmlFor="assistant-daily-limit"
-                    className="mb-0.5 block text-[10px] font-semibold"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    الحد اليومي
-                  </label>
-                  <input
-                    id="assistant-daily-limit"
-                    type="number"
-                    min={10}
-                    max={5000}
-                    value={assistantSettings.dailyRequestLimit}
-                    onChange={(e) =>
-                      onUpdateAssistantSettings?.({
-                        dailyRequestLimit: Math.max(
-                          10,
-                          Number(e.target.value) || 250
-                        ),
-                      })
-                    }
-                    className="w-full rounded-lg border px-2 py-1 text-xs tabular-nums"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="assistant-warn-pct"
-                    className="mb-0.5 block text-[10px] font-semibold"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    تنبيه الحصة (%)
-                  </label>
-                  <input
-                    id="assistant-warn-pct"
-                    type="number"
-                    min={50}
-                    max={98}
-                    value={assistantSettings.quotaWarningPercent}
-                    onChange={(e) =>
-                      onUpdateAssistantSettings?.({
-                        quotaWarningPercent: Math.max(
-                          50,
-                          Math.min(98, Number(e.target.value) || 80)
-                        ),
-                      })
-                    }
-                    className="w-full rounded-lg border px-2 py-1 text-xs tabular-nums"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {onResetAssistantQuota && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onResetAssistantQuota();
-                      onNotifySuccess('تم تصفير عداد طلبات المساعد.');
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>تصفير العداد</span>
-                  </button>
-                )}
-                {onClearAssistantCache && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClearAssistantCache();
-                      onNotifySuccess('تم مسح ذاكرة الردود المؤقتة.');
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    <span>مسح الكاش ({assistantCacheCount})</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <label className="flex cursor-pointer items-center gap-2 font-bold">
-              <input
-                type="checkbox"
-                checked={assistantSettings.cacheEnabled}
-                onChange={(e) =>
-                  onUpdateAssistantSettings?.({
-                    cacheEnabled: e.target.checked,
-                  })
-                }
-              />
-              <span>حفظ الردود المتكررة محلياً (Cache) لتوفير الحصة</span>
-            </label>
-            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              مفتاح Gemini يُدار بأمان على الخادم عبر Settings &gt; Secrets دون تخزين أي مفتاح في المتصفح.
-            </span>
-          </div>
-        </section>
+        <AiModelsArchitectureStudio
+          assistantSettings={assistantSettings}
+          assistantConnectivity={assistantConnectivity}
+          assistantQuotaInfo={assistantQuotaInfo}
+          assistantCacheCount={assistantCacheCount}
+          onUpdateAssistantSettings={onUpdateAssistantSettings}
+          onResetAssistantQuota={onResetAssistantQuota}
+          onClearAssistantCache={onClearAssistantCache}
+          onNotifySuccess={onNotifySuccess}
+          onNotifyError={onNotifyError}
+        />
       </NodeView>
     );
   }

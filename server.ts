@@ -1,10 +1,9 @@
 import {
-  GoogleGenAI,
+  type GenerateContentResponse,
+  type LiveServerMessage,
   Modality,
   Type,
   type FunctionDeclaration,
-  type GenerateContentResponse,
-  type LiveServerMessage,
 } from '@google/genai';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -14,6 +13,17 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, type WebSocket } from 'ws';
+import {
+  AI_FREE_MODELS,
+  AI_ROUTING_PIPELINES,
+  AI_TASK_PROFILES,
+  resolveOrderedTaskChain,
+  sanitizeAiModelId,
+  type AiPipelineKind,
+  type AiTaskKey,
+  type AiTaskRouteConfigItem,
+  type ApprovedCloudModelId,
+} from './src/aiConfig.ts';
 import {
   createUserRecord,
   findUserByEmail,
@@ -39,6 +49,14 @@ import {
   signSessionToken,
   type AuthRequest,
 } from './src/middleware/auth.ts';
+import {
+  createGoogleAiClient,
+  executeAudioTranscriptionWithFallback,
+  executeWithFallback,
+  getOrchestrationStatusSnapshot,
+  liveTestAiModelOrTask,
+  type OrchestratorAttachmentPart,
+} from './src/server/aiOrchestrator.ts';
 import type {
   InferredDocumentMetadata,
   QuickExtractRawRow,
@@ -47,14 +65,10 @@ import type { AssistantBrainMode, AssistantToolCall } from './src/types/assistan
 import { normalizePhoneNumber } from './src/utils/agencyLogic.ts';
 import { enforceSafeArabicTerminology } from './src/utils/assistantPrivacy.ts';
 import {
-  PRIMARY_FREE_GEMINI_MODEL,
-  SECONDARY_FREE_GEMINI_MODEL,
-  sanitizeAssistantModelId,
-} from './src/utils/assistantQuota.ts';
-import {
   ASSISTANT_TOOL_DECLARATIONS,
   validateToolCall,
 } from './src/utils/assistantTools.ts';
+import { mapModelIdToEngineSource } from './src/utils/morrowRouter.ts';
 import { buildSafeQuickExtractResult } from './src/utils/quickExtractEngine.ts';
 import {
   buildProactiveHeaderGreeting,
@@ -68,9 +82,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
-
-const GEMINI_MODEL = 'gemini-4-hydrogen';
-const LITE_FALLBACK_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 const pendingPhoneOtps = new Map<
   string,
@@ -90,21 +101,6 @@ function verifyPassword(password: string, storedHash: string | null): boolean {
   const expected = Buffer.from(keyHex, 'hex');
   if (derived.length !== expected.length) return false;
   return crypto.timingSafeEqual(derived, expected);
-}
-
-function createGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    return null;
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
 }
 
 function isTransientCloudError(err: unknown): boolean {
@@ -127,59 +123,6 @@ function isTransientCloudError(err: unknown): boolean {
     msg.includes('timeout') ||
     msg.includes('econnreset')
   );
-}
-
-async function generateWithSilentResilience(
-  ai: GoogleGenAI,
-  params: {
-    contents: unknown;
-    config?: Record<string, unknown>;
-    primaryModel?: string;
-    fallbackModel?: string;
-  }
-): Promise<{
-  response: GenerateContentResponse;
-  modelUsed: string;
-  fallbackUsed: 'primary' | 'flash-lite';
-}> {
-  const chain = Array.from(
-    new Set([
-      params.primaryModel || GEMINI_MODEL,
-      params.fallbackModel || LITE_FALLBACK_GEMINI_MODEL,
-    ])
-  );
-
-  let lastError: unknown = null;
-  for (let mIdx = 0; mIdx < chain.length; mIdx++) {
-    const modelName = chain[mIdx];
-    const maxAttempts = mIdx === 0 ? 2 : 2;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('cloud_model_timeout')), 28000);
-        });
-        const callPromise = ai.models.generateContent({
-          model: modelName,
-          contents: params.contents as Parameters<typeof ai.models.generateContent>[0]['contents'],
-          config: params.config as Parameters<typeof ai.models.generateContent>[0]['config'],
-        });
-        const response = await Promise.race([callPromise, timeoutPromise]);
-        return {
-          response,
-          modelUsed: modelName,
-          fallbackUsed: mIdx === 0 ? 'primary' : 'flash-lite',
-        };
-      } catch (err) {
-        lastError = err;
-        if (!isTransientCloudError(err)) {
-          throw err;
-        }
-        const waitMs = 350 * (attempt + 1) + Math.floor(Math.random() * 140);
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-      }
-    }
-  }
-  throw lastError;
 }
 
 function runLocalCopilotFallback(
@@ -288,7 +231,13 @@ async function startServer() {
   app.use(express.json({ limit: '25mb' }));
 
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ ok: true, model: GEMINI_MODEL });
+    const status = getOrchestrationStatusSnapshot();
+    res.json({
+      ok: true,
+      model: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      providers: status.providers,
+      modelsCount: status.models.length,
+    });
   });
 
   // --- Multi-Auth Endpoints: Gmail/Google, Username, Phone (OTP & Password) ---
@@ -820,6 +769,27 @@ async function startServer() {
     }
   });
 
+  const resolvePreferredChainFromRequest = (
+    taskKey: AiTaskKey,
+    body?: { preferredChain?: unknown; taskRouting?: unknown }
+  ): ApprovedCloudModelId[] | undefined => {
+    if (Array.isArray(body?.preferredChain) && body.preferredChain.length > 0) {
+      const cleaned = body.preferredChain
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((m) => sanitizeAiModelId(m));
+      if (cleaned.length > 0) {
+        return Array.from(new Set(cleaned));
+      }
+    }
+    if (body?.taskRouting && typeof body.taskRouting === 'object') {
+      return resolveOrderedTaskChain(
+        taskKey,
+        body.taskRouting as Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>
+      ).cloudChain;
+    }
+    return undefined;
+  };
+
   // --- Quick Extract Header Metadata Inference (Vision AI) ---
 
   app.post('/api/quick-extract/metadata-inference', async (req: Request, res: Response) => {
@@ -831,20 +801,22 @@ async function startServer() {
         imageDataUrl?: string;
         frames?: Array<{ mimeType?: string; data?: string; label?: string }>;
         rawText?: string;
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
 
       const filename = String(body.filename || '').trim().slice(0, 180);
       const rawText = String(body.rawText || '').trim().slice(0, 6000);
       const localFallback = inferMetadataFromText(rawText, [], filename);
 
-      const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [];
+      const attachments: OrchestratorAttachmentPart[] = [];
 
       if (body.base64Pdf) {
         const cleanPdf = String(body.base64Pdf)
           .replace(/^data:application\/pdf;base64,/, '')
           .trim();
         if (cleanPdf) {
-          parts.push({ inlineData: { mimeType: 'application/pdf', data: cleanPdf } });
+          attachments.push({ kind: 'pdf', mimeType: 'application/pdf', data: cleanPdf, filename });
         }
       } else if (Array.isArray(body.frames) && body.frames.length > 0) {
         const firstFrame = body.frames[0];
@@ -856,7 +828,7 @@ async function startServer() {
             firstFrame.mimeType === 'image/png' || firstFrame.mimeType === 'image/webp'
               ? firstFrame.mimeType
               : 'image/jpeg';
-          parts.push({ inlineData: { mimeType, data: cleanImg } });
+          attachments.push({ kind: 'image', mimeType, data: cleanImg });
         }
       } else if (body.imageDataUrl) {
         const mimeMatch = String(body.imageDataUrl).match(/^data:(image\/[a-zA-Z+]+);base64,/);
@@ -864,31 +836,29 @@ async function startServer() {
           .replace(/^data:image\/[a-zA-Z+]+;base64,/, '')
           .trim();
         if (cleanImg) {
-          parts.push({
-            inlineData: {
-              mimeType: mimeMatch?.[1] || 'image/jpeg',
-              data: cleanImg,
-            },
+          attachments.push({
+            kind: 'image',
+            mimeType: mimeMatch?.[1] || 'image/jpeg',
+            data: cleanImg,
           });
         }
       }
 
-      if (parts.length === 0 && !rawText) {
+      if (attachments.length === 0 && !rawText) {
         res.json({ ok: true, metadata: localFallback });
         return;
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
-        res.json({ ok: true, metadata: localFallback });
+      const statusSnap = getOrchestrationStatusSnapshot();
+      if (!statusSnap.providers.google && !statusSnap.providers.openrouter) {
+        res.json({
+          ok: true,
+          metadata: localFallback
+            ? { ...localFallback, executedModelId: 'morrow-local', executedProvider: 'local' }
+            : null,
+        });
         return;
       }
-
-      parts.push({
-        text: `اقرأ ترويسة الجدول فقط من المصدر المرفق (${filename || 'document'})${
-          rawText ? `\nعينة النص:\n${rawText.slice(0, 1800)}` : ''
-        } واستخرج: اسم الوكالة، الشهر، السنة، رقم المركز/الوكالة إن وجد، وعناوين الأعمدة الظاهرة.`,
-      });
 
       const metadataSchema = {
         type: Type.OBJECT,
@@ -909,18 +879,45 @@ async function startServer() {
         },
       };
 
-      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
-        contents: [{ role: 'user', parts }],
-        config: {
-          systemInstruction:
-            'أنت محلل ترويسات جداول وكالات الكمية الغذائية بدقة عالية. استخرج اسم الوكالة والشهر والسنة وعناوين الأعمدة كما هي في الترويسة فقط بصيغة JSON دون تخمين غير موجود.',
-          responseMimeType: 'application/json',
-          responseSchema: metadataSchema,
-          temperature: 0.1,
-        },
+      const hasVisualSource = attachments.some(
+        (a) => a.kind === 'pdf' || a.kind === 'image'
+      );
+      const orch = await executeWithFallback({
+        pipeline: hasVisualSource ? 'heavy_extraction' : 'fast_assistant',
+        preferredChain: resolvePreferredChainFromRequest(
+          hasVisualSource ? 'heavy_pdf_vision' : 'fast_copilot_actions',
+          body
+        ),
+        attachments,
+        promptText: `اقرأ ترويسة الجدول فقط من المصدر المرفق (${filename || 'document'})${
+          rawText ? `\nعينة النص:\n${rawText.slice(0, 1800)}` : ''
+        } واستخرج: اسم الوكالة، الشهر، السنة، رقم المركز/الوكالة إن وجد، وعناوين الأعمدة الظاهرة.`,
+        systemInstruction:
+          'أنت محلل ترويسات جداول وكالات الكمية الغذائية بدقة عالية. استخرج اسم الوكالة والشهر والسنة وعناوين الأعمدة كما هي في الترويسة فقط بصيغة JSON دون تخمين غير موجود.',
+        responseMimeType: 'application/json',
+        responseSchema: metadataSchema,
+        temperature: 0.1,
       });
 
-      const parsed = JSON.parse(String(response.text || '{}')) as {
+      if (!orch.ok) {
+        res.json({
+          ok: true,
+          metadata: localFallback
+            ? {
+                ...localFallback,
+                fallbackUsed: true,
+                executedModelId: 'morrow-local',
+                executedProvider: 'local',
+                executedModelLabel: 'Morrow المحلي (استنتاج احتياطي)',
+              }
+            : null,
+          fallbackUsed: true,
+          modelId: 'morrow-local',
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(String(orch.text || '{}')) as {
         agencyName?: string | null;
         agencyNameConfidence?: number;
         monthLabel?: string | null;
@@ -995,17 +992,28 @@ async function startServer() {
           detectedColumns,
           semanticMapping,
         }),
-        fallbackUsed,
+        fallbackUsed: orch.fallbackUsed,
+        executedModelId: orch.modelId,
+        executedProvider: orch.provider,
+        executedModelLabel: orch.modelLabel,
         confirmedByUser: false,
       };
 
-      res.json({ ok: true, metadata, fallbackUsed });
+      res.json({
+        ok: true,
+        metadata,
+        fallbackUsed: orch.fallbackUsed,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
+      });
     } catch {
       const body = (req.body || {}) as { filename?: string; rawText?: string };
       res.json({
         ok: true,
         metadata: inferMetadataFromText(String(body.rawText || ''), [], body.filename),
-        fallbackUsed: 'flash-lite',
+        fallbackUsed: true,
+        modelId: 'morrow-local',
       });
     }
   });
@@ -1034,6 +1042,8 @@ async function startServer() {
         base64Pdf?: string;
         frames?: Array<{ mimeType?: string; data?: string; label?: string }>;
         enhancementReport?: string;
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
 
       const mode = body.mode === 'camera_burst' ? 'camera_burst' : 'pdf';
@@ -1044,9 +1054,7 @@ async function startServer() {
           : (['name', 'individuals', 'decreaseCount', 'addOrDelete'] as const);
       const focusSet = new Set(focusedFields);
 
-      const contentParts: Array<
-        { inlineData: { mimeType: string; data: string } } | { text: string }
-      > = [];
+      const contentParts: OrchestratorAttachmentPart[] = [];
 
       // Attach optional Reference Template image + spatial column coordinates before target capture
       if (body.referenceTemplate?.imageBase64) {
@@ -1060,7 +1068,9 @@ async function startServer() {
             : 'image/jpeg';
         if (refCleanB64) {
           contentParts.push({
-            inlineData: { mimeType: refMime, data: refCleanB64 },
+            kind: 'image',
+            mimeType: refMime,
+            data: refCleanB64,
           });
           const regionsText = Array.isArray(body.referenceTemplate.regions)
             ? body.referenceTemplate.regions
@@ -1071,6 +1081,7 @@ async function startServer() {
                 .join('\n')
             : '';
           contentParts.push({
+            kind: 'text',
             text: `الصورة الأولى هي «النموذج المرجعي المعتمد» (${
               body.referenceTemplate.name || 'نموذج الدفتر'
             }). استخدم تخطيط الأعمدة ومناطقها لتوجيه قراءة الصفحات التالية بدقة:\n${regionsText}${
@@ -1118,12 +1129,13 @@ async function startServer() {
         }
 
         contentParts.push({
-          inlineData: {
-            mimeType: 'application/pdf',
-            data: rawBase64,
-          },
+          kind: 'pdf',
+          mimeType: 'application/pdf',
+          data: rawBase64,
+          filename: body.filename || 'document.pdf',
         });
         contentParts.push({
+          kind: 'text',
           text: `حلّل ملف PDF المرفق (${body.filename || 'document.pdf'}) واستخرج الحقول المطلوبة فقط (${focusedFields.join('، ')}) بصيغة JSON وفق وضع التحليل (${scanMode === 'fast' ? 'الوضع السريع' : 'الوضع المدقق'}).`,
         });
       } else {
@@ -1165,7 +1177,9 @@ async function startServer() {
             return;
           }
           contentParts.push({
-            inlineData: { mimeType, data: cleanB64 },
+            kind: 'image',
+            mimeType,
+            data: cleanB64,
           });
           frameCountAttached += 1;
         }
@@ -1178,15 +1192,16 @@ async function startServer() {
         }
 
         contentParts.push({
+          kind: 'text',
           text: `هذه لقطات متتالية (Burst Fusion: ${frameCountAttached} إطارات لنفس صفحة الدفتر اليدوي). ${body.enhancementReport || ''} ادمج المعلومات البصرية عبر جميع الزوايا واستخرج الحقول المحددة فقط (${focusedFields.join('، ')})، مع تحديد إحداثيات مربع القص suspectBox (من 0 إلى 1000) لأي اسم أو صف يحتاج مراجعة.`,
         });
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.google && !orchSnap.providers.openrouter) {
         res.status(503).json({
           error:
-            'مفتاح Gemini API غير مهيأ على الخادم لتشغيل محرك السحب السريع. يرجى إضافته في إعدادات الأسرار (GEMINI_API_KEY).',
+            'مفاتيح الذكاء السحابي (GEMINI_API_KEY / OPENROUTER_API_KEY) غير مهيأة على الخادم لتشغيل محرك السحب السريع.',
         });
         return;
       }
@@ -1348,21 +1363,30 @@ async function startServer() {
    }
    - عند الشك في أي حرف عربي: اضبط modelDoubtFlag=true، خفّض nameConfidence لأقل من 0.90، واذكر المقاطع في suspectSpans.`;
 
-      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
-        contents: [
-          {
-            role: 'user',
-            parts: contentParts,
-          },
-        ],
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          responseSchema: extractionSchema,
-        },
+      const orch = await executeWithFallback({
+        pipeline: 'heavy_extraction',
+        preferredChain: resolvePreferredChainFromRequest('heavy_pdf_vision', body),
+        attachments: contentParts,
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        responseSchema: extractionSchema,
+        timeoutMs: 28000,
       });
 
-      const parsed = JSON.parse(response.text || '{}') as {
+      if (!orch.ok) {
+        const transient = orch.hadRateLimitOrTimeout;
+        res.status(transient ? 503 : 500).json({
+          temporaryBusy: transient,
+          friendlyNotice: transient
+            ? 'خوادم القراءة تشهد ضغطاً مؤقتاً — جاري إعادة المحاولة عبر المسار البديل...'
+            : orch.errorSummary || 'تعذر إتمام قراءة هذا المستند حالياً.',
+          error: orch.errorSummary || 'تعذر تحليل المستند.',
+          attempts: orch.attempts,
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(orch.text || '{}') as {
         legibilityStatus?: 'clear' | 'needs_review' | 'rejected';
         clarityScore?: number;
         pageCount?: number;
@@ -1403,7 +1427,10 @@ async function startServer() {
               detectedColumns,
               semanticMapping,
             }),
-            fallbackUsed,
+            fallbackUsed: orch.fallbackUsed,
+            executedModelId: orch.modelId,
+            executedProvider: orch.provider,
+            executedModelLabel: orch.modelLabel,
             confirmedByUser: false,
           }
         : null;
@@ -1429,11 +1456,17 @@ async function startServer() {
 
       res.json({
         ...safeResult,
-        fallbackUsed,
-        resilienceNotice:
-          fallbackUsed === 'flash-lite'
-            ? 'تمت المعالجة عبر المسار السريع البديل (Flash Lite) لضمان الاستمرارية بدون انقطاع.'
-            : undefined,
+        fallbackUsed: orch.fallbackUsed,
+        executedModelId: orch.modelId,
+        executedProvider: orch.provider,
+        executedModelLabel: orch.modelLabel,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
+        attempts: orch.attempts,
+        resilienceNotice: orch.fallbackUsed
+          ? `تمت المعالجة بنجاح عبر المسار الاحتياطي (${orch.modelId}) لضمان الاستمرارية.`
+          : `تمت القراءة عبر النموذج الأساسي (${orch.modelId}).`,
       });
     } catch (err) {
       const transient = isTransientCloudError(err);
@@ -1487,6 +1520,8 @@ async function startServer() {
           unreadableCount: number;
           missingHint: string;
         };
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
 
       const phase =
@@ -1503,18 +1538,16 @@ async function startServer() {
           : (['name', 'individuals', 'decreaseCount', 'addOrDelete'] as const);
       const focusSet = new Set(focusedFields);
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.google && !orchSnap.providers.openrouter) {
         res.status(503).json({
           error:
-            'مفتاح Gemini API غير مهيأ على الخادم لتشغيل منظومة القراءة الكونية. يرجى إضافته في إعدادات الأسرار (GEMINI_API_KEY).',
+            'مفاتيح الذكاء السحابي (GEMINI_API_KEY / OPENROUTER_API_KEY) غير مهيأة على الخادم لتشغيل منظومة القراءة الكونية.',
         });
         return;
       }
 
-      const contentParts: Array<
-        { inlineData: { mimeType: string; data: string } } | { text: string }
-      > = [];
+      const contentParts: OrchestratorAttachmentPart[] = [];
 
       if (body.referenceTemplate?.imageBase64) {
         const refCleanB64 = String(body.referenceTemplate.imageBase64)
@@ -1526,7 +1559,7 @@ async function startServer() {
             ? body.referenceTemplate.mimeType
             : 'image/jpeg';
         if (refCleanB64) {
-          contentParts.push({ inlineData: { mimeType: refMime, data: refCleanB64 } });
+          contentParts.push({ kind: 'image', mimeType: refMime, data: refCleanB64 });
           const regionsText = Array.isArray(body.referenceTemplate.regions)
             ? body.referenceTemplate.regions
                 .map(
@@ -1536,12 +1569,14 @@ async function startServer() {
                 .join('\n')
             : '';
           contentParts.push({
+            kind: 'text',
             text: `الصورة الأولى هي النموذج المرجعي (${body.referenceTemplate.name || 'دفتر الوكالة'}):\n${regionsText}`,
           });
         }
       }
 
       let attachedInput = false;
+      let hasBinaryVisionOrPdf = false;
 
       if (body.base64Pdf) {
         const rawBase64 = String(body.base64Pdf)
@@ -1568,9 +1603,13 @@ async function startServer() {
           return;
         }
         contentParts.push({
-          inlineData: { mimeType: 'application/pdf', data: rawBase64 },
+          kind: 'pdf',
+          mimeType: 'application/pdf',
+          data: rawBase64,
+          filename: body.filename || 'document.pdf',
         });
         attachedInput = true;
+        hasBinaryVisionOrPdf = true;
       }
 
       if (Array.isArray(body.frames) && body.frames.length > 0) {
@@ -1588,8 +1627,9 @@ async function startServer() {
           const buf = Buffer.from(cleanB64, 'base64');
           totalBytes += buf.length;
           if (buf.length < 100) continue;
-          contentParts.push({ inlineData: { mimeType, data: cleanB64 } });
+          contentParts.push({ kind: 'image', mimeType, data: cleanB64 });
           attachedInput = true;
+          hasBinaryVisionOrPdf = true;
         }
         if (totalBytes > 24 * 1024 * 1024) {
           res.status(400).json({
@@ -1601,6 +1641,7 @@ async function startServer() {
 
       if (body.rawText && String(body.rawText).trim()) {
         contentParts.push({
+          kind: 'text',
           text: `النص / البيانات المستلمة من الملف (${body.filename || 'document'}):\n${String(
             body.rawText
           ).slice(0, 120000)}`,
@@ -1645,7 +1686,7 @@ async function startServer() {
         .filter(Boolean)
         .join('\n');
 
-      contentParts.push({ text: intentPrompt });
+      contentParts.push({ kind: 'text', text: intentPrompt });
 
       const ucrsSchema = {
         type: Type.OBJECT,
@@ -1878,16 +1919,44 @@ async function startServer() {
 5. في وضع الاكتشاف أو الكتب/المستندات أو البحث الدلالي: املأ entities بالأسماء، التواريخ، الأماكن، الملاحظات، والفقرات المهمة.
 6. التزم بوضع التشغيل: ${scanMode === 'fast' ? 'الوضع السريع' : 'الوضع المدقق'}.`;
 
-      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
-        contents: [{ role: 'user', parts: contentParts }],
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: ucrsSchema,
-        },
+      const ucrsPipeline: AiPipelineKind =
+        !hasBinaryVisionOrPdf &&
+        (body.sourceKind === 'excel' ||
+          body.sourceKind === 'csv' ||
+          body.sourceKind === 'word' ||
+          body.sourceKind === 'text')
+          ? 'data_processing'
+          : 'heavy_extraction';
+
+      const orch = await executeWithFallback({
+        pipeline: ucrsPipeline,
+        preferredChain: resolvePreferredChainFromRequest(
+          ucrsPipeline === 'data_processing'
+            ? 'structured_excel_csv'
+            : 'heavy_pdf_vision',
+          body
+        ),
+        attachments: contentParts,
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: ucrsSchema,
+        timeoutMs: 28000,
       });
 
-      const parsed = JSON.parse(response.text || '{}') as {
+      if (!orch.ok) {
+        const transient = orch.hadRateLimitOrTimeout;
+        res.status(transient ? 503 : 500).json({
+          temporaryBusy: transient,
+          friendlyNotice: transient
+            ? 'خوادم القراءة مشغولة حالياً — جاري المعالجة عبر المسار البديل...'
+            : orch.errorSummary || 'تعذر إتمام القراءة حالياً.',
+          error: orch.errorSummary || 'تعذر تشغيل منظومة القراءة الكونية.',
+          attempts: orch.attempts,
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(orch.text || '{}') as {
         legibilityStatus?: 'clear' | 'needs_review' | 'rejected';
         clarityScore?: number;
         pageCount?: number;
@@ -1938,7 +2007,10 @@ async function startServer() {
               detectedColumns,
               semanticMapping,
             }),
-            fallbackUsed,
+            fallbackUsed: orch.fallbackUsed,
+            executedModelId: orch.modelId,
+            executedProvider: orch.provider,
+            executedModelLabel: orch.modelLabel,
             confirmedByUser: false,
           }
         : null;
@@ -1950,7 +2022,7 @@ async function startServer() {
         clarityThreshold:
           typeof body.clarityThreshold === 'number'
             ? body.clarityThreshold
-            : 25, // UCRS allows progressive partial extraction instead of throwing everything away!
+            : 25,
         clarityScore: parsed.clarityScore ?? 0,
         legibilityStatus: parsed.legibilityStatus ?? 'needs_review',
         pageCount: parsed.pageCount ?? 1,
@@ -1971,11 +2043,17 @@ async function startServer() {
         unreadableRegions: Array.isArray(parsed.unreadableRegions)
           ? parsed.unreadableRegions
           : [],
-        fallbackUsed,
-        resilienceNotice:
-          fallbackUsed === 'flash-lite'
-            ? 'تمت القراءة عبر المسار السريع البديل (Flash Lite) تلقائياً بسبب ضغط الخادم.'
-            : undefined,
+        fallbackUsed: orch.fallbackUsed,
+        executedModelId: orch.modelId,
+        executedProvider: orch.provider,
+        executedModelLabel: orch.modelLabel,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
+        attempts: orch.attempts,
+        resilienceNotice: orch.fallbackUsed
+          ? `تمت القراءة عبر المسار الاحتياطي (${orch.modelId}) تلقائياً لضمان الاستمرارية.`
+          : `تمت القراءة عبر النموذج المختص (${orch.modelId}).`,
       });
     } catch (err) {
       const transient = isTransientCloudError(err);
@@ -2002,7 +2080,7 @@ async function startServer() {
         return;
       }
 
-      const ai = createGeminiClient();
+      const ai = createGoogleAiClient();
       if (!ai) {
         res.status(503).json({
           error: 'مفتاح Gemini API غير مهيأ للصوت السحابي.',
@@ -2079,6 +2157,8 @@ async function startServer() {
         mathIssuesCount?: number;
       }>;
       history?: Array<{ role: 'user' | 'model'; text: string }>;
+      preferredChain?: string[];
+      taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
     };
 
     const message = String(body.message || '').trim().slice(0, 1200);
@@ -2131,8 +2211,8 @@ async function startServer() {
     };
 
     try {
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.google && !orchSnap.providers.openrouter) {
         const local = runLocalCopilotFallback(
           message,
           Array.isArray(body.draftRows) ? body.draftRows : [],
@@ -2141,13 +2221,14 @@ async function startServer() {
         res.json({
           ...local,
           fallbackUsed: 'local',
+          modelId: 'morrow-local',
+          provider: 'local',
         });
         return;
       }
 
-      const contentParts: Array<
-        { inlineData: { mimeType: string; data: string } } | { text: string }
-      > = [];
+      const contentParts: OrchestratorAttachmentPart[] = [];
+      let hasImage = false;
 
       if (body.sourceImageBase64) {
         const cleanB64 = String(body.sourceImageBase64)
@@ -2158,7 +2239,8 @@ async function startServer() {
             ? body.sourceMimeType
             : 'image/jpeg';
         if (cleanB64.length > 100 && cleanB64.length < 18 * 1024 * 1024) {
-          contentParts.push({ inlineData: { mimeType, data: cleanB64 } });
+          contentParts.push({ kind: 'image', mimeType, data: cleanB64 });
+          hasImage = true;
         }
       }
 
@@ -2170,6 +2252,7 @@ async function startServer() {
         : '';
 
       contentParts.push({
+        kind: 'text',
         text: [
           `ملخص المستند: ${body.documentSummary || 'غير محدد'}`,
           `الهوية المستنتجة من الترويسة: ${JSON.stringify(body.inferredMetadata || null)}`,
@@ -2246,16 +2329,34 @@ async function startServer() {
    - تعديل اسم الوكالة أو التاريخ => update_metadata
 4. لا تقم أبداً بحفظ أو ترحيل البيانات نهائياً بدون ضغطة المستخدم.`;
 
-      const { response, fallbackUsed } = await generateWithSilentResilience(ai, {
-        contents: [{ role: 'user', parts: contentParts }],
-        config: {
-          systemInstruction: copilotInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: copilotSchema,
-        },
+      const orch = await executeWithFallback({
+        pipeline: hasImage ? 'heavy_extraction' : 'fast_assistant',
+        preferredChain: resolvePreferredChainFromRequest(
+          hasImage ? 'heavy_pdf_vision' : 'fast_copilot_actions',
+          body
+        ),
+        attachments: contentParts,
+        systemInstruction: copilotInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: copilotSchema,
       });
 
-      const parsed = JSON.parse(response.text || '{}') as {
+      if (!orch.ok) {
+        const local = runLocalCopilotFallback(
+          message,
+          Array.isArray(body.draftRows) ? body.draftRows : [],
+          body.inferredMetadata
+        );
+        res.json({
+          ...local,
+          fallbackUsed: 'local',
+          modelId: 'morrow-local',
+          provider: 'local',
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(orch.text || '{}') as {
         reply?: string;
         operations?: Array<Record<string, unknown>>;
       };
@@ -2263,7 +2364,10 @@ async function startServer() {
       res.json({
         reply: parsed.reply || 'تمت مراجعة المسودة.',
         operations: Array.isArray(parsed.operations) ? parsed.operations : [],
-        fallbackUsed,
+        fallbackUsed: orch.fallbackUsed,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
       });
     } catch {
       const local = runLocalCopilotFallback(
@@ -2274,26 +2378,44 @@ async function startServer() {
       res.json({
         ...local,
         fallbackUsed: 'local',
+        modelId: 'morrow-local',
+        provider: 'local',
       });
     }
   });
 
-  // --- Strictly Restricted 3-Brain Assistant Router (Morrow Local <-> gemini-2.5-flash <-> gemini-2.5-pro + H2 resilience) ---
+  // --- Free Models + Gemini 3.8 Live + Morrow Local AI Orchestration Status & Live Probe ---
   app.get('/api/assistant/status', (_req: Request, res: Response) => {
-    const ai = createGeminiClient();
-    res.json({
-      cloudConfigured: Boolean(ai),
-      defaultModel: PRIMARY_FREE_GEMINI_MODEL,
-      fallbackModel: SECONDARY_FREE_GEMINI_MODEL,
-      liveModel: 'gemini-3.8-live',
-      multimodalModel: GEMINI_MODEL,
-      models: {
-        flash: PRIMARY_FREE_GEMINI_MODEL,
-        pro: SECONDARY_FREE_GEMINI_MODEL,
-        live: 'gemini-3.8-live',
-        multimodal: GEMINI_MODEL,
-      },
-    });
+    res.json(getOrchestrationStatusSnapshot());
+  });
+
+  app.post('/api/assistant/test-model', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        modelId?: string;
+        backupModelId?: string;
+        taskKey?: string;
+        prompt?: string;
+      };
+      const taskKey =
+        body.taskKey && body.taskKey in AI_TASK_PROFILES
+          ? (body.taskKey as AiTaskKey)
+          : null;
+      const result = await liveTestAiModelOrTask({
+        modelId: body.modelId || null,
+        backupModelId: body.backupModelId || null,
+        taskKey,
+        prompt: body.prompt || null,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        finalFallback: 'morrow-local',
+        errorSummary:
+          err instanceof Error ? err.message : 'تعذر إجراء الفحص الحي للنموذج.',
+      });
+    }
   });
 
   const buildLiveWorkspaceSummaryText = (cloudContext?: Record<string, unknown>): string => {
@@ -2345,8 +2467,9 @@ async function startServer() {
       const body = (req.body || {}) as {
         prompt?: string;
         brainMode?: AssistantBrainMode;
+        pipeline?: AiPipelineKind;
         preferredModel?: string;
-        fallbackModel?: string;
+        preferredChain?: string[];
         cloudContext?: Record<string, unknown>;
         cloudHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
       };
@@ -2357,35 +2480,29 @@ async function startServer() {
         return;
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchStatus = getOrchestrationStatusSnapshot();
+      if (!orchStatus.providers.google && !orchStatus.providers.openrouter) {
         res.status(200).json({
           ok: false,
           fallbackToOffline: true,
           statusCategory: 'offline',
-          reason: 'مفتاح السحابة غير مهيأ على الخادم، تم التشغيل تلقائياً بمحرك Morrow المحلي.',
+          modelId: 'morrow-local',
+          provider: 'local',
+          reason:
+            'مفاتيح السحابة (GEMINI_API_KEY / OPENROUTER_API_KEY) غير مهيأة على الخادم، تم التشغيل تلقائياً بمحرك Morrow المحلي.',
         });
         return;
       }
 
       const mode: AssistantBrainMode =
-        body.brainMode === 'gemini_2_5_flash' ||
-        body.brainMode === 'gemini_2_5_pro' ||
+        body.brainMode === 'gemini_3_8_flash' ||
+        body.brainMode === 'gemini_3_5_flash' ||
+        body.brainMode === 'gemini_3_5_flash_lite' ||
+        body.brainMode === 'nemotron_free' ||
+        body.brainMode === 'openrouter_free' ||
         body.brainMode === 'local'
           ? body.brainMode
           : 'auto';
-
-      const requestedPreferred = String(body.preferredModel || '').trim().toLowerCase();
-      const primaryModel =
-        requestedPreferred === LITE_FALLBACK_GEMINI_MODEL
-          ? LITE_FALLBACK_GEMINI_MODEL
-          : sanitizeAssistantModelId(body.preferredModel || PRIMARY_FREE_GEMINI_MODEL);
-      const secondaryModel = sanitizeAssistantModelId(
-        body.fallbackModel ||
-          (primaryModel === SECONDARY_FREE_GEMINI_MODEL
-            ? PRIMARY_FREE_GEMINI_MODEL
-            : SECONDARY_FREE_GEMINI_MODEL)
-      );
 
       const liveSummaryBlock = buildLiveWorkspaceSummaryText(body.cloudContext);
       const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 7500);
@@ -2418,148 +2535,81 @@ ${contextText}`;
         ? `سجل الحوار القريب:\n${historyLines}\n\nالطلب الحالي:\n${prompt}`
         : prompt;
 
-      const classifyCloudError = (err: unknown): { isQuota: boolean; isTransient: boolean } => {
-        const msg = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
-        const status =
-          typeof (err as { status?: unknown })?.status === 'number'
-            ? Number((err as { status: number }).status)
-            : 0;
-        const isQuota =
-          status === 429 ||
-          msg.includes('429') ||
-          msg.includes('resource_exhausted') ||
-          msg.includes('quota');
-        const isTransient =
-          status === 503 ||
-          status === 500 ||
-          msg.includes('503') ||
-          msg.includes('unavailable') ||
-          msg.includes('timeout') ||
-          msg.includes('overloaded');
-        return { isQuota, isTransient };
-      };
+      const requestedPipeline: AiPipelineKind =
+        body.pipeline && body.pipeline in AI_ROUTING_PIPELINES
+          ? body.pipeline
+          : mode === 'gemini_3_5_flash_lite' || mode === 'openrouter_free'
+            ? 'fast_assistant'
+            : mode === 'gemini_3_5_flash'
+              ? 'data_processing'
+              : 'deep_assistant';
 
-      const runSingleModelWithRetry = async (
-        modelName: string
-      ): Promise<{
-        text: string;
-        toolCalls: AssistantToolCall[];
-        model: string;
-      }> => {
-        const maxAttempts = 2;
-        let lastErr: unknown = null;
+      let preferredChain: ApprovedCloudModelId[] | undefined =
+        resolvePreferredChainFromRequest('command_orchestration', body as {
+          preferredChain?: unknown;
+          taskRouting?: unknown;
+        });
+      if (!preferredChain && body.preferredModel) {
+        const sanitized = sanitizeAiModelId(body.preferredModel);
+        preferredChain = [sanitized, ...AI_ROUTING_PIPELINES[requestedPipeline]];
+      } else if (!preferredChain && mode === 'nemotron_free') {
+        preferredChain = [
+          AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+          AI_FREE_MODELS.GEMINI_3_8_FLASH,
+          AI_FREE_MODELS.GEMINI_3_5_FLASH,
+          AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+          AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+        ];
+      } else if (!preferredChain && mode === 'openrouter_free') {
+        preferredChain = [
+          AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+          AI_FREE_MODELS.GEMINI_3_8_FLASH,
+          AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+          AI_FREE_MODELS.GEMINI_3_5_FLASH,
+          AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+        ];
+      }
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            const timeoutPromise = new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error('assistant_cloud_timeout')), 9500);
-            });
+      const orch = await executeWithFallback({
+        pipeline: requestedPipeline,
+        preferredChain,
+        systemInstruction,
+        promptText: userContent,
+        tools: ASSISTANT_TOOL_DECLARATIONS,
+        timeoutMs: 12000,
+      });
 
-            const callPromise = ai.models.generateContent({
-              model: modelName,
-              contents: [
-                {
-                  role: 'user',
-                  parts: [{ text: userContent }],
-                },
-              ],
-              config: {
-                systemInstruction,
-                tools: [{ functionDeclarations: ASSISTANT_TOOL_DECLARATIONS }],
-              },
-            });
-
-            const response = await Promise.race([callPromise, timeoutPromise]);
-            const validCalls: AssistantToolCall[] = [];
-            for (const fc of response.functionCalls || []) {
-              const checked = validateToolCall({ name: fc.name, args: fc.args });
-              if (checked.valid && checked.sanitized) {
-                validCalls.push(checked.sanitized);
-              }
-            }
-            return {
-              text: enforceSafeArabicTerminology(String(response.text || '').trim()),
-              toolCalls: validCalls,
-              model: modelName,
-            };
-          } catch (err) {
-            lastErr = err;
-            const { isQuota, isTransient } = classifyCloudError(err);
-            if (isQuota || !isTransient || attempt === maxAttempts - 1) {
-              throw err;
-            }
-            const backoffMs = 350 * Math.pow(2, attempt);
-            await new Promise((r) => setTimeout(r, backoffMs));
-          }
-        }
-        throw lastErr;
-      };
-
-      // 3-Brain escalation chain + GEMINI_MODEL & Flash-Lite resilience fallback -> morrow_local
-      const orderedModels =
-        mode === 'gemini_2_5_pro'
-          ? [
-              SECONDARY_FREE_GEMINI_MODEL,
-              PRIMARY_FREE_GEMINI_MODEL,
-              GEMINI_MODEL,
-              LITE_FALLBACK_GEMINI_MODEL,
-            ]
-          : [
-              primaryModel,
-              secondaryModel,
-              GEMINI_MODEL,
-              LITE_FALLBACK_GEMINI_MODEL,
-            ];
-      const uniqueChain = Array.from(new Set(orderedModels));
-
-      let hitQuota = false;
-      let hit503 = false;
-      for (let i = 0; i < uniqueChain.length; i++) {
-        const candidateModel = uniqueChain[i];
-        try {
-          const result = await runSingleModelWithRetry(candidateModel);
-          const isFallbackUsed = i > 0;
-          const isPro = result.model === SECONDARY_FREE_GEMINI_MODEL;
-          const isHydrogen = result.model === GEMINI_MODEL;
-          const isFlashLite = result.model === LITE_FALLBACK_GEMINI_MODEL;
-          res.json({
-            ok: true,
-            engineUsed: isPro ? 'gemini_2_5_pro' : 'gemini_2_5_flash',
-            modelId: result.model,
-            fallbackUsed: isFallbackUsed,
-            switchedToFlashLite: isFlashLite,
-            had503Retry: hit503,
-            engineLabel: isFlashLite
-              ? 'Gemini Flash Lite · استجابة احتياطية سريعة'
-              : isHydrogen
-                ? 'Gemini 4 Hydrogen · سحابي متقدم'
-                : isPro
-                  ? 'Gemini 2.5 Pro · تحليل عميق'
-                  : 'Gemini 2.5 Flash · لغوي سريع',
-            text:
-              result.text ||
-              (result.toolCalls.length > 0
-                ? 'تم فهم الطلب وتجهيز الإجراء المناسب.'
-                : 'تفضل، كيف أقدر أساعدك أكثر؟'),
-            toolCalls: result.toolCalls,
-            latencyMs: Date.now() - startedAt,
-          });
-          return;
-        } catch (err) {
-          const { isQuota, isTransient } = classifyCloudError(err);
-          if (isQuota) hitQuota = true;
-          if (isTransient) hit503 = true;
-          // Escalate smoothly across cloud models without exposing raw SDK errors
-        }
+      if (orch.ok) {
+        res.json({
+          ok: true,
+          engineUsed: mapModelIdToEngineSource(orch.modelId),
+          modelId: orch.modelId,
+          provider: orch.provider,
+          fallbackUsed: orch.fallbackUsed,
+          hadRateLimitOrTimeout: orch.hadRateLimitOrTimeout,
+          attempts: orch.attempts,
+          engineLabel: orch.modelLabel,
+          text:
+            orch.text ||
+            (orch.toolCalls.length > 0
+              ? 'تم فهم الطلب وتجهيز الإجراء المناسب.'
+              : 'تفضل، كيف أقدر أساعدك أكثر؟'),
+          toolCalls: orch.toolCalls,
+          latencyMs: Date.now() - startedAt,
+        });
+        return;
       }
 
       res.status(200).json({
         ok: false,
         fallbackToOffline: true,
-        quotaExhausted: hitQuota,
-        statusCategory: hitQuota ? 'quota_exhausted' : 'offline',
-        reason: hitQuota
-          ? 'انتهت حصة السحابة مؤقتاً — تم التحويل تلقائياً إلى محرك Morrow المحلي.'
+        quotaExhausted: orch.hadRateLimitOrTimeout,
+        statusCategory: orch.hadRateLimitOrTimeout ? 'quota_exhausted' : 'offline',
+        modelId: 'morrow-local',
+        provider: 'local',
+        attempts: orch.attempts,
+        reason: orch.hadRateLimitOrTimeout
+          ? 'وصلت النماذج السحابية للحد المؤقت — تم التحويل تلقائياً إلى محرك Morrow المحلي.'
           : 'تعذر الوصول للنماذج السحابية حالياً — تم التحويل تلقائياً إلى محرك Morrow المحلي.',
       });
     } catch {
@@ -2567,18 +2617,22 @@ ${contextText}`;
         ok: false,
         fallbackToOffline: true,
         statusCategory: 'offline',
+        modelId: 'morrow-local',
+        provider: 'local',
         reason: 'تعذر الاتصال بالسحابة مؤقتاً، تم التحويل لمحرك Morrow المحلي.',
       });
     }
   });
 
-  // --- Morrow Smart Text Analyzer (WhatsApp / unstructured Arabic notes -> structured entries) ---
+  // --- Morrow Smart Text / Data Analyzer (data_processing: gemini-3.5-flash -> nemotron -> openrouter/free) ---
 
   app.post('/api/morrow/analyze-text', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
         rawText?: string;
         agencies?: Array<{ id: number; name: string }>;
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
       const rawText = String(body.rawText || '').trim().slice(0, 6000);
       if (!rawText) {
@@ -2586,12 +2640,13 @@ ${contextText}`;
         return;
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.google && !orchSnap.providers.openrouter) {
         res.status(200).json({
           ok: false,
           fallbackToLocal: true,
-          reason: 'مفتاح الذكاء السحابي غير مهيأ — يمكنك الاعتماد على المحلل المحلي الفوري.',
+          modelId: 'morrow-local',
+          reason: 'مفاتيح الذكاء السحابي غير مهيأة — يمكنك الاعتماد على المحلل المحلي الفوري.',
         });
         return;
       }
@@ -2627,27 +2682,27 @@ ${contextText}`;
         required: ['summary', 'items'],
       };
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `الوكالات المتاحة: ${agenciesHint || 'غير محددة'}\n\nالنص المراد تحليله:\n${rawText}`,
-              },
-            ],
-          },
-        ],
-        config: {
-          systemInstruction:
-            'أنت محلل نصوص عربية ومذكرات واتساب لنظام وكالات الكمية الغذائية. استخرج كل سطر إلى عملية مهيكلة (تحديث عدد الأفراد update_individuals، حجب كامل block_full، إضافة عائلة add_person، أو ملاحظة note) مع الالتزام الصارم بكلمة «الأفراد» وأعد JSON فقط.',
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
+      const orch = await executeWithFallback({
+        pipeline: 'data_processing',
+        preferredChain: resolvePreferredChainFromRequest('structured_excel_csv', body),
+        promptText: `الوكالات المتاحة: ${agenciesHint || 'غير محددة'}\n\nالنص / البيانات المراد تحليلها:\n${rawText}`,
+        systemInstruction:
+          'أنت محلل نصوص عربية ومذكرات واتساب وجداول Excel/CSV لنظام وكالات الكمية الغذائية. استخرج كل سطر إلى عملية مهيكلة (تحديث عدد الأفراد update_individuals، حجب كامل block_full، إضافة عائلة add_person، أو ملاحظة note) مع الالتزام الصارم بكلمة «الأفراد» وأعد JSON فقط.',
+        responseMimeType: 'application/json',
+        responseSchema: schema,
       });
 
-      const parsed = JSON.parse(response.text || '{}') as {
+      if (!orch.ok) {
+        res.status(200).json({
+          ok: false,
+          fallbackToLocal: true,
+          modelId: 'morrow-local',
+          reason: 'تعذر التحليل السحابي مؤقتاً — تم الإبقاء على التحليل المحلي.',
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(orch.text || '{}') as {
         summary?: string;
         items?: Array<{
           rawLine?: string;
@@ -2662,7 +2717,10 @@ ${contextText}`;
 
       res.json({
         ok: true,
-        modelId: GEMINI_MODEL,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
+        fallbackUsed: orch.fallbackUsed,
         summary: enforceSafeArabicTerminology(parsed.summary || 'تم تحليل النص بالذكاء السحابي بنجاح.'),
         items: Array.isArray(parsed.items) ? parsed.items : [],
       });
@@ -2670,12 +2728,13 @@ ${contextText}`;
       res.status(200).json({
         ok: false,
         fallbackToLocal: true,
+        modelId: 'morrow-local',
         reason: 'تعذر التحليل السحابي مؤقتاً — تم الإبقاء على التحليل المحلي.',
       });
     }
   });
 
-  // --- Morrow Voice Message Transcription (gemini-3.5-transcribe) ---
+  // --- Morrow Voice Message Transcription (Audio Pipeline: whisper-large-v3-turbo via Groq -> Gemini fallback) ---
   app.post('/api/morrow/transcribe', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
@@ -2683,6 +2742,8 @@ ${contextText}`;
         mimeType?: string;
         targetMode?: 'instruction' | 'quick_note' | 'draft_text';
         agencies?: Array<{ id: number; name: string }>;
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
       const cleanBase64 = String(body.audioBase64 || '')
         .replace(/^data:[^;]+;base64,/, '')
@@ -2698,12 +2759,12 @@ ${contextText}`;
         return;
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.groq && !orchSnap.providers.google) {
         res.status(503).json({
           ok: false,
           requiresApiKey: true,
-          error: 'مفتاح السحابة GEMINI_API_KEY غير مهيأ لتفريغ الرسائل الصوتية.',
+          error: 'مفتاح GROQ_API_KEY (أو GEMINI_API_KEY) غير مهيأ لتفريغ الرسائل الصوتية.',
         });
         return;
       }
@@ -2732,42 +2793,35 @@ ${contextText}`;
         .filter(Boolean)
         .join(' ');
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-transcribe',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType,
-                  data: cleanBase64,
-                },
-              },
-              {
-                text: transcribePrompt,
-              },
-            ],
-          },
-        ],
+      const audioResult = await executeAudioTranscriptionWithFallback({
+        audioBase64: cleanBase64,
+        mimeType,
+        promptHint: transcribePrompt,
+        language: 'ar',
+        preferredChain: resolvePreferredChainFromRequest('audio_transcription', body),
       });
 
-      const transcript = enforceSafeArabicTerminology(String(response.text || '').trim());
-      if (!transcript) {
+      if (!audioResult.ok || !audioResult.transcript) {
         res.status(422).json({
           ok: false,
-          error: 'لم يتم التقاط كلام واضح في التسجيل الصوتي.',
+          error: audioResult.errorSummary || 'لم يتم التقاط كلام واضح في التسجيل الصوتي.',
+          attempts: audioResult.attempts,
         });
         return;
       }
 
+      const transcript = audioResult.transcript;
       const looksLikeQuickNote = /^(?:ملاحظ[هة]|مذكر[هة]|تنبيه|لا تنسى|سجل ملاحظ[هة]|اكتب ملاحظ[هة])/i.test(
         transcript
       );
 
       res.json({
         ok: true,
-        modelId: 'gemini-3.5-transcribe',
+        modelId: audioResult.modelId,
+        provider: audioResult.provider,
+        modelLabel: audioResult.modelLabel,
+        fallbackUsed: audioResult.fallbackUsed,
+        attempts: audioResult.attempts,
         transcript,
         targetMode,
         detectedTargetMode: looksLikeQuickNote ? 'quick_note' : targetMode,
@@ -2783,7 +2837,7 @@ ${contextText}`;
     }
   });
 
-  // --- Morrow Multimodal File / Camera Analysis (gemini-4-hydrogen) ---
+  // --- Morrow Multimodal File / Camera Analysis (heavy_extraction: gemini-3.8-flash -> nemotron -> gemini-3.5-flash) ---
   app.post('/api/morrow/multimodal', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
@@ -2793,6 +2847,8 @@ ${contextText}`;
         prompt?: string;
         agencies?: Array<{ id: number; name: string }>;
         liveWorkspace?: Record<string, unknown>;
+        preferredChain?: string[];
+        taskRouting?: Partial<Record<AiTaskKey, Partial<AiTaskRouteConfigItem>>>;
       };
 
       const cleanBase64 = String(body.dataBase64 || '')
@@ -2815,12 +2871,12 @@ ${contextText}`;
         return;
       }
 
-      const ai = createGeminiClient();
-      if (!ai) {
+      const orchSnap = getOrchestrationStatusSnapshot();
+      if (!orchSnap.providers.google && !orchSnap.providers.openrouter) {
         res.status(503).json({
           ok: false,
           requiresApiKey: true,
-          error: 'مفتاح السحابة GEMINI_API_KEY غير مهيأ لتحليل الملفات والصور.',
+          error: 'مفاتيح السحابة (GEMINI_API_KEY / OPENROUTER_API_KEY) غير مهيأة لتحليل الملفات والصور.',
         });
         return;
       }
@@ -2866,35 +2922,36 @@ ${contextText}`;
         required: ['reply', 'looksLikeRosterTable'],
       };
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [
+      const orch = await executeWithFallback({
+        pipeline: 'heavy_extraction',
+        preferredChain: resolvePreferredChainFromRequest('heavy_pdf_vision', body),
+        attachments: [
           {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType,
-                  data: cleanBase64,
-                },
-              },
-              {
-                text: `اسم الملف: ${fileName}
-الوكالات المسجلة بالتطبيق: ${agenciesHint || 'غير محددة'}
-${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب المستخدم: ${userPrompt || 'اقرأ هذا المستند أو الصورة ولخّص محتواها. إذا كانت إيصال مصروف فاقترح manage_expense، وإذا كانت أسماء جديدة قليلة فاقترح add_person، وإذا كانت جدول مستفيدين/وكالات فاذكر التفاصيل وأوصِ بالسحب الذكي.'}`,
-              },
-            ],
+            kind: mimeType === 'application/pdf' ? 'pdf' : 'image',
+            mimeType,
+            data: cleanBase64,
+            filename: fileName,
           },
         ],
-        config: {
-          systemInstruction:
-            'أنت مساعد Morrow الذكي لقراءة الملفات والصور داخل تطبيق إدارة وكالات توزيع الطحين. التزم دائماً بكلمة «الأفراد» وأجب باللهجة العراقية المهنية الواضحة. حدد بدقة ما إذا كان المرفق جدول مستفيدين أو دفتر توزيع (looksLikeRosterTable)، وإن تضمن إيصالاً مالياً أو إضافة واضحة أضفها في suggestedTools ليراجعها المستخدم كمسودة موافقة. أعد JSON فقط.',
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
+        promptText: `اسم الملف: ${fileName}
+الوكالات المسجلة بالتطبيق: ${agenciesHint || 'غير محددة'}
+${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب المستخدم: ${userPrompt || 'اقرأ هذا المستند أو الصورة ولخّص محتواها. إذا كانت إيصال مصروف فاقترح manage_expense، وإذا كانت أسماء جديدة قليلة فاقترح add_person، وإذا كانت جدول مستفيدين/وكالات فاذكر التفاصيل وأوصِ بالسحب الذكي.'}`,
+        systemInstruction:
+          'أنت مساعد Morrow الذكي لقراءة الملفات والصور داخل تطبيق إدارة وكالات توزيع الطحين. التزم دائماً بكلمة «الأفراد» وأجب باللهجة العراقية المهنية الواضحة. حدد بدقة ما إذا كان المرفق جدول مستفيدين أو دفتر توزيع (looksLikeRosterTable)، وإن تضمن إيصالاً مالياً أو إضافة واضحة أضفها في suggestedTools ليراجعها المستخدم كمسودة موافقة. أعد JSON فقط.',
+        responseMimeType: 'application/json',
+        responseSchema: schema,
       });
 
-      const parsed = JSON.parse(response.text || '{}') as {
+      if (!orch.ok) {
+        res.status(orch.hadRateLimitOrTimeout ? 503 : 500).json({
+          ok: false,
+          error: orch.errorSummary || 'تعذر تحليل المرفق حالياً.',
+          attempts: orch.attempts,
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(orch.text || '{}') as {
         reply?: string;
         looksLikeRosterTable?: boolean;
         detectedAgencyName?: string | null;
@@ -2926,7 +2983,11 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
 
       res.json({
         ok: true,
-        modelId: GEMINI_MODEL,
+        modelId: orch.modelId,
+        provider: orch.provider,
+        modelLabel: orch.modelLabel,
+        fallbackUsed: orch.fallbackUsed,
+        attempts: orch.attempts,
         reply: enforceSafeArabicTerminology(
           parsed.reply || 'تمت قراءة المرفق بنجاح.'
         ),
@@ -2987,7 +3048,7 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
   });
 
   morrowLiveWss.on('connection', async (clientWs: WebSocket) => {
-    const ai = createGeminiClient();
+    const ai = createGoogleAiClient();
     if (!ai) {
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.send(
@@ -3127,7 +3188,7 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
 ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتبطة بالجلسة:\n${liveWorkspaceSummary}` : ''}`;
 
     const sessionPromise = ai.live.connect({
-      model: 'gemini-3.8-live',
+      model: AI_FREE_MODELS.GEMINI_3_8_LIVE,
       config: {
         responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
@@ -3148,7 +3209,7 @@ ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتب�
             clientWs.send(
               JSON.stringify({
                 type: 'ready',
-                model: 'gemini-3.8-live',
+                model: AI_FREE_MODELS.GEMINI_3_8_LIVE,
                 boundToWorkspace: Boolean(liveWorkspaceSummary),
               })
             );
@@ -3306,20 +3367,33 @@ ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتب�
           }
         },
         onerror: (err) => {
+          const ev = err as { message?: string; error?: { message?: string } };
+          const detail =
+            err instanceof Error
+              ? err.message
+              : ev?.error?.message || ev?.message || '';
           if (!closed && clientWs.readyState === clientWs.OPEN) {
             clientWs.send(
               JSON.stringify({
                 type: 'error',
-                message:
-                  err instanceof Error
-                    ? `انقطاع الاتصال المباشر: ${err.message}`
-                    : 'حدث خطأ في اتصال Gemini Live المباشر.',
+                message: detail
+                  ? `انقطاع الاتصال المباشر (${AI_FREE_MODELS.GEMINI_3_8_LIVE}): ${detail}`
+                  : 'حدث خطأ في اتصال Gemini Live المباشر.',
               })
             );
           }
         },
-        onclose: () => {
+        onclose: (closeEv?: unknown) => {
+          const ce = closeEv as { code?: number; reason?: string } | undefined;
           if (!closed && clientWs.readyState === clientWs.OPEN) {
+            if (ce?.reason) {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'error',
+                  message: `إغلاق جلسة ${AI_FREE_MODELS.GEMINI_3_8_LIVE} (${ce.code ?? ''}): ${ce.reason}`,
+                })
+              );
+            }
             clientWs.send(JSON.stringify({ type: 'closed' }));
             clientWs.close();
           }

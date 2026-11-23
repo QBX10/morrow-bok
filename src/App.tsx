@@ -842,6 +842,17 @@ export default function App() {
     assistant.openCommandCenter(tab);
   };
 
+  const openAiModelsStudio = () => {
+    if (activeView !== 'settings') {
+      setPreviousView(activeView);
+    }
+    assistant.setIsOpen(false);
+    setSettingsSection('ai_assistant');
+    setSettingsCapsuleId('sec_ai_assistant_cap');
+    setSettingsScreenMode('detail');
+    setActiveView('settings');
+  };
+
   const backFromMorrowLabel = useMemo(() => {
     if (previousView === 'agency_roster') {
       return `العودة إلى ${currentAgency?.name || 'جدول الوكالة'}`;
@@ -1165,6 +1176,8 @@ export default function App() {
           }}
           onNavigateToView={(view) => setActiveView(view)}
           initialQueuedFiles={pendingExtractFiles}
+          taskRouting={assistant.assistantSettings.taskRouting}
+          onOpenAiModelsStudio={openAiModelsStudio}
         />
       )}
 
@@ -1264,6 +1277,12 @@ export default function App() {
           liveCloudContext={assistant.liveCloudContext}
           onLiveToolAction={assistant.handleLiveVoiceToolAction}
           onVerifySystemIntegrity={assistant.verifyMorrowSystemIntegrity}
+          taskRouting={assistant.assistantSettings.taskRouting}
+          onOpenAiModelsStudio={openAiModelsStudio}
+          onCancelRequest={assistant.cancelActiveRequest}
+          onClearMessages={assistant.clearMessages}
+          onRetryLastPrompt={assistant.retryLastPrompt}
+          modelHealthSnapshots={assistant.modelHealthSnapshots}
         />
       )}
 
@@ -1529,14 +1548,11 @@ export default function App() {
           onQuickBackupJson={() => handleDownloadBackupJson(false)}
           onTogglePinMessage={assistant.togglePinMessage}
           onExportChatHistory={assistant.exportChatHistoryJson}
-          onOpenAssistantSettings={() => {
-            assistant.setIsOpen(false);
-            setPreviousView(activeView);
-            setSettingsSection('security_data');
-            setSettingsCapsuleId('sec_ai_assistant_cap');
-            setSettingsScreenMode('detail');
-            setActiveView('settings');
-          }}
+          onOpenAssistantSettings={openAiModelsStudio}
+          onCancelRequest={assistant.cancelActiveRequest}
+          onClearMessages={assistant.clearMessages}
+          onRetryLastPrompt={assistant.retryLastPrompt}
+          modelHealthSnapshots={assistant.modelHealthSnapshots}
         />
       )}
 

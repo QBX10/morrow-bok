@@ -448,15 +448,18 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           }}
         >
           <span className="font-bold" style={{ color: 'var(--text-muted)' }}>
-            توجيه الدماغ الثلاثي:
+            توجيه الدماغ الذكي:
           </span>
           <div className="flex flex-wrap items-center gap-1">
             {(
               [
                 { id: 'auto', label: 'تلقائي ذكي', icon: <Bot className="h-3 w-3" /> },
                 { id: 'local', label: 'Morrow محلي', icon: <Cpu className="h-3 w-3" /> },
-                { id: 'gemini_2_5_flash', label: '2.5 Flash', icon: <Zap className="h-3 w-3" /> },
-                { id: 'gemini_2_5_pro', label: '2.5 Pro', icon: <Sparkles className="h-3 w-3" /> },
+                { id: 'gemini_3_8_flash', label: '3.8 Flash', icon: <Sparkles className="h-3 w-3" /> },
+                { id: 'gemini_3_5_flash', label: '3.5 Flash', icon: <Zap className="h-3 w-3" /> },
+                { id: 'gemini_3_5_flash_lite', label: '3.5 Lite', icon: <Zap className="h-3 w-3" /> },
+                { id: 'nemotron_free', label: 'Nemotron', icon: <Sparkles className="h-3 w-3" /> },
+                { id: 'openrouter_free', label: 'OR Free', icon: <Bot className="h-3 w-3" /> },
               ] as const
             ).map((opt) => {
               const active = brainMode === opt.id;

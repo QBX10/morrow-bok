@@ -755,19 +755,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {
         id: 'ai_assistant',
         category: 'operations',
-        title: 'الذكاء الاصطناعي Morrow AI',
-        subtitle: 'الدماغ الثلاثي، اختيار النموذج، وضع الأوفلاين، الكاش، وحدود الحصة',
+        title: 'الذكاء الاصطناعي وتوجيه النماذج',
+        subtitle: 'معمارية النماذج التخصصية، التسلسل من الأقوى للأضعف، الاحتياطي، وMorrow الأخير',
         icon: <Bot className="h-5 w-5" />,
         galaxies: [
           {
             id: 'gal_ai_brain_quota',
-            title: 'مجرة الدماغ الثلاثي والنماذج والحصة',
-            subtitle: 'التحكم الكامل بمحرك Gemini أو التشغيل المحلي 100% والكاش',
+            title: 'معمارية النماذج والتوجيه من الأقوى للأضعف',
+            subtitle: 'تخصيص كل مهمة بالنموذج الأقوى والاحتياطي المباشر مع بقاء Morrow المحلي مرجعاً أخيراً',
             subAxes: [
               {
                 id: 'sec_ai_assistant_cap',
-                title: 'محرك Morrow والحصة والكاش',
-                subtitle: 'اختيار النموذج، وضع أوفلاين، والحد اليومي',
+                title: 'استوديو النماذج والتوجيه والحصة',
+                subtitle: 'توجيه المهام، سجل القوة، الربط الجذري، والأوفلاين',
                 badgeText: assistantSettings.onlineDisabled
                   ? 'أوفلاين 100%'
                   : `${assistantQuotaInfo?.dailyUsed ?? 0}/${assistantSettings.dailyRequestLimit}`,

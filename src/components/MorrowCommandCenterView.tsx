@@ -59,6 +59,7 @@ import type {
   SettingsSectionId,
 } from '../types/agency.ts';
 import type {
+  AiTaskRoutingMap,
   AssistantApprovalDraft,
   AssistantBrainMode,
   AssistantChoiceChip,
@@ -76,6 +77,11 @@ import type {
   MorrowProactiveInsight,
   MorrowSystemVerificationReport,
 } from '../types/assistant.ts';
+import {
+  CORE_SIX_SPECIALIZED_MODELS,
+  type ApprovedCloudModelId,
+  type ModelHealthRecord,
+} from '../lib/aiConfig.ts';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic.ts';
 import type { MaskedCloudContext } from '../utils/assistantPrivacy.ts';
 import {
@@ -164,6 +170,14 @@ interface MorrowCommandCenterViewProps {
   liveCloudContext?: MaskedCloudContext;
   onLiveToolAction?: (toolCall: AssistantToolCall) => string | void;
   onVerifySystemIntegrity?: () => Promise<MorrowSystemVerificationReport>;
+  taskRouting?: AiTaskRoutingMap;
+  onOpenAiModelsStudio?: () => void;
+  onCancelRequest?: () => void;
+  onClearMessages?: () => void;
+  onRetryLastPrompt?: (prompt?: string) => void;
+  modelHealthSnapshots?: Array<
+    ModelHealthRecord & { status: 'healthy' | 'cooldown' }
+  >;
 }
 
 interface AttachedDocumentItem {
@@ -181,6 +195,8 @@ interface MultimodalFeedEntry {
   kind: 'voice_note' | 'file_analysis' | 'live_summary';
   title: string;
   body: string;
+  modelId?: string;
+  modelLabel?: string;
   voiceMode?: 'instruction' | 'quick_note' | 'draft_text';
   linkedPersonName?: string;
   linkedAgencyName?: string;
@@ -226,9 +242,9 @@ const BRAIN_BUTTONS: Array<{
 }> = [
   {
     id: 'auto',
-    label: 'تلقائي (تصعيد ذكي)',
+    label: 'تلقائي ذكي (6+1)',
     shortLabel: 'تلقائي ذكي',
-    desc: 'يبدأ بـ Morrow المحلي ثم 2.5 Flash ثم 2.5 Pro عند الحاجة.',
+    desc: 'يبدأ بـ Morrow المحلي ثم يوجه تلقائياً للأقوى عبر النماذج الستة المجانية.',
     icon: <Bot className="h-4 w-4" />,
   },
   {
@@ -239,18 +255,39 @@ const BRAIN_BUTTONS: Array<{
     icon: <Cpu className="h-4 w-4" />,
   },
   {
-    id: 'gemini_2_5_flash',
-    label: 'Gemini 2.5 Flash',
-    shortLabel: '2.5 Flash',
-    desc: 'المهام اللغوية السريعة والصياغة اليومية.',
+    id: 'gemini_3_8_flash',
+    label: 'Gemini 3.8 Flash',
+    shortLabel: '3.8 Flash',
+    desc: 'الأقوى للمهام الثقيلة، PDF المعقد، الفهم البصري والاستنتاج.',
+    icon: <Sparkles className="h-4 w-4" />,
+  },
+  {
+    id: 'gemini_3_5_flash',
+    label: 'Gemini 3.5 Flash',
+    shortLabel: '3.5 Flash',
+    desc: 'متوازن للبيانات المنظمة (Excel/CSV) والأوامر متعددة الخطوات.',
     icon: <Zap className="h-4 w-4" />,
   },
   {
-    id: 'gemini_2_5_pro',
-    label: 'Gemini 2.5 Pro',
-    shortLabel: '2.5 Pro',
-    desc: 'التحليل الاستراتيجي والتقارير العميقة.',
+    id: 'gemini_3_5_flash_lite',
+    label: 'Gemini 3.5 Flash Lite',
+    shortLabel: '3.5 Lite',
+    desc: 'استجابة فورية للأوامر السريعة والردود اليومية.',
+    icon: <Zap className="h-4 w-4" />,
+  },
+  {
+    id: 'nemotron_free',
+    label: 'Nemotron 3.5 VL',
+    shortLabel: 'Nemotron',
+    desc: 'ذكاء المستندات والاستنتاج المستقل عبر OpenRouter المجاني.',
     icon: <Sparkles className="h-4 w-4" />,
+  },
+  {
+    id: 'openrouter_free',
+    label: 'OpenRouter Free',
+    shortLabel: 'OR Auto',
+    desc: 'بوابة الاحتياط التلقائي لأقوى نموذج مجاني متاح لحظياً.',
+    icon: <Bot className="h-4 w-4" />,
   },
 ];
 
@@ -284,11 +321,21 @@ const MEMORY_PRESETS: Array<{ key: string; label: string; desc: string }> = [
 ];
 
 function EngineAttributionIcon({ engine }: { engine?: AssistantEngineSource }) {
-  if (engine === 'gemini_2_5_pro') {
+  if (engine === 'gemini_3_8_flash' || engine === 'nemotron_free') {
     return <Sparkles className="h-3.5 w-3.5 shrink-0" />;
   }
-  if (engine === 'gemini_2_5_flash') {
+  if (engine === 'gemini_3_8_live') {
+    return <Radio className="h-3.5 w-3.5 shrink-0" />;
+  }
+  if (
+    engine === 'gemini_3_5_flash' ||
+    engine === 'gemini_3_5_flash_lite' ||
+    engine === 'openrouter_free'
+  ) {
     return <Zap className="h-3.5 w-3.5 shrink-0" />;
+  }
+  if (engine === 'whisper_large_v3_turbo') {
+    return <Volume2 className="h-3.5 w-3.5 shrink-0" />;
   }
   return <Cpu className="h-3.5 w-3.5 shrink-0" />;
 }
@@ -380,6 +427,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   liveCloudContext,
   onLiveToolAction,
   onVerifySystemIntegrity,
+  taskRouting,
+  onOpenAiModelsStudio,
+  onCancelRequest,
+  onClearMessages,
+  onRetryLastPrompt,
+  modelHealthSnapshots = [],
 }) => {
   // Side Drawer for secondary features (Memory, Approvals, Notes, Canvas 2.0, Brain, Commands)
   const [sideDrawerOpen, setSideDrawerOpen] = useState(false);
@@ -393,6 +446,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
   // Core Triad States: (1) Chat + Voice Messages, (2) Live Modal, (3) Files + Camera
   const [chatInput, setChatInput] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
   const [historySearch, setHistorySearch] = useState('');
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
@@ -596,6 +650,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     );
   }, [chatInput]);
 
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [filteredSlashCommands.length]);
+
   const handleRunSystemVerifier = async () => {
     if (!onVerifySystemIntegrity || verifyingSystem) return;
     setVerifyingSystem(true);
@@ -786,6 +844,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
     const audioUrl = audioBlob.size > 0 ? URL.createObjectURL(audioBlob) : undefined;
     let finalTranscript = fallbackTranscript;
+    let voiceModelId: string | undefined;
+    let voiceModelLabel: string | undefined;
 
     setTranscribingVoice(true);
     try {
@@ -798,15 +858,20 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           mimeType: mime,
           targetMode: activeTargetMode,
           agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+          taskRouting,
         }),
       });
       const json = (await res.json()) as {
         ok?: boolean;
         transcript?: string;
+        modelId?: string;
+        modelLabel?: string;
         error?: string;
       };
       if (res.ok && json.ok && json.transcript) {
         finalTranscript = json.transcript.trim();
+        voiceModelId = json.modelId;
+        voiceModelLabel = json.modelLabel;
       } else if (!finalTranscript && json.error) {
         setVoiceError(json.error);
       }
@@ -842,6 +907,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             kind: 'voice_note',
             title: 'ملاحظة سريعة بالتسجيل الصوتي',
             body: finalTranscript,
+            modelId: voiceModelId,
+            modelLabel: voiceModelLabel,
             voiceMode: 'quick_note',
             linkedPersonName: matched.person?.name,
             linkedAgencyName,
@@ -870,7 +937,11 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     if (activeTargetMode === 'draft_text') {
       if (finalTranscript) {
         setChatInput((prev) => (prev.trim() ? `${prev.trim()} ${finalTranscript}` : finalTranscript));
-        setSummonNotice('تم تفريغ التسجيل الصوتي في مربع الكتابة للمراجعة والتعديل قبل الإرسال.');
+        setSummonNotice(
+          voiceModelId
+            ? `تم تفريغ التسجيل الصوتي (${voiceModelId}) في مربع الكتابة للمراجعة قبل الإرسال.`
+            : 'تم تفريغ التسجيل الصوتي في مربع الكتابة للمراجعة والتعديل قبل الإرسال.'
+        );
         window.setTimeout(() => chatTextareaRef.current?.focus(), 60);
       }
       return;
@@ -884,6 +955,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         kind: 'voice_note',
         title: 'تعليمة صوتية لـ Morrow',
         body: finalTranscript || 'تم حفظ التسجيل الصوتي في المحادثة.',
+        modelId: voiceModelId,
+        modelLabel: voiceModelLabel,
         voiceMode: 'instruction',
         audioUrl,
         durationSec,
@@ -1055,6 +1128,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               mimeType: mime,
               targetMode: 'quick_note',
               agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+              taskRouting,
             }),
           });
           const json = (await res.json()) as {
@@ -1189,11 +1263,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           prompt: customQuestion || '',
           agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
           liveWorkspace: liveCloudContext?.liveWorkspace,
+          taskRouting,
         }),
       });
       const json = (await res.json()) as {
         ok?: boolean;
         reply?: string;
+        modelId?: string;
+        modelLabel?: string;
         looksLikeRosterTable?: boolean;
         suggestedTools?: AssistantToolCall[];
         error?: string;
@@ -1227,6 +1304,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           kind: 'file_analysis',
           title: target.name,
           body: json.reply || 'تمت قراءة الملف بنجاح.',
+          modelId: json.modelId,
+          modelLabel: json.modelLabel,
           file: target.file,
           previewUrl: target.previewUrl,
           looksLikeRosterTable: Boolean(json.looksLikeRosterTable),
@@ -1448,8 +1527,26 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </div>
           </div>
 
-          {/* End (RTL Left): Return to Main Chat (when viewing sub-section) + Side Extensions Drawer Button */}
+          {/* End (RTL Left): Clear Chat + Return to Main Chat + Side Extensions Drawer Button */}
           <div className="flex items-center gap-2 shrink-0">
+            {isMainConversationView && onClearMessages && messages.length > 1 && (
+              <button
+                type="button"
+                onClick={onClearMessages}
+                aria-label="بدء محادثة جديدة"
+                title="محادثة جديدة"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span className="hidden sm:inline">محادثة جديدة</span>
+              </button>
+            )}
+
             {!isMainConversationView && (
               <button
                 type="button"
@@ -1486,13 +1583,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               <span>الميزات والأقسام</span>
               {sideFeatureBadgeCount > 0 && (
                 <span
-                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-[10px] font-black tabular-nums"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
+                  className="font-mono text-[11px] font-black tabular-nums"
+                  style={{ color: 'var(--accent)' }}
                 >
-                  {sideFeatureBadgeCount}
+                  · {sideFeatureBadgeCount}
                 </span>
               )}
             </button>
@@ -1622,18 +1716,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
           {/* Conversation Scroll Stream */}
           <div className="flex-1 space-y-4 overflow-y-auto pb-4">
-            {/* Serene Welcome Hero showing ONLY the 3 Core Pillars when thread is fresh */}
+            {/* Serene Welcome Hero showing ONLY the 3 Core Pillars when thread is fresh (Single Flat Surface Elevation) */}
             {filteredMessages.length <= 2 && multimodalFeed.length === 0 && !historySearch && (
               <section
                 aria-label="قدرات مساعد Morrow الأساسية"
-                className="morrow-studio-surface rounded-[26px] border p-5 sm:p-7 space-y-5"
+                className="space-y-4 border-b pb-5"
+                style={{ borderColor: 'var(--border-color)' }}
               >
-                <div className="space-y-1.5 text-center sm:text-right">
+                <div className="space-y-1.5">
                   <h2 className="text-lg sm:text-xl font-extrabold" style={{ textWrap: 'balance' }}>
                     أهلاً بك في مساحة Morrow المتكاملة
                   </h2>
                   <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-                    سجّل صوتك لإضافة ملاحظة سريعة أو لإرسال تعليمات للذكاء الاصطناعي، افتح محادثة لايف التفاعلية، أو ارفع وصوّر ملفاتك — جميع النماذج مرتبطة لحظياً بحصتك الحالية.
+                    توجيه تلقائي ذكي بين النماذج الستة المتخصصة (3.8 Flash · 3.8 Live · 3.5 Flash · 3.5 Lite · Groq Whisper · Nemotron) مع التحويل التلقائي ومرجع Morrow المحلي.
                   </p>
                   {liveCloudContext?.liveWorkspace && (
                     <div
@@ -1649,12 +1744,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   )}
                 </div>
 
-                {/* 3 Core Entry Tiles */}
+                {/* 3 Core Entry Tiles (Single Elevation) */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div
                     className="flex flex-col justify-between gap-2.5 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent)]"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
@@ -1664,33 +1759,26 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       className="flex flex-col items-start gap-2 text-right"
                     >
                       <Mic className="h-5 w-5" style={{ color: 'var(--accent)' }} />
-                      <div className="text-xs font-extrabold">التسجيل الصوتي الذكي</div>
+                      <div className="text-xs font-extrabold">التسجيل الصوتي (Whisper)</div>
                       <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
                         أملِ تعليمات للذكاء أو سجّل ملاحظات سريعة بالصوت بدلاً من الكتابة
                       </div>
                     </button>
-                    <div className="flex items-center gap-1.5 pt-0.5">
+                    <div className="flex items-center gap-2 pt-1 text-[11px] font-bold">
                       <button
                         type="button"
                         onClick={() => void startVoiceMessageRecording('instruction')}
-                        className="rounded-lg border px-2 py-1 text-[10px] font-extrabold whitespace-nowrap hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--accent)',
-                        }}
+                        className="hover:underline"
+                        style={{ color: 'var(--accent)' }}
                       >
                         تعليمات للذكاء
                       </button>
+                      <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
                       <button
                         type="button"
                         onClick={() => void startVoiceMessageRecording('quick_note')}
-                        className="rounded-lg border px-2 py-1 text-[10px] font-extrabold whitespace-nowrap hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--text-primary)',
-                        }}
+                        className="hover:underline"
+                        style={{ color: 'var(--text-primary)' }}
                       >
                         ملاحظة سريعة
                       </button>
@@ -1703,14 +1791,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     onClick={() => setLiveModalOpen(true)}
                     className="flex flex-col items-start gap-2 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent)]"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
                     <Radio className="h-5 w-5" style={{ color: '#10b981' }} />
-                    <div className="text-xs font-extrabold">المحادثة لايف (مباشر)</div>
+                    <div className="text-xs font-extrabold">المحادثة لايف (3.8 Live)</div>
                     <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      حوار صوتي تفاعلي لحظي مع خيار تشغيل الكاميرا
+                      حوار صوتي تفاعلي لحظي مع خيار تشغيل الكاميرا وتنفيذ الأدوات
                     </div>
                   </button>
 
@@ -1720,14 +1808,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     onClick={() => filePickerRef.current?.click()}
                     className="flex flex-col items-start gap-2 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent)]"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
                     <Paperclip className="h-5 w-5" style={{ color: '#0ea5e9' }} />
                     <div className="text-xs font-extrabold">رفع أو تصوير الملفات</div>
                     <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      PDF أو صورة دفتر لقراءتها أو إرسالها للسحب الذكي
+                      PDF أو صورة دفتر لقراءتها عبر 3.8 Flash أو السحب الذكي
                     </div>
                   </button>
                 </div>
@@ -1756,7 +1844,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             {/* Text & Tool Messages */}
             {filteredMessages.map((msg) => {
               const isUser = msg.role === 'user';
-              const meta = getEngineDisplayMeta(msg.engineUsed);
+              const meta = getEngineDisplayMeta(msg.engineUsed, msg.modelId);
               return (
                 <div
                   key={msg.id}
@@ -1779,26 +1867,42 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]"
                         style={{ color: 'var(--text-muted)' }}
                       >
-                        <span
-                          className="inline-flex items-center gap-1.5 font-bold"
-                          style={{ color: 'var(--accent)' }}
-                        >
-                          <EngineAttributionIcon engine={msg.engineUsed} />
-                          <span>{msg.engineLabel || meta.badgeLabel}</span>
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                          <span className="tabular-nums text-[10px]">
-                            {msg.modelId || meta.modelId}
+                        <span className="inline-flex flex-wrap items-center gap-1.5 min-w-0">
+                          <span
+                            className="inline-flex items-center gap-1.5 font-bold"
+                            style={{ color: 'var(--accent)' }}
+                          >
+                            <EngineAttributionIcon engine={msg.engineUsed} />
+                            <span>{msg.engineLabel || meta.badgeLabel}</span>
+                          </span>
+                          <span dir="ltr" className="font-mono text-[10px] tabular-nums opacity-85">
+                            · {msg.modelId || meta.modelId}
+                            {typeof msg.latencyMs === 'number' && msg.latencyMs > 0
+                              ? ` · ${(msg.latencyMs / 1000).toFixed(1)}s`
+                              : ''}
                             {typeof msg.confidence === 'number'
                               ? ` · ثقة ${Math.round(msg.confidence * 100)}%`
                               : ''}
                           </span>
+                        </span>
+
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          {onRetryLastPrompt && (
+                            <button
+                              type="button"
+                              onClick={() => onRetryLastPrompt()}
+                              title="إعادة التوليد"
+                              className="inline-flex items-center gap-1 font-semibold hover:text-[var(--accent)]"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span className="hidden sm:inline">إعادة</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleCopyMessage(msg.id, msg.text)}
                             title="نسخ الرد"
-                            className="rounded-lg p-1 hover:opacity-75"
+                            className="inline-flex items-center gap-1 font-semibold hover:text-[var(--accent)]"
                           >
                             {copiedMsgId === msg.id ? (
                               <Check className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
@@ -1811,7 +1915,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                               type="button"
                               onClick={() => onTogglePinMessage(msg.id)}
                               title={msg.isPinned ? 'إلغاء التثبيت' : 'تثبيت الرسالة'}
-                              className="rounded-lg p-1 hover:opacity-75"
+                              className="inline-flex items-center gap-1 hover:opacity-80"
                               style={{
                                 color: msg.isPinned ? 'var(--accent)' : 'var(--text-muted)',
                               }}
@@ -1823,16 +1927,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                             type="button"
                             onClick={() => void handleSpeakMessage(msg.id, msg.text)}
                             title={speakingMsgId === msg.id ? 'إيقاف القراءة الصوتية' : 'استماع للرد'}
-                            className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold hover:border-[var(--accent)]"
+                            className="inline-flex items-center gap-1 font-bold hover:text-[var(--accent)]"
                             style={{
-                              backgroundColor:
-                                speakingMsgId === msg.id ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                              borderColor:
-                                speakingMsgId === msg.id ? 'var(--accent)' : 'var(--border-color)',
-                              color: speakingMsgId === msg.id ? 'var(--accent)' : 'var(--text-primary)',
+                              color: speakingMsgId === msg.id ? 'var(--accent)' : 'var(--text-muted)',
                             }}
                           >
-                            <Volume2 className="h-3 w-3" />
+                            <Volume2 className="h-3.5 w-3.5" />
                             <span>{speakingMsgId === msg.id ? 'إيقاف' : 'استماع'}</span>
                           </button>
 
@@ -1847,32 +1947,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                               setSummonNotice('تم حفظ الرد في الملاحظات السريعة وربطه تلقائياً إذا تضمن اسماً.');
                             }}
                             title="حفظ كملاحظة سريعة"
-                            className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold hover:border-[var(--accent)]"
-                            style={{
-                              backgroundColor: 'var(--bg-main)',
-                              borderColor: 'var(--border-color)',
-                            }}
+                            className="inline-flex items-center gap-1 font-bold hover:text-[var(--accent)]"
                           >
-                            <StickyNote className="h-3 w-3" />
-                            <span>ملاحظة</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onSendMessage(
-                                `أعد صياغة هذه النتيجة بأسلوب مختصر ورسمي:\n${msg.text.slice(0, 180)}`
-                              )
-                            }
-                            title="أعد الصياغة"
-                            className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold hover:border-[var(--accent)]"
-                            style={{
-                              backgroundColor: 'var(--bg-main)',
-                              borderColor: 'var(--border-color)',
-                            }}
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                            <span>صياغة</span>
+                            <StickyNote className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">ملاحظة</span>
                           </button>
                         </div>
                       </div>
@@ -1954,66 +2032,68 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
                     {msg.diagnosticsReport && msg.diagnosticsReport.issues.length > 0 && (
                       <div
-                        className="mt-3 space-y-2 border-t pt-3 text-xs"
+                        className="mt-3 divide-y border-t pt-2.5 text-xs"
                         style={{ borderColor: 'var(--border-color)' }}
                       >
                         {msg.diagnosticsReport.issues.slice(0, 6).map((issue) => (
-                          <div
-                            key={issue.id}
-                            className="rounded-xl border px-3 py-2"
-                            style={{
-                              backgroundColor: 'var(--bg-main)',
-                              borderColor:
-                                issue.severity === 'high'
-                                  ? 'var(--danger)'
-                                  : 'var(--border-color)',
-                            }}
-                          >
-                            <div className="font-bold">{issue.title}</div>
+                          <div key={issue.id} className="py-2">
+                            <div
+                              className="font-bold"
+                              style={{
+                                color:
+                                  issue.severity === 'high' ? 'var(--danger)' : 'var(--text-primary)',
+                              }}
+                            >
+                              {issue.title}
+                            </div>
                             <div style={{ color: 'var(--text-muted)' }}>{issue.detail}</div>
                           </div>
                         ))}
                         {msg.diagnosticsReport.autoFixableCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold"
-                            style={{
-                              backgroundColor: 'var(--accent)',
-                              color: 'var(--accent-fg)',
-                            }}
-                          >
-                            <Wrench className="h-3.5 w-3.5" />
-                            <span>
-                              تجهيز مسودة إصلاح ({msg.diagnosticsReport.autoFixableCount})
-                            </span>
-                          </button>
+                          <div className="pt-2.5">
+                            <button
+                              type="button"
+                              onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
+                              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold"
+                              style={{
+                                backgroundColor: 'var(--accent)',
+                                color: 'var(--accent-fg)',
+                              }}
+                            >
+                              <Wrench className="h-3.5 w-3.5" />
+                              <span>
+                                تجهيز مسودة إصلاح ({msg.diagnosticsReport.autoFixableCount})
+                              </span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     )}
 
                     {msg.confirmationDiff && (
                       <div
-                        className="mt-3 space-y-2 border-t pt-3 text-xs"
-                        style={{ borderColor: 'var(--border-color)' }}
+                        className="mt-3 space-y-2.5 border-t pt-3 text-xs"
+                        style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' }}
                       >
                         <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
                           {msg.confirmationDiff.title}
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div
+                          className="divide-y rounded-xl border"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
                           {msg.confirmationDiff.changes.map((c, idx) => (
                             <div
                               key={idx}
-                              className="rounded-xl border px-3 py-2"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                              }}
+                              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
                             >
-                              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                 {c.fieldLabel}
-                              </div>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-bold">
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5 font-bold tabular-nums">
                                 <span className="line-through opacity-75">{c.beforeValue}</span>
                                 <span style={{ color: 'var(--accent)' }}>←</span>
                                 <span style={{ color: 'var(--success)' }}>{c.afterValue}</span>
@@ -2068,7 +2148,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 key={item.id}
                 className="morrow-studio-surface rounded-[22px] border p-4 space-y-2.5 text-xs sm:text-sm"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 font-extrabold">
                     {item.kind === 'voice_note' ? (
                       <Volume2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
@@ -2079,12 +2159,24 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     )}
                     <span>{item.title}</span>
                   </div>
-                  {item.durationSec !== undefined && (
-                    <span className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                      {String(Math.floor(item.durationSec / 60)).padStart(2, '0')}:
-                      {String(item.durationSec % 60).padStart(2, '0')}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                    {item.modelId && (
+                      <span
+                        dir="ltr"
+                        style={{ color: 'var(--accent)' }}
+                        title={item.modelLabel || item.modelId}
+                      >
+                        {item.modelId}
+                      </span>
+                    )}
+                    {item.durationSec !== undefined && (
+                      <span>
+                        {item.modelId ? '· ' : ''}
+                        {String(Math.floor(item.durationSec / 60)).padStart(2, '0')}:
+                        {String(item.durationSec % 60).padStart(2, '0')}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {item.audioUrl && (
@@ -2234,21 +2326,38 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
             {(isThinking || analyzingAttachment || transcribingVoice) && (
               <div
-                className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs font-semibold"
+                className="flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent)' }} />
-                <span>
-                  {analyzingAttachment
-                    ? 'جاري قراءة وتحليل الملف المرفق...'
-                    : transcribingVoice
-                      ? 'جاري تفريغ الرسالة الصوتية ومعالجتها...'
-                      : 'جاري معالجة طلبك في Morrow...'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent)' }} />
+                  <span>
+                    {analyzingAttachment
+                      ? 'جاري قراءة وتحليل الملف المرفق...'
+                      : transcribingVoice
+                        ? 'جاري تفريغ الرسالة الصوتية ومعالجتها...'
+                        : 'جاري اختيار النموذج الأنسب ومعالجة طلبك...'}
+                  </span>
+                </div>
+                {isThinking && onCancelRequest && (
+                  <button
+                    type="button"
+                    onClick={onCancelRequest}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--danger)',
+                      color: 'var(--danger)',
+                    }}
+                  >
+                    <Square className="h-3 w-3" />
+                    <span>إيقاف</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -2497,7 +2606,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               }}
             />
 
-            {/* Slash Command Quick Launcher (when typing /) */}
+            {/* Slash Command Quick Launcher (when typing / with full keyboard nav) */}
             {filteredSlashCommands.length > 0 && (
               <div
                 className="rounded-2xl border p-2 space-y-1 max-h-52 overflow-y-auto"
@@ -2507,50 +2616,57 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 }}
               >
                 <div className="px-2 py-1 text-[10px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  أوامر Morrow الفورية (اختر للتنفيذ):
+                  أوامر Morrow الفورية (أسهم للتنقل · Enter للتنفيذ):
                 </div>
-                {filteredSlashCommands.map((sc) => (
-                  <button
-                    key={sc.id}
-                    type="button"
-                    onClick={() => {
-                      setChatInput('');
-                      if (sc.startVoice) {
-                        void startVoiceMessageRecording(sc.startVoice);
-                        return;
-                      }
-                      if (sc.openTab) {
-                        setCanvasOverlayActive(false);
-                        onChangeTab(sc.openTab);
-                        return;
-                      }
-                      if (sc.runVerifier) {
-                        setSideDrawerOpen(true);
-                        void handleRunSystemVerifier();
-                        return;
-                      }
-                      if (sc.canvasMode) {
-                        setCanvasMode(sc.canvasMode);
-                        setCanvasOverlayActive(true);
-                        return;
-                      }
-                      if (sc.prompt) {
-                        submitChatPrompt(sc.prompt);
-                      }
-                    }}
-                    className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-right text-xs hover:bg-[var(--bg-nav-active)]"
-                  >
-                    <div className="min-w-0">
-                      <span className="font-extrabold">{sc.label}</span>
-                      <span className="mr-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        {sc.desc}
+                {filteredSlashCommands.map((sc, idx) => {
+                  const highlighted = idx === slashIndex;
+                  return (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onMouseEnter={() => setSlashIndex(idx)}
+                      onClick={() => {
+                        setChatInput('');
+                        if (sc.startVoice) {
+                          void startVoiceMessageRecording(sc.startVoice);
+                          return;
+                        }
+                        if (sc.openTab) {
+                          setCanvasOverlayActive(false);
+                          onChangeTab(sc.openTab);
+                          return;
+                        }
+                        if (sc.runVerifier) {
+                          setSideDrawerOpen(true);
+                          void handleRunSystemVerifier();
+                          return;
+                        }
+                        if (sc.canvasMode) {
+                          setCanvasMode(sc.canvasMode);
+                          setCanvasOverlayActive(true);
+                          return;
+                        }
+                        if (sc.prompt) {
+                          submitChatPrompt(sc.prompt);
+                        }
+                      }}
+                      className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-right text-xs transition-colors"
+                      style={{
+                        backgroundColor: highlighted ? 'var(--bg-nav-active)' : 'transparent',
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <span className="font-extrabold">{sc.label}</span>
+                        <span className="mr-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          {sc.desc}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[10px] font-bold shrink-0" style={{ color: 'var(--accent)' }}>
+                        {sc.cmd}
                       </span>
-                    </div>
-                    <span className="font-mono text-[10px] font-bold shrink-0" style={{ color: 'var(--accent)' }}>
-                      {sc.cmd}
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -2568,6 +2684,44 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
+                  if (filteredSlashCommands.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setSlashIndex((i) => (i + 1) % filteredSlashCommands.length);
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setSlashIndex((i) =>
+                        (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length
+                      );
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setChatInput('');
+                      return;
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      const sc = filteredSlashCommands[slashIndex] || filteredSlashCommands[0];
+                      setChatInput('');
+                      if (sc.startVoice) void startVoiceMessageRecording(sc.startVoice);
+                      else if (sc.openTab) {
+                        setCanvasOverlayActive(false);
+                        onChangeTab(sc.openTab);
+                      } else if (sc.runVerifier) {
+                        setSideDrawerOpen(true);
+                        void handleRunSystemVerifier();
+                      } else if (sc.canvasMode) {
+                        setCanvasMode(sc.canvasMode);
+                        setCanvasOverlayActive(true);
+                      } else if (sc.prompt) {
+                        submitChatPrompt(sc.prompt);
+                      }
+                      return;
+                    }
+                  }
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     submitChatPrompt();
@@ -2585,19 +2739,36 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 }}
               />
 
-              <button
-                type="submit"
-                disabled={(!chatInput.trim() && !attachedFile) || isThinking || analyzingAttachment}
-                aria-label="إرسال"
-                className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-extrabold whitespace-nowrap shrink-0 disabled:opacity-45"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                <Send className="h-4 w-4" />
-                <span className="hidden sm:inline">إرسال</span>
-              </button>
+              {isThinking && onCancelRequest ? (
+                <button
+                  type="button"
+                  onClick={onCancelRequest}
+                  aria-label="إيقاف"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-extrabold whitespace-nowrap shrink-0"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">إيقاف</span>
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={(!chatInput.trim() && !attachedFile) || isThinking || analyzingAttachment}
+                  aria-label="إرسال"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-extrabold whitespace-nowrap shrink-0 disabled:opacity-45"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                  <span className="hidden sm:inline">إرسال</span>
+                </button>
+              )}
             </form>
 
             {/* Clean Action Trio Bar: التسجيل الصوتي + Target Mode + Live Talk + Upload/Camera */}
@@ -2780,6 +2951,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               submitChatPrompt(prompt);
             }}
             cloudConfigured={cloudConfigured}
+            taskRouting={taskRouting}
           />
         </main>
       )}
@@ -3515,10 +3687,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 </div>
               </div>
 
-              {/* Section 2: Intelligence Brain Engine */}
-              <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
+              {/* Section 2: Intelligence Brain Engine & Live 6-Model Health */}
+              <div className="space-y-2.5 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  اختيار دماغ Morrow
+                  اختيار دماغ Morrow وتوجيه النماذج
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {BRAIN_BUTTONS.map((btn) => {
@@ -3541,6 +3713,53 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     );
                   })}
                 </div>
+
+                <div
+                  className="divide-y rounded-xl border text-[11px]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  {CORE_SIX_SPECIALIZED_MODELS.map((spec) => {
+                    const snap = modelHealthSnapshots.find(
+                      (h) => h.modelId === (spec.id as ApprovedCloudModelId)
+                    );
+                    const cooling = snap?.status === 'cooldown';
+                    return (
+                      <div key={spec.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                        <span className="truncate font-semibold">{spec.shortLabel}</span>
+                        <span
+                          className="shrink-0 font-mono text-[10px] tabular-nums font-bold"
+                          style={{ color: cooling ? 'var(--warning)' : 'var(--success)' }}
+                        >
+                          {cooling ? 'تبريد' : 'جاهز'}
+                          {snap?.avgLatencyMs ? ` · ${(snap.avgLatencyMs / 1000).toFixed(1)}s` : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSideDrawerOpen(false);
+                    if (onOpenAiModelsStudio) {
+                      onOpenAiModelsStudio();
+                    } else {
+                      onNavigateView?.('settings', 'ai_assistant');
+                    }
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>تخصيص النماذج والتوجيه</span>
+                </button>
               </div>
 
               {/* Section 3: Conversation Tools & Search */}

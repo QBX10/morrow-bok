@@ -22,6 +22,7 @@ import type {
   NormalizedBox,
   QuickExtractEvaluatedRow,
 } from '../../types/agency';
+import type { AiTaskRoutingMap } from '../../types/assistant';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
 import { RowZoomViewerModal } from './ContextualRowSnippetModal';
 import { type CopilotOperation } from './LiveDraftCopilot';
@@ -65,6 +66,7 @@ interface ZeroTrustDraftWorkspaceProps {
   onFinalCommit: () => void;
   committing?: boolean;
   commitLabel?: string;
+  taskRouting?: AiTaskRoutingMap;
 }
 
 export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = ({
@@ -93,6 +95,7 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
   onFinalCommit,
   committing,
   commitLabel = 'تأكيد نهائي وحفظ في الجدول الأساسي',
+  taskRouting,
 }) => {
   const [presetPrompt, setPresetPrompt] = useState<string | null>(null);
   const [internalLabOpen, setInternalLabOpen] = useState(true);
@@ -419,6 +422,7 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
         presetPrompt={presetPrompt}
         onClearPresetPrompt={() => setPresetPrompt(null)}
         copilotSectionRef={copilotSectionRef}
+        taskRouting={taskRouting}
       />
 
       {/* Zoom & Original Source Viewer Modal */}
