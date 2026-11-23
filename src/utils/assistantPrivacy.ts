@@ -1,5 +1,11 @@
-import type { AssistantMessage, AssistantUiContext } from '../types/assistant.ts';
-import { normalizeArabic } from './agencyLogic.ts';
+import type { AppDatabaseState } from '../types/agency.ts';
+import type {
+  AssistantMessage,
+  AssistantUiContext,
+  MorrowLiveAgencyDigest,
+  MorrowLiveWorkspaceContext,
+} from '../types/assistant.ts';
+import { computeAgencyMetrics, normalizeArabic } from './agencyLogic.ts';
 
 const ARABIC_INDIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 const PERSIAN_INDIC_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -102,6 +108,14 @@ export interface MaskedCloudContext {
   totalPersonsCount: number;
   privacyMode: 'masked_no_beneficiaries' | 'names_allowed_by_user';
   focusedPersonName?: string;
+  liveWorkspace?: MorrowLiveWorkspaceContext;
+  beneficiaryDirectory?: Array<{
+    id: number;
+    name: string;
+    agencyId: number;
+    individuals: number;
+    status: string;
+  }>;
 }
 
 export function redactPotentialPiiText(text: string): string {
@@ -115,10 +129,82 @@ export function redactPotentialPiiText(text: string): string {
     .replace(/\b\d{7,16}\b/g, '[رقم بطاقة محجوب]');
 }
 
+export function buildLiveWorkspaceContext(
+  state: AppDatabaseState,
+  extras?: { quickNotesCount?: number; pendingDraftsCount?: number }
+): MorrowLiveWorkspaceContext {
+  const settings = state.calculationSettings;
+  const agenciesBreakdown: MorrowLiveAgencyDigest[] = [];
+
+  let totalRegisteredHouseholds = 0;
+  let totalActiveHouseholds = 0;
+  let totalActiveIndividuals = 0;
+  let totalBlockedCount = 0;
+  let totalKg = 0;
+  let totalRevenueIqd = 0;
+  let totalExpensesIqd = 0;
+
+  for (const ag of state.agencies) {
+    const agPersons = state.persons.filter((p) => p.agencyId === ag.id);
+    const agExpenses = state.expenses.filter((e) => e.agencyId === ag.id);
+    const metrics = computeAgencyMetrics(agPersons, agExpenses, settings);
+
+    agenciesBreakdown.push({
+      id: ag.id,
+      name: ag.name,
+      activeHouseholds: metrics.activeHouseholds,
+      activeIndividuals: metrics.activeIndividuals,
+      blockedCount: metrics.blockedCount,
+      fullBags: metrics.fullBags,
+      remainderKg: metrics.remainderKg,
+      revenueIqd: metrics.revenue,
+      expensesIqd: metrics.totalExpenses,
+      profitIqd: metrics.profit,
+    });
+
+    totalRegisteredHouseholds += metrics.registeredHouseholds;
+    totalActiveHouseholds += metrics.activeHouseholds;
+    totalActiveIndividuals += metrics.activeIndividuals;
+    totalBlockedCount += metrics.blockedCount;
+    totalKg += metrics.totalKg;
+    totalRevenueIqd += metrics.revenue;
+    totalExpensesIqd += metrics.totalExpenses;
+  }
+
+  const totalFullBags = Math.floor(totalKg / Math.max(1, settings.kgPerBag));
+  const archives = state.monthlyArchives || [];
+
+  return {
+    periodName: state.activePeriod?.quotaName || 'الحصة الحالية',
+    feePerIndividualIqd: settings.feePerIndividualIqd,
+    fixedCardFeeIqd: settings.fixedCardFeeIqd,
+    kgPerIndividual: settings.kgPerIndividual,
+    kgPerBag: settings.kgPerBag,
+    roundingStepIqd: settings.roundingStepIqd ?? 0,
+    discountPercent: settings.discountPercent ?? 0,
+    totalRegisteredHouseholds,
+    totalActiveHouseholds,
+    totalActiveIndividuals,
+    totalBlockedCount,
+    totalFullBags,
+    totalKg,
+    totalRevenueIqd,
+    totalExpensesIqd,
+    totalProfitIqd: totalRevenueIqd - totalExpensesIqd,
+    archivesCount: archives.length,
+    latestArchiveName: archives[0]?.periodMeta?.quotaName || null,
+    quickNotesCount: extras?.quickNotesCount ?? 0,
+    pendingDraftsCount: extras?.pendingDraftsCount ?? 0,
+    agenciesBreakdown,
+  };
+}
+
 export function buildCloudContextPayload(
   uiContext: AssistantUiContext,
   history: AssistantMessage[],
-  allowCloudBeneficiaryNames: boolean
+  allowCloudBeneficiaryNames: boolean,
+  state?: AppDatabaseState,
+  extras?: { quickNotesCount?: number; pendingDraftsCount?: number }
 ): {
   cloudContext: MaskedCloudContext;
   cloudHistory: Array<{ role: 'user' | 'assistant'; text: string }>;
@@ -126,6 +212,21 @@ export function buildCloudContextPayload(
   const selectedAgency = uiContext.agencies.find(
     (a) => a.id === uiContext.selectedAgencyId
   );
+
+  const liveWorkspace = state ? buildLiveWorkspaceContext(state, extras) : undefined;
+  const beneficiaryDirectory =
+    allowCloudBeneficiaryNames && state
+      ? state.persons
+          .filter((p) => p.status !== 'مؤرشف' && p.blockType !== 'archived')
+          .slice(0, 120)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            agencyId: p.agencyId,
+            individuals: p.individuals ?? 0,
+            status: p.status || 'نشط',
+          }))
+      : undefined;
 
   const cloudContext: MaskedCloudContext = {
     activeView: uiContext.activeView,
@@ -158,6 +259,8 @@ export function buildCloudContextPayload(
     ...(allowCloudBeneficiaryNames && uiContext.focusedPersonName
       ? { focusedPersonName: uiContext.focusedPersonName }
       : {}),
+    ...(liveWorkspace ? { liveWorkspace } : {}),
+    ...(beneficiaryDirectory ? { beneficiaryDirectory } : {}),
   };
 
   // Keep cloud history minimal (last 4 turns, max 420 chars each) to minimize context & quota usage

@@ -16,16 +16,17 @@ import type {
   AgencyExpense,
   AppView,
   CalculationSettings,
-  PeriodArchiveRecord,
+  MonthlyArchiveRecord,
   Person,
   SettingsSectionId,
 } from '../types/agency';
 import {
   auditAgencyPersons,
   calculateAllocation,
+  computeAgencyMetrics,
   formatIqd,
   formatQuota,
-  summarizePersons,
+  formatTotalQuota,
 } from '../utils/agencyLogic';
 import { BottomSheet } from './cosmos/BottomSheet';
 
@@ -36,7 +37,7 @@ interface AgencyWorkspaceFrameProps {
   currentAgency: Agency;
   persons: Person[];
   expenses: AgencyExpense[];
-  archives: PeriodArchiveRecord[];
+  archives: MonthlyArchiveRecord[];
   calculationSettings: CalculationSettings;
   agencyAccentColors?: Record<number, string>;
   onSelectAgency: (agencyId: number) => void;
@@ -80,17 +81,29 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
     [persons, currentAgency.id]
   );
 
-  const summary = useMemo(
-    () => summarizePersons(agencyPersons, calculationSettings),
-    [agencyPersons, calculationSettings]
+  const agencyExpenses = useMemo(
+    () => expenses.filter((ex) => ex.agencyId === currentAgency.id),
+    [expenses, currentAgency.id]
   );
 
+  const summary = useMemo(() => {
+    const metrics = computeAgencyMetrics(
+      agencyPersons,
+      agencyExpenses,
+      calculationSettings
+    );
+    return {
+      familiesCount: metrics.activeHouseholds,
+      totalIndividuals: metrics.activeIndividuals,
+      totalBagsLabel: formatTotalQuota(metrics.totalKg, calculationSettings),
+      totalPriceIqd: metrics.revenue,
+      blockedCount: metrics.blockedCount,
+    };
+  }, [agencyPersons, agencyExpenses, calculationSettings]);
+
   const agencyExpensesTotal = useMemo(
-    () =>
-      expenses
-        .filter((ex) => ex.agencyId === currentAgency.id)
-        .reduce((acc, ex) => acc + ex.amountIqd, 0),
-    [expenses, currentAgency.id]
+    () => agencyExpenses.reduce((acc, ex) => acc + ex.amountIqd, 0),
+    [agencyExpenses]
   );
 
   const auditIssues = useMemo(

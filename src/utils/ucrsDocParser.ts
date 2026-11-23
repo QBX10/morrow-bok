@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
 import type {
+  Agency,
+  InferredDocumentMetadata,
   Person,
   QuickExtractEvaluatedRow,
   QuickExtractFocusField,
@@ -18,6 +20,7 @@ import {
   buildIdentityFromParsedText,
   extractDatesAndLocationsFromText,
 } from './ucrsEngine';
+import { inferMetadataFromText } from './zeroTrustExtract';
 
 export interface LocalParsedDocumentResult {
   rawText: string;
@@ -26,12 +29,14 @@ export interface LocalParsedDocumentResult {
   entities: UcrsExtractedTextEntity[];
   identity: UcrsContentIdentity;
   documentSummary: string;
+  inferredMetadata: InferredDocumentMetadata | null;
 }
 
 const NAME_HEADER_HINTS = ['اسم', 'الاسم', 'المستفيد', 'رب الاسرة', 'الاسماء', 'name'];
 const IND_HEADER_HINTS = ['افراد', 'الافراد', 'الأفراد', '\u0627\u0646\u0641\u0627\u0631', '\u0627\u0644\u0623\u0646\u0641\u0627\u0631', 'العدد', 'count', 'individuals'];
 const DEC_HEADER_HINTS = ['نزول', 'نقصان', 'نقص', 'decrease'];
 const ADD_DEL_HEADER_HINTS = ['اضافة', 'إضافة', 'حذف', 'تعديل', 'التغيير'];
+const DATE_HEADER_HINTS = ['تاريخ', 'التاريخ', 'الشهر', 'الفترة', 'date', 'month'];
 const NOTE_HEADER_HINTS = ['ملاحظة', 'ملاحظات', 'عنوان', 'سبب', 'note', 'notes'];
 
 function parseIntSafe(val: unknown): number | null {
@@ -75,6 +80,7 @@ function buildRowsFromMatrix(
   let indCol = hasExplicitHeader ? findColumnIndex(headerRow, IND_HEADER_HINTS) : -1;
   const decCol = hasExplicitHeader ? findColumnIndex(headerRow, DEC_HEADER_HINTS) : -1;
   const addDelCol = hasExplicitHeader ? findColumnIndex(headerRow, ADD_DEL_HEADER_HINTS) : -1;
+  const dateCol = hasExplicitHeader ? findColumnIndex(headerRow, DATE_HEADER_HINTS) : -1;
   const noteCol = hasExplicitHeader ? findColumnIndex(headerRow, NOTE_HEADER_HINTS) : -1;
 
   if (nameCol === -1) {
@@ -133,6 +139,7 @@ function buildRowsFromMatrix(
       ? 'إضافة'
       : 'لا يوجد';
     const noteVal = noteCol >= 0 ? String(line[noteCol] || '').trim() : '';
+    const rowDateVal = dateCol >= 0 ? String(line[dateCol] || '').trim() : '';
 
     const rawRow: QuickExtractRawRow = {
       rowIndex: rows.length + 1,
@@ -142,8 +149,10 @@ function buildRowsFromMatrix(
       decreaseCount: decVal ?? 0,
       addOrDeleteCount: addDelCount ?? 0,
       addOrDeleteAction: action,
-      nameConfidence: learned.updatedName ? 0.98 : 0.4,
-      numbersConfidence: indVal !== null ? 0.98 : 0.7,
+      rowDate: rowDateVal || null,
+      nameConfidence: learned.updatedName ? 0.99 : 0.4,
+      numbersConfidence: indVal !== null ? 0.99 : 0.7,
+      dateConfidence: rowDateVal ? 0.99 : 1,
       modelDoubtFlag: false,
       modelDoubtReason: '',
       rawSnippet: line.join(' | '),
@@ -336,6 +345,7 @@ async function extractTextFromDocxBuffer(buf: ArrayBuffer): Promise<string> {
 export async function parseLocalStructuredDocument(params: {
   file?: File;
   rawTextInput?: string;
+  agencies?: Agency[];
   knownPersons?: Person[];
   learningRules?: UcrsLearningRule[];
   focusedFields?: QuickExtractFocusField[];
@@ -410,6 +420,7 @@ export async function parseLocalStructuredDocument(params: {
   });
 
   const entities = buildEntitiesFromText(rawText, rows);
+  const inferredMetadata = inferMetadataFromText(rawText, params.agencies || [], fileName);
 
   return {
     rawText,
@@ -421,5 +432,6 @@ export async function parseLocalStructuredDocument(params: {
       rows.length > 0
         ? `تمت قراءة ${rows.length} صفًا من «${fileName}» (${identity.contentType}).`
         : `تمت قراءة محتوى نصي من «${fileName}» (${identity.wordCount} كلمة).`,
+    inferredMetadata,
   };
 }

@@ -14,6 +14,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Maximize2,
+  MessageSquare,
   Mic,
   MicOff,
   Minimize2,
@@ -49,8 +50,14 @@ import type {
 } from '../types/assistant';
 import type { QuotaCheckResult } from '../utils/assistantQuota';
 import { getEngineDisplayMeta } from '../utils/morrowRouter';
+import {
+  buildPermissionRecoveryGuide,
+  requestMicrophonePermission,
+  type MediaPermissionGuide,
+} from '../utils/mediaPermissions';
 import { BottomSheet } from './cosmos/BottomSheet';
 import { ResultCard } from './cosmos/ResultCard';
+import { PermissionGuardModal } from './permissions/PermissionGuardModal';
 
 interface AssistantWidgetProps {
   isOpen: boolean;
@@ -96,6 +103,7 @@ interface AssistantWidgetProps {
   onQuickBackupJson?: () => void;
   onTogglePinMessage?: (messageId: string) => void;
   onExportChatHistory?: () => void;
+  hideLauncher?: boolean;
 }
 
 const BRAIN_MODES: Array<{
@@ -240,6 +248,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onQuickBackupJson,
   onTogglePinMessage,
   onExportChatHistory,
+  hideLauncher = false,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -249,6 +258,8 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   const [tipDismissed, setTipDismissed] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [micPermissionGuide, setMicPermissionGuide] = useState<MediaPermissionGuide | null>(null);
+  const [checkingMicPermission, setCheckingMicPermission] = useState(false);
   const [savedPromptSet, setSavedPromptSet] = useState<Set<string>>(() => new Set());
 
   // Draggable Floating Launcher position offset (x, y from bottom-left anchor)
@@ -326,18 +337,37 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     }
   };
 
-  const toggleVoiceInput = () => {
+  const toggleVoiceInput = async () => {
     if (isRecording && recognitionRef.current) {
       recognitionRef.current.stop();
       setIsRecording(false);
       return;
     }
+
+    setCheckingMicPermission(true);
+    const perm = await requestMicrophonePermission();
+    setCheckingMicPermission(false);
+    if (!perm.ok) {
+      setMicPermissionGuide(
+        perm.guide || buildPermissionRecoveryGuide('microphone')
+      );
+      return;
+    }
+
     const w = window as unknown as {
       SpeechRecognition?: new () => BrowserSpeechRecognition;
       webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
     };
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) return;
+    if (!Ctor) {
+      setMicPermissionGuide(
+        buildPermissionRecoveryGuide(
+          'microphone',
+          'الإملاء الصوتي غير مدعوم في هذا المتصفح، يمكنك كتابة الأمر نصياً.'
+        )
+      );
+      return;
+    }
     try {
       const rec = new Ctor();
       rec.lang = 'ar-IQ';
@@ -351,13 +381,17 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         const text = parts.join(' ').trim();
         if (text) setInputValue(text);
       };
-      rec.onerror = () => setIsRecording(false);
+      rec.onerror = () => {
+        setIsRecording(false);
+        setMicPermissionGuide(buildPermissionRecoveryGuide('microphone'));
+      };
       rec.onend = () => setIsRecording(false);
       recognitionRef.current = rec;
       setIsRecording(true);
       rec.start();
     } catch {
       setIsRecording(false);
+      setMicPermissionGuide(buildPermissionRecoveryGuide('microphone'));
     }
   };
 
@@ -422,65 +456,91 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         </aside>
       )}
 
-      {/* Draggable Floating Launcher Button */}
-      {!isOpen && (
-        <button
-          type="button"
-          onPointerDown={(e) => {
-            dragInfoRef.current = {
-              active: true,
-              moved: false,
-              startX: e.clientX,
-              startY: e.clientY,
-              origX: fabOffset.x,
-              origY: fabOffset.y,
-            };
-          }}
-          onPointerMove={(e) => {
-            if (!dragInfoRef.current.active) return;
-            const dx = e.clientX - dragInfoRef.current.startX;
-            const dy = e.clientY - dragInfoRef.current.startY;
-            if (Math.hypot(dx, dy) > 6) {
-              dragInfoRef.current.moved = true;
-              const maxX = Math.max(0, window.innerWidth - 180);
-              const maxY = Math.max(0, window.innerHeight - 140);
-              setFabOffset({
-                x: Math.max(0, Math.min(maxX, dragInfoRef.current.origX + dx)),
-                y: Math.max(-maxY, Math.min(40, dragInfoRef.current.origY + dy)),
-              });
-            }
-          }}
-          onPointerUp={() => {
-            const wasDrag = dragInfoRef.current.moved;
-            dragInfoRef.current.active = false;
-            if (!wasDrag) {
-              onToggleOpen(true);
-            }
-          }}
-          aria-label="فتح المساعد الذكي Morrow"
-          title={proactiveTip || 'اسحب للتحريك أو اضغط لفتح المساعد الذكي Morrow'}
-          className="no-print assistant-glow-btn fixed bottom-20 left-3 md:bottom-4 md:left-4 z-[var(--z-floating-assistant)] inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-extrabold whitespace-nowrap shadow-xl cursor-grab active:cursor-grabbing touch-none transition-shadow hover:shadow-2xl"
+      {/* Draggable Floating Launcher Pill (Primary tap -> Dedicated Full-Screen Studio; quick icon -> compact drawer) */}
+      {!isOpen && !hideLauncher && (
+        <div
+          className="no-print fixed bottom-4 left-4 z-[var(--z-floating-assistant)] flex items-center gap-1"
           style={{
-            backgroundColor: 'var(--accent)',
-            borderColor: 'var(--accent)',
-            color: 'var(--accent-fg)',
             transform: `translate3d(${fabOffset.x}px, ${fabOffset.y}px, 0)`,
           }}
         >
-          <span className="relative flex h-2.5 w-2.5">
-            <span
-              className="inline-flex h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: statusMeta.color }}
-            />
-          </span>
-          <Bot className="h-4 w-4 shrink-0" />
-          <span>Morrow</span>
-          {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
-            <span className="rounded-lg bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
-              {pendingDraftsCount + queuedTasks.length}
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              dragInfoRef.current = {
+                active: true,
+                moved: false,
+                startX: e.clientX,
+                startY: e.clientY,
+                origX: fabOffset.x,
+                origY: fabOffset.y,
+              };
+            }}
+            onPointerMove={(e) => {
+              if (!dragInfoRef.current.active) return;
+              const dx = e.clientX - dragInfoRef.current.startX;
+              const dy = e.clientY - dragInfoRef.current.startY;
+              if (Math.hypot(dx, dy) > 6) {
+                dragInfoRef.current.moved = true;
+                const maxX = Math.max(0, window.innerWidth - 180);
+                const maxY = Math.max(0, window.innerHeight - 140);
+                setFabOffset({
+                  x: Math.max(0, Math.min(maxX, dragInfoRef.current.origX + dx)),
+                  y: Math.max(-maxY, Math.min(40, dragInfoRef.current.origY + dy)),
+                });
+              }
+            }}
+            onPointerUp={() => {
+              const wasDrag = dragInfoRef.current.moved;
+              dragInfoRef.current.active = false;
+              if (!wasDrag) {
+                if (onOpenCommandCenter) {
+                  onOpenCommandCenter('chat');
+                } else {
+                  onToggleOpen(true);
+                }
+              }
+            }}
+            aria-label="دخول إلى المساعد الشخصي Morrow بملء الشاشة"
+            title={proactiveTip || 'اسحب للتحريك أو اضغط للدخول إلى صفحة المساعد بملء الشاشة'}
+            className="assistant-glow-btn inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-extrabold whitespace-nowrap shadow-xl cursor-grab active:cursor-grabbing touch-none transition-shadow hover:shadow-2xl"
+            style={{
+              backgroundColor: 'var(--accent)',
+              borderColor: 'var(--accent)',
+              color: 'var(--accent-fg)',
+            }}
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span
+                className="inline-flex h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: statusMeta.color }}
+              />
             </span>
-          )}
-        </button>
+            <Bot className="h-4 w-4 shrink-0" />
+            <span>Morrow</span>
+            {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
+              <span className="rounded-lg bg-black/25 px-1.5 py-0.5 text-[10px] tabular-nums">
+                {pendingDraftsCount + queuedTasks.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onToggleOpen(true)}
+            aria-label="محادثة سريعة فوق الصفحة"
+            title="فتح نافذة محادثة سريعة دون مغادرة الصفحة"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border shadow-lg transition-colors hover:border-[var(--accent)]"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
+              borderColor: 'var(--border-color)',
+              color: 'var(--accent)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+        </div>
       )}
 
       {/* Non-Blocking Drawer or Fullscreen Studio Panel */}
@@ -490,7 +550,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
           className={`no-print fixed z-[var(--z-sheet)] flex flex-col overflow-hidden border shadow-2xl transition-all duration-200 ${
             isFullscreen
               ? 'inset-2 sm:inset-4 rounded-[26px]'
-              : 'top-14 bottom-20 left-3 md:bottom-4 md:left-4 w-[min(450px,calc(100vw-1.5rem))] rounded-[24px]'
+              : 'top-14 bottom-4 left-3 md:left-4 w-[min(450px,calc(100vw-1.5rem))] rounded-[24px]'
           }`}
           style={{
             backgroundColor: 'color-mix(in srgb, var(--bg-surface) 95%, transparent)',
@@ -1471,6 +1531,19 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
           )}
         </div>
       </BottomSheet>
+
+      <PermissionGuardModal
+        open={Boolean(micPermissionGuide)}
+        guide={micPermissionGuide}
+        checking={checkingMicPermission}
+        onClose={() => setMicPermissionGuide(null)}
+        onRetryPermission={() => {
+          setMicPermissionGuide(null);
+          void toggleVoiceInput();
+        }}
+        onUseFallback={() => textareaRef.current?.focus()}
+        fallbackLabel="الكتابة نصياً"
+      />
     </>
   );
 };

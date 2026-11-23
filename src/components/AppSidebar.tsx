@@ -576,7 +576,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               icon: <Bot className="h-4 w-4" />,
               active: activeView === 'morrow_center',
               badge: pendingDraftsCount > 0 ? pendingDraftsCount : undefined,
-              titleHint: 'مركز المساعد بملء الشاشة',
+              titleHint: 'دخول إلى صفحة المساعد الشخصي بملء الشاشة',
               onClick: () => {
                 navigateAndClose('morrow_center');
               },
@@ -832,7 +832,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       <aside
         aria-label="التنقل الرئيسي"
         data-testid="desktop-sidebar"
-        className={`no-print hidden lg:flex shrink-0 flex-col border transition-[width] duration-200 sticky top-[68px] h-[calc(100vh-5rem)] lg:ms-4 lg:mt-2 lg:mb-3 rounded-2xl overflow-hidden shadow-sm ${
+        className={`no-print hidden lg:flex shrink-0 flex-col border transition-[width] duration-200 sticky top-[70px] h-[calc(100vh-5.25rem)] lg:ms-4 lg:mt-1.5 lg:mb-3 rounded-2xl overflow-hidden shadow-xs ${
           collapsed ? 'w-[72px]' : 'w-64'
         }`}
         style={{

@@ -289,6 +289,18 @@ export interface QuickExtractSuspectSegment {
   reason: string;
 }
 
+export interface InferredDocumentMetadata {
+  agencyName: string | null;
+  agencyNameConfidence: number;
+  matchedAgencyId?: number | null;
+  tableDateLabel: string | null;
+  tableDateConfidence: number;
+  centerOrAgencyNumber: string | null;
+  centerNumberConfidence: number;
+  headerSnippet?: string;
+  confirmedByUser: boolean;
+}
+
 export interface QuickExtractRawRow {
   rowIndex: number;
   pageNumber: number;
@@ -297,15 +309,20 @@ export interface QuickExtractRawRow {
   decreaseCount: number | null;
   addOrDeleteCount: number | null;
   addOrDeleteAction: 'إضافة' | 'حذف' | 'لا يوجد' | 'غير محدد';
+  rowDate?: string | null;
   nameConfidence: number;
   numbersConfidence: number;
+  dateConfidence?: number;
   modelDoubtFlag: boolean;
   modelDoubtReason: string;
   rawSnippet: string;
   suspectSpans?: QuickExtractSuspectSpan[];
   suspectBox?: NormalizedBox;
+  rowBox?: NormalizedBox;
   notes?: string;
 }
+
+export type ZeroTrustCellStatus = 'verified' | 'yellow' | 'red';
 
 export interface QuickExtractEvaluatedRow extends QuickExtractRawRow {
   id: string;
@@ -325,6 +342,11 @@ export interface QuickExtractEvaluatedRow extends QuickExtractRawRow {
   resolvedDecreaseCount: number | null;
   resolvedAddOrDeleteCount: number | null;
   resolvedAddOrDeleteAction: 'إضافة' | 'حذف' | 'لا يوجد';
+  resolvedRowDate?: string;
+  zeroTrustNameStatus?: ZeroTrustCellStatus;
+  zeroTrustNumbersStatus?: ZeroTrustCellStatus;
+  zeroTrustDateStatus?: ZeroTrustCellStatus;
+  zeroTrustConfirmed?: boolean;
   notes?: string;
 }
 
@@ -339,6 +361,8 @@ export interface QuickExtractAnalysisResult {
   documentSummary: string;
   rows: QuickExtractEvaluatedRow[];
   sourceImageUrls?: Record<number, string>;
+  sourcePdfUrl?: string;
+  inferredMetadata?: InferredDocumentMetadata | null;
 }
 
 // --- Universal Cognitive Reading & Progressive Comprehension System (UCRS) ---
@@ -520,6 +544,7 @@ export interface UcrsSession {
   coverageRegions: UcrsCoverageRegion[];
   diagnostics: UcrsDiagnosticEntry[];
   documentSummary: string;
+  inferredMetadata?: InferredDocumentMetadata | null;
   lastFusionDiff?: UcrsFusionDiff | null;
   coverageOverrideNote?: string;
   committedAt?: string;

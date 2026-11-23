@@ -676,5 +676,24 @@ export function buildBeforeAfterDiff(
     };
   }
 
+  if (toolCall.name === 'backup_restore' && toolCall.args.action === 'archive_period') {
+    return {
+      id,
+      title: 'تأكيد أرشفة وإغلاق الحصة الحالية',
+      summary:
+        'سيتم أخذ لقطة أرشيفية كاملة لجميع الوكالات والسجلات وحفظها في قسم البيانات التاريخية.',
+      requiresBulkBackup: true,
+      toolCall,
+      status: 'pending',
+      changes: [
+        {
+          fieldLabel: 'الأرشفة الشهرية',
+          beforeValue: `${(state.monthlyArchives || []).length} أرشيف محفوظ`,
+          afterValue: 'إضافة لقطة أرشيف مغلقة جديدة للحصة الحالية',
+        },
+      ],
+    };
+  }
+
   return null;
 }

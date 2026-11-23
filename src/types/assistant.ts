@@ -320,3 +320,224 @@ export interface AssistantMutationHandlers {
     note: string;
   }) => void;
 }
+
+export type MorrowCanvasMode =
+  | 'overview_charts'
+  | 'editable_table'
+  | 'executive_report'
+  | 'forecast'
+  | 'text_analysis'
+  | 'macro_studio';
+
+export interface MorrowChartSeriesItem {
+  id: string;
+  agencyId: number;
+  label: string;
+  icon: string;
+  activeHouseholds: number;
+  blockedCount: number;
+  activeIndividuals: number;
+  fullBags: number;
+  remainderKg: number;
+  revenue: number;
+  totalExpenses: number;
+  profit: number;
+  sharePercent: number;
+}
+
+export interface MorrowProactiveInsight {
+  id: string;
+  severity: 'high' | 'medium' | 'info';
+  category: 'forecast' | 'anomaly' | 'backup' | 'audit' | 'opportunity';
+  title: string;
+  detail: string;
+  metricLabel?: string;
+  resolutionMode: 'summon_canvas' | 'navigate_spotlight';
+  targetCanvasMode?: MorrowCanvasMode;
+  targetView?: AppView;
+  targetAgencyId?: number;
+  targetId?: string;
+  promptToRun?: string;
+}
+
+export interface MorrowEditableRowDraft {
+  personId: number;
+  name: string;
+  agencyId: number;
+  agencyName: string;
+  originalIndividuals: number;
+  individuals: number;
+  originalBlockType: BlockScope;
+  blockType: BlockScope;
+  originalNotes: string;
+  notes: string;
+}
+
+export interface MorrowExecutiveReport {
+  id: string;
+  title: string;
+  generatedAt: string;
+  periodLabel: string;
+  scopeLabel: string;
+  summaryPoints: string[];
+  agencyRows: MorrowChartSeriesItem[];
+  totals: {
+    registeredHouseholds: number;
+    activeHouseholds: number;
+    blockedCount: number;
+    activeIndividuals: number;
+    fullBags: number;
+    remainderKg: number;
+    revenue: number;
+    totalExpenses: number;
+    profit: number;
+  };
+}
+
+export interface MorrowAgencyForecast {
+  agencyId: number;
+  agencyName: string;
+  currentIndividuals: number;
+  projectedIndividuals: number;
+  currentBags: number;
+  projectedBags: number;
+  changePercent: number;
+  riskLevel: 'low' | 'medium' | 'high';
+  note: string;
+}
+
+export interface MorrowForecastReport {
+  id: string;
+  horizonLabel: string;
+  baselineLabel: string;
+  projectedIndividuals: number;
+  deltaIndividuals: number;
+  deltaPercent: number;
+  projectedBags: number;
+  projectedRevenue: number;
+  projectedProfit: number;
+  trendDirection: 'up' | 'down' | 'stable';
+  agencyForecasts: MorrowAgencyForecast[];
+  recommendations: string[];
+}
+
+export interface MorrowTextExtractedEntry {
+  id: string;
+  rawLine: string;
+  candidateName: string;
+  extractedIndividuals: number | null;
+  matchedPersonId: number | null;
+  matchedPersonName: string | null;
+  matchedAgencyId: number | null;
+  matchedAgencyName: string | null;
+  actionHint: 'update_individuals' | 'block_full' | 'add_person' | 'note';
+  confidence: number;
+}
+
+export interface MorrowTextAnalysisResult {
+  id: string;
+  rawText: string;
+  analyzedAt: string;
+  usedCloudAi: boolean;
+  summary: string;
+  entries: MorrowTextExtractedEntry[];
+}
+
+export type MorrowMacroStepAction =
+  | 'run_diagnostics'
+  | 'compute_forecast'
+  | 'generate_report'
+  | 'stage_auto_fixes'
+  | 'prepare_backup'
+  | 'prepare_archive_month';
+
+export interface MorrowMacroDefinition {
+  id: string;
+  name: string;
+  triggerPhrase: string;
+  description: string;
+  builtIn?: boolean;
+  steps: MorrowMacroStepAction[];
+}
+
+export interface MorrowMacroStepTrace {
+  action: MorrowMacroStepAction;
+  label: string;
+  status: 'done' | 'staged_draft' | 'warning';
+  detail: string;
+}
+
+export interface MorrowMacroExecutionResult {
+  macroId: string;
+  macroName: string;
+  executedAt: string;
+  steps: MorrowMacroStepTrace[];
+  report?: MorrowExecutiveReport;
+  forecast?: MorrowForecastReport;
+  diagnosticsSummary?: DiagnosticSummary;
+  stagedDraftTools: AssistantToolCall[];
+}
+
+export interface MorrowSummonNavigateDecision {
+  mode: 'summon_canvas' | 'navigate_spotlight' | 'chat_standard';
+  canvasMode?: MorrowCanvasMode;
+  targetAgencyId?: number | null;
+  targetView?: AppView;
+  settingsSection?: SettingsSectionId;
+  targetDomId?: string;
+  title: string;
+  reason: string;
+}
+
+export interface MorrowLiveAgencyDigest {
+  id: number;
+  name: string;
+  activeHouseholds: number;
+  activeIndividuals: number;
+  blockedCount: number;
+  fullBags: number;
+  remainderKg: number;
+  revenueIqd: number;
+  expensesIqd: number;
+  profitIqd: number;
+}
+
+export interface MorrowLiveWorkspaceContext {
+  periodName: string;
+  feePerIndividualIqd: number;
+  fixedCardFeeIqd: number;
+  kgPerIndividual: number;
+  kgPerBag: number;
+  roundingStepIqd: number;
+  discountPercent: number;
+  totalRegisteredHouseholds: number;
+  totalActiveHouseholds: number;
+  totalActiveIndividuals: number;
+  totalBlockedCount: number;
+  totalFullBags: number;
+  totalKg: number;
+  totalRevenueIqd: number;
+  totalExpensesIqd: number;
+  totalProfitIqd: number;
+  archivesCount: number;
+  latestArchiveName: string | null;
+  quickNotesCount: number;
+  pendingDraftsCount: number;
+  agenciesBreakdown: MorrowLiveAgencyDigest[];
+}
+
+export interface MorrowSystemCheckItem {
+  id: string;
+  label: string;
+  status: 'ok' | 'warning' | 'error';
+  detail: string;
+}
+
+export interface MorrowSystemVerificationReport {
+  checkedAt: string;
+  allPassed: boolean;
+  activeModelLabel: string;
+  boundAgenciesCount: number;
+  boundPersonsCount: number;
+  checks: MorrowSystemCheckItem[];
+}

@@ -43,6 +43,8 @@ import type {
   UcrsSession,
 } from '../types/agency';
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
+import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
+import { searchHierarchyNodes } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
 
 interface TopBarProps {
@@ -60,10 +62,14 @@ interface TopBarProps {
   readyLists: ReadyList[];
   relations: RelationEntry[];
   ucrsSessions: UcrsSession[];
+  hierarchyTree?: HierarchyNode;
+  pendingDraftsCount?: number;
   onToggleDarkTheme: (dark: boolean) => void;
   onChangeTopBarConfig: (patch: Partial<TopBarConfig>) => void;
   onNavigateHome: () => void;
   onNavigateView: (view: AppView, settingsSection?: SettingsSectionId) => void;
+  onOpenMorrowStudio?: () => void;
+  onNavigateHierarchyTarget?: (target: HierarchyTarget, nodeId: string) => void;
   onSelectPersonFromSearch: (person: Person) => void;
   onSelectAgencyFromSearch: (agencyId: number) => void;
   onUndo: () => void;
@@ -85,6 +91,14 @@ type SearchHit =
   | { kind: 'person'; id: string; label: string; sublabel: string; person: Person }
   | { kind: 'agency'; id: string; label: string; sublabel: string; agencyId: number }
   | { kind: 'ready_list'; id: string; label: string; sublabel: string }
+  | {
+      kind: 'hierarchy';
+      id: string;
+      label: string;
+      sublabel: string;
+      target: HierarchyTarget;
+      nodeId: string;
+    }
   | {
       kind: 'view';
       id: string;
@@ -109,10 +123,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   readyLists,
   relations,
   ucrsSessions,
+  hierarchyTree,
+  pendingDraftsCount = 0,
   onToggleDarkTheme,
   onChangeTopBarConfig,
   onNavigateHome,
   onNavigateView,
+  onOpenMorrowStudio,
+  onNavigateHierarchyTarget,
   onSelectPersonFromSearch,
   onSelectAgencyFromSearch,
   onUndo,
@@ -269,6 +287,20 @@ export const TopBar: React.FC<TopBarProps> = ({
       }
     }
 
+    if (hierarchyTree) {
+      const hHits = searchHierarchyNodes(hierarchyTree, searchQuery);
+      for (const h of hHits.slice(0, 5)) {
+        hits.push({
+          kind: 'hierarchy',
+          id: `h-${h.node.id}`,
+          label: h.node.title,
+          sublabel: h.path.map((n) => n.title).join(' ◂ '),
+          target: h.node.target,
+          nodeId: h.node.id,
+        });
+      }
+    }
+
     for (const p of persons) {
       if (
         normalizeArabic(p.name).includes(q) ||
@@ -283,11 +315,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           person: p,
         });
       }
-      if (hits.length >= 10) break;
+      if (hits.length >= 12) break;
     }
 
-    return hits.slice(0, 10);
-  }, [searchQuery, agencies, readyLists, persons, agencyMap]);
+    return hits.slice(0, 12);
+  }, [searchQuery, agencies, readyLists, persons, agencyMap, hierarchyTree]);
 
   useEffect(() => {
     setActiveHitIdx(0);
@@ -302,7 +334,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       onSelectAgencyFromSearch(hit.agencyId);
     } else if (hit.kind === 'ready_list') {
       onNavigateView('ready_lists');
-    } else {
+    } else if (hit.kind === 'hierarchy' && onNavigateHierarchyTarget) {
+      onNavigateHierarchyTarget(hit.target, hit.nodeId);
+    } else if (hit.kind === 'view') {
       onNavigateView(hit.view, hit.settingsSection);
     }
   };
@@ -356,7 +390,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     return items;
   }, [persons, relations, ucrsSessions, capabilities.canUseQuickExtract, onNavigateView]);
 
-  if (effectiveMode === 'hidden') {
+  if (effectiveMode === 'hidden' && !isAutoHidden) {
     return (
       <div className="no-print fixed top-3 left-4 z-50 flex items-center gap-2 transition-opacity">
         <button
@@ -379,18 +413,14 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (isAutoHidden && onRequestReveal) {
+            if (onRequestReveal) {
               onRequestReveal();
             } else {
               onChangeTopBarConfig({ mode: 'normal' });
             }
           }}
           aria-label="إظهار الشريط العلوي"
-          title={
-            isAutoHidden
-              ? 'مخفي تلقائياً أثناء التركيز — اضغط لإظهاره'
-              : 'استعادة الشريط العلوي'
-          }
+          title="استعادة الشريط العلوي"
           className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold shadow-lg transition-opacity hover:opacity-90"
           style={{
             backgroundColor: 'var(--accent)',
@@ -399,7 +429,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           }}
         >
           <Eye className="h-4 w-4" />
-          <span>{isAutoHidden ? 'تركيز نشط · إظهار' : 'إظهار الشريط'}</span>
+          <span>إظهار الشريط</span>
         </button>
       </div>
     );
@@ -409,23 +439,34 @@ export const TopBar: React.FC<TopBarProps> = ({
   const accountInitial = authUser?.displayName?.trim().charAt(0).toUpperCase() || '';
 
   return (
-    <div className="no-print sticky top-0 z-40 w-full px-2.5 pt-2 pb-1 sm:px-5 sm:pt-2.5 pointer-events-none">
+    <div
+      className="no-print sticky top-0 z-40 w-full px-2.5 pt-2 pb-1 sm:px-5 sm:pt-2.5 pointer-events-none"
+      style={{
+        transform: isAutoHidden ? 'translate3d(0, calc(-100% - 14px), 0)' : 'translate3d(0, 0, 0)',
+        opacity: isAutoHidden ? 0 : 1,
+        transition:
+          'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease',
+      }}
+    >
       <header
         data-testid="floating-topbar"
-        className={`pointer-events-auto mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 md:grid md:grid-cols-[1fr_minmax(260px,460px)_1fr] md:gap-4 rounded-2xl border transition-all duration-200 ${
-          isCompact ? 'h-[44px] px-2.5 sm:px-3.5' : 'h-[50px] px-3 sm:px-4'
+        aria-hidden={isAutoHidden ? true : undefined}
+        className={`mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 md:grid md:grid-cols-[1fr_minmax(250px,450px)_1fr] md:gap-4 rounded-2xl border transition-all duration-200 ${
+          isAutoHidden ? 'pointer-events-none' : 'pointer-events-auto'
+        } ${
+          isCompact ? 'h-[46px] px-2.5 sm:px-3.5' : 'h-[54px] px-3 sm:px-4'
         }`}
         style={{
-          backgroundColor: 'color-mix(in srgb, var(--bg-surface) 80%, transparent)',
-          borderColor: 'color-mix(in srgb, var(--border-color) 82%, transparent)',
+          backgroundColor: 'color-mix(in srgb, var(--bg-surface) 84%, transparent)',
+          borderColor: 'color-mix(in srgb, var(--border-color) 85%, transparent)',
           boxShadow: darkTheme
-            ? '0 10px 28px -12px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
-            : '0 10px 26px -14px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.72)',
-          backdropFilter: 'blur(16px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+            ? '0 10px 30px -14px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+            : '0 8px 24px -14px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.78)',
+          backdropFilter: 'blur(18px) saturate(155%)',
+          WebkitBackdropFilter: 'blur(18px) saturate(155%)',
         }}
       >
-        {/* Right Zone (Start in RTL): Mobile Menu + Morrow + Active Page Title */}
+        {/* Right Zone (Start in RTL): Mobile Menu + Morrow + History Arrows + Active View */}
         <div className="flex items-center gap-2 shrink-0 min-w-0">
           <button
             type="button"
@@ -461,6 +502,33 @@ export const TopBar: React.FC<TopBarProps> = ({
               Morrow
             </span>
           </button>
+
+          {(onGoBack || onGoForward) && (
+            <div className="hidden xl:flex items-center gap-0.5">
+              <button
+                type="button"
+                disabled={!canGoBack}
+                onClick={onGoBack}
+                aria-label="رجوع"
+                title="رجوع"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-main)] disabled:opacity-25"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={!canGoForward}
+                onClick={onGoForward}
+                aria-label="تقدم"
+                title="تقدم"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-main)] disabled:opacity-25"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           {showViewTitle && activeViewLabel && (
             <div className="hidden md:flex items-center gap-2 min-w-0">
@@ -639,8 +707,34 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Left Zone (End in RTL): Notification Bell + Account Avatar Menu */}
+        {/* Left Zone (End in RTL): Primary Morrow Studio CTA + Notification Bell + Account Avatar Menu */}
         <div className="flex items-center justify-end gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => (onOpenMorrowStudio ? onOpenMorrowStudio() : onNavigateView('morrow_center'))}
+            aria-label="دخول إلى مساعد Morrow الشخصي بملء الشاشة"
+            title="فتح صفحة المساعد الشخصي بملء الشاشة"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 sm:px-3 text-xs font-extrabold whitespace-nowrap transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--accent-fg)',
+            }}
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">مساعد Morrow</span>
+            {pendingDraftsCount > 0 && (
+              <span
+                className="inline-flex h-4 min-w-4 items-center justify-center rounded-md px-1 text-[10px] font-black tabular-nums"
+                style={{
+                  backgroundColor: 'rgba(0,0,0,0.22)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                {pendingDraftsCount}
+              </span>
+            )}
+          </button>
+
           {/* Notifications Bell */}
           <div ref={notifBoxRef} className="relative">
             <button
@@ -1045,7 +1139,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       >
                         <span className="inline-flex items-center gap-1.5">
                           <Sparkles className="h-3.5 w-3.5" />
-                          <span>إخفاء تلقائي بالتركيز</span>
+                          <span>إخفاء تلقائي مع التمرير</span>
                         </span>
                         <span>{topBarConfig.autoFocus ? 'مفعّل' : 'متوقف'}</span>
                       </button>

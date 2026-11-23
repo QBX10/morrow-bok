@@ -1,10 +1,18 @@
-import { GoogleGenAI, Type, type GenerateContentResponse } from '@google/genai';
+import {
+  GoogleGenAI,
+  Modality,
+  Type,
+  type GenerateContentResponse,
+  type LiveServerMessage,
+} from '@google/genai';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import express, { type Request, type Response } from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { WebSocketServer, type WebSocket } from 'ws';
 import {
   createUserRecord,
   findUserByEmail,
@@ -30,7 +38,10 @@ import {
   signSessionToken,
   type AuthRequest,
 } from './src/middleware/auth.ts';
-import type { QuickExtractRawRow } from './src/types/agency.ts';
+import type {
+  InferredDocumentMetadata,
+  QuickExtractRawRow,
+} from './src/types/agency.ts';
 import type { AssistantBrainMode, AssistantToolCall } from './src/types/assistant.ts';
 import { normalizePhoneNumber } from './src/utils/agencyLogic.ts';
 import { enforceSafeArabicTerminology } from './src/utils/assistantPrivacy.ts';
@@ -821,6 +832,19 @@ async function startServer() {
             items: { type: Type.STRING },
           },
           documentSummary: { type: Type.STRING },
+          inferredMetadata: {
+            type: Type.OBJECT,
+            nullable: true,
+            properties: {
+              agencyName: { type: Type.STRING, nullable: true },
+              agencyNameConfidence: { type: Type.NUMBER },
+              tableDateLabel: { type: Type.STRING, nullable: true },
+              tableDateConfidence: { type: Type.NUMBER },
+              centerOrAgencyNumber: { type: Type.STRING, nullable: true },
+              centerNumberConfidence: { type: Type.NUMBER },
+              headerSnippet: { type: Type.STRING },
+            },
+          },
           rows: {
             type: Type.ARRAY,
             items: {
@@ -836,11 +860,14 @@ async function startServer() {
                   type: Type.STRING,
                   enum: ['إضافة', 'حذف', 'لا يوجد', 'غير محدد'],
                 },
+                rowDate: { type: Type.STRING, nullable: true },
                 nameConfidence: { type: Type.NUMBER },
                 numbersConfidence: { type: Type.NUMBER },
+                dateConfidence: { type: Type.NUMBER },
                 modelDoubtFlag: { type: Type.BOOLEAN },
                 modelDoubtReason: { type: Type.STRING },
                 rawSnippet: { type: Type.STRING },
+                notes: { type: Type.STRING },
                 suspectSpans: {
                   type: Type.ARRAY,
                   items: {
@@ -853,6 +880,17 @@ async function startServer() {
                   },
                 },
                 suspectBox: {
+                  type: Type.OBJECT,
+                  nullable: true,
+                  properties: {
+                    ymin: { type: Type.INTEGER },
+                    xmin: { type: Type.INTEGER },
+                    ymax: { type: Type.INTEGER },
+                    xmax: { type: Type.INTEGER },
+                  },
+                  required: ['ymin', 'xmin', 'ymax', 'xmax'],
+                },
+                rowBox: {
                   type: Type.OBJECT,
                   nullable: true,
                   properties: {
@@ -907,20 +945,28 @@ async function startServer() {
       ].join('\n   ');
 
       const systemPrompt = `أنت محرك معالجة مستندات ذكي (Intelligent Document Processing) ورؤية حاسوبية متخصص في استخراج الجداول العربية المكتوبة رقميًا أو بخط اليد (الدفاتر الورقية).
-تعمل وفق القواعد الصارمة التالية — "الشك والرفض الآمن — لا تخمّن أبدًا":
-1. فحص الجودة والازدحام:
+تعمل وفق القواعد الصارمة التالية — "الأمان المطلق ومبدأ الشك 1% — لا تخمّن أبدًا":
+1. استنتاج الهوية والسياق التلقائي (Metadata Inference):
+   - اقرأ ترويسة الصورة أو أعلى الملف بعناية لاستنتاج:
+     * agencyName: اسم الوكالة أو الوكيل (مثلاً: وكالة منذر الحلو).
+     * tableDateLabel: تاريخ أو شهر الجدول (مثلاً: تشرين الأول 2026).
+     * centerOrAgencyNumber: رقم المركز أو رقم الوكالة إن وُجد.
+     * headerSnippet: نص الترويسة المستخرج كما ظهر في الأعلى.
+2. فحص الجودة ومبدأ الشك بنسبة 1% (أقل من 99%):
    - عالج تداخل الأسطر وضيق الجداول، وإذا توفرت عدة لقطات (Burst Frames) لنفس الدفتر فطابقها معًا للتأكد من كل نقطة وحرف ورقم.
    - إذا كانت الصورة/الصفحة مهزوزة، مطموسة، مغطاة بظل/لمعان، أو غير مقروءة بحيث يستحيل قراءة الصفوف بأمان: اضبط legibilityStatus="rejected" واكتب الأسباب الدقيقة بالعربية في rejectionReasons واترك rows فارغًا.
-2. التركيز المخصص على الحقول (التزم بدقة بالحقول المحددة فقط وتجاهل غير المطلوب):
+   - كن صادقًا للغاية في درجات الثقة (nameConfidence, numbersConfidence, dateConfidence من 0.0 إلى 1.0): لا تعطِ 0.99 أو 1.0 إلا إذا كان الخط والرقم واضحين بنسبة مطلقة! أي تردد أو بهتان أو تداخل ولو بنسبة 1% يجب أن تكون درجته أقل من 0.99 (مثلاً 0.95 أو 0.88) مع توضيح السبب في modelDoubtReason وsuspectSpans.
+3. القص البصري الشامل للسطر (Contextual Row Snippet):
+   - لكل صف، أرجع rowBox (ymin, xmin, ymax, xmax من 0 إلى 1000) يغطي **السطر كاملاً أفقيًا** من بدايته إلى نهايته (جميع الأعمدة المتجاورة: الاسم والأرقام والملاحظات)، بالإضافة إلى suspectBox للجزء الأشد شكًا.
+4. التركيز المخصص على الحقول (التزم بدقة بالحقول المحددة فقط وتجاهل غير المطلوب):
    ${fieldFocusPrompt}
-3. وضع التشغيل الحالي (${scanMode === 'fast' ? 'الوضع السريع Fast Mode' : 'الوضع المدقق Audit Mode'}):
+5. وضع التشغيل الحالي (${scanMode === 'fast' ? 'الوضع السريع Fast Mode' : 'الوضع المدقق Audit Mode'}):
    - ${
      scanMode === 'fast'
-       ? 'اقرأ الصفوف الواضحة بسرعة ودقة مباشرة، ولا تفعّل الشك إلا عند وجود طمس أو رمز غير مقروء فعليًا.'
-       : 'دقق في كل نقطة وهمزة ورقم، وأرجع suspectBox بإحداثيات (ymin, xmin, ymax, xmax) من 0 إلى 1000 لموقع الاسم أو الصف في الصورة كي يعاين المستخدم القص المرئي مباشرة.'
+       ? 'اقرأ الصفوف الواضحة بسرعة ودقة مباشرة، وخفّض الثقة لأقل من 0.99 فقط عند وجود طمس أو تداخل.'
+       : 'دقق في كل نقطة وهمزة ورقم وتاريخ، وأرجع rowBox للسطر كاملاً وsuspectBox لموقع الشك كي يعاين المستخدم القص المرئي مباشرة.'
    }
-   - عند الشك في أي حرف عربي: اضبط modelDoubtFlag=true، خفّض nameConfidence لأقل من 0.90، واذكر المقاطع في suspectSpans، واكتب suspectBox (ymin, xmin, ymax, xmax من 0 إلى 1000).
-   - لا تخترع أو تكمل أي اسم أو رقم بالتخمين!`;
+   - عند الشك في أي حرف عربي: اضبط modelDoubtFlag=true، خفّض nameConfidence لأقل من 0.90، واذكر المقاطع في suspectSpans.`;
 
       const response: GenerateContentResponse = await ai.models.generateContent({
         model: GEMINI_MODEL,
@@ -943,6 +989,7 @@ async function startServer() {
         pageCount?: number;
         rejectionReasons?: string[];
         documentSummary?: string;
+        inferredMetadata?: Partial<InferredDocumentMetadata> | null;
         rows?: QuickExtractRawRow[];
       };
 
@@ -962,6 +1009,28 @@ async function startServer() {
           : [],
         documentSummary: parsed.documentSummary || '',
         rawRows: Array.isArray(parsed.rows) ? parsed.rows : [],
+        inferredMetadata: parsed.inferredMetadata
+          ? {
+              agencyName: parsed.inferredMetadata.agencyName ?? null,
+              agencyNameConfidence:
+                typeof parsed.inferredMetadata.agencyNameConfidence === 'number'
+                  ? parsed.inferredMetadata.agencyNameConfidence
+                  : 0.9,
+              tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
+              tableDateConfidence:
+                typeof parsed.inferredMetadata.tableDateConfidence === 'number'
+                  ? parsed.inferredMetadata.tableDateConfidence
+                  : 0.9,
+              centerOrAgencyNumber:
+                parsed.inferredMetadata.centerOrAgencyNumber ?? null,
+              centerNumberConfidence:
+                typeof parsed.inferredMetadata.centerNumberConfidence === 'number'
+                  ? parsed.inferredMetadata.centerNumberConfidence
+                  : 0.9,
+              headerSnippet: parsed.inferredMetadata.headerSnippet || undefined,
+              confirmedByUser: false,
+            }
+          : null,
       });
 
       res.json(safeResult);
@@ -1244,6 +1313,19 @@ async function startServer() {
             ],
           },
           missingHint: { type: Type.STRING },
+          inferredMetadata: {
+            type: Type.OBJECT,
+            nullable: true,
+            properties: {
+              agencyName: { type: Type.STRING, nullable: true },
+              agencyNameConfidence: { type: Type.NUMBER },
+              tableDateLabel: { type: Type.STRING, nullable: true },
+              tableDateConfidence: { type: Type.NUMBER },
+              centerOrAgencyNumber: { type: Type.STRING, nullable: true },
+              centerNumberConfidence: { type: Type.NUMBER },
+              headerSnippet: { type: Type.STRING },
+            },
+          },
           rows: {
             type: Type.ARRAY,
             items: {
@@ -1259,8 +1341,10 @@ async function startServer() {
                   type: Type.STRING,
                   enum: ['إضافة', 'حذف', 'لا يوجد', 'غير محدد'],
                 },
+                rowDate: { type: Type.STRING, nullable: true },
                 nameConfidence: { type: Type.NUMBER },
                 numbersConfidence: { type: Type.NUMBER },
+                dateConfidence: { type: Type.NUMBER },
                 modelDoubtFlag: { type: Type.BOOLEAN },
                 modelDoubtReason: { type: Type.STRING },
                 rawSnippet: { type: Type.STRING },
@@ -1277,6 +1361,17 @@ async function startServer() {
                   },
                 },
                 suspectBox: {
+                  type: Type.OBJECT,
+                  nullable: true,
+                  properties: {
+                    ymin: { type: Type.INTEGER },
+                    xmin: { type: Type.INTEGER },
+                    ymax: { type: Type.INTEGER },
+                    xmax: { type: Type.INTEGER },
+                  },
+                  required: ['ymin', 'xmin', 'ymax', 'xmax'],
+                },
+                rowBox: {
                   type: Type.OBJECT,
                   nullable: true,
                   properties: {
@@ -1362,13 +1457,14 @@ async function startServer() {
         ],
       };
 
-      const systemInstruction = `أنت "منظومة القراءة الكونية والإدراك التدريجي" (UCRS) داخل تطبيق Morrow لإدارة وكالات الكمية الغذائية.
+      const systemInstruction = `أنت "منظومة القراءة الكونية والإدراك التدريجي" (UCRS) داخل تطبيق Morrow لإدارة وكالات الكمية الغذائية، وتعمل تحت مبدأ الأمان المطلق والشك 1% (Zero-Trust).
 مبادئك الصارمة:
-1. الفهم قبل الاستخراج: حدد أولاً نوع المحتوى وموضوعه وجودته وهل يخص جداول المستفيدين/الوكالات (important | useful | neutral | irrelevant) مع ذكر السبب، ورأيك الصريح.
-2. التدرج وعدم الاختراع (Zero Silent Errors): إذا رأيت 10 أسماء واستطعت قراءة 4 منها بثقة عالية و3 بشك و3 غير مقروءة، استخرج الأربعة الواضحة والمشكوكة بأمانة، وضع إحداثيات الأجزاء غير المقروءة في unreadableRegions واكتب في missingHint ما تحتاجه لإكمال الباقي (مثل: صورة أوضح للجزء العلوي الأيمن). لا تخمّن أي حرف أو رقم أبدًا!
-3. حدد إحداثيات suspectBox (ymin, xmin, ymax, xmax من 0 إلى 1000) لكل صف أمكن رصده بصريًا لتعمل خريطة التغطية البصرية وقصاصات المراجعة.
-4. في وضع الاكتشاف أو الكتب/المستندات أو البحث الدلالي: املأ entities بالأسماء، التواريخ، الأماكن، الملاحظات، والفقرات المهمة.
-5. التزم بوضع التشغيل: ${scanMode === 'fast' ? 'الوضع السريع' : 'الوضع المدقق'}.`;
+1. استنتاج الهوية والترويسة تلقائياً: اقرأ أعلى الصورة أو المستند لاستنتاج اسم الوكالة (agencyName)، وتاريخ/شهر الجدول (tableDateLabel مثل: تشرين الأول 2026)، ورقم المركز أو الوكالة (centerOrAgencyNumber)، ونص الترويسة (headerSnippet) واملأ inferredMetadata.
+2. الفهم قبل الاستخراج: حدد أولاً نوع المحتوى وموضوعه وجودته وهل يخص جداول المستفيدين/الوكالات (important | useful | neutral | irrelevant) مع ذكر السبب، ورأيك الصريح.
+3. التدرج ومبدأ الشك 1% (Zero Silent Errors): إذا وجدت أي غموض أو بهتان ولو بنسبة 1% في اسم أو رقم أو تاريخ، اضبط درجة ثقته أقل من 0.99 (مثل 0.94 أو 0.84) ولا تعطه 0.99+ إلا عند الوضوح التام. وإذا رأيت 10 أسماء واستطعت قراءة 4 بثقة و3 بشك و3 غير مقروءة، استخرج ما أمكن بأمانة وضع إحداثيات غير المقروءة في unreadableRegions واكتب missingHint. لا تخمّن أي حرف أو رقم أبدًا!
+4. القص البصري الشامل للسطر: أرجع لكل صف rowBox (ymin, xmin, ymax, xmax من 0 إلى 1000) يمتد أفقياً عبر **السطر كاملاً** من أول عمود إلى آخر عمود، بالإضافة إلى suspectBox لبقعة الشك.
+5. في وضع الاكتشاف أو الكتب/المستندات أو البحث الدلالي: املأ entities بالأسماء، التواريخ، الأماكن، الملاحظات، والفقرات المهمة.
+6. التزم بوضع التشغيل: ${scanMode === 'fast' ? 'الوضع السريع' : 'الوضع المدقق'}.`;
 
       const response: GenerateContentResponse = await ai.models.generateContent({
         model: GEMINI_MODEL,
@@ -1387,6 +1483,7 @@ async function startServer() {
         rejectionReasons?: string[];
         documentSummary?: string;
         identity?: Record<string, unknown>;
+        inferredMetadata?: Partial<InferredDocumentMetadata> | null;
         missingHint?: string;
         rows?: QuickExtractRawRow[];
         entities?: Array<Record<string, unknown>>;
@@ -1397,6 +1494,29 @@ async function startServer() {
           box: { ymin: number; xmin: number; ymax: number; xmax: number };
         }>;
       };
+
+      const normalizedMeta: InferredDocumentMetadata | null = parsed.inferredMetadata
+        ? {
+            agencyName: parsed.inferredMetadata.agencyName ?? null,
+            agencyNameConfidence:
+              typeof parsed.inferredMetadata.agencyNameConfidence === 'number'
+                ? parsed.inferredMetadata.agencyNameConfidence
+                : 0.9,
+            tableDateLabel: parsed.inferredMetadata.tableDateLabel ?? null,
+            tableDateConfidence:
+              typeof parsed.inferredMetadata.tableDateConfidence === 'number'
+                ? parsed.inferredMetadata.tableDateConfidence
+                : 0.9,
+            centerOrAgencyNumber:
+              parsed.inferredMetadata.centerOrAgencyNumber ?? null,
+            centerNumberConfidence:
+              typeof parsed.inferredMetadata.centerNumberConfidence === 'number'
+                ? parsed.inferredMetadata.centerNumberConfidence
+                : 0.9,
+            headerSnippet: parsed.inferredMetadata.headerSnippet || undefined,
+            confirmedByUser: false,
+          }
+        : null;
 
       const safeRowsResult = buildSafeQuickExtractResult({
         sourceMode: body.sourceKind === 'camera_burst' ? 'camera_burst' : 'pdf',
@@ -1414,11 +1534,13 @@ async function startServer() {
           : [],
         documentSummary: parsed.documentSummary || '',
         rawRows: Array.isArray(parsed.rows) ? parsed.rows : [],
+        inferredMetadata: normalizedMeta,
       });
 
       res.json({
         ...safeRowsResult,
         identity: parsed.identity || null,
+        inferredMetadata: normalizedMeta,
         missingHint: parsed.missingHint || '',
         entities: Array.isArray(parsed.entities) ? parsed.entities : [],
         unreadableRegions: Array.isArray(parsed.unreadableRegions)
@@ -1496,19 +1618,230 @@ async function startServer() {
     }
   });
 
-  // --- Strictly Restricted 3-Brain Assistant Router (Morrow Local <-> gemini-2.5-flash <-> gemini-2.5-pro) ---
+  // --- Quick Extract Live Draft Assistant Copilot ---
+  app.post('/api/quick-extract/copilot', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        message?: string;
+        documentSummary?: string;
+        inferredMetadata?: Partial<InferredDocumentMetadata> | null;
+        sourceImageBase64?: string;
+        sourceMimeType?: string;
+        draftRows?: Array<{
+          id?: string;
+          rowIndex: number;
+          resolvedName: string;
+          resolvedIndividuals: number | null;
+          resolvedDecreaseCount: number | null;
+          resolvedAddOrDeleteCount: number | null;
+          resolvedAddOrDeleteAction: string;
+          resolvedRowDate?: string;
+          notes?: string;
+          nameConfidence?: number;
+          numbersConfidence?: number;
+          zeroTrustConfirmed?: boolean;
+        }>;
+        history?: Array<{ role: 'user' | 'model'; text: string }>;
+      };
+
+      const message = String(body.message || '').trim().slice(0, 1200);
+      if (!message) {
+        res.status(400).json({ error: 'رسالة المساعد فارغة.' });
+        return;
+      }
+
+      const ai = createGeminiClient();
+      if (!ai) {
+        res.status(503).json({
+          error: 'مفتاح Gemini API غير مهيأ على الخادم لتشغيل المساعد الحي.',
+        });
+        return;
+      }
+
+      const contentParts: Array<
+        { inlineData: { mimeType: string; data: string } } | { text: string }
+      > = [];
+
+      if (body.sourceImageBase64) {
+        const cleanB64 = String(body.sourceImageBase64)
+          .replace(/^data:image\/[a-zA-Z+]+;base64,/, '')
+          .trim();
+        const mimeType =
+          body.sourceMimeType === 'image/png' || body.sourceMimeType === 'image/webp'
+            ? body.sourceMimeType
+            : 'image/jpeg';
+        if (cleanB64.length > 100 && cleanB64.length < 18 * 1024 * 1024) {
+          contentParts.push({ inlineData: { mimeType, data: cleanB64 } });
+        }
+      }
+
+      const compactRows = (Array.isArray(body.draftRows) ? body.draftRows : [])
+        .slice(0, 180)
+        .map((r) => ({
+          rowIndex: r.rowIndex,
+          name: r.resolvedName,
+          individuals: r.resolvedIndividuals,
+          decreaseCount: r.resolvedDecreaseCount,
+          addOrDeleteCount: r.resolvedAddOrDeleteCount,
+          addOrDeleteAction: r.resolvedAddOrDeleteAction,
+          rowDate: r.resolvedRowDate || '',
+          notes: r.notes || '',
+          nameConfidence: r.nameConfidence,
+          numbersConfidence: r.numbersConfidence,
+          confirmed: Boolean(r.zeroTrustConfirmed),
+        }));
+
+      const historyText = Array.isArray(body.history)
+        ? body.history
+            .slice(-8)
+            .map((h) => `${h.role === 'user' ? 'المستخدم' : 'المساعد'}: ${h.text}`)
+            .join('\n')
+        : '';
+
+      contentParts.push({
+        text: [
+          `ملخص المستند: ${body.documentSummary || 'غير محدد'}`,
+          `الهوية المستنتجة من الترويسة: ${JSON.stringify(body.inferredMetadata || null)}`,
+          `صفوف مسودة السحب الحالية (${compactRows.length} صف):\n${JSON.stringify(compactRows)}`,
+          historyText ? `سياق المحادثة:\n${historyText}` : '',
+          `طلب المستخدم الحالي:\n${message}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      });
+
+      const copilotSchema = {
+        type: Type.OBJECT,
+        properties: {
+          reply: { type: Type.STRING },
+          operations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                type: {
+                  type: Type.STRING,
+                  enum: [
+                    'filter_blocked',
+                    'filter_doubtful',
+                    'filter_clear',
+                    'highlight_row',
+                    'delete_row',
+                    'update_row',
+                    'hide_empty_columns',
+                    'show_all_columns',
+                    'update_metadata',
+                  ],
+                },
+                rowIndex: { type: Type.INTEGER, nullable: true },
+                name: { type: Type.STRING, nullable: true },
+                individuals: { type: Type.INTEGER, nullable: true },
+                decreaseCount: { type: Type.INTEGER, nullable: true },
+                addOrDeleteCount: { type: Type.INTEGER, nullable: true },
+                addOrDeleteAction: {
+                  type: Type.STRING,
+                  enum: ['إضافة', 'حذف', 'لا يوجد'],
+                  nullable: true,
+                },
+                notes: { type: Type.STRING, nullable: true },
+                rowDate: { type: Type.STRING, nullable: true },
+                agencyName: { type: Type.STRING, nullable: true },
+                tableDateLabel: { type: Type.STRING, nullable: true },
+                centerOrAgencyNumber: { type: Type.STRING, nullable: true },
+              },
+              required: ['type'],
+            },
+          },
+        },
+        required: ['reply', 'operations'],
+      };
+
+      const copilotInstruction = `أنت المساعد الحي (Live Draft Copilot) وزميل العمل داخل مسودة السحب السريع.
+أنت متصل بصرياً بالصورة الأصلية المرفقة (إن وُجدت) وبالترويسة المستنتجة وبجدول مسودة السحب.
+قواعدك:
+1. أجب باللغة العربية باحترافية ووضوح واختصار عملي كزميل عمل.
+2. عند السؤال عن معلومة في الجدول أو الصورة (مثل: "ما هو تاريخ هذا الجدول؟" أو "من هو الشخص رقم 54؟")، استخرج الإجابة من الصورة/الترويسة/الصفوف بدقة واذكر رقم السطر. استخدم "highlight_row" مع rowIndex إن سأل عن شخص محدد لإبرازه بصرياً.
+3. عندما يطلب المستخدم تعديلاً أو تصفية على المسودة، أضف العمليات المناسبة في operations:
+   - "قم بتصفية الأسماء التي لديها أفراد محجوبين فقط" / "أظهر النزول فقط" => filter_blocked
+   - "أظهر الصفوف المشكوك فيها" => filter_doubtful
+   - "أظهر الكل" / "ألغ التصفية" => filter_clear
+   - "قم بإخفاء الأعمدة الفارغة" => hide_empty_columns
+   - "أظهر كل الأعمدة" => show_all_columns
+   - "احذف السطر 54" => delete_row مع rowIndex: 54
+   - "عدّل اسم السطر 5 إلى ..." أو تعديل عدد الأفراد/الملاحظات => update_row مع rowIndex والحقول المعدلة
+   - تعديل اسم الوكالة أو التاريخ => update_metadata
+4. لا تقم أبداً بحفظ أو ترحيل البيانات نهائياً بدون ضغطة المستخدم، واقتصر على تعديل المسودة أو تصفيتها.`;
+
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [{ role: 'user', parts: contentParts }],
+        config: {
+          systemInstruction: copilotInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: copilotSchema,
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}') as {
+        reply?: string;
+        operations?: Array<Record<string, unknown>>;
+      };
+
+      res.json({
+        reply: parsed.reply || 'تمت مراجعة المسودة.',
+        operations: Array.isArray(parsed.operations) ? parsed.operations : [],
+      });
+    } catch (err) {
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? `تعذر تواصل المساعد الحي: ${err.message}`
+            : 'تعذر تواصل المساعد الحي.',
+      });
+    }
+  });
+
+  // --- Strictly Restricted 3-Brain Assistant Router (Morrow Local <-> gemini-2.5-flash <-> gemini-2.5-pro + H2 resilience) ---
   app.get('/api/assistant/status', (_req: Request, res: Response) => {
     const ai = createGeminiClient();
     res.json({
       cloudConfigured: Boolean(ai),
       defaultModel: PRIMARY_FREE_GEMINI_MODEL,
       fallbackModel: SECONDARY_FREE_GEMINI_MODEL,
+      liveModel: 'gemini-3.8-live',
+      multimodalModel: GEMINI_MODEL,
       models: {
         flash: PRIMARY_FREE_GEMINI_MODEL,
         pro: SECONDARY_FREE_GEMINI_MODEL,
+        live: 'gemini-3.8-live',
+        multimodal: GEMINI_MODEL,
       },
     });
   });
+
+  const buildLiveWorkspaceSummaryText = (cloudContext?: Record<string, unknown>): string => {
+    if (!cloudContext || typeof cloudContext !== 'object') return '';
+    const lw = cloudContext.liveWorkspace as Record<string, unknown> | undefined;
+    if (!lw || typeof lw !== 'object') return '';
+    const agenciesList = Array.isArray(lw.agenciesBreakdown)
+      ? (lw.agenciesBreakdown as Array<Record<string, unknown>>)
+          .slice(0, 12)
+          .map(
+            (ag) =>
+              `- ${String(ag.name || '')} (ID:${ag.id}): ${Number(ag.activeHouseholds || 0)} عائلة نشطة، ${Number(ag.activeIndividuals || 0)} أفراد، محجوب ${Number(ag.blockedCount || 0)}، ${Number(ag.fullBags || 0)} كيس (${Number(ag.remainderKg || 0)} كغم متبقي)، إيراد ${Number(ag.revenueIqd || 0)} د.ع، مصروفات ${Number(ag.expensesIqd || 0)} د.ع، صافي ${Number(ag.profitIqd || 0)} د.ع`
+          )
+          .join('\n')
+      : '';
+    return [
+      `الحصة الحالية: ${String(lw.periodName || 'الحصة الحالية')}`,
+      `الإعدادات: رسم الفرد ${Number(lw.feePerIndividualIqd || 0)} د.ع | رسم البطاقة الثابت ${Number(lw.fixedCardFeeIqd || 0)} د.ع | كغم/فرد ${Number(lw.kgPerIndividual || 0)} | وزن الكيس ${Number(lw.kgPerBag || 50)} كغم | خصم ${Number(lw.discountPercent || 0)}%`,
+      `الإجمالي الكلي: ${Number(lw.totalActiveHouseholds || 0)} عائلة نشطة (من أصل ${Number(lw.totalRegisteredHouseholds || 0)}) | ${Number(lw.totalActiveIndividuals || 0)} أفراد نشطين | محجوب ${Number(lw.totalBlockedCount || 0)} | ${Number(lw.totalFullBags || 0)} كيس | إيراد ${Number(lw.totalRevenueIqd || 0)} د.ع | مصروفات ${Number(lw.totalExpensesIqd || 0)} د.ع | صافي الربح ${Number(lw.totalProfitIqd || 0)} د.ع`,
+      `الأرشيفات: ${Number(lw.archivesCount || 0)}${lw.latestArchiveName ? ` (آخر أرشيف: ${String(lw.latestArchiveName)})` : ''} | ملاحظات سريعة: ${Number(lw.quickNotesCount || 0)} | مسودات معلقة: ${Number(lw.pendingDraftsCount || 0)}`,
+      agenciesList ? `تفصيل الوكالات:\n${agenciesList}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
 
   app.post('/api/assistant/chat', async (req: Request, res: Response) => {
     const startedAt = Date.now();
@@ -1556,7 +1889,8 @@ async function startServer() {
             : SECONDARY_FREE_GEMINI_MODEL)
       );
 
-      const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 2800);
+      const liveSummaryBlock = buildLiveWorkspaceSummaryText(body.cloudContext);
+      const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 7500);
       const historyLines = Array.isArray(body.cloudHistory)
         ? body.cloudHistory
             .slice(-4)
@@ -1564,15 +1898,16 @@ async function startServer() {
             .join('\n')
         : '';
 
-      const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المدمج داخل تطبيق إدارة وكالات الكمية الغذائية.
+      const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المرتبط ارتباطاً جذرياً ومباشراً ببيانات وإجراءات تطبيق إدارة وكالات الكمية الغذائية.
 قواعدك الصارمة:
 1. تحدث باللهجة العراقية المهنية المختصرة والواضحة.
 2. التزم تماماً بكلمة «الأفراد» و«أفراد» و«فرد» حصرياً في جميع الردود والتقارير عند الإشارة لعدد الأشخاص.
-3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر فقط الأداة المناسبة من Function Calling بالوسائط الدقيقة.
-4. أي عملية تعديل أو إضافة أو أرشفة يجب أن تُجهَّز كمسودة للموافقة فقط عبر الأداة دون تخمين بيانات ناقصة.
+3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر الأداة المناسبة من Function Calling بالوسائط الدقيقة فور طلب المستخدم البحث أو الانتقال أو التصفية أو تجهيز تعديل أو إضافة.
+4. أي عملية تعديل أو إضافة أو أرشفة أو مصروف أو إعدادات يجب أن تُجهَّز كمسودة للموافقة فقط عبر الأداة دون تخمين بيانات ناقصة.
 5. لا تقترح حذفاً نهائياً أبداً (استخدم archive_person فقط للأرشفة الآمنة).
-6. أجب باختصار ووضوح، وقدّم نصائح تحليلية دقيقة عند استخدام التحليل العميق.
-سياق التطبيق المصغر (محجوب الأسماء حفاظاً على الخصوصية):
+6. استند حصرياً إلى الأرقام الحية من «ملخص البيانات الحي» المرفق أدناه ولا تخترع أي رقم.
+${liveSummaryBlock ? `\nملخص البيانات الحي للتطبيق الآن:\n${liveSummaryBlock}\n` : ''}
+سياق التطبيق الكامل (${String(body.cloudContext?.privacyMode || 'masked_no_beneficiaries')}):
 ${contextText}`;
 
       const userContent = historyLines
@@ -1656,11 +1991,11 @@ ${contextText}`;
         throw lastErr;
       };
 
-      // Strictly 3-brain escalation chain: gemini-2.5-flash <-> gemini-2.5-pro -> morrow_local
+      // 3-Brain escalation chain + GEMINI_MODEL resilience fallback -> morrow_local
       const orderedModels =
         mode === 'gemini_2_5_pro'
-          ? [SECONDARY_FREE_GEMINI_MODEL, PRIMARY_FREE_GEMINI_MODEL]
-          : [primaryModel, secondaryModel];
+          ? [SECONDARY_FREE_GEMINI_MODEL, PRIMARY_FREE_GEMINI_MODEL, GEMINI_MODEL]
+          : [primaryModel, secondaryModel, GEMINI_MODEL];
       const uniqueChain = Array.from(new Set(orderedModels));
 
       let hitQuota = false;
@@ -1670,14 +2005,17 @@ ${contextText}`;
           const result = await runSingleModelWithRetry(candidateModel);
           const isFallbackUsed = i > 0;
           const isPro = result.model === SECONDARY_FREE_GEMINI_MODEL;
+          const isHydrogen = result.model === GEMINI_MODEL;
           res.json({
             ok: true,
             engineUsed: isPro ? 'gemini_2_5_pro' : 'gemini_2_5_flash',
             modelId: result.model,
             fallbackUsed: isFallbackUsed,
-            engineLabel: isPro
-              ? 'Gemini 2.5 Pro · تحليل عميق'
-              : 'Gemini 2.5 Flash · لغوي سريع',
+            engineLabel: isHydrogen
+              ? 'Gemini 4 Hydrogen · سحابي متقدم'
+              : isPro
+                ? 'Gemini 2.5 Pro · تحليل عميق'
+                : 'Gemini 2.5 Flash · لغوي سريع',
             text:
               result.text ||
               (result.toolCalls.length > 0
@@ -1690,7 +2028,7 @@ ${contextText}`;
         } catch (err) {
           const { isQuota } = classifyCloudError(err);
           if (isQuota) hitQuota = true;
-          // Escalate smoothly from Flash -> Pro (or vice versa) without exposing raw SDK errors
+          // Escalate smoothly across cloud models without exposing raw SDK errors
         }
       }
 
@@ -1709,6 +2047,345 @@ ${contextText}`;
         fallbackToOffline: true,
         statusCategory: 'offline',
         reason: 'تعذر الاتصال بالسحابة مؤقتاً، تم التحويل لمحرك Morrow المحلي.',
+      });
+    }
+  });
+
+  // --- Morrow Smart Text Analyzer (WhatsApp / unstructured Arabic notes -> structured entries) ---
+
+  app.post('/api/morrow/analyze-text', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        rawText?: string;
+        agencies?: Array<{ id: number; name: string }>;
+      };
+      const rawText = String(body.rawText || '').trim().slice(0, 6000);
+      if (!rawText) {
+        res.status(400).json({ ok: false, error: 'يرجى لصق النص أولاً لتحليله.' });
+        return;
+      }
+
+      const ai = createGeminiClient();
+      if (!ai) {
+        res.status(200).json({
+          ok: false,
+          fallbackToLocal: true,
+          reason: 'مفتاح الذكاء السحابي غير مهيأ — يمكنك الاعتماد على المحلل المحلي الفوري.',
+        });
+        return;
+      }
+
+      const agenciesHint = Array.isArray(body.agencies)
+        ? body.agencies.map((a) => `${a.id}:${a.name}`).join('، ')
+        : '';
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING },
+          items: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                rawLine: { type: Type.STRING },
+                detectedName: { type: Type.STRING },
+                action: {
+                  type: Type.STRING,
+                  enum: ['update_individuals', 'block_full', 'add_person', 'note'],
+                },
+                individualsCount: { type: Type.INTEGER, nullable: true },
+                agencyNameHint: { type: Type.STRING, nullable: true },
+                noteText: { type: Type.STRING, nullable: true },
+                confidence: { type: Type.NUMBER },
+              },
+              required: ['rawLine', 'detectedName', 'action', 'confidence'],
+            },
+          },
+        },
+        required: ['summary', 'items'],
+      };
+
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `الوكالات المتاحة: ${agenciesHint || 'غير محددة'}\n\nالنص المراد تحليله:\n${rawText}`,
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction:
+            'أنت محلل نصوص عربية ومذكرات واتساب لنظام وكالات الكمية الغذائية. استخرج كل سطر إلى عملية مهيكلة (تحديث عدد الأفراد update_individuals، حجب كامل block_full، إضافة عائلة add_person، أو ملاحظة note) مع الالتزام الصارم بكلمة «الأفراد» وأعد JSON فقط.',
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}') as {
+        summary?: string;
+        items?: Array<{
+          rawLine?: string;
+          detectedName?: string;
+          action?: 'update_individuals' | 'block_full' | 'add_person' | 'note';
+          individualsCount?: number | null;
+          agencyNameHint?: string | null;
+          noteText?: string | null;
+          confidence?: number;
+        }>;
+      };
+
+      res.json({
+        ok: true,
+        modelId: GEMINI_MODEL,
+        summary: enforceSafeArabicTerminology(parsed.summary || 'تم تحليل النص بالذكاء السحابي بنجاح.'),
+        items: Array.isArray(parsed.items) ? parsed.items : [],
+      });
+    } catch {
+      res.status(200).json({
+        ok: false,
+        fallbackToLocal: true,
+        reason: 'تعذر التحليل السحابي مؤقتاً — تم الإبقاء على التحليل المحلي.',
+      });
+    }
+  });
+
+  // --- Morrow Voice Message Transcription (gemini-3.5-transcribe) ---
+  app.post('/api/morrow/transcribe', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        audioBase64?: string;
+        mimeType?: string;
+      };
+      const cleanBase64 = String(body.audioBase64 || '')
+        .replace(/^data:[^;]+;base64,/, '')
+        .trim();
+      const mimeType = String(body.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+
+      if (!cleanBase64) {
+        res.status(400).json({ ok: false, error: 'الملف الصوتي فارغ.' });
+        return;
+      }
+
+      const ai = createGeminiClient();
+      if (!ai) {
+        res.status(503).json({
+          ok: false,
+          requiresApiKey: true,
+          error: 'مفتاح السحابة GEMINI_API_KEY غير مهيأ لتفريغ الرسائل الصوتية.',
+        });
+        return;
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-transcribe',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: cleanBase64,
+                },
+              },
+              {
+                text: 'فرّغ هذا التسجيل الصوتي باللغة العربية أو اللهجة العراقية بدقة كاملة وأعد النص المفرّغ فقط بدون مقدمات.',
+              },
+            ],
+          },
+        ],
+      });
+
+      const transcript = enforceSafeArabicTerminology(String(response.text || '').trim());
+      if (!transcript) {
+        res.status(422).json({
+          ok: false,
+          error: 'لم يتم التقاط كلام واضح في التسجيل الصوتي.',
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        modelId: 'gemini-3.5-transcribe',
+        transcript,
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? `تعذر تفريغ الرسالة الصوتية: ${err.message}`
+            : 'تعذر تفريغ الرسالة الصوتية حالياً.',
+      });
+    }
+  });
+
+  // --- Morrow Multimodal File / Camera Analysis (gemini-4-hydrogen) ---
+  app.post('/api/morrow/multimodal', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        fileName?: string;
+        mimeType?: string;
+        dataBase64?: string;
+        prompt?: string;
+        agencies?: Array<{ id: number; name: string }>;
+        liveWorkspace?: Record<string, unknown>;
+      };
+
+      const cleanBase64 = String(body.dataBase64 || '')
+        .replace(/^data:[^;]+;base64,/, '')
+        .trim();
+      const mimeType = String(body.mimeType || '').trim();
+      const fileName = String(body.fileName || 'مستند مرفق').trim().slice(0, 180);
+      const userPrompt = String(body.prompt || '').trim().slice(0, 1500);
+
+      if (!cleanBase64 || !mimeType) {
+        res.status(400).json({ ok: false, error: 'يرجى إرفاق صورة أو ملف PDF صالح أولاً.' });
+        return;
+      }
+
+      if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
+        res.status(400).json({
+          ok: false,
+          error: 'نوع الملف غير مدعوم للمعاينة الذكية (يدعم الصور وملفات PDF).',
+        });
+        return;
+      }
+
+      const ai = createGeminiClient();
+      if (!ai) {
+        res.status(503).json({
+          ok: false,
+          requiresApiKey: true,
+          error: 'مفتاح السحابة GEMINI_API_KEY غير مهيأ لتحليل الملفات والصور.',
+        });
+        return;
+      }
+
+      const agenciesHint = Array.isArray(body.agencies)
+        ? body.agencies.map((a) => `${a.id}:${a.name}`).join('، ')
+        : '';
+      const lw = body.liveWorkspace;
+      const liveHint =
+        lw && typeof lw === 'object'
+          ? `الحصة الحالية: ${String(lw.periodName || '')} | رسم الفرد: ${Number(lw.feePerIndividualIqd || 0)} د.ع | إجمالي الأفراد النشطين: ${Number(lw.totalActiveIndividuals || 0)}`
+          : '';
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          reply: { type: Type.STRING },
+          looksLikeRosterTable: { type: Type.BOOLEAN },
+          detectedAgencyName: { type: Type.STRING, nullable: true },
+          suggestedRowsCount: { type: Type.INTEGER, nullable: true },
+          suggestedTools: {
+            type: Type.ARRAY,
+            nullable: true,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                toolName: {
+                  type: Type.STRING,
+                  enum: ['add_person', 'manage_expense', 'update_settings'],
+                },
+                agencyId: { type: Type.INTEGER, nullable: true },
+                name: { type: Type.STRING, nullable: true },
+                individuals: { type: Type.INTEGER, nullable: true },
+                notes: { type: Type.STRING, nullable: true },
+                description: { type: Type.STRING, nullable: true },
+                amountIqd: { type: Type.INTEGER, nullable: true },
+                feePerIndividualIqd: { type: Type.INTEGER, nullable: true },
+              },
+              required: ['toolName'],
+            },
+          },
+        },
+        required: ['reply', 'looksLikeRosterTable'],
+      };
+
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: cleanBase64,
+                },
+              },
+              {
+                text: `اسم الملف: ${fileName}
+الوكالات المسجلة بالتطبيق: ${agenciesHint || 'غير محددة'}
+${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب المستخدم: ${userPrompt || 'اقرأ هذا المستند أو الصورة ولخّص محتواها. إذا كانت إيصال مصروف فاقترح manage_expense، وإذا كانت أسماء جديدة قليلة فاقترح add_person، وإذا كانت جدول مستفيدين/وكالات فاذكر التفاصيل وأوصِ بالسحب الذكي.'}`,
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction:
+            'أنت مساعد Morrow الذكي لقراءة الملفات والصور داخل تطبيق إدارة وكالات توزيع الطحين. التزم دائماً بكلمة «الأفراد» وأجب باللهجة العراقية المهنية الواضحة. حدد بدقة ما إذا كان المرفق جدول مستفيدين أو دفتر توزيع (looksLikeRosterTable)، وإن تضمن إيصالاً مالياً أو إضافة واضحة أضفها في suggestedTools ليراجعها المستخدم كمسودة موافقة. أعد JSON فقط.',
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}') as {
+        reply?: string;
+        looksLikeRosterTable?: boolean;
+        detectedAgencyName?: string | null;
+        suggestedRowsCount?: number | null;
+        suggestedTools?: Array<Record<string, unknown>> | null;
+      };
+
+      const validatedTools: AssistantToolCall[] = [];
+      if (Array.isArray(parsed.suggestedTools)) {
+        for (const item of parsed.suggestedTools.slice(0, 6)) {
+          if (!item || typeof item !== 'object') continue;
+          const tName = String(item.toolName || '');
+          const args: Record<string, unknown> = {};
+          if (item.agencyId !== undefined && item.agencyId !== null) args.agencyId = Number(item.agencyId);
+          if (typeof item.name === 'string' && item.name.trim()) args.name = item.name.trim();
+          if (item.individuals !== undefined && item.individuals !== null) args.individuals = Number(item.individuals);
+          if (typeof item.notes === 'string' && item.notes.trim()) args.notes = item.notes.trim();
+          if (typeof item.description === 'string' && item.description.trim()) args.description = item.description.trim();
+          if (item.amountIqd !== undefined && item.amountIqd !== null) args.amountIqd = Number(item.amountIqd);
+          if (item.feePerIndividualIqd !== undefined && item.feePerIndividualIqd !== null) {
+            args.feePerIndividualIqd = Number(item.feePerIndividualIqd);
+          }
+          const check = validateToolCall({ name: tName, args });
+          if (check.valid && check.sanitized) {
+            validatedTools.push(check.sanitized);
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        modelId: GEMINI_MODEL,
+        reply: enforceSafeArabicTerminology(
+          parsed.reply || 'تمت قراءة المرفق بنجاح.'
+        ),
+        looksLikeRosterTable: Boolean(parsed.looksLikeRosterTable),
+        detectedAgencyName: parsed.detectedAgencyName || null,
+        suggestedRowsCount:
+          typeof parsed.suggestedRowsCount === 'number' ? parsed.suggestedRowsCount : null,
+        suggestedTools: validatedTools,
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? `تعذر تحليل المرفق: ${err.message}`
+            : 'تعذر تحليل المرفق حالياً.',
       });
     }
   });
@@ -1736,7 +2413,435 @@ ${contextText}`;
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = http.createServer(app);
+  const morrowLiveWss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (request, socket, head) => {
+    try {
+      const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+      if (url.pathname === '/api/morrow/live') {
+        morrowLiveWss.handleUpgrade(request, socket, head, (ws) => {
+          morrowLiveWss.emit('connection', ws, request);
+        });
+      }
+    } catch {
+      socket.destroy();
+    }
+  });
+
+  morrowLiveWss.on('connection', async (clientWs: WebSocket) => {
+    const ai = createGeminiClient();
+    if (!ai) {
+      if (clientWs.readyState === clientWs.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            type: 'error',
+            requiresApiKey: true,
+            message: 'مفتاح السحابة GEMINI_API_KEY غير مهيأ على الخادم لتشغيل المحادثة المباشرة لايف.',
+          })
+        );
+        clientWs.close();
+      }
+      return;
+    }
+
+    let closed = false;
+    let liveSession: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
+    let sessionCloudContext: Record<string, unknown> | undefined;
+
+    type LiveIncomingMsg = {
+      type?: 'init' | 'audio' | 'video' | 'text';
+      data?: string;
+      mimeType?: string;
+      text?: string;
+      cloudContext?: Record<string, unknown>;
+    };
+
+    const earlyMessages: LiveIncomingMsg[] = [];
+    let resolveInit: (() => void) | null = null;
+    const initWaitPromise = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+      setTimeout(() => resolve(), 650);
+    });
+
+    const initialListener = (raw: WebSocket.RawData) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as LiveIncomingMsg;
+        if (msg.type === 'init' && msg.cloudContext && typeof msg.cloudContext === 'object') {
+          sessionCloudContext = msg.cloudContext;
+          resolveInit?.();
+          return;
+        }
+        earlyMessages.push(msg);
+      } catch {
+        // ignore malformed frame
+      }
+    };
+
+    clientWs.on('message', initialListener);
+    clientWs.once('close', () => {
+      closed = true;
+      resolveInit?.();
+    });
+
+    await initWaitPromise;
+    clientWs.off('message', initialListener);
+    if (closed) return;
+
+    const liveWorkspaceSummary = buildLiveWorkspaceSummaryText(sessionCloudContext);
+    const liveDirectory = Array.isArray(sessionCloudContext?.beneficiaryDirectory)
+      ? (sessionCloudContext?.beneficiaryDirectory as Array<Record<string, unknown>>)
+      : [];
+
+    const LIVE_TOOL_DECLARATIONS = [
+      {
+        name: 'get_live_workspace_stats',
+        description: 'إرجاع إحصائيات الحصة الحالية والأفراد والأكياس وصافي الربح للجميع أو لوكالة محددة.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            agencyId: { type: Type.INTEGER, nullable: true },
+            agencyName: { type: Type.STRING, nullable: true },
+          },
+        },
+      },
+      {
+        name: 'navigate_app_screen',
+        description: 'نقل شاشة المستخدم وإبراز قسم محدد داخل التطبيق.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            targetView: {
+              type: Type.STRING,
+              enum: [
+                'hub',
+                'master_roster',
+                'agency_roster',
+                'finance',
+                'quick_extract',
+                'ready_lists',
+                'relationships',
+                'data_archives',
+                'settings',
+              ],
+            },
+            agencyId: { type: Type.INTEGER, nullable: true },
+          },
+          required: ['targetView'],
+        },
+      },
+      {
+        name: 'search_live_beneficiary',
+        description: 'البحث عن مستفيد داخل السجلات الحية للمستخدم.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            query: { type: Type.STRING },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'stage_zero_trust_draft',
+        description:
+          'تجهيز مسودة تعديل أو إضافة أو مصروف آمنة للمراجعة والموافقة من المستخدم داخل التطبيق.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            toolName: {
+              type: Type.STRING,
+              enum: ['add_person', 'manage_expense', 'update_settings'],
+            },
+            agencyId: { type: Type.INTEGER, nullable: true },
+            name: { type: Type.STRING, nullable: true },
+            individuals: { type: Type.INTEGER, nullable: true },
+            description: { type: Type.STRING, nullable: true },
+            amountIqd: { type: Type.INTEGER, nullable: true },
+            feePerIndividualIqd: { type: Type.INTEGER, nullable: true },
+          },
+          required: ['toolName'],
+        },
+      },
+    ];
+
+    const liveSystemInstruction = `أنت المساعد الذكي الشخصي Morrow في جلسة صوتية ومشاهدة مباشرة مرتبطة جذرياً بتطبيق إدارة وكالات توزيع الطحين والمستفيدين.
+تحدث باللهجة العراقية المهنية الهادئة والواضحة وباختصار مفيد، والتزم دائماً بمصطلح «الأفراد» وأبداً لا تستخدم «الأنفار».
+إذا سألك المستخدم عن أرقام حية أو إحصائيات أو أرباح أو أراد فتح صفحة أو تجهيز مسودة تعديل/مصروف، استخدم الأدوات المباشرة (Function Calling) فوراً.
+${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتبطة بالجلسة:\n${liveWorkspaceSummary}` : ''}`;
+
+    const sessionPromise = ai.live.connect({
+      model: 'gemini-3.8-live',
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: 'Zephyr',
+            },
+          },
+        },
+        tools: [{ functionDeclarations: LIVE_TOOL_DECLARATIONS }],
+        systemInstruction: liveSystemInstruction,
+      },
+      callbacks: {
+        onopen: () => {
+          if (!closed && clientWs.readyState === clientWs.OPEN) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'ready',
+                model: 'gemini-3.8-live',
+                boundToWorkspace: Boolean(liveWorkspaceSummary),
+              })
+            );
+          }
+        },
+        onmessage: async (message: LiveServerMessage) => {
+          if (closed || clientWs.readyState !== clientWs.OPEN) return;
+          const content = message.serverContent;
+
+          if (content?.inputTranscription?.text) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'input_transcript',
+                text: content.inputTranscription.text,
+              })
+            );
+          }
+
+          if (content?.outputTranscription?.text) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'output_transcript',
+                text: enforceSafeArabicTerminology(content.outputTranscription.text),
+              })
+            );
+          }
+
+          for (const part of content?.modelTurn?.parts ?? []) {
+            if (part.inlineData?.data) {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'audio',
+                  data: part.inlineData.data,
+                })
+              );
+            }
+          }
+
+          // Handle Live Function Calling and forward validated UI actions
+          const fCalls = message.toolCall?.functionCalls;
+          if (Array.isArray(fCalls) && fCalls.length > 0) {
+            const functionResponses: Array<{
+              id?: string;
+              name?: string;
+              response: Record<string, unknown>;
+            }> = [];
+
+            const lw = (sessionCloudContext?.liveWorkspace || {}) as Record<string, unknown>;
+            const agenciesList = Array.isArray(lw.agenciesBreakdown)
+              ? (lw.agenciesBreakdown as Array<Record<string, unknown>>)
+              : [];
+
+            for (const fc of fCalls) {
+              const args = (fc.args || {}) as Record<string, unknown>;
+              let responseObj: Record<string, unknown> = { ok: true };
+              let uiToolCall: AssistantToolCall | null = null;
+
+              if (fc.name === 'get_live_workspace_stats') {
+                const targetAg =
+                  args.agencyId !== undefined
+                    ? agenciesList.find((a) => Number(a.id) === Number(args.agencyId))
+                    : typeof args.agencyName === 'string' && args.agencyName.trim()
+                      ? agenciesList.find((a) =>
+                          String(a.name || '').includes(String(args.agencyName).trim())
+                        )
+                      : undefined;
+                responseObj = targetAg
+                  ? { ok: true, agency: targetAg, periodName: lw.periodName }
+                  : {
+                      ok: true,
+                      periodName: lw.periodName,
+                      totalActiveHouseholds: lw.totalActiveHouseholds,
+                      totalActiveIndividuals: lw.totalActiveIndividuals,
+                      totalFullBags: lw.totalFullBags,
+                      totalRevenueIqd: lw.totalRevenueIqd,
+                      totalProfitIqd: lw.totalProfitIqd,
+                      agenciesCount: agenciesList.length,
+                    };
+                const checked = validateToolCall({
+                  name: 'get_stats_profit',
+                  args: targetAg ? { agencyId: Number(targetAg.id) } : {},
+                });
+                if (checked.valid && checked.sanitized) uiToolCall = checked.sanitized;
+              } else if (fc.name === 'navigate_app_screen') {
+                const checked = validateToolCall({
+                  name: 'navigate_focus',
+                  args: {
+                    targetView: String(args.targetView || 'hub'),
+                    ...(args.agencyId !== undefined ? { agencyId: Number(args.agencyId) } : {}),
+                  },
+                });
+                if (checked.valid && checked.sanitized) {
+                  uiToolCall = checked.sanitized;
+                  responseObj = { ok: true, navigatedTo: checked.sanitized.args.targetView };
+                }
+              } else if (fc.name === 'search_live_beneficiary') {
+                const q = String(args.query || '').trim();
+                const matches = q
+                  ? liveDirectory
+                      .filter((p) => String(p.name || '').includes(q))
+                      .slice(0, 6)
+                  : [];
+                const checked = validateToolCall({ name: 'search_person', args: { query: q } });
+                if (checked.valid && checked.sanitized) uiToolCall = checked.sanitized;
+                responseObj = {
+                  ok: true,
+                  matchesCount: matches.length,
+                  matches,
+                  note:
+                    liveDirectory.length === 0
+                      ? 'تم تشغيل البحث داخل التطبيق مباشرة مع حماية خصوصية الأسماء عن السحابة.'
+                      : undefined,
+                };
+              } else if (fc.name === 'stage_zero_trust_draft') {
+                const targetTool = String(args.toolName || '');
+                const toolArgs: Record<string, unknown> = { ...args };
+                delete toolArgs.toolName;
+                const checked = validateToolCall({ name: targetTool, args: toolArgs });
+                if (checked.valid && checked.sanitized) {
+                  uiToolCall = checked.sanitized;
+                  responseObj = {
+                    ok: true,
+                    stagedForUserApproval: true,
+                    message: 'تم تجهيز مسودة الموافقة الآمنة على شاشة المستخدم.',
+                  };
+                } else {
+                  responseObj = { ok: false, reason: checked.reason || 'وسائط غير مكتملة' };
+                }
+              }
+
+              if (uiToolCall && clientWs.readyState === clientWs.OPEN) {
+                clientWs.send(JSON.stringify({ type: 'tool_call', toolCall: uiToolCall }));
+              }
+
+              functionResponses.push({
+                id: fc.id,
+                name: fc.name,
+                response: responseObj,
+              });
+            }
+
+            try {
+              const s = liveSession || (await sessionPromise);
+              await s.sendToolResponse({ functionResponses });
+            } catch {
+              // ignore tool response send failure during teardown
+            }
+          }
+
+          if (content?.interrupted) {
+            clientWs.send(JSON.stringify({ type: 'interrupted' }));
+          }
+          if (content?.turnComplete) {
+            clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+          }
+        },
+        onerror: (err) => {
+          if (!closed && clientWs.readyState === clientWs.OPEN) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'error',
+                message:
+                  err instanceof Error
+                    ? `انقطاع الاتصال المباشر: ${err.message}`
+                    : 'حدث خطأ في اتصال Gemini Live المباشر.',
+              })
+            );
+          }
+        },
+        onclose: () => {
+          if (!closed && clientWs.readyState === clientWs.OPEN) {
+            clientWs.send(JSON.stringify({ type: 'closed' }));
+            clientWs.close();
+          }
+        },
+      },
+    });
+
+    const dispatchLiveClientMsg = (
+      session: Awaited<ReturnType<typeof ai.live.connect>>,
+      msg: LiveIncomingMsg
+    ) => {
+      if (msg.type === 'audio' && msg.data) {
+        session.sendRealtimeInput({
+          audio: { data: msg.data, mimeType: 'audio/pcm;rate=16000' },
+        });
+      } else if (msg.type === 'video' && msg.data) {
+        session.sendRealtimeInput({
+          video: { data: msg.data, mimeType: msg.mimeType || 'image/jpeg' },
+        });
+      } else if (msg.type === 'text' && msg.text) {
+        session.sendRealtimeInput({ text: msg.text });
+      }
+    };
+
+    sessionPromise
+      .then((s) => {
+        liveSession = s;
+        if (closed) {
+          try {
+            s.close();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        while (earlyMessages.length > 0) {
+          const buffered = earlyMessages.shift();
+          if (buffered) dispatchLiveClientMsg(s, buffered);
+        }
+      })
+      .catch((err) => {
+        if (!closed && clientWs.readyState === clientWs.OPEN) {
+          clientWs.send(
+            JSON.stringify({
+              type: 'error',
+              message:
+                err instanceof Error
+                  ? `تعذر فتح جلسة لايف: ${err.message}`
+                  : 'تعذر الاتصال بخدمة لايف المباشرة.',
+            })
+          );
+          clientWs.close();
+        }
+      });
+
+    clientWs.on('message', async (raw) => {
+      if (closed) return;
+      try {
+        const msg = JSON.parse(raw.toString()) as LiveIncomingMsg;
+        if (msg.type === 'init') return;
+        const session = await sessionPromise;
+        if (closed) return;
+        dispatchLiveClientMsg(session, msg);
+      } catch {
+        // Ignore malformed frame or closed session during teardown
+      }
+    });
+
+    clientWs.on('close', () => {
+      closed = true;
+      try {
+        liveSession?.close();
+      } catch {
+        // ignore
+      }
+    });
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
 }

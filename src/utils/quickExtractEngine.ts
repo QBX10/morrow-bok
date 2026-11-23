@@ -1,5 +1,6 @@
 import type {
   Agency,
+  InferredDocumentMetadata,
   Person,
   QuickExtractAnalysisResult,
   QuickExtractCaptureMode,
@@ -17,6 +18,7 @@ import type {
   ReadyListItem,
 } from '../types/agency.ts';
 import { normalizeArabic } from './agencyLogic.ts';
+import { computeRowZeroTrustSummary } from './zeroTrustExtract.ts';
 
 export const MIN_ACCEPTABLE_CLARITY_SCORE = 55;
 export const FAST_MODE_MIN_CLARITY_SCORE = 35;
@@ -765,7 +767,7 @@ export function evaluateExtractedRow(
 
   const rowHasDoubt = doubtReasons.length > 0 || suspectSegments.length > 0;
 
-  return {
+  const baseEvaluated: QuickExtractEvaluatedRow = {
     ...raw,
     id: `qe_${raw.pageNumber}_${raw.rowIndex}_${index}`,
     sourceMode: options?.sourceMode || 'pdf',
@@ -778,7 +780,17 @@ export function evaluateExtractedRow(
     missingFields,
     isComplete: missingFields.length === 0,
     ...resolvedRowBase,
+    resolvedRowDate: raw.rowDate ? String(raw.rowDate).trim() : '',
     notes: raw.notes ? String(raw.notes).trim() : '',
+  };
+
+  const zt = computeRowZeroTrustSummary(baseEvaluated);
+  return {
+    ...baseEvaluated,
+    zeroTrustNameStatus: zt.name.status,
+    zeroTrustNumbersStatus: zt.numbers.status,
+    zeroTrustDateStatus: zt.date.status,
+    zeroTrustConfirmed: !zt.anyDoubt,
   };
 }
 
@@ -788,6 +800,7 @@ export function recomputeRowValidation(
     tree?: ArabicNameTree;
     persons?: Person[];
     resetConfirmOnNameEdit?: boolean;
+    zeroTrustConfirmed?: boolean;
     focusedFields?: QuickExtractFocusField[];
     scanMode?: QuickExtractScanMode;
   }
@@ -857,7 +870,7 @@ export function recomputeRowValidation(
     doubtConfirmed = false;
   }
 
-  return {
+  const nextRow: QuickExtractEvaluatedRow = {
     ...row,
     nameConfidence,
     modelDoubtFlag,
@@ -871,6 +884,24 @@ export function recomputeRowValidation(
     doubtReasons,
     hasDoubt,
     doubtConfirmed,
+    zeroTrustConfirmed:
+      options?.zeroTrustConfirmed !== undefined
+        ? options.zeroTrustConfirmed
+        : options?.resetConfirmOnNameEdit
+          ? false
+          : row.zeroTrustConfirmed,
+  };
+
+  const zt = computeRowZeroTrustSummary(nextRow);
+  return {
+    ...nextRow,
+    zeroTrustNameStatus: zt.name.status,
+    zeroTrustNumbersStatus: zt.numbers.status,
+    zeroTrustDateStatus: zt.date.status,
+    zeroTrustConfirmed:
+      options?.zeroTrustConfirmed !== undefined
+        ? options.zeroTrustConfirmed
+        : !zt.anyDoubt,
   };
 }
 
@@ -886,6 +917,7 @@ export function buildSafeQuickExtractResult(params: {
   documentSummary: string;
   rawRows: QuickExtractRawRow[];
   persons?: Person[];
+  inferredMetadata?: InferredDocumentMetadata | null;
 }): QuickExtractAnalysisResult {
   const sourceMode = params.sourceMode || 'pdf';
   const scanMode: QuickExtractScanMode = params.scanMode || 'audit';
@@ -946,7 +978,8 @@ export function buildSafeQuickExtractResult(params: {
     (r) =>
       (r.hasDoubt && !r.doubtConfirmed) ||
       !r.isComplete ||
-      (r.mathIssues.length > 0 && !r.mathConfirmed)
+      (r.mathIssues.length > 0 && !r.mathConfirmed) ||
+      r.zeroTrustConfirmed === false
   );
 
   return {
@@ -959,6 +992,7 @@ export function buildSafeQuickExtractResult(params: {
     rejectionReasons: [],
     documentSummary: params.documentSummary || '',
     rows: evaluatedRows,
+    inferredMetadata: params.inferredMetadata ?? null,
   };
 }
 

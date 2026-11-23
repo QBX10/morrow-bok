@@ -981,5 +981,17 @@ export function executeApprovedToolMutation(
       .join('\n• ')}`;
   }
 
+  if (toolCall.name === 'backup_restore') {
+    const action = String(toolCall.args.action || 'backup_json');
+    if (action === 'archive_period') {
+      runtime.exportBackupJson(true);
+      runtime.archiveCurrentPeriod();
+      runtime.navigate('data_archives');
+      return 'تم تنزيل نسخة احتياطية آمنة وأرشفة الحصة الحالية في الأرشيف الشهري بنجاح.';
+    }
+    runtime.exportBackupJson(false);
+    return 'تم تنزيل نسخة احتياطية كاملة (JSON) إلى جهازك بنجاح.';
+  }
+
   return 'تم تنفيذ الإجراء بنجاح.';
 }

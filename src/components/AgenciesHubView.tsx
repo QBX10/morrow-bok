@@ -30,21 +30,27 @@ import { DEFAULT_WORKSPACE_COSMOS } from '../data/seedData';
 import type {
   Agency,
   AgencyExpense,
+  AppDatabaseState,
   AppView,
   CalculationSettings,
+  MonthlyArchiveRecord,
   PeriodQuotaMeta,
   Person,
   SettingsSectionId,
   WorkspaceCosmosState,
 } from '../types/agency';
+import type { MorrowProactiveInsight } from '../types/assistant';
 import {
   auditAgencyPersons,
   calculateAllocation,
-  computeAgencyMetrics,
   formatIqd,
   formatNumberCompact,
   formatQuota,
 } from '../utils/agencyLogic';
+import {
+  buildIndexedWorkspaceAnalytics,
+  computeProactiveInsightsAndForecasts,
+} from '../utils/morrowWorkspaceEngine';
 import {
   buildCosmosRegistry,
   COSMOS_TAG_LABELS,
@@ -92,6 +98,9 @@ interface AgenciesHubViewProps {
   onDismissSuggestion?: (suggestionId: string) => void;
   onCompleteOnboarding?: () => void;
   onOpenWorldSwitcher?: () => void;
+  monthlyArchives?: MonthlyArchiveRecord[];
+  lastBackupAt?: string | null;
+  onOpenMorrowInsight?: (insight: MorrowProactiveInsight) => void;
 }
 
 export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
@@ -118,6 +127,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   onDismissSuggestion,
   onCompleteOnboarding,
   onOpenWorldSwitcher,
+  monthlyArchives = [],
+  lastBackupAt,
+  onOpenMorrowInsight,
 }) => {
   const [newAgencyName, setNewAgencyName] = useState('');
   const [showAddAgency, setShowAddAgency] = useState(false);
@@ -143,12 +155,59 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     [workspaceCosmos]
   );
 
-  const allMetrics = useMemo(
-    () => computeAgencyMetrics(persons, expenses, calculationSettings),
-    [persons, expenses, calculationSettings]
+  // Single-pass O(N+M) indexed analytics replaces repeated per-agency filter() scans
+  const indexedAnalytics = useMemo(
+    () =>
+      buildIndexedWorkspaceAnalytics(
+        agencies,
+        persons,
+        expenses,
+        calculationSettings
+      ),
+    [agencies, persons, expenses, calculationSettings]
   );
 
+  const allMetrics = indexedAnalytics.totals;
+
   const auditIssues = useMemo(() => auditAgencyPersons(persons), [persons]);
+
+  const proactiveAlerts = useMemo(() => {
+    const pseudoState: AppDatabaseState = {
+      agencies,
+      persons,
+      expenses,
+      readyLists: [],
+      readyListItems: [],
+      relations: [],
+      tableHeaders: {},
+      calculationSettings,
+      modeTier: capabilities.modeTier,
+      editorEnabled: capabilities.canEditRecords,
+      darkTheme: false,
+      requireLoginOnStart: false,
+      topBarConfig: {
+        mode: 'normal',
+        autoFocus: false,
+        autoFocusAction: 'hide',
+      },
+    };
+    return computeProactiveInsightsAndForecasts({
+      state: pseudoState,
+      monthlyArchives,
+      activePeriod,
+      lastBackupAt,
+    }).insights.slice(0, 3);
+  }, [
+    agencies,
+    persons,
+    expenses,
+    calculationSettings,
+    capabilities.modeTier,
+    capabilities.canEditRecords,
+    monthlyArchives,
+    activePeriod,
+    lastBackupAt,
+  ]);
 
   const visibleWorlds = useMemo(() => {
     const base = resolvedCosmosRoot.children.filter(
@@ -211,18 +270,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const agencyBreakdown = useMemo(() => {
     const totalInd = Math.max(1, allMetrics.activeIndividuals);
     return agencies.map((ag) => {
-      const m = computeAgencyMetrics(
-        persons.filter((p) => p.agencyId === ag.id),
-        expenses.filter((e) => e.agencyId === ag.id),
-        calculationSettings
-      );
+      const m = indexedAnalytics.byAgencyId.get(ag.id)?.metrics || allMetrics;
       return {
         agency: ag,
         metrics: m,
         sharePct: Math.round((m.activeIndividuals / totalInd) * 100),
       };
     });
-  }, [agencies, persons, expenses, calculationSettings, allMetrics.activeIndividuals]);
+  }, [agencies, indexedAnalytics.byAgencyId, allMetrics]);
 
   const liveBentoCalc = useMemo(() => {
     const n = Number(bentoCalcCount);
@@ -258,11 +313,11 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 space-y-6 sm:space-y-8 p-4 pb-24 sm:p-8 sm:pb-20">
+    <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 space-y-6 p-4 pb-24 sm:px-7 sm:py-6 sm:pb-20">
       {/* Executive Hub Top Bar */}
       <header
         data-testid="hub-top-header"
-        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 sm:p-6"
+        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-color)',
@@ -367,6 +422,95 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           )}
         </div>
       </header>
+
+      {/* Morrow Proactive Intelligence Strip */}
+      {proactiveAlerts.length > 0 && (
+        <section
+          aria-label="التنبيهات الاستباقية الذكية من Morrow"
+          className="grid grid-cols-1 gap-3 md:grid-cols-3"
+        >
+          {proactiveAlerts.map((insight) => {
+            const actionLabel =
+              insight.resolutionMode === 'summon_canvas'
+                ? 'فتح في لوحة Morrow'
+                : 'مراجعة الإجراء';
+            return (
+              <div
+                key={insight.id}
+                className="tabrix-card flex flex-col justify-between gap-2.5 border p-4 text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor:
+                    insight.severity === 'high'
+                      ? 'color-mix(in srgb, var(--danger) 48%, var(--border-color))'
+                      : insight.severity === 'medium'
+                      ? 'color-mix(in srgb, var(--warning) 48%, var(--border-color))'
+                      : 'var(--border-color)',
+                }}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 font-extrabold">
+                      <Sparkles
+                        className="h-3.5 w-3.5 shrink-0"
+                        style={{
+                          color:
+                            insight.severity === 'high'
+                              ? 'var(--danger)'
+                              : insight.severity === 'medium'
+                              ? 'var(--warning)'
+                              : 'var(--accent)',
+                        }}
+                      />
+                      <span>{insight.title}</span>
+                    </span>
+                    {insight.metricLabel && (
+                      <span
+                        className="font-bold tabular-nums shrink-0"
+                        style={{ color: 'var(--accent)' }}
+                      >
+                        {insight.metricLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {insight.detail}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  {onOpenMorrowInsight ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenMorrowInsight(insight)}
+                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors hover:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--accent)',
+                      }}
+                    >
+                      {actionLabel}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateView(insight.targetView || 'morrow_center')}
+                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors hover:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--accent)',
+                      }}
+                    >
+                      {actionLabel}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {/* First-Time Onboarding Tour Card */}
       {!effectiveCosmos.accessibility.onboardingCompleted && onCompleteOnboarding && (
@@ -1094,11 +1238,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 items-stretch">
           {primaryThreeAgencies.map((agency, idx) => {
-            const m = computeAgencyMetrics(
-              persons.filter((p) => p.agencyId === agency.id),
-              expenses.filter((e) => e.agencyId === agency.id),
-              calculationSettings
-            );
+            const m = indexedAnalytics.byAgencyId.get(agency.id)?.metrics || allMetrics;
             const cardOrderLabels = [
               'الوكالة الأولى',
               'الوكالة الثانية',
@@ -1240,11 +1380,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </h3>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {extraAgencies.map((agency) => {
-              const m = computeAgencyMetrics(
-                persons.filter((p) => p.agencyId === agency.id),
-                expenses.filter((e) => e.agencyId === agency.id),
-                calculationSettings
-              );
+              const m = indexedAnalytics.byAgencyId.get(agency.id)?.metrics || allMetrics;
               return (
                 <button
                   key={agency.id}

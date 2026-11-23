@@ -443,86 +443,22 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
               type="checkbox"
               checked={topBarConfig.autoFocus}
               onChange={(e) =>
-                onChangeTopBarConfig({ autoFocus: e.target.checked })
+                onChangeTopBarConfig({
+                  autoFocus: e.target.checked,
+                  autoFocusAction: 'hide',
+                })
               }
               className="mt-0.5"
             />
             <div>
               <div className="font-extrabold">
-                تفعيل الإخفاء / التصغير التلقائي عند التركيز والتمرير
+                الوضع التلقائي للشريط العلوي (يختفي عند النزول ويظهر فوراً عند الصعود)
               </div>
-              <div style={{ color: 'var(--text-muted)' }}>
-                يمكن استعادته بتمرير المؤشر أعلى الشاشة أو عبر الزر العائم.
+              <div className="mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                وضع موحّد وسلس: ينزلق الشريط العلوي للاختفاء تلقائياً عند التمرير للأسفل لتوسيع مساحة الرؤية، ويعود للظهور فوراً بمجرد الصعود للأعلى أو تقريب المؤشر لحافة الشاشة.
               </div>
             </div>
           </label>
-
-          {topBarConfig.autoFocus && (
-            <div
-              className="space-y-2.5 border-t pt-3"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChangeTopBarConfig({ autoFocusAction: 'hide' })
-                  }
-                  className="min-h-[42px] rounded-xl border px-3 py-1.5 font-bold"
-                  style={{
-                    backgroundColor:
-                      (topBarConfig.autoFocusAction || 'hide') === 'hide'
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-surface)',
-                    borderColor:
-                      (topBarConfig.autoFocusAction || 'hide') === 'hide'
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    color:
-                      (topBarConfig.autoFocusAction || 'hide') === 'hide'
-                        ? 'var(--accent)'
-                        : 'var(--text-primary)',
-                  }}
-                >
-                  إخفاء تلقائي بالكامل عند التركيز
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChangeTopBarConfig({ autoFocusAction: 'compact' })
-                  }
-                  className="min-h-[42px] rounded-xl border px-3 py-1.5 font-bold"
-                  style={{
-                    backgroundColor:
-                      topBarConfig.autoFocusAction === 'compact'
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-surface)',
-                    borderColor:
-                      topBarConfig.autoFocusAction === 'compact'
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    color:
-                      topBarConfig.autoFocusAction === 'compact'
-                        ? 'var(--accent)'
-                        : 'var(--text-primary)',
-                  }}
-                >
-                  تصغير ارتفاع الشريط فقط
-                </button>
-              </div>
-
-              <label className="flex min-h-[40px] cursor-pointer items-center gap-2 pt-1 font-semibold">
-                <input
-                  type="checkbox"
-                  checked={Boolean(topBarConfig.autoHideInTables)}
-                  onChange={(e) =>
-                    onChangeTopBarConfig({ autoHideInTables: e.target.checked })
-                  }
-                />
-                <span>إخفاء تلقائي فوري في شاشات الجداول والسحب السريع</span>
-              </label>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2.5 text-xs sm:grid-cols-4">

@@ -28,7 +28,11 @@ import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
 import { getStoredSession } from './lib/authClient';
-import type { AssistantExternalTableCommand, MorrowCenterTab } from './types/assistant';
+import type {
+  AssistantExternalTableCommand,
+  MorrowCanvasMode,
+  MorrowCenterTab,
+} from './types/assistant';
 import type {
   AgencyExpense,
   AppView,
@@ -38,7 +42,6 @@ import type {
   ReadyListItem,
   RelationEntry,
   SettingsSectionId,
-  TopBarAutoFocusAction,
   TopBarFocusMode,
 } from './types/agency';
 import { auditAgencyPersons } from './utils/agencyLogic';
@@ -66,6 +69,7 @@ import {
   TABLE_THEMES,
 } from './utils/themes';
 import { playTactileFeedback } from './utils/tactileFeedback';
+import { computeTopBarScrollHidden } from './utils/scrollAutoHide';
 
 type AppNavSnapshot = {
   view: AppView;
@@ -208,9 +212,10 @@ export default function App() {
       return next;
     });
   };
-  const [scrolledDown, setScrolledDown] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
-  const [manualReveal, setManualReveal] = useState(false);
+  const [autoScrollHidden, setAutoScrollHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
+  const pointerNearTopRef = useRef(false);
+  const headerFocusActiveRef = useRef(false);
   const [selectedAgencyId, setSelectedAgencyId] = useState<number>(
     state.agencies[0]?.id ?? 1
   );
@@ -236,6 +241,14 @@ export default function App() {
   const [externalTableCommand, setExternalTableCommand] =
     useState<AssistantExternalTableCommand | null>(null);
   const [columnCustomizerOpen, setColumnCustomizerOpen] = useState(false);
+  const [initialMorrowCanvas, setInitialMorrowCanvas] = useState<{
+    mode: MorrowCanvasMode;
+    nonce: number;
+  } | null>(null);
+  const [pendingExtractFiles, setPendingExtractFiles] = useState<{
+    files: File[];
+    nonce: number;
+  } | null>(null);
 
   const capabilities = useMemo(
     () =>
@@ -300,110 +313,82 @@ export default function App() {
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
-    setScrolledDown(false);
-    setManualReveal(false);
-    setInputFocused(false);
+    lastScrollYRef.current = 0;
+    pointerNearTopRef.current = false;
+    setAutoScrollHidden(false);
   }, [activeView]);
 
   useEffect(() => {
-    if (!state.topBarConfig.autoFocus) {
-      setScrolledDown(false);
-      setInputFocused(false);
-      setManualReveal(false);
+    if (!state.topBarConfig.autoFocus || state.topBarConfig.mode === 'hidden') {
+      setAutoScrollHidden(false);
       return;
     }
 
-    const isFocusableField = (el: EventTarget | null): boolean => {
-      if (!(el instanceof HTMLElement)) return false;
-      if (!el.closest('main')) return false;
-      if (el.isContentEditable) return true;
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
-      if (el.tagName === 'INPUT') {
-        const type = (el as HTMLInputElement).type.toLowerCase();
-        return ![
-          'checkbox',
-          'radio',
-          'file',
-          'button',
-          'submit',
-          'reset',
-          'color',
-        ].includes(type);
-      }
-      return false;
-    };
+    const isFocusInsideHeader = (el: EventTarget | null): boolean =>
+      el instanceof HTMLElement && Boolean(el.closest('header'));
 
     const onScroll = () => {
-      const next = window.scrollY > 60;
-      setScrolledDown(next);
-      if (!next) {
-        setManualReveal(false);
+      const y = Math.max(0, window.scrollY || 0);
+      const prevY = lastScrollYRef.current;
+      setAutoScrollHidden((wasHidden) =>
+        computeTopBarScrollHidden({
+          enabled: Boolean(state.topBarConfig.autoFocus),
+          currentY: y,
+          prevY,
+          wasHidden,
+          pointerNearTop: pointerNearTopRef.current,
+          hasActiveOverlayOrFocusInHeader: headerFocusActiveRef.current,
+        })
+      );
+      lastScrollYRef.current = y;
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const nearTop = e.clientY <= 16;
+      if (nearTop !== pointerNearTopRef.current) {
+        pointerNearTopRef.current = nearTop;
+        if (nearTop) {
+          setAutoScrollHidden(false);
+        }
       }
     };
 
     const onFocusIn = (e: FocusEvent) => {
-      if (isFocusableField(e.target)) {
-        setManualReveal(false);
-        setInputFocused(true);
+      if (isFocusInsideHeader(e.target)) {
+        headerFocusActiveRef.current = true;
+        setAutoScrollHidden(false);
       }
     };
 
     const onFocusOut = () => {
       requestAnimationFrame(() => {
-        setInputFocused(isFocusableField(document.activeElement));
+        headerFocusActiveRef.current = isFocusInsideHeader(document.activeElement);
       });
     };
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (e.clientY <= 10 && window.scrollY > 60) {
-        setManualReveal(true);
-      }
-    };
-
+    lastScrollYRef.current = Math.max(0, window.scrollY || 0);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
     document.addEventListener('focusin', onFocusIn);
     document.addEventListener('focusout', onFocusOut);
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
     return () => {
       window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('focusout', onFocusOut);
-      window.removeEventListener('mousemove', onMouseMove);
     };
-  }, [state.topBarConfig.autoFocus]);
-
-  const isTableView = [
-    'agency_roster',
-    'master_roster',
-    'ready_lists',
-    'relationships',
-    'quick_extract',
-  ].includes(activeView);
-
-  const autoTriggerActive =
-    state.topBarConfig.autoFocus &&
-    !manualReveal &&
-    (scrolledDown ||
-      inputFocused ||
-      (Boolean(state.topBarConfig.autoHideInTables) && isTableView));
-
-  const autoAction: TopBarAutoFocusAction =
-    state.topBarConfig.autoFocusAction || 'hide';
+  }, [state.topBarConfig.autoFocus, state.topBarConfig.mode]);
 
   const isAutoHidden =
     state.topBarConfig.mode !== 'hidden' &&
-    autoTriggerActive &&
-    autoAction === 'hide';
+    Boolean(state.topBarConfig.autoFocus) &&
+    autoScrollHidden;
 
   const effectiveTopBarMode: TopBarFocusMode =
     state.topBarConfig.mode === 'hidden'
       ? 'hidden'
-      : isAutoHidden
-      ? 'hidden'
       : state.topBarConfig.mode === 'compact'
-      ? 'compact'
-      : autoTriggerActive && autoAction === 'compact'
       ? 'compact'
       : 'normal';
 
@@ -432,7 +417,7 @@ export default function App() {
       setColumnCustomizerOpen(false);
     }
     if (view === 'settings') {
-      if (activeView !== 'settings') {
+      if (activeView !== 'settings' && activeView !== 'morrow_center') {
         setPreviousView(activeView);
       }
       setSettingsCapsuleId(null);
@@ -442,6 +427,10 @@ export default function App() {
         setSettingsScreenMode('detail');
       } else {
         setSettingsScreenMode('hub');
+      }
+    } else if (view === 'morrow_center') {
+      if (activeView !== 'morrow_center' && activeView !== 'settings') {
+        setPreviousView(activeView);
       }
     }
     setActiveView(view);
@@ -506,8 +495,13 @@ export default function App() {
       return;
     }
 
-    if (target.view === 'morrow_center' && target.morrowTab) {
-      assistant.setActiveCommandCenterTab(target.morrowTab);
+    if (target.view === 'morrow_center') {
+      if (activeView !== 'morrow_center' && activeView !== 'settings') {
+        setPreviousView(activeView);
+      }
+      if (target.morrowTab) {
+        assistant.setActiveCommandCenterTab(target.morrowTab);
+      }
     }
 
     if (target.openColumnCustomizer) {
@@ -886,9 +880,32 @@ export default function App() {
     />
   );
 
+  const openMorrowStudio = (tab: 'chat' | 'approvals' | 'memory' | 'quick_notes' = 'chat') => {
+    if (activeView !== 'morrow_center' && activeView !== 'settings') {
+      setPreviousView(activeView);
+    }
+    assistant.openCommandCenter(tab);
+  };
+
+  const backFromMorrowLabel = useMemo(() => {
+    if (previousView === 'agency_roster') {
+      return `العودة إلى ${currentAgency?.name || 'جدول الوكالة'}`;
+    }
+    if (previousView === 'master_roster') return 'العودة إلى الجدول الشامل';
+    if (previousView === 'quick_extract') return 'العودة إلى السحب الذكي';
+    if (previousView === 'ready_lists') return 'العودة إلى القوائم الجاهزة';
+    if (previousView === 'relationships') return 'العودة إلى العلاقات';
+    if (previousView === 'finance') return 'العودة إلى المالية';
+    if (previousView === 'data_archives') return 'العودة إلى الأرشفة';
+    return 'العودة إلى المركز';
+  }, [previousView, currentAgency]);
+
+  const isDedicatedFullScreenView =
+    activeView === 'settings' || activeView === 'morrow_center';
+
   return (
     <div className="flex min-h-screen flex-col [overflow-x:clip]">
-      {activeView !== 'settings' && (
+      {!isDedicatedFullScreenView && (
         <TopBar
           capabilities={capabilities}
           authUser={authUser}
@@ -904,13 +921,17 @@ export default function App() {
           readyLists={state.readyLists}
           relations={state.relations}
           ucrsSessions={ucrsSessions}
+          hierarchyTree={hierarchyTree}
+          pendingDraftsCount={assistant.pendingDraftsCount}
           onToggleDarkTheme={setDarkTheme}
           onChangeTopBarConfig={(patch) => {
-            setManualReveal(false);
+            setAutoScrollHidden(false);
             setTopBarConfig(patch);
           }}
           onNavigateHome={() => handleNavigate('hub')}
           onNavigateView={handleNavigate}
+          onOpenMorrowStudio={() => openMorrowStudio('chat')}
+          onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
           onSelectPersonFromSearch={(person) => {
             setSelectedAgencyId(person.agencyId);
             setFocusedPersonId(person.id);
@@ -930,7 +951,7 @@ export default function App() {
           onRedo={redo}
           onOpenAuth={() => setAuthModalOpen(true)}
           onOpenMobileSidebar={() => setDrawerOpen(true)}
-          onRequestReveal={() => setManualReveal(true)}
+          onRequestReveal={() => setAutoScrollHidden(false)}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           canGoBack={navHistory.index > 0}
           canGoForward={navHistory.index < navHistory.stack.length - 1}
@@ -946,7 +967,7 @@ export default function App() {
       )}
 
       <div className="flex flex-1 min-h-0">
-        {activeView !== 'settings' && (
+        {!isDedicatedFullScreenView && (
           <AppSidebar
             activeView={activeView}
             selectedAgencyId={selectedAgencyId}
@@ -965,6 +986,7 @@ export default function App() {
             onToggleCollapse={toggleSidebarCollapsed}
             onCloseMobile={() => setDrawerOpen(false)}
             onNavigate={handleNavigate}
+            onNavigateMorrowTab={(tab) => openMorrowStudio(tab)}
             onOpenAgencyRoster={(id) => {
               setSelectedAgencyId(id);
               setActiveView('agency_roster');
@@ -973,8 +995,11 @@ export default function App() {
           />
         )}
 
-        <div key={activeView} className="flex-1 min-w-0 flex flex-col pb-20 md:pb-0 tabrix-view-enter">
-          {activeView !== 'settings' && renderedHierarchyBar}
+        <div
+          key={activeView}
+          className="flex-1 min-w-0 flex flex-col tabrix-view-enter"
+        >
+          {!isDedicatedFullScreenView && renderedHierarchyBar}
 
           {activeView === 'hub' && (
             <AgenciesHubView
@@ -1006,6 +1031,22 @@ export default function App() {
                 updateAccessibilityPrefs({ onboardingCompleted: true })
               }
               onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
+              monthlyArchives={monthlyArchives}
+              lastBackupAt={assistant.lastBackupAt}
+              onOpenMorrowInsight={(insight) => {
+                if (insight.targetCanvasMode) {
+                  assistant.setActiveCommandCenterTab('chat');
+                  setInitialMorrowCanvas({
+                    mode: insight.targetCanvasMode,
+                    nonce: Date.now(),
+                  });
+                  handleNavigate('morrow_center');
+                  return;
+                }
+                if (insight.targetView) {
+                  handleNavigate(insight.targetView);
+                }
+              }}
             />
           )}
 
@@ -1212,6 +1253,7 @@ export default function App() {
             setActiveView('agency_roster');
           }}
           onNavigateToView={(view) => setActiveView(view)}
+          initialQueuedFiles={pendingExtractFiles}
         />
       )}
 
@@ -1278,12 +1320,39 @@ export default function App() {
               nonce: Date.now(),
             });
           }}
+          onBackToApp={() =>
+            setActiveView(
+              previousView === 'morrow_center' || previousView === 'settings'
+                ? 'hub'
+                : previousView
+            )
+          }
+          backLabel={backFromMorrowLabel}
           activeAgencyId={selectedAgencyId}
           onSelectActiveAgency={(agId) => setSelectedAgencyId(agId)}
           activePeriodLabel={activePeriod?.quotaName}
           onNavigateView={handleNavigate}
           onTogglePinMessage={assistant.togglePinMessage}
           onExportChatHistory={assistant.exportChatHistoryJson}
+          expenses={state.expenses}
+          monthlyArchives={monthlyArchives}
+          activePeriod={activePeriod}
+          calculationSettings={state.calculationSettings}
+          lastBackupAt={assistant.lastBackupAt}
+          cloudConfigured={assistant.cloudConfigured}
+          onStageToolDrafts={assistant.stageToolDrafts}
+          onOpenAgencyRoster={(agId) => {
+            setSelectedAgencyId(agId);
+            setActiveView('agency_roster');
+          }}
+          initialCanvasMode={initialMorrowCanvas}
+          onHandoffFilesToQuickExtract={(files) => {
+            setPendingExtractFiles({ files, nonce: Date.now() });
+            setActiveView('quick_extract');
+          }}
+          liveCloudContext={assistant.liveCloudContext}
+          onLiveToolAction={assistant.handleLiveVoiceToolAction}
+          onVerifySystemIntegrity={assistant.verifyMorrowSystemIntegrity}
         />
       )}
 
@@ -1539,7 +1608,8 @@ export default function App() {
           hasUndoableAction={assistant.hasUndoableAssistantMessage}
           onUndoLastAction={assistant.undoLastAssistantAction}
           pendingDraftsCount={assistant.pendingDraftsCount}
-          onOpenCommandCenter={assistant.openCommandCenter}
+          onOpenCommandCenter={openMorrowStudio}
+          hideLauncher={activeView === 'morrow_center'}
           onQuickCameraExtract={() => {
             if (capabilities.canUseQuickExtract) {
               assistant.setIsOpen(false);
@@ -1578,7 +1648,7 @@ export default function App() {
           onClose={() => setCommandPaletteOpen(false)}
           onChangeBrainMode={assistant.setBrainMode}
           onNavigateView={handleNavigate}
-          onOpenCommandCenterTab={assistant.openCommandCenter}
+          onOpenCommandCenterTab={openMorrowStudio}
           onSelectAgency={(agId) => setSelectedAgencyId(agId)}
           onSelectPerson={(person) => {
             setSelectedAgencyId(person.agencyId);
@@ -1611,8 +1681,8 @@ export default function App() {
         />
       )}
 
-      {/* Mobile One-Thumb Bottom Navigation Bar */}
-      {!isAuthGateLocked && !securityPrefs.privacyLocked && (
+      {/* Mobile One-Thumb Bottom Navigation Bar (hidden in dedicated Full-Screen views) */}
+      {!isAuthGateLocked && !securityPrefs.privacyLocked && !isDedicatedFullScreenView && (
         <CosmosBottomNav
           activeView={activeView}
           canAddPerson={capabilities.canEditRecords}
@@ -1624,6 +1694,9 @@ export default function App() {
             setAddPersonOpen(true);
           }}
           onOpenAssistant={() => assistant.setIsOpen(true)}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          isAssistantThinking={assistant.isThinking}
+          pendingDraftsCount={assistant.pendingDraftsCount}
         />
       )}
 

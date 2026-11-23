@@ -30,6 +30,7 @@ import type {
   Agency,
   AppView,
   CalculationSettings,
+  InferredDocumentMetadata,
   NormalizedBox,
   Person,
   QuickExtractAnalysisResult,
@@ -79,12 +80,15 @@ import {
   extractLearningRuleFromCorrection,
   mergeSupplementaryExtraction,
 } from '../utils/ucrsEngine';
+import { normalizeInferredMetadata } from '../utils/zeroTrustExtract';
 import { CoreRosterTable, type CoreRosterRow } from './CoreRosterTable';
 import {
   SelectionActionBar,
   type SelectablePersonRecord,
 } from './SelectionActionBar';
 import { BurstCameraCapture } from './quickExtract/BurstCameraCapture';
+import type { CopilotOperation } from './quickExtract/LiveDraftCopilot';
+import { MetadataInferenceBanner } from './quickExtract/MetadataInferenceBanner';
 import { RedFlagDoubtSegment } from './quickExtract/RedFlagDoubtSegment';
 import { ReferenceTemplateModal } from './quickExtract/ReferenceTemplateModal';
 import { RoutingPanel } from './quickExtract/RoutingPanel';
@@ -92,6 +96,10 @@ import { UcrsCoverageAndSessionsPanel } from './quickExtract/UcrsCoverageAndSess
 import { UcrsIdentityAndPlanCard } from './quickExtract/UcrsIdentityAndPlanCard';
 import { UcrsReportsAndStatsModal } from './quickExtract/UcrsReportsAndStatsModal';
 import { UcrsSemanticSearchPanel } from './quickExtract/UcrsSemanticSearchPanel';
+import {
+  ZeroTrustDraftWorkspace,
+  type DraftFilterMode,
+} from './quickExtract/ZeroTrustDraftWorkspace';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -129,6 +137,7 @@ interface QuickExtractViewProps {
   onDeleteUcrsLearningRule?: (ruleId: string) => void;
   onDoneNavigateToAgency: (agencyId: number) => void;
   onNavigateToView: (view: AppView) => void;
+  initialQueuedFiles?: { files: File[]; nonce: number } | null;
 }
 
 type IntakeTabMode = 'pdf' | 'camera_burst' | 'universal_files';
@@ -231,6 +240,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   onDeleteUcrsLearningRule,
   onDoneNavigateToAgency,
   onNavigateToView,
+  initialQueuedFiles,
 }) => {
   const fallbackAgencyId = agencies[0]?.id ?? 1;
   const initialAgencyId = agencies.some((a) => a.id === defaultAgencyId)
@@ -280,6 +290,41 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     useState(false);
   const [commitSummary, setCommitSummary] =
     useState<QuickExtractCommitSummary | null>(null);
+
+  // Zero-Trust Draft Mode UI states
+  const [draftFilterMode, setDraftFilterMode] =
+    useState<DraftFilterMode>('all');
+  const [hideEmptyDraftCols, setHideEmptyDraftCols] = useState(false);
+  const [copilotHighlightRowIdx, setCopilotHighlightRowIdx] = useState<
+    number | null
+  >(null);
+  const [activePdfBlobUrl, setActivePdfBlobUrl] = useState<string | undefined>(
+    undefined
+  );
+  const pdfBlobUrlRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrlRef.current) {
+        URL.revokeObjectURL(pdfBlobUrlRef.current);
+      }
+    };
+  }, []);
+
+  const replacePdfBlobUrl = (file?: File) => {
+    if (pdfBlobUrlRef.current) {
+      URL.revokeObjectURL(pdfBlobUrlRef.current);
+      pdfBlobUrlRef.current = undefined;
+    }
+    if (file) {
+      const nextUrl = URL.createObjectURL(file);
+      pdfBlobUrlRef.current = nextUrl;
+      setActivePdfBlobUrl(nextUrl);
+      return nextUrl;
+    }
+    setActivePdfBlobUrl(undefined);
+    return undefined;
+  };
 
   const [routingConfig, setRoutingConfig] = useState<QuickExtractRoutingConfig>(
     () => ({
@@ -381,13 +426,24 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     });
 
     const hasAnyDoubt = enrichedRows.some(
-      (r) => r.hasDoubt || !r.isComplete || r.mathIssues.length > 0
+      (r) =>
+        r.hasDoubt ||
+        !r.isComplete ||
+        r.mathIssues.length > 0 ||
+        r.zeroTrustConfirmed === false
+    );
+
+    const normalizedMeta = normalizeInferredMetadata(
+      rawResult.inferredMetadata,
+      agencies
     );
 
     const normalizedResult: QuickExtractAnalysisResult = {
       ...rawResult,
       scanMode: activeScanMode,
       focusedFields: activeFocused,
+      inferredMetadata: normalizedMeta,
+      sourcePdfUrl: rawResult.sourcePdfUrl || pdfBlobUrlRef.current,
       status:
         rawResult.status === 'rejected'
           ? 'rejected'
@@ -517,6 +573,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       coverage,
       coverageRegions,
       diagnostics,
+      inferredMetadata: normalizedMeta,
       documentSummary: rawResult.documentSummary || identity.topic,
       lastFusionDiff: null,
     };
@@ -526,6 +583,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     persistSession(session);
     setPastRows([]);
     setFutureRows([]);
+    setDraftFilterMode('all');
+    setCopilotHighlightRowIdx(null);
     setSelectedRowIds(enrichedRows.map((r) => r.id));
     setFocusedRowKey(null);
     setCoverageOverrideConfirmed(false);
@@ -711,6 +770,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
     setFileName(file.name);
     setLoading(true);
+    const pdfBlobUrl = replacePdfBlobUrl(file);
 
     try {
       const base64Pdf = await fileToDataUrl(file);
@@ -727,6 +787,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         filename: file.name,
         base64Pdf,
       });
+      if (pdfBlobUrl) {
+        data.sourcePdfUrl = pdfBlobUrl;
+      }
 
       buildAnalysisWithLearning({
         rawResult: data,
@@ -828,8 +891,10 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       const plan = buildDefaultReadingPlan(intentMode, customCommand);
 
       if (intake.supportsOfflineLocalParse) {
+        replacePdfBlobUrl(undefined);
         const parsed = await parseLocalStructuredDocument({
           file: first,
+          agencies,
           knownPersons: persons,
           learningRules: ucrsLearningRules.filter((r) => r.enabled),
           focusedFields,
@@ -881,6 +946,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               rejectionReasons: [],
               documentSummary: parsed.documentSummary,
               rows: parsed.rows,
+              inferredMetadata: parsed.inferredMetadata,
               identity: parsed.identity,
               entities: parsed.entities,
             },
@@ -902,6 +968,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
       // Visual intake (Single/Batch Images or PDF supplementary)
       if (intake.kind === 'pdf') {
+        const pdfBlobUrl = mode === 'new' ? replacePdfBlobUrl(first) : pdfBlobUrlRef.current;
         const base64Pdf = await fileToDataUrl(first);
         const data = await callUcrsAnalyzeEndpoint({
           phase: mode === 'append_fusion' ? 'fusion_complete' : 'progressive_extract',
@@ -919,6 +986,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 }
               : undefined,
         });
+        if (pdfBlobUrl) data.sourcePdfUrl = pdfBlobUrl;
 
         if (mode === 'append_fusion' && activeSession) {
           const incomingRows = (data.rows || []).map(
@@ -1090,14 +1158,25 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     }
   };
 
+  const handledQueueNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!initialQueuedFiles || !initialQueuedFiles.files.length) return;
+    if (handledQueueNonceRef.current === initialQueuedFiles.nonce) return;
+    handledQueueNonceRef.current = initialQueuedFiles.nonce;
+    setCaptureMode('universal_files');
+    void handleUniversalFilesUpload(initialQueuedFiles.files, 'new');
+  }, [initialQueuedFiles]);
+
   const handleAnalyzePastedText = async () => {
     if (!pastedText.trim()) return;
     setUploadError('');
     setCommitSummary(null);
     setLoading(true);
     try {
+      replacePdfBlobUrl(undefined);
       const parsed = await parseLocalStructuredDocument({
         rawTextInput: pastedText,
+        agencies,
         knownPersons: persons,
         learningRules: ucrsLearningRules.filter((r) => r.enabled),
         focusedFields,
@@ -1121,6 +1200,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           rejectionReasons: [],
           documentSummary: parsed.documentSummary,
           rows: parsed.rows,
+          inferredMetadata: parsed.inferredMetadata,
           identity: parsed.identity,
           entities: parsed.entities,
         },
@@ -1147,7 +1227,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
   const handleAnalyzeCroppedRegion = async (
     croppedDataUrl: string,
-    _box: NormalizedBox
+    _box?: NormalizedBox
   ) => {
     if (!activeSession) return;
     setUploadError('');
@@ -1281,7 +1361,10 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const updateRow = (
     rowId: string,
     patch: Partial<QuickExtractEvaluatedRow>,
-    options?: { resetConfirmOnNameEdit?: boolean }
+    options?: {
+      resetConfirmOnNameEdit?: boolean;
+      zeroTrustConfirmed?: boolean;
+    }
   ) => {
     if (!analysis) return;
     const existingRow = analysis.rows.find((r) => r.id === rowId);
@@ -1314,6 +1397,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           tree: nameTree,
           persons,
           resetConfirmOnNameEdit: options?.resetConfirmOnNameEdit,
+          zeroTrustConfirmed: options?.zeroTrustConfirmed,
           focusedFields: activeFocused,
           scanMode: activeScanMode,
         }
@@ -1321,6 +1405,157 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     });
     setAnalysis({ ...analysis, rows: nextRows });
     syncSessionFromRows(nextRows);
+  };
+
+  const deleteDraftRow = (rowId: string) => {
+    if (!analysis) return;
+    setPastRows((p) => [...p.slice(-24), analysis.rows]);
+    setFutureRows([]);
+    const nextRows = analysis.rows.filter((r) => r.id !== rowId);
+    setAnalysis({ ...analysis, rows: nextRows });
+    setSelectedRowIds((prev) => prev.filter((id) => id !== rowId));
+    syncSessionFromRows(nextRows);
+  };
+
+  const updateInferredMetadata = (
+    nextMeta: InferredDocumentMetadata,
+    applyRouting = false
+  ) => {
+    const normalized =
+      normalizeInferredMetadata(nextMeta, agencies) || nextMeta;
+    const confirmedMeta = { ...normalized, confirmedByUser: nextMeta.confirmedByUser };
+
+    setAnalysis((prev) =>
+      prev ? { ...prev, inferredMetadata: confirmedMeta } : prev
+    );
+    if (activeSession) {
+      persistSession({
+        ...activeSession,
+        inferredMetadata: confirmedMeta,
+      });
+    }
+    if (applyRouting && confirmedMeta.matchedAgencyId) {
+      setRoutingConfig((prev) => ({
+        ...prev,
+        primaryDestination: {
+          ...prev.primaryDestination,
+          kind: 'agency',
+          agencyId: confirmedMeta.matchedAgencyId!,
+        },
+      }));
+    }
+  };
+
+  const handleApplyCopilotOperations = (ops: CopilotOperation[]): string[] => {
+    const appliedLog: string[] = [];
+    if (!analysis) return appliedLog;
+
+    let workingRows = [...analysis.rows];
+    let rowsModified = false;
+
+    for (const op of ops) {
+      if (op.type === 'filter_blocked') {
+        setDraftFilterMode('blocked');
+        appliedLog.push('تمت تصفية الجدول لإظهار الأسماء ذات الأفراد المحجوبين/النزول فقط');
+      } else if (op.type === 'filter_doubtful') {
+        setDraftFilterMode('doubtful');
+        appliedLog.push('تمت تصفية الجدول لإظهار الصفوف التي تحتاج مراجعة (<99%)');
+      } else if (op.type === 'filter_clear') {
+        setDraftFilterMode('all');
+        setCopilotHighlightRowIdx(null);
+        appliedLog.push('تم إلغاء التصفية وإظهار جميع صفوف المسودة');
+      } else if (op.type === 'hide_empty_columns') {
+        setHideEmptyDraftCols(true);
+        appliedLog.push('تم إخفاء الأعمدة الفارغة من عرض المسودة');
+      } else if (op.type === 'show_all_columns') {
+        setHideEmptyDraftCols(false);
+        appliedLog.push('تم إظهار كافة الأعمدة');
+      } else if (op.type === 'highlight_row' && typeof op.rowIndex === 'number') {
+        setCopilotHighlightRowIdx(op.rowIndex);
+        appliedLog.push(`تم إبراز السطر رقم ${op.rowIndex} في المسودة`);
+      } else if (op.type === 'delete_row' && typeof op.rowIndex === 'number') {
+        const before = workingRows.length;
+        workingRows = workingRows.filter((r) => r.rowIndex !== op.rowIndex);
+        if (workingRows.length < before) {
+          rowsModified = true;
+          appliedLog.push(`تم حذف السطر رقم ${op.rowIndex} من المسودة`);
+        }
+      } else if (op.type === 'update_row' && typeof op.rowIndex === 'number') {
+        const target = workingRows.find((r) => r.rowIndex === op.rowIndex);
+        if (target) {
+          const activeFocused = resolveFocusedFields(
+            analysis.focusedFields || focusedFields
+          );
+          const activeScanMode = analysis.scanMode || scanMode;
+          workingRows = workingRows.map((r) => {
+            if (r.rowIndex !== op.rowIndex) return r;
+            return recomputeRowValidation(
+              {
+                ...r,
+                resolvedName: op.name ?? r.resolvedName,
+                resolvedIndividuals:
+                  op.individuals !== undefined && op.individuals !== null
+                    ? op.individuals
+                    : r.resolvedIndividuals,
+                resolvedDecreaseCount:
+                  op.decreaseCount !== undefined && op.decreaseCount !== null
+                    ? op.decreaseCount
+                    : r.resolvedDecreaseCount,
+                resolvedAddOrDeleteCount:
+                  op.addOrDeleteCount !== undefined && op.addOrDeleteCount !== null
+                    ? op.addOrDeleteCount
+                    : r.resolvedAddOrDeleteCount,
+                resolvedAddOrDeleteAction:
+                  op.addOrDeleteAction ?? r.resolvedAddOrDeleteAction,
+                resolvedRowDate: op.rowDate ?? r.resolvedRowDate,
+                notes: op.notes ?? r.notes,
+              },
+              {
+                tree: nameTree,
+                persons,
+                focusedFields: activeFocused,
+                scanMode: activeScanMode,
+                zeroTrustConfirmed: true,
+              }
+            );
+          });
+          rowsModified = true;
+          appliedLog.push(`تم تحديث بيانات السطر رقم ${op.rowIndex}`);
+        }
+      } else if (op.type === 'update_metadata') {
+        const currentMeta: InferredDocumentMetadata = analysis.inferredMetadata || {
+          agencyName: null,
+          agencyNameConfidence: 1,
+          tableDateLabel: null,
+          tableDateConfidence: 1,
+          centerOrAgencyNumber: null,
+          centerNumberConfidence: 1,
+          confirmedByUser: false,
+        };
+        updateInferredMetadata(
+          {
+            ...currentMeta,
+            agencyName: op.agencyName ?? currentMeta.agencyName,
+            tableDateLabel: op.tableDateLabel ?? currentMeta.tableDateLabel,
+            centerOrAgencyNumber:
+              op.centerOrAgencyNumber ?? currentMeta.centerOrAgencyNumber,
+            confirmedByUser: true,
+          },
+          true
+        );
+        appliedLog.push('تم تحديث بيانات الترويسة المستنتجة');
+      }
+    }
+
+    if (rowsModified) {
+      setPastRows((p) => [...p.slice(-24), analysis.rows]);
+      setFutureRows([]);
+      setAnalysis({ ...analysis, rows: workingRows });
+      setSelectedRowIds(workingRows.map((r) => r.id));
+      syncSessionFromRows(workingRows);
+    }
+
+    return appliedLog;
   };
 
   const handleLocalUndo = () => {
@@ -1368,10 +1603,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       documentSummary: sess.documentSummary,
       rows: sess.rows,
       sourceImageUrls: previewImg ? { 1: previewImg } : undefined,
+      inferredMetadata: sess.inferredMetadata ?? null,
     });
     setSelectedRowIds(sess.rows.map((r) => r.id));
     setPastRows([]);
     setFutureRows([]);
+    setDraftFilterMode('all');
+    setCopilotHighlightRowIdx(null);
     setUcrsTab('pipeline');
   };
 
@@ -1619,6 +1857,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   };
 
   const resetAll = () => {
+    replacePdfBlobUrl(undefined);
     setAnalysis(null);
     setActiveSession(null);
     setAllParsedRowsBackup(null);
@@ -1629,6 +1868,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setPastRows([]);
     setFutureRows([]);
     setSelectedRowIds([]);
+    setDraftFilterMode('all');
+    setHideEmptyDraftCols(false);
+    setCopilotHighlightRowIdx(null);
   };
 
   const handleJumpToRow = (rowId: string) => {
@@ -1642,6 +1884,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const activeSourceImageUrl =
     analysis?.sourceImageUrls?.[1] ||
     activeSession?.sources.find((s) => s.previewDataUrl)?.previewDataUrl;
+  const activeSourcePdfUrl = analysis?.sourcePdfUrl || activePdfBlobUrl;
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
@@ -2438,6 +2681,69 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       {/* Post-Extraction Pipeline */}
       {ucrsTab === 'pipeline' && analysis && analysis.status !== 'rejected' && (
         <>
+          {/* Smart Header Metadata Inference Banner */}
+          <MetadataInferenceBanner
+            metadata={
+              analysis.inferredMetadata ?? activeSession?.inferredMetadata
+            }
+            agencies={agencies}
+            onConfirm={(confirmedMeta) =>
+              updateInferredMetadata(confirmedMeta, true)
+            }
+            onUpdate={(editedMeta) =>
+              updateInferredMetadata(editedMeta, true)
+            }
+          />
+
+          {/* Zero-Trust Draft Mode + 1% Doubt Rule Table + Contextual Full-Row Snippets + Live Copilot */}
+          <ZeroTrustDraftWorkspace
+            rows={rows}
+            inferredMetadata={
+              analysis.inferredMetadata ?? activeSession?.inferredMetadata
+            }
+            documentSummary={analysis.documentSummary || fileName}
+            sourceImageUrl={activeSourceImageUrl}
+            sourcePdfUrl={activeSourcePdfUrl}
+            filterMode={draftFilterMode}
+            onChangeFilterMode={setDraftFilterMode}
+            hideEmptyColumns={hideEmptyDraftCols}
+            onToggleHideEmptyColumns={setHideEmptyDraftCols}
+            highlightedRowIndex={copilotHighlightRowIdx}
+            canUndo={pastRows.length > 0}
+            canRedo={futureRows.length > 0}
+            onUndo={handleLocalUndo}
+            onRedo={handleLocalRedo}
+            onUpdateRow={updateRow}
+            onDeleteRow={deleteDraftRow}
+            onApplyCopilotOperations={handleApplyCopilotOperations}
+            onAnalyzeCroppedRegion={handleAnalyzeCroppedRegion}
+            onFinalCommit={() => {
+              const hasUnconfirmed = rows.some(
+                (r) =>
+                  r.zeroTrustConfirmed === false ||
+                  (r.hasDoubt && !r.doubtConfirmed) ||
+                  !r.isComplete ||
+                  (r.mathIssues.length > 0 && !r.mathConfirmed)
+              );
+              if (hasUnconfirmed) {
+                setDraftFilterMode('doubtful');
+                setUploadError(
+                  'توجد خلايا بنسبة ثقة أقل من 99% أو نواقص لم يتم تأكيدها بعد. تم تصفية المسودة لإظهارها للمراجعة قبل الحفظ النهائي.'
+                );
+                return;
+              }
+              setUploadError('');
+              if (
+                selectedPlanCounts.update > 0 ||
+                selectedPlanCounts.replace > 0
+              ) {
+                setShowConfirmUpdates(true);
+              } else {
+                executeCommit();
+              }
+            }}
+          />
+
           {/* Honest Progressive Summary Strip */}
           {activeSession && (
             <section

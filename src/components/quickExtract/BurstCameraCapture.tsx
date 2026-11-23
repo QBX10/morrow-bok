@@ -14,6 +14,12 @@ import {
   preprocessLedgerBurstFrames,
   type BurstFusionSummary,
 } from '../../utils/ledgerImageProcessor';
+import {
+  buildPermissionRecoveryGuide,
+  requestCameraStreamSafe,
+  type MediaPermissionGuide,
+} from '../../utils/mediaPermissions';
+import { PermissionGuardModal } from '../permissions/PermissionGuardModal';
 
 interface BurstCameraCaptureProps {
   analyzing: boolean;
@@ -38,6 +44,9 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
     null
   );
   const [showEnhancedPreview, setShowEnhancedPreview] = useState(true);
+  const [permissionGuide, setPermissionGuide] = useState<MediaPermissionGuide | null>(null);
+  const [checkingPermission, setCheckingPermission] = useState(false);
+  const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -60,35 +69,34 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
 
   const startCamera = async () => {
     setCameraError('');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError(
-        'المتصفح لا يدعم الوصول المباشر للكاميرا. يمكنك رفع صور الدفتر من الزر أدناه.'
-      );
-      return;
-    }
+    setCheckingPermission(true);
     try {
       stopCamera();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
-      streamRef.current = stream;
+      const res = await requestCameraStreamSafe();
+      if (!res.ok || !res.stream) {
+        const fallbackGuide =
+          res.guide ||
+          buildPermissionRecoveryGuide(
+            'camera',
+            'تعذر تشغيل الكاميرا (تحقق من صلاحيات الكاميرا أو استخدم خيار رفع صور الدفتر مباشرة).'
+          );
+        setCameraError(fallbackGuide.reason);
+        setPermissionGuide(fallbackGuide);
+        setCameraActive(false);
+        return;
+      }
+
+      setPermissionGuide(null);
+      streamRef.current = res.stream;
       setCameraActive(true);
       requestAnimationFrame(() => {
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = res.stream;
           void videoRef.current.play().catch(() => {});
         }
       });
-    } catch {
-      setCameraError(
-        'تعذر تشغيل الكاميرا (تحقق من صلاحيات الكاميرا أو استخدم خيار رفع صور الدفتر مباشرة).'
-      );
-      setCameraActive(false);
+    } finally {
+      setCheckingPermission(false);
     }
   };
 
@@ -220,6 +228,7 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
               <ImagePlus className="h-4 w-4" />
               <span>رفع صورة أو عدة زوايا للدفتر</span>
               <input
+                ref={fileUploadInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/*"
                 multiple
@@ -294,14 +303,28 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
         {cameraError && (
           <div
             role="alert"
-            className="mt-3 rounded-lg border px-3 py-2 text-xs font-semibold"
+            className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs font-semibold"
             style={{
               backgroundColor: 'var(--danger-bg)',
               borderColor: 'var(--danger)',
               color: 'var(--danger)',
             }}
           >
-            {cameraError}
+            <span>{cameraError}</span>
+            <button
+              type="button"
+              onClick={() =>
+                setPermissionGuide(buildPermissionRecoveryGuide('camera', cameraError))
+              }
+              className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--danger)',
+                color: 'var(--danger)',
+              }}
+            >
+              عرض خطوات السماح بالكاميرا
+            </button>
           </div>
         )}
       </div>
@@ -441,6 +464,16 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
           )}
         </div>
       )}
+
+      <PermissionGuardModal
+        open={Boolean(permissionGuide)}
+        guide={permissionGuide}
+        checking={checkingPermission}
+        onClose={() => setPermissionGuide(null)}
+        onRetryPermission={() => void startCamera()}
+        onUseFallback={() => fileUploadInputRef.current?.click()}
+        fallbackLabel="رفع صور الدفتر من الجهاز"
+      />
     </div>
   );
 };

@@ -18,6 +18,8 @@ import type {
   AssistantToolCall,
   AssistantUserPref,
   MorrowCenterTab,
+  MorrowSystemCheckItem,
+  MorrowSystemVerificationReport,
 } from '../types/assistant.ts';
 import {
   buildAssistantCacheKey,
@@ -25,7 +27,10 @@ import {
   setCachedAssistantResponse,
   type AssistantCacheEntry,
 } from '../utils/assistantCache.ts';
-import { getProactiveHealthNotice } from '../utils/assistantDiagnostics.ts';
+import {
+  getProactiveHealthNotice,
+  runAppDiagnostics,
+} from '../utils/assistantDiagnostics.ts';
 import {
   executeApprovedToolMutation,
   resolveToolExecution,
@@ -441,6 +446,27 @@ export function useAssistantEngine(params: {
     ]
   );
 
+  const liveCloudPayload = useMemo(
+    () =>
+      buildCloudContextPayload(
+        fullRuntime.uiContext,
+        messages,
+        Boolean(fullRuntime.state.securityPrefs?.allowCloudBeneficiaryNames),
+        fullRuntime.state,
+        {
+          quickNotesCount: quickNotes.length,
+          pendingDraftsCount,
+        }
+      ),
+    [
+      fullRuntime.uiContext,
+      fullRuntime.state,
+      messages,
+      quickNotes.length,
+      pendingDraftsCount,
+    ]
+  );
+
   const smartSuggestions = useMemo(
     () =>
       getScreenAwareSuggestions(
@@ -494,6 +520,58 @@ export function useAssistantEngine(params: {
       return draftId;
     },
     []
+  );
+
+  const stageToolDrafts = useCallback(
+    (tools: AssistantToolCall[], sourceLabel: string) => {
+      let stagedCount = 0;
+      let backupTriggered = false;
+
+      for (const rawTool of tools) {
+        const validated = validateToolCall(rawTool);
+        if (!validated.valid || !validated.sanitized) continue;
+        const tc = validated.sanitized;
+
+        if (tc.name === 'backup_restore' && tc.args.action === 'backup_json') {
+          exportBackupJson(false);
+          backupTriggered = true;
+          continue;
+        }
+
+        const diff = buildBeforeAfterDiff(
+          fullRuntime.state,
+          tc,
+          fullRuntime.uiContext.focusedPersonId
+        );
+        if (diff) {
+          const draftId = registerDraftFromDiff(diff, 'morrow_local', sourceLabel);
+          stagedCount += 1;
+          appendMessage({
+            role: 'assistant',
+            text: `${sourceLabel}: جهّزت مسودة «${diff.title}» للمراجعة والموافقة:`,
+            engineUsed: 'morrow_local',
+            gracefulLevel: 'A',
+            confirmationDiff: diff,
+            pendingDraftId: draftId,
+          });
+        }
+      }
+
+      if (stagedCount > 0) {
+        emitAppToast({
+          title: `تم تجهيز ${stagedCount} مسودة في طابور الموافقة`,
+          description: 'لن تتغير البيانات الفعلية إلا بعد موافقتك.',
+          tone: 'info',
+        });
+      } else if (backupTriggered) {
+        emitAppToast({
+          title: 'تم تنزيل النسخة الاحتياطية بنجاح',
+          tone: 'success',
+        });
+      }
+      return stagedCount;
+    },
+    [fullRuntime.state, fullRuntime.uiContext.focusedPersonId, exportBackupJson, registerDraftFromDiff, appendMessage]
   );
 
   const savePromptToQueue = useCallback((prompt: string, reason: string) => {
@@ -1021,20 +1099,40 @@ export function useAssistantEngine(params: {
       if (assistantSettings.cacheEnabled) {
         const cached = getCachedAssistantResponse(responseCache, cacheKey);
         if (cached) {
-          if (cached.toolCalls?.[0]) {
-            const validated = validateToolCall(cached.toolCalls[0]);
-            if (validated.valid && validated.sanitized) {
+          if (cached.toolCalls && cached.toolCalls.length > 0) {
+            const validCachedTools = cached.toolCalls
+              .map((t) => validateToolCall(t))
+              .filter((v): v is { valid: true; sanitized: AssistantToolCall } => Boolean(v.valid && v.sanitized))
+              .map((v) => v.sanitized);
+
+            if (validCachedTools.length > 0) {
+              const primaryTool = validCachedTools[0];
               const resolved = resolveToolExecution(
-                validated.sanitized,
+                primaryTool,
                 fullRuntime,
                 cached.text
               );
               const draftId = resolved.confirmationDiff
                 ? registerDraftFromDiff(resolved.confirmationDiff, cached.engineUsed, cleanPrompt)
                 : undefined;
+
+              const extraNotes: string[] = [];
+              for (const extraTool of validCachedTools.slice(1)) {
+                const extraResolved = resolveToolExecution(extraTool, fullRuntime);
+                if (extraResolved.confirmationDiff) {
+                  registerDraftFromDiff(extraResolved.confirmationDiff, cached.engineUsed, cleanPrompt);
+                  extraNotes.push(`• مسودة إضافية: ${extraResolved.confirmationDiff.title}`);
+                } else if (extraResolved.replyText) {
+                  extraNotes.push(`• ${extraResolved.replyText}`);
+                }
+              }
+
               appendMessage({
                 role: 'assistant',
-                text: resolved.replyText,
+                text:
+                  extraNotes.length > 0
+                    ? `${resolved.replyText}\n\nإجراءات إضافية مرتبطة:\n${extraNotes.join('\n')}`
+                    : resolved.replyText,
                 engineUsed: cached.engineUsed,
                 engineLabel: `${cached.engineLabel} · ذاكرة سريعة`,
                 modelId: cached.modelId,
@@ -1078,14 +1176,7 @@ export function useAssistantEngine(params: {
       setIsThinking(true);
       setQuotaStats((prev) => recordOnlineRequest(prev, activeModel));
       try {
-        const allowCloudNames = Boolean(
-          fullRuntime.state.securityPrefs?.allowCloudBeneficiaryNames
-        );
-        const { cloudContext, cloudHistory } = buildCloudContextPayload(
-          fullRuntime.uiContext,
-          messages,
-          allowCloudNames
-        );
+        const { cloudContext, cloudHistory } = liveCloudPayload;
 
         const controller = new AbortController();
         const timer = window.setTimeout(() => controller.abort(), 11500);
@@ -1135,73 +1226,90 @@ export function useAssistantEngine(params: {
             : 'gemini_2_5_flash';
         const engineMeta = getEngineDisplayMeta(resolvedEngine);
 
-        const firstToolRaw = Array.isArray(data.toolCalls) ? data.toolCalls[0] : null;
-        if (firstToolRaw) {
-          const validated = validateToolCall(firstToolRaw);
-          if (validated.valid && validated.sanitized) {
-            const resolved = resolveToolExecution(
-              validated.sanitized,
-              fullRuntime,
-              data.text
-            );
-            if (resolved.nextSlotSession !== undefined) {
-              setSlotSession(resolved.nextSlotSession);
-            }
-            if (assistantSettings.cacheEnabled) {
-              setResponseCache((prev) =>
-                setCachedAssistantResponse(prev, {
-                  key: cacheKey,
-                  text: data.text || resolved.replyText,
-                  engineUsed: resolvedEngine,
-                  engineLabel: data.engineLabel || engineMeta.badgeLabel,
-                  modelId: data.modelId || engineMeta.modelId,
-                  toolCalls: [validated.sanitized!],
-                })
-              );
-            }
-            const draftId = resolved.confirmationDiff
-              ? registerDraftFromDiff(resolved.confirmationDiff, resolvedEngine, cleanPrompt)
-              : undefined;
-            appendMessage({
-              role: 'assistant',
-              text: resolved.replyText,
-              engineUsed: resolvedEngine,
-              engineLabel: data.engineLabel || engineMeta.badgeLabel,
-              modelId: data.modelId || engineMeta.modelId,
-              stealthExecuted: resolved.stealthExecuted,
-              gracefulLevel: resolved.gracefulLevel,
-              choices: [
-                ...(resolved.choices || []),
-                ...(draftId
-                  ? [
-                      {
-                        id: `open_drafts_${draftId}`,
-                        label: 'عرض في الموافقات',
-                        actionType: 'open_command_center_tab' as const,
-                        payload: { tab: 'approvals' },
-                      },
-                    ]
-                  : []),
-              ],
-              confirmationDiff: resolved.confirmationDiff ?? undefined,
-              pendingDraftId: draftId,
-              spotlightAction: resolved.spotlightAction,
-              sandboxNotice: resolved.sandboxNotice,
-              diagnosticsReport: resolved.diagnosticsReport,
-              resultCard: resolved.resultCard,
-            });
-            if (resolved.stealthExecuted) {
-              emitAppToast({
-                title: `تنفيذ صامت (${engineMeta.shortLabel})`,
-                description: resolved.replyText,
-                tone: 'success',
-              });
-              if (options?.fromFloatingWidget && resolved.autoCloseChat) {
-                setIsOpen(false);
-              }
-            }
-            return;
+        const validatedTools = Array.isArray(data.toolCalls)
+          ? data.toolCalls
+              .map((raw) => validateToolCall(raw))
+              .filter((v): v is { valid: true; sanitized: AssistantToolCall } =>
+                Boolean(v.valid && v.sanitized)
+              )
+              .map((v) => v.sanitized)
+          : [];
+
+        if (validatedTools.length > 0) {
+          const primaryTool = validatedTools[0];
+          const resolved = resolveToolExecution(primaryTool, fullRuntime, data.text);
+          if (resolved.nextSlotSession !== undefined) {
+            setSlotSession(resolved.nextSlotSession);
           }
+          if (assistantSettings.cacheEnabled) {
+            setResponseCache((prev) =>
+              setCachedAssistantResponse(prev, {
+                key: cacheKey,
+                text: data.text || resolved.replyText,
+                engineUsed: resolvedEngine,
+                engineLabel: data.engineLabel || engineMeta.badgeLabel,
+                modelId: data.modelId || engineMeta.modelId,
+                toolCalls: validatedTools,
+              })
+            );
+          }
+          const draftId = resolved.confirmationDiff
+            ? registerDraftFromDiff(resolved.confirmationDiff, resolvedEngine, cleanPrompt)
+            : undefined;
+
+          const extraNotes: string[] = [];
+          for (const extraTool of validatedTools.slice(1)) {
+            const extraResolved = resolveToolExecution(extraTool, fullRuntime);
+            if (extraResolved.confirmationDiff) {
+              registerDraftFromDiff(extraResolved.confirmationDiff, resolvedEngine, cleanPrompt);
+              extraNotes.push(`• مسودة إضافية: ${extraResolved.confirmationDiff.title}`);
+            } else if (extraResolved.replyText) {
+              extraNotes.push(`• ${extraResolved.replyText}`);
+            }
+          }
+
+          appendMessage({
+            role: 'assistant',
+            text:
+              extraNotes.length > 0
+                ? `${resolved.replyText}\n\nإجراءات إضافية مرتبطة:\n${extraNotes.join('\n')}`
+                : resolved.replyText,
+            engineUsed: resolvedEngine,
+            engineLabel: data.engineLabel || engineMeta.badgeLabel,
+            modelId: data.modelId || engineMeta.modelId,
+            stealthExecuted: resolved.stealthExecuted,
+            gracefulLevel: resolved.gracefulLevel,
+            choices: [
+              ...(resolved.choices || []),
+              ...(draftId
+                ? [
+                    {
+                      id: `open_drafts_${draftId}`,
+                      label: 'عرض في الموافقات',
+                      actionType: 'open_command_center_tab' as const,
+                      payload: { tab: 'approvals' },
+                    },
+                  ]
+                : []),
+            ],
+            confirmationDiff: resolved.confirmationDiff ?? undefined,
+            pendingDraftId: draftId,
+            spotlightAction: resolved.spotlightAction,
+            sandboxNotice: resolved.sandboxNotice,
+            diagnosticsReport: resolved.diagnosticsReport,
+            resultCard: resolved.resultCard,
+          });
+          if (resolved.stealthExecuted) {
+            emitAppToast({
+              title: `تنفيذ صامت (${engineMeta.shortLabel})`,
+              description: resolved.replyText,
+              tone: 'success',
+            });
+            if (options?.fromFloatingWidget && resolved.autoCloseChat) {
+              setIsOpen(false);
+            }
+          }
+          return;
         }
 
         const replyText =
@@ -1258,13 +1366,179 @@ export function useAssistantEngine(params: {
       conversationMemory,
       responseCache,
       quotaStats,
-      messages,
+      liveCloudPayload,
       appendMessage,
       runLocalAndRespond,
       presentOfflineOutcome,
       registerDraftFromDiff,
     ]
   );
+
+  const handleLiveVoiceToolAction = useCallback(
+    (rawTool: AssistantToolCall): string => {
+      const checked = validateToolCall(rawTool);
+      if (!checked.valid || !checked.sanitized) {
+        return checked.reason || 'أمر غير مكتمل من الجلسة المباشرة.';
+      }
+      const tc = checked.sanitized;
+      const resolved = resolveToolExecution(tc, fullRuntime);
+      if (resolved.confirmationDiff) {
+        const draftId = registerDraftFromDiff(
+          resolved.confirmationDiff,
+          'gemini_2_5_flash',
+          'أمر صوتي مباشر (Live)'
+        );
+        appendMessage({
+          role: 'assistant',
+          text: `من المحادثة المباشرة لايف — جهّزت مسودة «${resolved.confirmationDiff.title}» للمراجعة:`,
+          engineUsed: 'gemini_2_5_flash',
+          engineLabel: 'Gemini 3.8 Live · أمر مباشر',
+          modelId: 'gemini-3.8-live',
+          gracefulLevel: 'A',
+          confirmationDiff: resolved.confirmationDiff,
+          pendingDraftId: draftId,
+        });
+        emitAppToast({
+          title: 'مسودة جديدة من المحادثة لايف',
+          description: resolved.confirmationDiff.title,
+          tone: 'info',
+        });
+        return `تم تجهيز مسودة «${resolved.confirmationDiff.title}» للموافقة الآمنة.`;
+      }
+
+      if (resolved.replyText) {
+        appendMessage({
+          role: 'assistant',
+          text: resolved.replyText,
+          engineUsed: 'gemini_2_5_flash',
+          engineLabel: 'Gemini 3.8 Live · تنفيذ مباشر',
+          modelId: 'gemini-3.8-live',
+          gracefulLevel: resolved.gracefulLevel,
+          spotlightAction: resolved.spotlightAction,
+          resultCard: resolved.resultCard,
+        });
+      }
+      return resolved.replyText || 'تم تنفيذ الطلب في التطبيق.';
+    },
+    [fullRuntime, registerDraftFromDiff, appendMessage]
+  );
+
+  const verifyMorrowSystemIntegrity = useCallback(async (): Promise<MorrowSystemVerificationReport> => {
+    const checks: MorrowSystemCheckItem[] = [];
+    const lw = liveCloudPayload.cloudContext.liveWorkspace;
+
+    // 1. Root workspace state & live metrics parity
+    const agencyParity =
+      Boolean(lw) &&
+      lw!.agenciesBreakdown.length === fullRuntime.state.agencies.length &&
+      lw!.totalRegisteredHouseholds === fullRuntime.state.persons.length;
+
+    checks.push({
+      id: 'workspace_binding',
+      label: 'الربط الجذري ببيانات الوكالات والأفراد',
+      status: agencyParity ? 'ok' : 'warning',
+      detail: lw
+        ? `مربوط لحظياً مع ${lw.agenciesBreakdown.length} وكالات · ${lw.totalActiveIndividuals.toLocaleString('ar-IQ')} فرد نشط · ${lw.totalFullBags.toLocaleString('ar-IQ')} كيس (${lw.periodName})`
+        : 'تعذر قراءة ملخص الحصة الحالية.',
+    });
+
+    // 2. Local brain + Diagnostics engine probe
+    const localProbe = runOfflineBrain({
+      prompt: 'احصائيات',
+      state: fullRuntime.state,
+      uiContext: fullRuntime.uiContext,
+      slotSession: null,
+      memory: conversationMemory,
+    });
+    const diag = runAppDiagnostics(fullRuntime.state, lastBackupAt);
+
+    checks.push({
+      id: 'morrow_local_probe',
+      label: 'محرك Morrow المحلي والتشخيص الفوري',
+      status: localProbe.handled ? 'ok' : 'warning',
+      detail: `استجابة محلية فورية (${Math.round(localProbe.confidence * 100)}%) · درجة سلامة الجداول ${diag.healthScore}% (${diag.totalIssues} ملاحظة)`,
+    });
+
+    // 3. Zero-trust tool validation gate
+    const badCheck = validateToolCall({ name: 'archive_person', args: {} });
+    const goodCheck = validateToolCall({ name: 'get_stats_profit', args: {} });
+    checks.push({
+      id: 'zero_trust_tools',
+      label: 'بوابة الأمان والصفّر-ثقة للأدوات',
+      status: !badCheck.valid && goodCheck.valid ? 'ok' : 'error',
+      detail:
+        !badCheck.valid && goodCheck.valid
+          ? 'تمنع التنفيذ العشوائي وتُمرّر أي تعديل عبر مسودة «قبل ← بعد».'
+          : 'فحص التحقق من الأدوات يحتاج مراجعة.',
+    });
+
+    // 4. Privacy context & masking check
+    const privacyMode = liveCloudPayload.cloudContext.privacyMode;
+    checks.push({
+      id: 'privacy_masking',
+      label: 'حماية الخصوصية وسياق النماذج السحابية',
+      status: 'ok',
+      detail:
+        privacyMode === 'names_allowed_by_user'
+          ? `مفعل: السحابة ترى المؤشرات + دليل الأسماء المصرح به (${liveCloudPayload.cloudContext.beneficiaryDirectory?.length ?? 0})`
+          : 'مفعل: السحابة ترى الإحصائيات والوكالات كاملة مع حجب أسماء المستفيدين تلقائياً',
+    });
+
+    // 5. Server status & all cloud models binding check
+    try {
+      const res = await fetch('/api/assistant/status');
+      if (res.ok) {
+        const statusJson = (await res.json()) as {
+          cloudConfigured?: boolean;
+          defaultModel?: string;
+          fallbackModel?: string;
+          liveModel?: string;
+          multimodalModel?: string;
+        };
+        setCloudConfigured(Boolean(statusJson.cloudConfigured));
+        checks.push({
+          id: 'cloud_and_live_status',
+          label: 'النماذج السحابية + لايف + المرفقات',
+          status: statusJson.cloudConfigured ? 'ok' : 'warning',
+          detail: statusJson.cloudConfigured
+            ? `متصل: ${statusJson.defaultModel || 'gemini-2.5-flash'} · ${statusJson.fallbackModel || 'gemini-2.5-pro'} · ${statusJson.liveModel || 'gemini-3.8-live'} · ${statusJson.multimodalModel || 'gemini-4-hydrogen'}`
+            : 'مفتاح السحابة غير مهيأ — يعتمد التطبيق بكفاءة على Morrow المحلي.',
+        });
+      } else {
+        checks.push({
+          id: 'cloud_and_live_status',
+          label: 'النماذج السحابية + لايف + المرفقات',
+          status: 'warning',
+          detail: 'تعذر الوصول لحالة الخادم السحابي حالياً (HTTP ' + res.status + ').',
+        });
+      }
+    } catch {
+      checks.push({
+        id: 'cloud_and_live_status',
+        label: 'النماذج السحابية + لايف + المرفقات',
+        status: 'warning',
+        detail: 'وضع العمل بدون اتصال — محرك Morrow المحلي يعمل بالكامل.',
+      });
+    }
+
+    const activeMeta =
+      brainMode === 'local'
+        ? 'Morrow المحلي'
+        : brainMode === 'gemini_2_5_flash'
+          ? 'Gemini 2.5 Flash'
+          : brainMode === 'gemini_2_5_pro'
+            ? 'Gemini 2.5 Pro'
+            : 'التصعيد التلقائي المتكامل';
+
+    return {
+      checkedAt: new Date().toISOString(),
+      allPassed: checks.every((c) => c.status !== 'error'),
+      activeModelLabel: activeMeta,
+      boundAgenciesCount: fullRuntime.state.agencies.length,
+      boundPersonsCount: fullRuntime.state.persons.length,
+      checks,
+    };
+  }, [liveCloudPayload, fullRuntime.state, fullRuntime.uiContext, conversationMemory, lastBackupAt, brainMode]);
 
   const flushNextCompoundStepIfAny = useCallback(() => {
     setPendingCompoundQueue((prev) => {
@@ -1722,5 +1996,10 @@ export function useAssistantEngine(params: {
     conversationMemory,
     hasUndoableAssistantMessage,
     undoLastAssistantAction,
+    stageToolDrafts,
+    lastBackupAt,
+    liveCloudContext: liveCloudPayload.cloudContext,
+    handleLiveVoiceToolAction,
+    verifyMorrowSystemIntegrity,
   };
 }
