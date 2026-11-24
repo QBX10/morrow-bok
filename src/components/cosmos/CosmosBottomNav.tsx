@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Bot,
   Home,
@@ -18,12 +19,11 @@ interface CosmosBottomNavProps {
   onQuickAddPerson: () => void;
   onOpenAssistant: () => void;
   onOpenCommandPalette: () => void;
-  isAssistantThinking?: boolean;
   pendingDraftsCount?: number;
 }
 
 /**
- * Mobile One-Thumb Floating Navigation Dock — strictly operational + single Settings gateway.
+ * Glassy Floating Dock with Framer Motion layoutId gold pill indicator and Top Glow Cap.
  */
 export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   activeView,
@@ -33,7 +33,6 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   onQuickAddPerson,
   onOpenAssistant,
   onOpenCommandPalette,
-  isAssistantThinking = false,
   pendingDraftsCount = 0,
 }) => {
   const [hiddenByScroll, setHiddenByScroll] = useState(false);
@@ -45,7 +44,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
       const delta = curY - lastScrollYRef.current;
       if (curY < 60) {
         setHiddenByScroll(false);
-      } else if (delta > 16) {
+      } else if (delta > 24) {
         setHiddenByScroll(true);
       } else if (delta < -10) {
         setHiddenByScroll(false);
@@ -83,7 +82,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
     {
       id: 'center_action',
       label: canAddPerson ? 'إضافة' : 'بحث',
-      icon: canAddPerson ? <Plus className="h-5 w-5" /> : <Search className="h-5 w-5" />,
+      icon: canAddPerson ? <Plus className="h-4 w-4" /> : <Search className="h-4 w-4" />,
       primary: true,
       onClick: () => (canAddPerson ? onQuickAddPerson() : onOpenCommandPalette()),
       onLongPress: onOpenCommandPalette,
@@ -117,14 +116,12 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
 
   return (
     <nav
-      aria-label="شريط الوصول السريع للجوال"
-      className={`lg:hidden fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] flex justify-center px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pointer-events-none transition-transform duration-200 ${
-        hiddenByScroll ? 'translate-y-24' : 'translate-y-0'
+      aria-label="شريط التنقل العائم"
+      className={`fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] flex justify-center px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pointer-events-none transition-transform duration-300 ${
+        hiddenByScroll ? 'translate-y-28' : 'translate-y-0'
       }`}
     >
-      <div
-        className="nexus-glass-lite pointer-events-auto flex w-full max-w-md items-center justify-around gap-1 rounded-full border px-2.5 py-1.5 shadow-2xl"
-      >
+      <div className="smoked-glass-elevated pointer-events-auto relative flex w-auto max-w-[96vw] items-center justify-center gap-1 sm:gap-1.5 rounded-full px-2.5 py-1.5 border border-[#D4AF37]/25 shadow-[0_20px_48px_rgba(0,0,0,0.8)]">
         {items.map((item) => {
           let holdTimer: number | null = null;
           const startHold = () => {
@@ -150,15 +147,11 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
                 onTouchStart={startHold}
                 onTouchEnd={cancelHold}
                 onTouchCancel={cancelHold}
-                className="nexus-pill-btn -mt-4 flex h-12 min-w-[60px] flex-col items-center justify-center px-3.5 shadow-lg transition-transform active:scale-95"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
+                className="obsidian-gold-cta relative mx-1 flex h-11 min-w-[58px] flex-col items-center justify-center rounded-full px-4 shadow-lg active:scale-95 cursor-pointer"
                 aria-label={item.label}
               >
                 {item.icon}
-                <span className="text-[10px] font-black leading-none mt-0.5">
+                <span className="text-[10px] font-black leading-none mt-0.5 whitespace-nowrap">
                   {item.label}
                 </span>
               </button>
@@ -173,30 +166,27 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
               onTouchStart={startHold}
               onTouchEnd={cancelHold}
               onTouchCancel={cancelHold}
-              className="relative flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition-colors active:scale-95"
+              aria-current={item.active ? 'page' : undefined}
+              className="relative flex min-h-[44px] min-w-[56px] sm:min-w-[66px] flex-col items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-bold transition-colors active:scale-95 cursor-pointer"
               style={{
-                backgroundColor: item.active ? 'var(--bg-nav-active)' : 'transparent',
-                color: item.active ? 'var(--accent)' : 'var(--text-muted)',
+                color: item.active ? '#F3E5AB' : '#9898AA',
               }}
             >
-              <span className="relative">
-                {item.icon}
-                {item.id === 'morrow' && isAssistantThinking && (
-                  <span
-                    className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
-                    style={{ backgroundColor: 'var(--warning)' }}
-                  />
-                )}
-              </span>
-              <span className="whitespace-nowrap leading-none">{item.label}</span>
-              {typeof item.badge === 'number' && item.badge > 0 && (
-                <span
-                  className="absolute top-0.5 left-1 rounded-full px-1 text-[9px] font-black tabular-nums"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
+              {item.active && (
+                <motion.div
+                  layoutId="floating-nav-active-pill"
+                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  className="absolute inset-0 rounded-full border border-[#D4AF37]/40 bg-[#D4AF37]/15"
                 >
+                  <span className="nav-top-glow-cap" />
+                </motion.div>
+              )}
+              <span className="relative z-10">{item.icon}</span>
+              <span className="relative z-10 whitespace-nowrap leading-none">
+                {item.label}
+              </span>
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span className="absolute top-0.5 left-1.5 z-20 rounded-full px-1 font-mono-num text-[9px] font-black bg-[#D4AF37] text-[#09090B]">
                   {item.badge}
                 </span>
               )}

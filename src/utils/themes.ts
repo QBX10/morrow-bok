@@ -10,7 +10,7 @@ import type {
   ThemePreferences,
 } from '../types/agency';
 
-export type ThemeCapsuleGroupId = 'classic' | 'modern' | 'glass';
+export type ThemeCapsuleGroupId = 'classic';
 
 export interface AppThemeDefinition {
   id: AppThemeId;
@@ -18,7 +18,7 @@ export interface AppThemeDefinition {
   englishName: string;
   description: string;
   mood: string;
-  isDark: boolean;
+  isDark: true;
   capsuleGroup?: ThemeCapsuleGroupId;
   swatches: [string, string, string];
   vars: {
@@ -47,428 +47,45 @@ export interface AppThemeDefinition {
   };
 }
 
-export const APP_THEMES: AppThemeDefinition[] = [
-  {
-    id: 'obsidian-gold',
-    name: 'السبج والذهب',
-    englishName: 'Obsidian & Gold',
-    mood: 'فخامة ليلية وتركيز عميق',
-    description:
-      'أسود سبجي عميق جداً مع لمسات ذهبية راقية تمنح تركيزاً ليلياً مريحاً وفخامة تنفيذية.',
-    isDark: true,
-    swatches: ['#121212', '#1A1A24', '#F5B041'],
-    vars: {
-      '--bg-main': '#121212',
-      '--bg-surface': '#1A1A24',
-      '--bg-header': '#121216',
-      '--bg-table-header': '#1E1F2B',
-      '--bg-nav-active': 'rgba(245, 176, 65, 0.14)',
-      '--bg-zebra': 'rgba(255, 255, 255, 0.025)',
-      '--bg-numeric': 'rgba(245, 176, 65, 0.06)',
-      '--row-hover-bg': 'rgba(245, 176, 65, 0.11)',
-      '--text-primary': '#F0F0F5',
-      '--text-muted': '#8A8A9E',
-      '--border-color': 'rgba(255, 255, 255, 0.08)',
-      '--grid-color': 'rgba(255, 255, 255, 0.07)',
-      '--accent': '#F5B041',
-      '--accent-fg': '#121212',
-      '--success': '#10B981',
-      '--success-fg': '#04271D',
-      '--success-bg': 'rgba(16, 185, 129, 0.16)',
-      '--warning': '#F5B041',
-      '--warning-bg': 'rgba(245, 176, 65, 0.16)',
-      '--danger': '#EF4444',
-      '--danger-fg': '#FFFFFF',
-      '--danger-bg': 'rgba(239, 68, 68, 0.16)',
-    },
+export const OBSIDIAN_GOLD_THEME: AppThemeDefinition = {
+  id: 'obsidian-gold',
+  name: 'السبج والذهب',
+  englishName: 'Obsidian & Gold',
+  mood: 'الهوية البصرية الحصرية المعتمدة',
+  description:
+    'أسود سبجي عميق (#09090B) مع زجاجية داكنة مصقولة ولمسات ذهب معدني فاخرة (#D4AF37).',
+  isDark: true,
+  swatches: ['#09090B', '#121216', '#D4AF37'],
+  vars: {
+    '--bg-main': '#09090B',
+    '--bg-surface': '#121216',
+    '--bg-header': '#0D0D11',
+    '--bg-table-header': '#16161C',
+    '--bg-nav-active': 'rgba(212, 175, 55, 0.14)',
+    '--bg-zebra': 'rgba(255, 255, 255, 0.024)',
+    '--bg-numeric': 'rgba(212, 175, 55, 0.055)',
+    '--row-hover-bg': 'rgba(212, 175, 55, 0.11)',
+    '--text-primary': '#F4F4F6',
+    '--text-muted': '#9898AA',
+    '--border-color': 'rgba(212, 175, 55, 0.22)',
+    '--grid-color': 'rgba(212, 175, 55, 0.12)',
+    '--accent': '#D4AF37',
+    '--accent-fg': '#09090B',
+    '--success': '#10B981',
+    '--success-fg': '#04271D',
+    '--success-bg': 'rgba(16, 185, 129, 0.16)',
+    '--warning': '#F5B041',
+    '--warning-bg': 'rgba(245, 176, 65, 0.16)',
+    '--danger': '#EF4444',
+    '--danger-fg': '#FFFFFF',
+    '--danger-bg': 'rgba(239, 68, 68, 0.16)',
   },
-  {
-    id: 'aurora',
-    name: 'الشفق القطبي',
-    englishName: 'Aurora',
-    mood: 'تدرجات قطبية متناغمة',
-    description:
-      'سماء ليلية عميقة بإضاءة خضراء وبنفسجية وزرقاء متوازنة تقلل إجهاد العمل المتأخر.',
-    isDark: true,
-    swatches: ['#071220', '#0e1d33', '#38bdf8'],
-    vars: {
-      '--bg-main': '#071220',
-      '--bg-surface': '#0e1d33',
-      '--bg-header': '#040a14',
-      '--bg-table-header': '#162c4a',
-      '--bg-nav-active': 'rgba(56, 189, 248, 0.15)',
-      '--bg-zebra': 'rgba(30, 58, 95, 0.32)',
-      '--bg-numeric': 'rgba(52, 211, 153, 0.055)',
-      '--row-hover-bg': 'rgba(56, 189, 248, 0.12)',
-      '--text-primary': '#f0f9ff',
-      '--text-muted': '#94b3d4',
-      '--border-color': '#203b5e',
-      '--grid-color': '#1d3657',
-      '--accent': '#38bdf8',
-      '--accent-fg': '#062033',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(16, 185, 129, 0.16)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(245, 158, 11, 0.16)',
-      '--danger': '#fb7185',
-      '--danger-fg': '#4c0519',
-      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
-    },
-  },
-  {
-    id: 'cyberpunk',
-    name: 'النيون السيبراني',
-    englishName: 'Cyberpunk',
-    mood: 'دقة رقمية وتقنية عالية',
-    description:
-      'أسود فائق العمق مع لمسات وردية كهربائية وسماوية حادة لبيئات التدقيق الرقمي.',
-    isDark: true,
-    swatches: ['#090910', '#131422', '#ec4899'],
-    vars: {
-      '--bg-main': '#090910',
-      '--bg-surface': '#131422',
-      '--bg-header': '#05050a',
-      '--bg-table-header': '#1e2038',
-      '--bg-nav-active': 'rgba(236, 72, 153, 0.15)',
-      '--bg-zebra': 'rgba(34, 211, 238, 0.04)',
-      '--bg-numeric': 'rgba(34, 211, 238, 0.07)',
-      '--row-hover-bg': 'rgba(236, 72, 153, 0.12)',
-      '--text-primary': '#f8fafc',
-      '--text-muted': '#a5b4fc',
-      '--border-color': '#2c2f52',
-      '--grid-color': '#272a4a',
-      '--accent': '#f43f8e',
-      '--accent-fg': '#ffffff',
-      '--success': '#22d3ee',
-      '--success-fg': '#083344',
-      '--success-bg': 'rgba(34, 211, 238, 0.14)',
-      '--warning': '#facc15',
-      '--warning-bg': 'rgba(250, 204, 21, 0.14)',
-      '--danger': '#fb7185',
-      '--danger-fg': '#4c0519',
-      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
-    },
-  },
-  {
-    id: 'desert-mirage',
-    name: 'السراب الصحراوي',
-    englishName: 'Desert Mirage',
-    mood: 'دفء ورقي ناعم للقراءة الطويلة',
-    description:
-      'خلفية رملية عاجية دافئة بنصوص فحمية واضحة وفواصل خشبية هادئة تمنع إرهاق العين.',
-    isDark: false,
-    swatches: ['#f5efe4', '#fffcf6', '#9a5b13'],
-    vars: {
-      '--bg-main': '#f5efe4',
-      '--bg-surface': '#fffcf6',
-      '--bg-header': '#3a2d21',
-      '--bg-table-header': '#ece2cf',
-      '--bg-nav-active': '#f2e4cc',
-      '--bg-zebra': 'rgba(236, 226, 207, 0.48)',
-      '--bg-numeric': 'rgba(154, 91, 19, 0.05)',
-      '--row-hover-bg': 'rgba(154, 91, 19, 0.09)',
-      '--text-primary': '#26211c',
-      '--text-muted': '#695b4e',
-      '--border-color': '#ddd0b9',
-      '--grid-color': '#e2d7c3',
-      '--accent': '#9a5b13',
-      '--accent-fg': '#ffffff',
-      '--success': '#166534',
-      '--success-fg': '#ffffff',
-      '--success-bg': '#eef7f0',
-      '--warning': '#b45309',
-      '--warning-bg': '#fef5e7',
-      '--danger': '#b91c1c',
-      '--danger-fg': '#ffffff',
-      '--danger-bg': '#fdf0ef',
-    },
-  },
-  {
-    id: 'arctic-snow',
-    name: 'الثلج القطبي',
-    englishName: 'Arctic Snow',
-    mood: 'وضوح نهاري ناصع واحترافي',
-    description:
-      'واجهة نهارية نقية ومشرقة بتباين مدروس وألوان محايدة واضحة لإنجاز المعاملات السريعة.',
-    isDark: false,
-    swatches: ['#f4f7fb', '#ffffff', '#1d4ed8'],
-    vars: {
-      '--bg-main': '#f4f7fb',
-      '--bg-surface': '#ffffff',
-      '--bg-header': '#0f172a',
-      '--bg-table-header': '#eef3f9',
-      '--bg-nav-active': '#e8f1ff',
-      '--bg-zebra': 'rgba(241, 245, 249, 0.65)',
-      '--bg-numeric': 'rgba(29, 78, 216, 0.035)',
-      '--row-hover-bg': 'rgba(29, 78, 216, 0.075)',
-      '--text-primary': '#0f172a',
-      '--text-muted': '#475569',
-      '--border-color': '#d9e2ec',
-      '--grid-color': '#e2e8f0',
-      '--accent': '#1d4ed8',
-      '--accent-fg': '#ffffff',
-      '--success': '#15803d',
-      '--success-fg': '#ffffff',
-      '--success-bg': '#f0fdf4',
-      '--warning': '#b45309',
-      '--warning-bg': '#fffbeb',
-      '--danger': '#b91c1c',
-      '--danger-fg': '#ffffff',
-      '--danger-bg': '#fef2f2',
-    },
-  },
-  {
-    id: 'emerald-forest',
-    name: 'غابة الزمرد',
-    englishName: 'Emerald Forest',
-    mood: 'توازن مالي وهدوء طبيعي',
-    description:
-      'أخضر غابي عميق ومريح يبرز الأرقام المالية والإنجاز بوضوح هادئ ومستقر.',
-    isDark: true,
-    swatches: ['#091712', '#10241c', '#10b981'],
-    vars: {
-      '--bg-main': '#091712',
-      '--bg-surface': '#10241c',
-      '--bg-header': '#050f0b',
-      '--bg-table-header': '#173327',
-      '--bg-nav-active': 'rgba(16, 185, 129, 0.16)',
-      '--bg-zebra': 'rgba(23, 51, 39, 0.42)',
-      '--bg-numeric': 'rgba(16, 185, 129, 0.065)',
-      '--row-hover-bg': 'rgba(16, 185, 129, 0.12)',
-      '--text-primary': '#ecfdf5',
-      '--text-muted': '#86b5a1',
-      '--border-color': '#1f4434',
-      '--grid-color': '#1b3c2e',
-      '--accent': '#10b981',
-      '--accent-fg': '#022c22',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(52, 211, 153, 0.16)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(251, 191, 36, 0.15)',
-      '--danger': '#f87171',
-      '--danger-fg': '#450a0a',
-      '--danger-bg': 'rgba(248, 113, 113, 0.16)',
-    },
-  },
-  {
-    id: 'royal-crimson',
-    name: 'القرمزي الملكي',
-    englishName: 'Royal Crimson',
-    mood: 'هيبة إدارية وتباين رفيع',
-    description:
-      'خلفية داكنة فاخرة بلمسات ياقوتية قرمزية راقية تمنح الجداول حضوراً مهيباً.',
-    isDark: true,
-    swatches: ['#150b10', '#21121a', '#e11d48'],
-    vars: {
-      '--bg-main': '#150b10',
-      '--bg-surface': '#21121a',
-      '--bg-header': '#0d0609',
-      '--bg-table-header': '#311a26',
-      '--bg-nav-active': 'rgba(225, 29, 72, 0.18)',
-      '--bg-zebra': 'rgba(49, 26, 38, 0.42)',
-      '--bg-numeric': 'rgba(225, 29, 72, 0.07)',
-      '--row-hover-bg': 'rgba(225, 29, 72, 0.13)',
-      '--text-primary': '#fff1f2',
-      '--text-muted': '#cfa3b0',
-      '--border-color': '#442434',
-      '--grid-color': '#3c202e',
-      '--accent': '#e11d48',
-      '--accent-fg': '#ffffff',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(52, 211, 153, 0.15)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(251, 191, 36, 0.15)',
-      '--danger': '#fb7185',
-      '--danger-fg': '#4c0519',
-      '--danger-bg': 'rgba(251, 113, 133, 0.2)',
-    },
-  },
-  {
-    id: 'zen-minimal',
-    name: 'البساطة الهادئة',
-    englishName: 'Zen Minimal',
-    mood: 'صفاء بصري وخلو من المشتتات',
-    description:
-      'ألوان حجرية وزيتية ناعمة بلا حدة بصرية للتركيز الكامل على قوائم الأسماء والأرقام.',
-    isDark: false,
-    swatches: ['#eff4f2', '#fafcfb', '#0f766e'],
-    vars: {
-      '--bg-main': '#eff4f2',
-      '--bg-surface': '#fafcfb',
-      '--bg-header': '#183632',
-      '--bg-table-header': '#e4edea',
-      '--bg-nav-active': '#d8ebe5',
-      '--bg-zebra': 'rgba(228, 237, 234, 0.5)',
-      '--bg-numeric': 'rgba(15, 118, 110, 0.045)',
-      '--row-hover-bg': 'rgba(15, 118, 110, 0.08)',
-      '--text-primary': '#162825',
-      '--text-muted': '#4c6763',
-      '--border-color': '#cadbd5',
-      '--grid-color': '#d5e3de',
-      '--accent': '#0f766e',
-      '--accent-fg': '#ffffff',
-      '--success': '#15803d',
-      '--success-fg': '#ffffff',
-      '--success-bg': '#e8f8ee',
-      '--warning': '#b45309',
-      '--warning-bg': '#fef6e7',
-      '--danger': '#be123c',
-      '--danger-fg': '#ffffff',
-      '--danger-bg': '#fdf0f3',
-    },
-  },
-];
+};
 
-export const MODERN_APP_THEMES: AppThemeDefinition[] = [
-  {
-    id: 'alabaster-glass',
-    name: 'المرمر الزجاجي',
-    englishName: 'Alabaster Glass',
-    mood: 'زجاجية نهارية هادئة وتباين ناصع',
-    description:
-      'سطح خزفي شفاف ناعم مع لمسات زرقاء هادئة يمنح البطاقات عمقاً زجاجياً مريحاً للعين.',
-    isDark: false,
-    capsuleGroup: 'glass',
-    swatches: ['#eef3f9', '#ffffff', '#2563eb'],
-    vars: {
-      '--bg-main': '#eef3f9',
-      '--bg-surface': '#fbfdff',
-      '--bg-header': '#0f172a',
-      '--bg-table-header': '#e5edf7',
-      '--bg-nav-active': '#e0ecff',
-      '--bg-zebra': 'rgba(226, 236, 248, 0.55)',
-      '--bg-numeric': 'rgba(37, 99, 235, 0.04)',
-      '--row-hover-bg': 'rgba(37, 99, 235, 0.08)',
-      '--text-primary': '#0f172a',
-      '--text-muted': '#475569',
-      '--border-color': '#d2deec',
-      '--grid-color': '#dde7f2',
-      '--accent': '#2563eb',
-      '--accent-fg': '#ffffff',
-      '--success': '#15803d',
-      '--success-fg': '#ffffff',
-      '--success-bg': '#ecfdf5',
-      '--warning': '#b45309',
-      '--warning-bg': '#fffbeb',
-      '--danger': '#dc2626',
-      '--danger-fg': '#ffffff',
-      '--danger-bg': '#fef2f2',
-    },
-  },
-  {
-    id: 'sage-linen',
-    name: 'الكتان الحكيم',
-    englishName: 'Sage Linen',
-    mood: 'هدوء طبيعي دافئ للقراءة والتركيز',
-    description:
-      'خلفية كتانية دافئة بلمسات خضراء حريرية تخفف إجهاد النظر أثناء مراجعة القوائم الطويلة.',
-    isDark: false,
-    capsuleGroup: 'modern',
-    swatches: ['#f3f5f1', '#fcfdfb', '#0d9488'],
-    vars: {
-      '--bg-main': '#f3f5f1',
-      '--bg-surface': '#fcfdfb',
-      '--bg-header': '#172826',
-      '--bg-table-header': '#e7ece6',
-      '--bg-nav-active': '#dcf0ec',
-      '--bg-zebra': 'rgba(231, 236, 230, 0.54)',
-      '--bg-numeric': 'rgba(13, 148, 136, 0.045)',
-      '--row-hover-bg': 'rgba(13, 148, 136, 0.085)',
-      '--text-primary': '#1a2523',
-      '--text-muted': '#526360',
-      '--border-color': '#d3dcd4',
-      '--grid-color': '#dfe6e0',
-      '--accent': '#0d9488',
-      '--accent-fg': '#ffffff',
-      '--success': '#15803d',
-      '--success-fg': '#ffffff',
-      '--success-bg': '#ecfdf5',
-      '--warning': '#b45309',
-      '--warning-bg': '#fef7e6',
-      '--danger': '#be123c',
-      '--danger-fg': '#ffffff',
-      '--danger-bg': '#fff1f2',
-    },
-  },
-  {
-    id: 'nordic-dusk',
-    name: 'غسق الشمال',
-    englishName: 'Nordic Dusk',
-    mood: 'ليلي هادئ بدون حدة بصرية',
-    description:
-      'أردواز ليلي معتدل العمق مع تمييز فيروزي ناعم لتجربة إعدادات وجداول مريحة ليلاً.',
-    isDark: true,
-    capsuleGroup: 'modern',
-    swatches: ['#0f1722', '#172232', '#2dd4bf'],
-    vars: {
-      '--bg-main': '#0f1722',
-      '--bg-surface': '#172232',
-      '--bg-header': '#091019',
-      '--bg-table-header': '#1f2e42',
-      '--bg-nav-active': 'rgba(45, 212, 191, 0.15)',
-      '--bg-zebra': 'rgba(31, 46, 66, 0.42)',
-      '--bg-numeric': 'rgba(45, 212, 191, 0.06)',
-      '--row-hover-bg': 'rgba(45, 212, 191, 0.11)',
-      '--text-primary': '#f1f5f9',
-      '--text-muted': '#94a3b8',
-      '--border-color': '#26364d',
-      '--grid-color': '#213044',
-      '--accent': '#2dd4bf',
-      '--accent-fg': '#042f2e',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(52, 211, 153, 0.16)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(251, 191, 36, 0.16)',
-      '--danger': '#fb7185',
-      '--danger-fg': '#4c0519',
-      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
-    },
-  },
-  {
-    id: 'midnight-indigo',
-    name: 'نيلي منتصف الليل',
-    englishName: 'Midnight Indigo',
-    mood: 'زجاجية ليلية عصرية بعمق متدرج',
-    description:
-      'خلفية نيلية عميقة مع طبقات زجاجية مصقولة وبنفسجي هادئ للوحات التحكم المتقدمة.',
-    isDark: true,
-    capsuleGroup: 'glass',
-    swatches: ['#0b1021', '#141b34', '#818cf8'],
-    vars: {
-      '--bg-main': '#0b1021',
-      '--bg-surface': '#141b34',
-      '--bg-header': '#070b18',
-      '--bg-table-header': '#1d2749',
-      '--bg-nav-active': 'rgba(129, 140, 248, 0.16)',
-      '--bg-zebra': 'rgba(29, 39, 73, 0.4)',
-      '--bg-numeric': 'rgba(129, 140, 248, 0.065)',
-      '--row-hover-bg': 'rgba(129, 140, 248, 0.12)',
-      '--text-primary': '#eef2ff',
-      '--text-muted': '#a5b4fc',
-      '--border-color': '#293561',
-      '--grid-color': '#232e54',
-      '--accent': '#818cf8',
-      '--accent-fg': '#0f172a',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(52, 211, 153, 0.15)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(251, 191, 36, 0.15)',
-      '--danger': '#fb7185',
-      '--danger-fg': '#4c0519',
-      '--danger-bg': 'rgba(251, 113, 133, 0.16)',
-    },
-  },
-];
-
-export const ALL_APP_THEMES: AppThemeDefinition[] = [
-  ...APP_THEMES,
-  ...MODERN_APP_THEMES,
-];
+// Locked single-theme architecture: Obsidian & Gold only.
+export const APP_THEMES: AppThemeDefinition[] = [OBSIDIAN_GOLD_THEME];
+export const MODERN_APP_THEMES: AppThemeDefinition[] = [];
+export const ALL_APP_THEMES: AppThemeDefinition[] = [OBSIDIAN_GOLD_THEME];
 
 export const APP_THEME_CAPSULES: Array<{
   id: ThemeCapsuleGroupId;
@@ -478,37 +95,14 @@ export const APP_THEME_CAPSULES: Array<{
 }> = [
   {
     id: 'classic',
-    title: 'الثيمات الكلاسيكية الأصيلة',
-    subtitle: 'الثيمات الثمانية الأصلية بألوانها الكاملة المحمية',
+    title: 'الهوية المعتمدة — السبج والذهب',
+    subtitle: 'نظام الألوان الوحيد المعتمد عبر كامل التطبيق',
     themes: APP_THEMES,
-  },
-  {
-    id: 'modern',
-    title: 'ثيمات عصرية هادئة',
-    subtitle: 'لوحات لونية معاصرة مريحة للعمل الطويل',
-    themes: MODERN_APP_THEMES.filter((t) => t.capsuleGroup === 'modern'),
-  },
-  {
-    id: 'glass',
-    title: 'ثيمات زجاجية مصقولة',
-    subtitle: 'شفافية وطبقات عمق ناعمة لبطاقات الواجهة',
-    themes: MODERN_APP_THEMES.filter((t) => t.capsuleGroup === 'glass'),
   },
 ];
 
-const LEGACY_THEME_MAP: Record<string, AppThemeId> = {
-  'midnight-slate': 'obsidian-gold',
-  'warm-paper': 'desert-mirage',
-  'crisp-daylight': 'arctic-snow',
-  'charcoal-emerald': 'emerald-forest',
-  'nordic-navy': 'aurora',
-  'soft-mint': 'zen-minimal',
-};
-
-export function resolveAppThemeId(rawId?: string | null): AppThemeId {
-  if (!rawId) return 'arctic-snow';
-  if (ALL_APP_THEMES.some((t) => t.id === rawId)) return rawId as AppThemeId;
-  return LEGACY_THEME_MAP[rawId] || 'arctic-snow';
+export function resolveAppThemeId(_rawId?: string | null): AppThemeId {
+  return 'obsidian-gold';
 }
 
 export interface TableThemeDefinition {
@@ -524,7 +118,7 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'الجدول الزجاجي',
     englishName: 'Glass Table',
     description:
-      'صفوف شفافة ناعمة بلمسة زجاجية وفواصل أفقية خفيفة للغاية.',
+      'صفوف شفافة ناعمة بلمسة زجاجية وفواصل ذهبية خفيفة للغاية.',
   },
   {
     id: 'paper-ledger',
@@ -545,14 +139,14 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'التنفيذي الملكي',
     englishName: 'Royal Executive',
     description:
-      'رأس بارز باللون المميز وتباين واضح للأعمدة الرقمية والحصص.',
+      'رأس بارز باللون الذهبي وتباين واضح للأعمدة الرقمية والحصص.',
   },
   {
     id: 'pastel-blocks',
     name: 'الكتل اللطيفة',
     englishName: 'Pastel Blocks',
     description:
-      'فصل هادئ بين الصفوف بظلال باستيل لطيفة تناسب القوائم اليومية.',
+      'فصل هادئ بين الصفوف بظلال ناعمة تناسب القوائم اليومية.',
   },
   {
     id: 'minimalist-lines',
@@ -566,7 +160,7 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'المصفوفة الرقمية',
     englishName: 'Neon Matrix',
     description:
-      'توهج خفيف عند التمرير وإبراز رقمي متساوٍ مخصص للتدقيق السريع.',
+      'توهج ذهبي خفيف عند التمرير وإبراز رقمي متساوٍ مخصص للتدقيق السريع.',
   },
   {
     id: 'card-based',
@@ -586,9 +180,9 @@ const LEGACY_TABLE_MAP: Record<string, TableThemeId> = {
 };
 
 export function resolveTableThemeId(rawId?: string | null): TableThemeId {
-  if (!rawId) return 'paper-ledger';
+  if (!rawId) return 'glass';
   if (TABLE_THEMES.some((t) => t.id === rawId)) return rawId as TableThemeId;
-  return LEGACY_TABLE_MAP[rawId] || 'paper-ledger';
+  return LEGACY_TABLE_MAP[rawId] || 'glass';
 }
 
 export const ARABIC_FONTS: Array<{
@@ -598,9 +192,15 @@ export const ARABIC_FONTS: Array<{
   description: string;
 }> = [
   {
+    id: 'ibm-plex',
+    name: 'IBM Plex Sans Arabic',
+    cssFamily: "'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif",
+    description: 'الخط الافتراضي للقراءة والواجهات والأرقام المحاسبية الدقيقة.',
+  },
+  {
     id: 'cairo',
     name: 'Cairo',
-    cssFamily: "'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif",
+    cssFamily: "'Cairo', 'Readex Pro', 'IBM Plex Sans Arabic', system-ui, sans-serif",
     description: 'حديث وواضح في العناوين والبطاقات والجداول اليومية.',
   },
   {
@@ -627,19 +227,13 @@ export const ARABIC_FONTS: Array<{
     cssFamily: "'El Messiri', 'Cairo', system-ui, sans-serif",
     description: 'طابع عربي أنيق وفخم يناسب التقارير الرسمية والبطاقات.',
   },
-  {
-    id: 'ibm-plex',
-    name: 'IBM Plex Sans Arabic',
-    cssFamily: "'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif",
-    description: 'احترافي ومثالي للأرقام المحاسبية والمحاذاة الجدولية الدقيقة.',
-  },
 ];
 
 export function resolveArabicFontId(rawId?: string | null): ArabicFontId {
-  if (!rawId) return 'cairo';
+  if (!rawId) return 'ibm-plex';
   if (rawId === 'noto-sans') return 'ibm-plex';
   if (ARABIC_FONTS.some((f) => f.id === rawId)) return rawId as ArabicFontId;
-  return 'cairo';
+  return 'ibm-plex';
 }
 
 export const FONT_SIZE_MAP: Record<FontSizeStep, { label: string; px: string; num: number }> = {
@@ -666,21 +260,21 @@ export const ROW_DENSITY_MAP: Record<
 
 export const SHADOW_LEVEL_CSS: Record<CardShadowLevel, string> = {
   none: 'none',
-  soft: '0 2px 10px -2px rgba(0, 0, 0, 0.08)',
-  elevated: '0 10px 28px -6px rgba(0, 0, 0, 0.22)',
+  soft: '0 8px 24px -10px rgba(0, 0, 0, 0.55)',
+  elevated: '0 18px 42px -14px rgba(0, 0, 0, 0.78)',
 };
 
 export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: 'preset_night_work',
-    name: 'وضع العمل الليلي',
+    name: 'وضع السبج والذهب القياسي',
     appTheme: 'obsidian-gold',
-    tableTheme: 'data-grid',
+    tableTheme: 'glass',
     fontFamily: 'ibm-plex',
     fontSizePx: 15,
-    rowHeightPx: 40,
+    rowHeightPx: 42,
     colWidthScale: 100,
-    borderRadiusPx: 24,
+    borderRadiusPx: 22,
     cardShadowLevel: 'soft',
     glassEffect: true,
     conditionalFormatting: {
@@ -691,16 +285,16 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   },
   {
     id: 'preset_fast_reading',
-    name: 'وضع القراءة السريعة',
-    appTheme: 'desert-mirage',
-    tableTheme: 'paper-ledger',
-    fontFamily: 'tajawal',
+    name: 'وضع التدقيق المكثف',
+    appTheme: 'obsidian-gold',
+    tableTheme: 'data-grid',
+    fontFamily: 'cairo',
     fontSizePx: 16,
     rowHeightPx: 46,
     colWidthScale: 105,
     borderRadiusPx: 20,
-    cardShadowLevel: 'none',
-    glassEffect: false,
+    cardShadowLevel: 'elevated',
+    glassEffect: true,
     conditionalFormatting: {
       highlightBlockedRows: true,
       highlightDuplicateNames: true,
@@ -719,11 +313,11 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   fontSizePx: 15,
   rowHeightPx: 44,
   colWidthScale: 100,
-  borderRadiusPx: 24,
+  borderRadiusPx: 22,
   cardShadowLevel: 'soft',
   glassEffect: true,
-  glassOpacityPct: 62,
-  themeColorMode: 'auto',
+  glassOpacityPct: 68,
+  themeColorMode: 'dark',
   customBgColor: '',
   customSurfaceColor: '',
   customTextColor: '',
@@ -745,9 +339,8 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   activeRowFocusMode: true,
 };
 
-export function getAppThemeById(id?: string | null): AppThemeDefinition {
-  const resolved = resolveAppThemeId(id);
-  return ALL_APP_THEMES.find((t) => t.id === resolved) || APP_THEMES[4];
+export function getAppThemeById(_id?: string | null): AppThemeDefinition {
+  return OBSIDIAN_GOLD_THEME;
 }
 
 export function applyThemePreferencesToDocument(
@@ -761,14 +354,7 @@ export function applyThemePreferencesToDocument(
 ): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  let theme = getAppThemeById(prefs.appTheme);
-
-  // Honor themeColorMode ('auto' follows OS prefers-color-scheme if user hasn't forced dark/light theme choice explicitly via classic override)
-  if (prefs.themeColorMode === 'dark' && !theme.isDark) {
-    theme = getAppThemeById('midnight-indigo');
-  } else if (prefs.themeColorMode === 'light' && theme.isDark) {
-    theme = getAppThemeById('arctic-snow');
-  }
+  const theme = OBSIDIAN_GOLD_THEME;
 
   const fontId = resolveArabicFontId(prefs.fontFamily);
   const font = ARABIC_FONTS.find((f) => f.id === fontId) || ARABIC_FONTS[0];
@@ -777,29 +363,12 @@ export function applyThemePreferencesToDocument(
   const density =
     ROW_DENSITY_MAP[prefs.rowDensity] || ROW_DENSITY_MAP.comfortable;
 
-  if (theme.isDark) {
-    root.classList.add('dark');
-  } else {
-    root.classList.remove('dark');
-  }
-  root.style.colorScheme = theme.isDark ? 'dark' : 'light';
+  root.classList.add('dark');
+  root.style.colorScheme = 'dark';
 
   Object.entries(theme.vars).forEach(([key, val]) => {
     root.style.setProperty(key, val);
   });
-
-  if (prefs.customBgColor?.trim()) {
-    root.style.setProperty('--bg-main', prefs.customBgColor.trim());
-  }
-  if (prefs.customSurfaceColor?.trim()) {
-    root.style.setProperty('--bg-surface', prefs.customSurfaceColor.trim());
-  }
-  if (prefs.customTextColor?.trim()) {
-    root.style.setProperty('--text-primary', prefs.customTextColor.trim());
-  }
-  if (prefs.customAccentColor?.trim()) {
-    root.style.setProperty('--accent', prefs.customAccentColor.trim());
-  }
 
   const effectiveFontSizePx =
     typeof prefs.fontSizePx === 'number' && prefs.fontSizePx >= 11 && prefs.fontSizePx <= 26
@@ -824,14 +393,14 @@ export function applyThemePreferencesToDocument(
     prefs.borderRadiusPx >= 2 &&
     prefs.borderRadiusPx <= 28
       ? prefs.borderRadiusPx
-      : 14;
+      : 22;
 
   const glassOpacity =
     typeof prefs.glassOpacityPct === 'number' &&
     prefs.glassOpacityPct >= 40 &&
     prefs.glassOpacityPct <= 100
       ? prefs.glassOpacityPct / 100
-      : 0.86;
+      : 0.68;
 
   const shadowCss =
     SHADOW_LEVEL_CSS[prefs.cardShadowLevel || 'soft'] || SHADOW_LEVEL_CSS.soft;
@@ -845,11 +414,11 @@ export function applyThemePreferencesToDocument(
   root.style.setProperty('--card-radius', `${radiusPx}px`);
   root.style.setProperty('--glass-opacity', String(glassOpacity));
   root.style.setProperty('--card-shadow', shadowCss);
-  root.style.setProperty('--accent-ai', '#5B4FE9');
-  root.style.setProperty('--accent-ai-glow', 'rgba(91, 79, 233, 0.42)');
-  root.dataset.appTheme = theme.id;
+  root.style.setProperty('--accent-ai', '#D4AF37');
+  root.style.setProperty('--accent-ai-glow', 'rgba(212, 175, 55, 0.42)');
+  root.dataset.appTheme = 'obsidian-gold';
   root.dataset.tableTheme = resolveTableThemeId(prefs.tableTheme);
-  root.dataset.glass = prefs.glassEffect ? '1' : '0';
+  root.dataset.glass = prefs.glassEffect !== false ? '1' : '0';
   root.dataset.reduceMotion = accessibility?.reduceMotion ? '1' : '0';
   root.dataset.oneHanded = accessibility?.oneHandedMode ? '1' : '0';
   root.dataset.numerals = accessibility?.numeralSystem || 'western';

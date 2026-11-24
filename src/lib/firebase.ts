@@ -17,6 +17,10 @@ const configWithOptionalDb = firebaseConfig as typeof firebaseConfig & {
   firestoreDatabaseId?: string;
 };
 
+export const isFirestoreConfigured = Boolean(
+  configWithOptionalDb.firestoreDatabaseId
+);
+
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 
 export const db = configWithOptionalDb.firestoreDatabaseId
@@ -90,6 +94,7 @@ export function handleFirestoreError(
 }
 
 export async function testConnection(): Promise<void> {
+  if (!isFirestoreConfigured) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -97,12 +102,14 @@ export async function testConnection(): Promise<void> {
       error instanceof Error &&
       error.message.includes('the client is offline')
     ) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore client is offline; using local workspace storage.');
     }
   }
 }
 
-void testConnection();
+if (isFirestoreConfigured) {
+  void testConnection();
+}
 
 export function initWorkspaceAuth(
   onAuthSuccess?: (user: User, token: string) => void,

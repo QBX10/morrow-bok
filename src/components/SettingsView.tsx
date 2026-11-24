@@ -35,7 +35,6 @@ import {
   Maximize2,
   Minimize2,
   Monitor,
-  Moon,
   Palette,
   PanelTop,
   Percent,
@@ -48,7 +47,6 @@ import {
   ShieldCheck,
   Sliders,
   Sparkles,
-  Sun,
   Table2,
   Tag,
   Type,
@@ -545,27 +543,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {
         id: 'appearance',
         category: 'visual',
-        title: 'المظهر والهوية البصرية',
-        subtitle: 'الثيمات، الألوان المخصصة، هندسة البطاقات، ومحركات الجداول الـ8',
-        metaText: `${activeThemeObj.name} · ${activeTableObj.name}`,
+        title: 'هندسة السبج والذهب والجداول',
+        subtitle: 'ملفات المظهر، الأبعاد الزجاجية، ومحركات الجداول الـ8 تحت هوية السبج والذهب المعتمدة',
+        metaText: `السبج والذهب · ${activeTableObj.name}`,
         icon: <Palette className="h-5 w-5" />,
         subIcons: [
-          {
-            id: 'sub_themes',
-            label: 'الثيمات (12)',
-            hint: 'الثيمات الكلاسيكية الـ8 والعصرية الـ4',
-            icon: <Palette className="h-4 w-4" />,
-            galaxyId: 'gal_app_themes',
-            capsuleId: 'appearance_themes_cap',
-          },
-          {
-            id: 'sub_custom',
-            label: 'ألوان حرة',
-            hint: 'محرر الألوان المخصصة والزجاجية',
-            icon: <Sparkles className="h-4 w-4" />,
-            galaxyId: 'gal_app_custom_geometry',
-            capsuleId: 'appearance_themes_custom_cap',
-          },
           {
             id: 'sub_tables',
             label: 'الجداول الـ8',
@@ -575,44 +557,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             capsuleId: 'appearance_table_engines_cap',
           },
           {
+            id: 'sub_geometry',
+            label: 'الزجاجية والأبعاد',
+            hint: 'انحناء الزوايا، شفافية الزجاج، وارتفاع الصفوف',
+            icon: <Layers className="h-4 w-4" />,
+            galaxyId: 'gal_app_custom_geometry',
+            capsuleId: 'appearance_geometry_cap',
+          },
+          {
             id: 'sub_profiles',
             label: 'ملفات المظهر',
-            hint: 'حفظ واستعادة توليفات المظهر الكاملة',
+            hint: 'حفظ واستعادة توليفات الجداول والخطوط',
             icon: <Bookmark className="h-4 w-4" />,
             galaxyId: 'gal_app_themes',
             capsuleId: 'appearance_profiles_cap',
+          },
+          {
+            id: 'sub_rules',
+            label: 'التنسيق الشرطي',
+            hint: 'تمييز المحجوبين والمكررين وسجلات 0 أفراد',
+            icon: <Sliders className="h-4 w-4" />,
+            galaxyId: 'gal_app_tables',
+            capsuleId: 'appearance_table_rules_cap',
           },
         ],
         galaxies: [
           {
             id: 'gal_app_themes',
-            title: 'مكتبة الثيمات والملفات',
-            subtitle: 'الثيمات الكلاسيكية الـ8 والعصرية الزجاجية الـ4 وملفات المظهر المحفوظة',
-            icon: <Palette className="h-5 w-5" />,
+            title: 'ملفات التخصيص المعتمدة',
+            subtitle: 'الهوية مقفلة على السبج والذهب مع حفظ واسترجاع توليفات الجدول والخط',
+            icon: <Bookmark className="h-5 w-5" />,
             subAxes: [
-              {
-                id: 'appearance_themes_cap',
-                title: 'جميع الثيمات (12)',
-                subtitle: 'استعراض الثيمات الكلاسيكية والعصرية',
-                badgeText: activeThemeObj.name,
-                icon: <Palette className="h-4 w-4" />,
-              },
-              {
-                id: 'appearance_themes_classic_cap',
-                title: 'الكلاسيكية الأصيلة (8)',
-                subtitle: 'السبج، الثلج، الشفق، الزمرد، والسراب',
-                icon: <Sun className="h-4 w-4" />,
-              },
-              {
-                id: 'appearance_themes_modern_cap',
-                title: 'العصرية والزجاجية (4)',
-                subtitle: 'المرمر الزجاجي والكتان وغسق الشمال',
-                icon: <Sparkles className="h-4 w-4" />,
-              },
               {
                 id: 'appearance_profiles_cap',
                 title: 'ملفات المظهر المحفوظة',
-                subtitle: 'حفظ واسترجاع توليفاتك الكاملة',
+                subtitle: 'حفظ واسترجاع توليفاتك للجدول والخط والأبعاد',
                 badgeText: `${themePrefs.savedProfiles?.length ?? 2} ملف`,
                 icon: <Bookmark className="h-4 w-4" />,
               },
@@ -620,16 +599,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           },
           {
             id: 'gal_app_custom_geometry',
-            title: 'الألوان الحرة والهندسة والزجاجية',
-            subtitle: 'محرر الثيم المخصص والألوان الحرة، انحناء الحواف، والظلال',
+            title: 'الهندسة والزجاجية والظلال',
+            subtitle: 'ضبط انحناء الحواف، شفافية الزجاج الدخاني، وحجم الصفوف',
             icon: <Layers className="h-5 w-5" />,
             subAxes: [
-              {
-                id: 'appearance_themes_custom_cap',
-                title: 'محرر الثيم والألوان الحرة',
-                subtitle: 'تخصيص الخلفية والسطح واللون المميز وحفظه',
-                icon: <Palette className="h-4 w-4" />,
-              },
               {
                 id: 'appearance_geometry_cap',
                 title: 'الهندسة والزجاجية والظلال',
@@ -2451,29 +2424,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={() => {
-                onToggleDarkTheme(!darkTheme);
-                notifySuccess(
-                  !darkTheme ? 'تم تفعيل الوضع الليلي.' : 'تم تفعيل الوضع النهاري.'
-                );
-              }}
-              title={darkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'}
-              aria-label={darkTheme ? 'الوضع النهاري' : 'الوضع الليلي'}
-              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              {darkTheme ? (
-                <Sun className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
-              ) : (
-                <Moon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              )}
-            </button>
           </div>
         </div>
       </header>
@@ -2534,10 +2484,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex flex-wrap items-center gap-4 text-xs tabular-nums">
                 <div>
                   <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    الثيم والخط
+                    الهوية والخط
                   </div>
                   <div className="font-extrabold">
-                    {activeThemeObj.name} · {activeFontObj.name}
+                    السبج والذهب · {activeFontObj.name}
                   </div>
                 </div>
                 <div

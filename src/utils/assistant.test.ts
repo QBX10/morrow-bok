@@ -76,7 +76,7 @@ function makeTestContext(state = makeSeedState()): AssistantUiContext {
     selectedAgencyId: null,
     focusedPersonId: null,
     modeTier: state.modeTier,
-    themeId: state.themePrefs?.appTheme || 'arctic-snow',
+    themeId: state.themePrefs?.appTheme || 'obsidian-gold',
     agencies: state.agencies.map((a) => ({ id: a.id, name: a.name })),
     readyLists: state.readyLists.map((l) => ({
       id: l.id,

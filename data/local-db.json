@@ -11,6 +11,45 @@
       "passwordHash": null,
       "role": "manager",
       "createdAt": "2026-11-19T19:18:56.820Z"
+    },
+    {
+      "id": 2,
+      "uid": "gml_d4bfd5d5b9cb45c3",
+      "authProvider": "google",
+      "displayName": "أحمد الساعدي",
+      "email": "usera_morrow@example.com",
+      "username": null,
+      "phone": null,
+      "avatarUrl": null,
+      "passwordHash": "3445b3c38def314345dd539714b0dad8:fed40fb7d319d4dc228cadd995eaddbfd25beeef817c3dccc382c08cb8b92ce23e160ed8ec99e8ae3eee8c9e4c43a9a567dc981e718ea31dd6f76eefb91bad34",
+      "role": "manager",
+      "createdAt": "2026-11-24T13:23:03.450Z"
+    },
+    {
+      "id": 3,
+      "uid": "gml_84986d128c7848ae",
+      "authProvider": "google",
+      "displayName": "أحمد الساعدي",
+      "email": "usera_2026@example.com",
+      "username": null,
+      "phone": null,
+      "avatarUrl": null,
+      "passwordHash": "5deae309b3e64401eecefc7328356234:84cec911355e3843769728b375c8aec7c63fab423f802bd55bd1130f1b9bf576946e98214f129bffb5f53b41e6cabdf10031f101c5ae86f2e62baded47bc748d",
+      "role": "manager",
+      "createdAt": "2026-11-24T13:25:01.831Z"
+    },
+    {
+      "id": 4,
+      "uid": "gml_d815a9a71d574cc2",
+      "authProvider": "google",
+      "displayName": "علي الحسن",
+      "email": "userb_2026@example.com",
+      "username": null,
+      "phone": null,
+      "avatarUrl": null,
+      "passwordHash": "87079b717efb8368df7c31cd247ead33:3524b45b3c740c22d2f182c1869d6c43be327ad8c63f25f4701de841d29894e05ef933e4fc7940f330a1f993686feecbba5d155e4508597f8c69e2c4f8f442d0",
+      "role": "manager",
+      "createdAt": "2026-11-24T13:27:52.572Z"
     }
   ],
   "snapshots": []

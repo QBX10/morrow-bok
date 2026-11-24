@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Palette,
   RotateCcw,
+  ShieldCheck,
   Table2,
   Trash2,
 } from 'lucide-react';
@@ -20,16 +21,10 @@ import type {
   HierarchyNode,
 } from '../../../utils/hierarchyRegistry';
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
-import { DEFAULT_WORKSPACE_COSMOS } from '../../../data/seedData';
-import { CustomThemeStudioPanel } from '../../worlds/CosmosNewWorlds';
 import {
-  ALL_APP_THEMES,
-  APP_THEMES,
-  APP_THEME_CAPSULES,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
-  MODERN_APP_THEMES,
-  resolveAppThemeId,
+  OBSIDIAN_GOLD_THEME,
   resolveTableThemeId,
   TABLE_THEMES,
 } from '../../../utils/themes';
@@ -79,10 +74,8 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
 }) => {
   const [newProfileName, setNewProfileName] = useState('');
 
-  const activeAppTheme = resolveAppThemeId(themePrefs.appTheme);
   const activeTableTheme = resolveTableThemeId(themePrefs.tableTheme);
-  const currentThemeObj =
-    ALL_APP_THEMES.find((t) => t.id === activeAppTheme) || APP_THEMES[4];
+  const currentThemeObj = OBSIDIAN_GOLD_THEME;
   const savedProfiles =
     themePrefs.savedProfiles && themePrefs.savedProfiles.length > 0
       ? themePrefs.savedProfiles
@@ -143,77 +136,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
     },
   ];
 
-  const renderThemeCardsGrid = (themes: typeof APP_THEMES) => (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {themes.map((theme) => {
-        const selected = activeAppTheme === theme.id;
-        return (
-          <button
-            key={theme.id}
-            type="button"
-            onClick={() => {
-              onUpdateThemePrefs({
-                appTheme: theme.id,
-                activeProfileId: null,
-                themeColorMode: 'auto',
-              });
-              onNotifySuccess(`تم تفعيل ثيم التطبيق: ${theme.name}`);
-            }}
-            className="flex min-h-[136px] flex-col items-start rounded-2xl border p-4 text-right transition-all hover:-translate-y-0.5"
-            style={{
-              backgroundColor: selected
-                ? 'var(--bg-nav-active)'
-                : 'var(--bg-main)',
-              borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-            }}
-          >
-            <div className="flex w-full items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                {theme.swatches.map((hex, i) => (
-                  <span
-                    key={i}
-                    className="inline-block h-4 w-4 rounded-md border"
-                    style={{
-                      backgroundColor: hex,
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                ))}
-              </div>
-              {selected && (
-                <CheckCircle2
-                  className="h-4 w-4 shrink-0"
-                  style={{ color: 'var(--accent)' }}
-                />
-              )}
-            </div>
-            <div
-              className="mt-2.5 text-sm font-extrabold"
-              style={{
-                color: selected ? 'var(--accent)' : 'var(--text-primary)',
-              }}
-            >
-              {theme.name}
-            </div>
-            <div
-              className="text-[11px] font-semibold"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {theme.englishName} · {theme.isDark ? 'داكن' : 'فاتح'}
-            </div>
-            <p
-              className="mt-1.5 text-[11px] leading-relaxed"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {theme.mood}
-            </p>
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  // Level 3 Hub: 4 Bento Capsule Cards with Mini Previews + Topbar Size Switcher
+  // Level 3 Hub: Locked Obsidian & Gold Banner + Profiles, Geometry & Tables
   if (!activeCapsuleId) {
     return (
       <NodeView
@@ -225,11 +148,37 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         onResetBranch={() => {
           onResetThemePrefs();
           onNotifySuccess(
-            'تمت استعادة إعدادات المظهر الافتراضية مع الإبقاء على ملفاتك المحفوظة.'
+            'تمت استعادة إعدادات الجداول والزجاجية مع الحفاظ على هوية السبج والذهب.'
           );
         }}
-        resetBranchLabel="استعادة افتراضيات المظهر"
+        resetBranchLabel="استعادة افتراضيات الجداول والأبعاد"
       >
+        {/* Locked Obsidian & Gold Identity Status Banner */}
+        <section className="smoked-glass rounded-2xl border border-[#D4AF37]/30 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/15">
+              <ShieldCheck className="h-5 w-5 text-[#F3E5AB]" />
+            </div>
+            <div>
+              <div className="text-sm font-black text-[#F3E5AB]">
+                الهوية البصرية المعتمدة: السبج والذهب (Obsidian & Gold)
+              </div>
+              <div className="text-[11px] text-[#9898AA]">
+                مقفل على نظام الزجاج الدخاني الأسود (#09090B) مع اللمسات الذهبية المعدنية (#D4AF37).
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {currentThemeObj.swatches.map((hex, i) => (
+              <span
+                key={i}
+                className="h-5 w-7 rounded-md border border-[#D4AF37]/35"
+                style={{ backgroundColor: hex }}
+              />
+            ))}
+          </div>
+        </section>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {sectionNode.children.map((child) => {
             const badge = resolveHierarchyNodeBadge(child, badgeContext);
@@ -249,31 +198,10 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                   </span>
                 </div>
               );
-            } else if (child.id === 'appearance_themes_cap') {
-              preview = (
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {currentThemeObj.swatches.map((hex, i) => (
-                      <span
-                        key={i}
-                        className="h-4 w-6 rounded border"
-                        style={{
-                          backgroundColor: hex,
-                          borderColor: 'var(--border-color)',
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span className="font-bold tabular-nums">
-                    {ALL_APP_THEMES.length} ثيمات (8 كلاسيكية +{' '}
-                    {MODERN_APP_THEMES.length} حديثة)
-                  </span>
-                </div>
-              );
             } else if (child.id === 'appearance_geometry_cap') {
               preview = (
                 <div className="flex items-center justify-between font-bold tabular-nums">
-                  <span>تدوير: {themePrefs.borderRadiusPx ?? 12}px</span>
+                  <span>تدوير: {themePrefs.borderRadiusPx ?? 22}px</span>
                   <span>صف: {themePrefs.rowHeightPx ?? 42}px</span>
                   <span>
                     {themePrefs.glassEffect ? 'زجاجي مفعّل' : 'سطح صلب'}
@@ -483,286 +411,6 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               حفظ التخصيص الحالي كملف
             </button>
           </form>
-        </section>
-      </NodeView>
-    );
-  }
-
-  // Level 4B: Themes Hub Capsule (Drills into Classic / Modern+Glass / Custom Colors Level 5)
-  if (activeCapsuleId === 'appearance_themes_cap') {
-    return (
-      <NodeView
-        node={activeNode}
-        displayMode={displayMode}
-        liveStatusText={currentThemeObj.name}
-        onResetBranch={() => {
-          onUpdateThemePrefs({
-            appTheme: DEFAULT_THEME_PREFERENCES.appTheme,
-            customBgColor: '',
-            customSurfaceColor: '',
-            customTextColor: '',
-            customAccentColor: '',
-            activeProfileId: null,
-          });
-          onNotifySuccess('تمت استعادة الثيم النهاري الكلاسيكي الافتراضي.');
-        }}
-        resetBranchLabel="استعادة افتراضي الثيم"
-      >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {activeNode.children.map((subCap) => {
-            const preview =
-              subCap.id === 'appearance_themes_classic_cap' ? (
-                <div className="flex items-center gap-1.5">
-                  {APP_THEMES.slice(0, 4).map((t) => (
-                    <span
-                      key={t.id}
-                      className="h-3.5 w-6 rounded border"
-                      style={{
-                        backgroundColor: t.swatches[2],
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                  ))}
-                  <span className="font-bold tabular-nums">+4 أخرى</span>
-                </div>
-              ) : subCap.id === 'appearance_themes_modern_cap' ? (
-                <div className="flex items-center gap-1.5">
-                  {MODERN_APP_THEMES.map((t) => (
-                    <span
-                      key={t.id}
-                      className="h-3.5 w-6 rounded border"
-                      style={{
-                        backgroundColor: t.swatches[2],
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                  ))}
-                  <span className="font-bold">جديدة وزجاجية</span>
-                </div>
-              ) : (
-                <div className="font-bold">
-                  خلفية · بطاقات · نصوص · Accent
-                </div>
-              );
-
-            return (
-              <NodeCard
-                key={subCap.id}
-                node={subCap}
-                preview={preview}
-                actionLabel="فتح المجموعة"
-                onOpen={(n) => onOpenCapsule(n.id)}
-              />
-            );
-          })}
-        </div>
-
-        {/* All Theme Capsule Groups side by side cleanly for instant 1-click access */}
-        <div className="space-y-4">
-          {APP_THEME_CAPSULES.map((group) => (
-            <section
-              key={group.id}
-              className="capsule-glass-card border p-5 space-y-3"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-extrabold">{group.title}</h2>
-                  <p
-                    className="text-[11px]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {group.subtitle}
-                  </p>
-                </div>
-                <span
-                  className="rounded-lg border px-2.5 py-0.5 text-[11px] font-bold tabular-nums"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  {group.themes.length} ثيمات
-                </span>
-              </div>
-              {renderThemeCardsGrid(group.themes)}
-            </section>
-          ))}
-        </div>
-      </NodeView>
-    );
-  }
-
-  // Level 5A: Classic 8 Themes
-  if (activeCapsuleId === 'appearance_themes_classic_cap') {
-    return (
-      <NodeView
-        node={activeNode}
-        displayMode={displayMode}
-        liveStatusText={currentThemeObj.name}
-      >
-        <section
-          aria-label="الثيمات الكلاسيكية الأصيلة"
-          className="capsule-glass-card border p-5 space-y-4"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex items-center gap-2">
-            <Palette className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <h2 className="text-base font-extrabold">
-              ثيمات التطبيق الكلاسيكية المحمية (8 ثيمات)
-            </h2>
-          </div>
-          {renderThemeCardsGrid(APP_THEMES)}
-        </section>
-      </NodeView>
-    );
-  }
-
-  // Level 5B: New Modern & Glass Themes
-  if (activeCapsuleId === 'appearance_themes_modern_cap') {
-    return (
-      <NodeView
-        node={activeNode}
-        displayMode={displayMode}
-        liveStatusText={currentThemeObj.name}
-      >
-        <section
-          aria-label="الثيمات العصرية والزجاجية"
-          className="capsule-glass-card border p-5 space-y-4"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <h2 className="text-base font-extrabold">
-            الثيمات العصرية والزجاجية المضافة حديثاً ({MODERN_APP_THEMES.length} ثيمات)
-          </h2>
-          {renderThemeCardsGrid(MODERN_APP_THEMES)}
-        </section>
-      </NodeView>
-    );
-  }
-
-  // Level 5C: Custom Color Overrides (Protected Branch)
-  if (activeCapsuleId === 'appearance_themes_custom_cap') {
-    return (
-      <NodeView
-        node={activeNode}
-        displayMode={displayMode}
-        onResetBranch={() => {
-          onUpdateThemePrefs({
-            customBgColor: '',
-            customSurfaceColor: '',
-            customTextColor: '',
-            customAccentColor: '',
-          });
-          onNotifySuccess('تمت استعادة ألوان الثيم دون تخصيص حر.');
-        }}
-        resetBranchLabel="إلغاء الألوان الحرة"
-      >
-        {onSaveCustomTheme && onDeleteCustomTheme && (
-          <CustomThemeStudioPanel
-            themePrefs={themePrefs}
-            accessibility={accessibility || DEFAULT_WORKSPACE_COSMOS.accessibility}
-            onUpdateThemePrefs={onUpdateThemePrefs}
-            onSaveCustomTheme={onSaveCustomTheme}
-            onDeleteCustomTheme={onDeleteCustomTheme}
-            onNotify={onNotifySuccess}
-          />
-        )}
-
-        <section
-          className="capsule-glass-card border p-5 space-y-4 text-xs"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-extrabold">
-              تخصيص الألوان الحرة (Color Overrides)
-            </span>
-            {(themePrefs.customBgColor ||
-              themePrefs.customSurfaceColor ||
-              themePrefs.customTextColor ||
-              themePrefs.customAccentColor) && (
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateThemePrefs({
-                    customBgColor: '',
-                    customSurfaceColor: '',
-                    customTextColor: '',
-                    customAccentColor: '',
-                  })
-                }
-                className="min-h-[38px] rounded-xl border px-3 py-1.5 font-bold"
-                style={{ borderColor: 'var(--border-color)' }}
-              >
-                إلغاء الألوان الحرة
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {(
-              [
-                {
-                  key: 'customBgColor',
-                  label: 'خلفية التطبيق',
-                  fallback: '#f4f7fb',
-                },
-                {
-                  key: 'customSurfaceColor',
-                  label: 'البطاقات والجداول',
-                  fallback: '#ffffff',
-                },
-                {
-                  key: 'customTextColor',
-                  label: 'لون النصوص',
-                  fallback: '#0f172a',
-                },
-                {
-                  key: 'customAccentColor',
-                  label: 'اللون المميز (Accent)',
-                  fallback: '#1d4ed8',
-                },
-              ] as const
-            ).map((item) => {
-              const val = themePrefs[item.key] || '';
-              return (
-                <div
-                  key={item.key}
-                  className="flex min-h-[54px] items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <span className="font-bold">{item.label}</span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      aria-label={item.label}
-                      value={val || item.fallback}
-                      onChange={(e) =>
-                        onUpdateThemePrefs({
-                          [item.key]: e.target.value,
-                        })
-                      }
-                      className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-                    />
-                    {val && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateThemePrefs({ [item.key]: '' })}
-                        aria-label={`استعادة ${item.label}`}
-                        className="text-xs font-extrabold"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </section>
       </NodeView>
     );

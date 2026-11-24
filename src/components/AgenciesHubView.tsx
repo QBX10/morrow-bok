@@ -70,6 +70,7 @@ import { SmartDashboardCard } from './ui/SmartDashboardCard';
 import { BottomSheet } from './cosmos/BottomSheet';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
 
 interface AgenciesHubViewProps {
   agencies: Agency[];
@@ -98,6 +99,7 @@ interface AgenciesHubViewProps {
     patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
   ) => void;
   onNavigateView?: (view: AppView, settingsSection?: SettingsSectionId) => void;
+  onLoadStarterData?: () => void;
 }
 
 const AGENCY_ICON_PRESETS = ['🌾', '🏪', '📦', '🏛️', '🚚', '⚖️', '🧾', '🏢'];
@@ -197,6 +199,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   onAddAgency,
   onUpdateAgencyDetails,
   onNavigateView,
+  onLoadStarterData,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<AgencyFilterTab>('all');
@@ -812,7 +815,46 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         }}
       />
 
-      {filteredAgencies.length === 0 ? (
+      {agencies.length === 0 ? (
+        <div className="smoked-glass-elevated rounded-[22px] p-8 sm:p-10 text-center space-y-5 relative overflow-hidden">
+          <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
+            <DotMatrixPattern />
+          </div>
+          <div className="relative z-10 mx-auto w-20 h-20 flex items-center justify-center rounded-2xl border border-[#D4AF37]/25 bg-black/40">
+            <GeometricGoldCube size={64} />
+          </div>
+          <div className="relative z-10 space-y-2 max-w-md mx-auto">
+            <h3 className="font-display-ar text-lg sm:text-xl font-bold text-[#F4F4F6]">
+              مساحتك المعزولة جاهزة للانطلاق
+            </h3>
+            <p className="text-xs sm:text-sm leading-relaxed text-[#9898AA]">
+              هذا الحساب يبدأ بسجل نظيف تماماً وخاص بك وحدك. أنشئ وكالتك الأولى الآن أو جرّب النظام ببيانات نموذجية جاهزة.
+            </p>
+          </div>
+          <div className="relative z-10 flex flex-wrap items-center justify-center gap-3">
+            {capabilities.canManageAgencies && (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="obsidian-gold-cta inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>إنشاء وكالتك الأولى</span>
+              </button>
+            )}
+            {onLoadStarterData && (
+              <button
+                type="button"
+                onClick={onLoadStarterData}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/30 bg-white/[0.04] hover:bg-[#D4AF37]/15 px-5 py-2.5 text-xs sm:text-sm font-bold text-[#F3E5AB] transition-all cursor-pointer"
+              >
+                <Sparkles className="h-4 w-4 text-[#D4AF37]" />
+                <span>تحميل بيانات تجريبية جاهزة</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : filteredAgencies.length === 0 ? (
         <div
           className="nexus-squircle p-10 text-center text-xs"
           style={{
@@ -1337,8 +1379,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               },
               {
                 id: 'portal-theme',
-                label: 'المظهر',
-                hint: 'السبج والذهب، الثيمات الـ 12 والخطوط',
+                label: 'الجداول والخطوط',
+                hint: 'هوية السبج والذهب، الجداول الـ 8 والخطوط',
                 icon: <Palette className="h-4 w-4" />,
                 onClick: () => onNavigateView('settings', 'appearance'),
               },
@@ -1868,35 +1910,36 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-24 sm:px-6 lg:pb-10">
-      {/* 1. Executive Agencies Command Header */}
-      <section className="nexus-squircle p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0">
-          <NexusDuotoneIcon sizeClass="h-11 w-11">
-            <Building2 className="h-5 w-5" />
-          </NexusDuotoneIcon>
-          <div className="space-y-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-black tracking-tight sm:text-2xl">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:pb-24">
+      {/* 1. Architectural Hero Header Card (Obsidian & Gold) */}
+      <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-6 sm:p-8 flex flex-wrap items-center justify-between gap-6">
+        {/* Subtle DotMatrix & Geometric Gold Cube Accent */}
+        <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
+          <DotMatrixPattern />
+        </div>
+        <div className="pointer-events-none hidden md:block absolute -left-4 -bottom-6 opacity-25">
+          <GeometricGoldCube size={140} />
+        </div>
+
+        <div className="relative z-10 flex items-start gap-4 min-w-0">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#D4AF37]/35 bg-[#D4AF37]/12 shadow-[0_8px_24px_rgba(212,175,55,0.16)]">
+            <Building2 className="h-6 w-6 text-[#F3E5AB]" />
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-display-ar text-xl font-black tracking-tight sm:text-2xl gold-gradient-text">
                 الوكالات والتوزيع
               </h1>
               {activePeriod && (
-                <span
-                  className="text-xs font-extrabold"
-                  style={{ color: 'var(--accent)' }}
-                >
-                  · {activePeriod.quotaName} · {activePeriod.monthName}{' '}
-                  {activePeriod.year}
+                <span className="inline-flex items-center rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-3 py-0.5 font-mono-num text-[11px] font-bold text-[#F3E5AB] whitespace-nowrap">
+                  {activePeriod.quotaName} · {activePeriod.monthName} {activePeriod.year}
                 </span>
               )}
             </div>
-            <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs sm:text-sm text-[#9898AA] leading-relaxed">
               مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
               {previousArchiveDelta && (
-                <span
-                  className="mr-2 font-bold tabular-nums"
-                  style={{ color: 'var(--accent)' }}
-                >
+                <span className="mr-2 font-mono-num font-bold text-[#F3E5AB]">
                   ({previousArchiveDelta.diff >= 0 ? '+' : ''}
                   {previousArchiveDelta.diff} فرد مقارنة بأرشيف{' '}
                   {previousArchiveDelta.archiveLabel})
@@ -1906,18 +1949,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="relative z-10 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={onOpenMasterRoster}
-            className="nexus-pill-btn inline-flex min-h-[42px] items-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
+            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-black/45 hover:bg-black/65 hover:border-[#D4AF37]/50 px-4 py-2 text-xs font-extrabold text-[#F4F4F6] transition-all cursor-pointer whitespace-nowrap"
           >
-            <Table2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+            <Table2 className="h-4 w-4 text-[#D4AF37]" />
             <span>السجل الشامل للوكالات</span>
           </button>
 
@@ -1925,22 +1963,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             type="button"
             data-testid="home-customizer-btn"
             onClick={() => setCustomizerOpen(true)}
-            className="nexus-pill-btn inline-flex min-h-[42px] items-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor:
-                'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
-              color: 'var(--accent)',
-            }}
+            className="obsidian-gold-cta inline-flex min-h-[42px] items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold cursor-pointer whitespace-nowrap"
           >
             <SlidersHorizontal className="h-4 w-4" />
             <span>تخصيص الواجهة</span>
             {(layoutPrefs.activeMiniWidgets.length > 0 ||
               layoutPrefs.hiddenSections.length > 0) && (
-              <span
-                className="font-black tabular-nums"
-                style={{ color: 'var(--accent)' }}
-              >
+              <span className="font-mono-num font-black">
                 · {layoutPrefs.activeMiniWidgets.length +
                   layoutPrefs.hiddenSections.length}
               </span>

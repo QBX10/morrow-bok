@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DEFAULT_EXPERT_TABLE_CONFIG,
   DEFAULT_GENERAL_PREFS,
@@ -19,6 +19,12 @@ import {
   saveAppearanceProfileToFirestore,
   syncWorkspaceSummaryToFirestore,
 } from '../lib/firestoreSync';
+import type { CompressionStats } from '../services/compression/compressionEngine';
+import {
+  getCleanTenantInitialState,
+  loadTenantWorkspace,
+  saveTenantWorkspace,
+} from '../services/storage/tenantStorage';
 import type {
   AccessibilityAndExperiencePrefs,
   Agency,
@@ -82,13 +88,10 @@ import {
   applyThemePreferencesToDocument,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
-  getAppThemeById,
-  resolveAppThemeId,
   resolveArabicFontId,
   resolveTableThemeId,
 } from '../utils/themes';
 
-const DB_STORAGE_KEY = 'flour_agency_db_v2';
 const DEFAULT_MAX_UNDO_HISTORY = 35;
 
 interface DataSnapshot {
@@ -169,218 +172,301 @@ function mergeWorkspaceCosmos(raw?: Partial<WorkspaceCosmosState>): WorkspaceCos
   };
 }
 
-function loadInitialState(): AppDatabaseState {
-  try {
-    const raw = localStorage.getItem(DB_STORAGE_KEY);
-    if (!raw) return INITIAL_DATABASE_STATE;
-    const parsed = JSON.parse(raw) as Partial<AppDatabaseState>;
-    const agencies =
-      Array.isArray(parsed.agencies) && parsed.agencies.length > 0
-        ? parsed.agencies
-        : INITIAL_DATABASE_STATE.agencies;
+function normalizeLoadedWorkspaceState(
+  parsed: Partial<AppDatabaseState> | null | undefined,
+  uid: string | null
+): AppDatabaseState {
+  const cleanBase = getCleanTenantInitialState(uid);
+  if (!parsed || typeof parsed !== 'object') {
+    return cleanBase;
+  }
 
-    // Versioned Migration with automatic pre-migration snapshot (Zero-Loss Guard)
-    const CURRENT_STATE_VERSION = 3;
-    let migrationSnapshot: MigrationSnapshotRecord | undefined = parsed.migrationSnapshot;
-    if (!parsed.stateVersion || parsed.stateVersion < CURRENT_STATE_VERSION) {
-      migrationSnapshot = {
-        version: parsed.stateVersion || 1,
-        createdAt: new Date().toISOString(),
-        reason: 'لقطة احتياطية تلقائية قبل التوحيد إلى الوضع الموحد والإعدادات المنظمة v3',
-        modeTier: parsed.modeTier,
-        editorEnabled: parsed.editorEnabled,
-        calculationSettings: {
-          ...DEFAULT_CALCULATION_SETTINGS,
-          ...(parsed.calculationSettings || {}),
-        },
-        themePrefs: parsed.themePrefs,
-        generalPrefs: parsed.generalPrefs,
-        securityPrefs: parsed.securityPrefs,
+  const agencies = Array.isArray(parsed.agencies) ? parsed.agencies : [];
+  const CURRENT_STATE_VERSION = 4;
+  const migrationSnapshot: MigrationSnapshotRecord | undefined =
+    parsed.migrationSnapshot;
+
+  const mergedGeneralPrefs: GeneralAppPrefs = {
+    ...DEFAULT_GENERAL_PREFS,
+    ...(parsed.generalPrefs || {}),
+    granularControls: {
+      ...DEFAULT_GENERAL_PREFS.granularControls!,
+      ...(parsed.generalPrefs?.granularControls || {}),
+      bypassEditConfirm:
+        parsed.generalPrefs?.granularControls?.bypassEditConfirm ??
+        Boolean(parsed.expertTableConfig?.allowDirectNoConfirmEdit),
+    },
+    hubShortcutIds:
+      Array.isArray(parsed.generalPrefs?.hubShortcutIds) &&
+      parsed.generalPrefs!.hubShortcutIds!.length > 0
+        ? parsed.generalPrefs!.hubShortcutIds!
+        : DEFAULT_GENERAL_PREFS.hubShortcutIds,
+    quickToggleIds:
+      Array.isArray(parsed.generalPrefs?.quickToggleIds) &&
+      parsed.generalPrefs!.quickToggleIds!.length > 0
+        ? parsed.generalPrefs!.quickToggleIds!.filter(
+            (id) => id !== 'qt_dark_mode'
+          )
+        : (DEFAULT_GENERAL_PREFS.quickToggleIds || []).filter(
+            (id) => id !== 'qt_dark_mode'
+          ),
+    agencyAccentColors: {
+      ...DEFAULT_GENERAL_PREFS.agencyAccentColors,
+      ...(parsed.generalPrefs?.agencyAccentColors || {}),
+    },
+    homeLayoutPrefs: {
+      sectionOrder:
+        Array.isArray(parsed.generalPrefs?.homeLayoutPrefs?.sectionOrder) &&
+        parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder.length > 0
+          ? parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder
+          : [...DEFAULT_GENERAL_PREFS.homeLayoutPrefs!.sectionOrder],
+      hiddenSections: Array.isArray(
+        parsed.generalPrefs?.homeLayoutPrefs?.hiddenSections
+      )
+        ? parsed.generalPrefs!.homeLayoutPrefs!.hiddenSections
+        : [],
+      activeMiniWidgets: Array.isArray(
+        parsed.generalPrefs?.homeLayoutPrefs?.activeMiniWidgets
+      )
+        ? parsed.generalPrefs!.homeLayoutPrefs!.activeMiniWidgets
+        : [],
+    },
+    customExpenseCategories:
+      Array.isArray(parsed.generalPrefs?.customExpenseCategories) &&
+      parsed.generalPrefs!.customExpenseCategories!.length > 0
+        ? parsed.generalPrefs!.customExpenseCategories!
+        : DEFAULT_GENERAL_PREFS.customExpenseCategories,
+    recurringExpenseTemplates: Array.isArray(
+      parsed.generalPrefs?.recurringExpenseTemplates
+    )
+      ? parsed.generalPrefs!.recurringExpenseTemplates!
+      : [],
+  };
+
+  return {
+    ...cleanBase,
+    ...parsed,
+    stateVersion: CURRENT_STATE_VERSION,
+    migrationSnapshot,
+    workspaceCosmos: mergeWorkspaceCosmos(parsed.workspaceCosmos),
+    agencies,
+    persons: Array.isArray(parsed.persons) ? parsed.persons : [],
+    expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
+    readyLists: Array.isArray(parsed.readyLists)
+      ? normalizeReadyLists(parsed.readyLists, agencies)
+      : [],
+    readyListItems: Array.isArray(parsed.readyListItems)
+      ? parsed.readyListItems
+      : [],
+    relations: Array.isArray(parsed.relations) ? parsed.relations : [],
+    tableHeaders:
+      parsed.tableHeaders && typeof parsed.tableHeaders === 'object'
+        ? { ...cleanBase.tableHeaders, ...parsed.tableHeaders }
+        : cleanBase.tableHeaders,
+    topBarConfig:
+      parsed.topBarConfig && typeof parsed.topBarConfig === 'object'
+        ? { ...cleanBase.topBarConfig, ...parsed.topBarConfig }
+        : cleanBase.topBarConfig,
+    modeTier: 'expert',
+    editorEnabled: true,
+    darkTheme: true,
+    requireLoginOnStart: true,
+    calculationSettings: {
+      ...DEFAULT_CALCULATION_SETTINGS,
+      ...(parsed.calculationSettings || {}),
+    },
+    themePrefs: {
+      ...DEFAULT_THEME_PREFERENCES,
+      ...(parsed.themePrefs || {}),
+      appTheme: 'obsidian-gold',
+      themeColorMode: 'dark',
+      customBgColor: '',
+      customSurfaceColor: '',
+      customTextColor: '',
+      customAccentColor: '',
+      customSavedThemes: [],
+      tableTheme: resolveTableThemeId(parsed.themePrefs?.tableTheme),
+      fontFamily: resolveArabicFontId(parsed.themePrefs?.fontFamily),
+      savedProfiles:
+        Array.isArray(parsed.themePrefs?.savedProfiles) &&
+        parsed.themePrefs!.savedProfiles!.length > 0
+          ? parsed.themePrefs!.savedProfiles!
+          : DEFAULT_APPEARANCE_PROFILES,
+      conditionalFormatting: {
+        ...DEFAULT_THEME_PREFERENCES.conditionalFormatting!,
+        ...(parsed.themePrefs?.conditionalFormatting || {}),
+      },
+    },
+    expertTableConfig: {
+      ...DEFAULT_EXPERT_TABLE_CONFIG,
+      ...(parsed.expertTableConfig || {}),
+    },
+    quickExtractPrefs: {
+      ...DEFAULT_QUICK_EXTRACT_PREFS,
+      ...(parsed.quickExtractPrefs || {}),
+    },
+    relationsPrefs: {
+      ...DEFAULT_RELATIONS_PREFS,
+      ...(parsed.relationsPrefs || {}),
+    },
+    generalPrefs: mergedGeneralPrefs,
+    securityPrefs: {
+      ...DEFAULT_SECURITY_PREFS,
+      ...(parsed.securityPrefs || {}),
+      secondaryCloud: {
+        ...DEFAULT_SECURITY_PREFS.secondaryCloud!,
+        ...(parsed.securityPrefs?.secondaryCloud || {}),
+      },
+      driveAccountMeta: {
+        ...DEFAULT_SECURITY_PREFS.driveAccountMeta!,
+        ...(parsed.securityPrefs?.driveAccountMeta || {}),
+      },
+      smartSync: {
+        ...DEFAULT_SECURITY_PREFS.smartSync!,
+        ...(parsed.securityPrefs?.smartSync || {}),
+      },
+    },
+    recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
+    workspaceNotes: Array.isArray(parsed.workspaceNotes)
+      ? parsed.workspaceNotes
+      : [],
+    activePeriod: resolvePeriodMeta(
+      parsed.activePeriod,
+      cleanBase.activePeriod?.fullDate
+    ),
+    monthlyArchives: Array.isArray(parsed.monthlyArchives)
+      ? parsed.monthlyArchives
+      : [],
+    ucrsSessions: Array.isArray(parsed.ucrsSessions) ? parsed.ucrsSessions : [],
+    ucrsLearningRules: Array.isArray(parsed.ucrsLearningRules)
+      ? parsed.ucrsLearningRules
+      : [],
+  };
+}
+
+export function useAgencyStore(activeUid: string | null = null) {
+  const [state, setState] = useState<AppDatabaseState>(() =>
+    getCleanTenantInitialState(activeUid)
+  );
+  const [past, setPast] = useState<DataSnapshot[]>([]);
+  const [future, setFuture] = useState<DataSnapshot[]>([]);
+  const [storageReady, setStorageReady] = useState<boolean>(!activeUid);
+  const [compressionStats, setCompressionStats] =
+    useState<CompressionStats | null>(null);
+  const loadedUidRef = useRef<string | null>(null);
+
+  // Strict per-uid hydration & isolation whenever activeUid changes
+  useEffect(() => {
+    let cancelled = false;
+    loadedUidRef.current = null;
+    setPast([]);
+    setFuture([]);
+    setCompressionStats(null);
+
+    const freshClean = getCleanTenantInitialState(activeUid);
+    setState(freshClean);
+
+    if (!activeUid) {
+      setStorageReady(true);
+      return () => {
+        cancelled = true;
       };
     }
 
-    const mergedGeneralPrefs: GeneralAppPrefs = {
-      ...DEFAULT_GENERAL_PREFS,
-      ...(parsed.generalPrefs || {}),
-      granularControls: {
-        ...DEFAULT_GENERAL_PREFS.granularControls!,
-        ...(parsed.generalPrefs?.granularControls || {}),
-        bypassEditConfirm:
-          parsed.generalPrefs?.granularControls?.bypassEditConfirm ??
-          Boolean(parsed.expertTableConfig?.allowDirectNoConfirmEdit),
-      },
-      hubShortcutIds:
-        Array.isArray(parsed.generalPrefs?.hubShortcutIds) &&
-        parsed.generalPrefs!.hubShortcutIds!.length > 0
-          ? parsed.generalPrefs!.hubShortcutIds!
-          : DEFAULT_GENERAL_PREFS.hubShortcutIds,
-      quickToggleIds:
-        Array.isArray(parsed.generalPrefs?.quickToggleIds) &&
-        parsed.generalPrefs!.quickToggleIds!.length > 0
-          ? parsed.generalPrefs!.quickToggleIds!
-          : DEFAULT_GENERAL_PREFS.quickToggleIds,
-      agencyAccentColors: {
-        ...DEFAULT_GENERAL_PREFS.agencyAccentColors,
-        ...(parsed.generalPrefs?.agencyAccentColors || {}),
-      },
-      homeLayoutPrefs: {
-        sectionOrder:
-          Array.isArray(parsed.generalPrefs?.homeLayoutPrefs?.sectionOrder) &&
-          parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder.length > 0
-            ? parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder
-            : [...DEFAULT_GENERAL_PREFS.homeLayoutPrefs!.sectionOrder],
-        hiddenSections: Array.isArray(
-          parsed.generalPrefs?.homeLayoutPrefs?.hiddenSections
-        )
-          ? parsed.generalPrefs!.homeLayoutPrefs!.hiddenSections
-          : [],
-        activeMiniWidgets: Array.isArray(
-          parsed.generalPrefs?.homeLayoutPrefs?.activeMiniWidgets
-        )
-          ? parsed.generalPrefs!.homeLayoutPrefs!.activeMiniWidgets
-          : [],
-      },
-      customExpenseCategories:
-        Array.isArray(parsed.generalPrefs?.customExpenseCategories) &&
-        parsed.generalPrefs!.customExpenseCategories!.length > 0
-          ? parsed.generalPrefs!.customExpenseCategories!
-          : DEFAULT_GENERAL_PREFS.customExpenseCategories,
-      recurringExpenseTemplates: Array.isArray(
-        parsed.generalPrefs?.recurringExpenseTemplates
-      )
-        ? parsed.generalPrefs!.recurringExpenseTemplates!
-        : [],
+    setStorageReady(false);
+
+    (async () => {
+      try {
+        const localLoaded = await loadTenantWorkspace(activeUid);
+        if (cancelled) return;
+
+        if (localLoaded) {
+          const normalized = normalizeLoadedWorkspaceState(
+            localLoaded.state,
+            activeUid
+          );
+          loadedUidRef.current = activeUid;
+          setState(normalized);
+          setCompressionStats(localLoaded.stats);
+          setStorageReady(true);
+          return;
+        }
+
+        // Fresh browser/device for returning account: check server snapshot once
+        let resolvedState = freshClean;
+        try {
+          const token = await getActiveBearerToken();
+          if (token && !cancelled) {
+            const res = await fetch('/api/workspace', {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.exists && data.snapshot && !cancelled) {
+                resolvedState = normalizeLoadedWorkspaceState(
+                  data.snapshot,
+                  activeUid
+                );
+              }
+            }
+          }
+        } catch {
+          // Offline / local mode fallback cleanly uses empty clean state
+        }
+
+        if (cancelled) return;
+        const initialStats = await saveTenantWorkspace(activeUid, resolvedState);
+        if (cancelled) return;
+        loadedUidRef.current = activeUid;
+        setState(resolvedState);
+        setCompressionStats(initialStats);
+        setStorageReady(true);
+      } catch {
+        if (!cancelled) {
+          loadedUidRef.current = activeUid;
+          setState(freshClean);
+          setStorageReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
     };
+  }, [activeUid]);
 
-    return {
-      ...INITIAL_DATABASE_STATE,
-      ...parsed,
-      stateVersion: CURRENT_STATE_VERSION,
-      migrationSnapshot,
-      workspaceCosmos: mergeWorkspaceCosmos(parsed.workspaceCosmos),
-      agencies,
-      persons: Array.isArray(parsed.persons)
-        ? parsed.persons
-        : INITIAL_DATABASE_STATE.persons,
-      expenses: Array.isArray(parsed.expenses)
-        ? parsed.expenses
-        : INITIAL_DATABASE_STATE.expenses,
-      readyLists: Array.isArray(parsed.readyLists)
-        ? normalizeReadyLists(parsed.readyLists, agencies)
-        : INITIAL_DATABASE_STATE.readyLists,
-      readyListItems: Array.isArray(parsed.readyListItems)
-        ? parsed.readyListItems
-        : INITIAL_DATABASE_STATE.readyListItems,
-      relations: Array.isArray(parsed.relations)
-        ? parsed.relations
-        : INITIAL_DATABASE_STATE.relations,
-      tableHeaders:
-        parsed.tableHeaders && typeof parsed.tableHeaders === 'object'
-          ? { ...INITIAL_DATABASE_STATE.tableHeaders, ...parsed.tableHeaders }
-          : INITIAL_DATABASE_STATE.tableHeaders,
-      topBarConfig:
-        parsed.topBarConfig && typeof parsed.topBarConfig === 'object'
-          ? { ...INITIAL_DATABASE_STATE.topBarConfig, ...parsed.topBarConfig }
-          : INITIAL_DATABASE_STATE.topBarConfig,
-      modeTier: 'expert',
-      editorEnabled: true,
-      darkTheme: Boolean(parsed.darkTheme),
-      requireLoginOnStart: Boolean(parsed.requireLoginOnStart),
-      calculationSettings: {
-        ...DEFAULT_CALCULATION_SETTINGS,
-        ...(parsed.calculationSettings || {}),
-      },
-      themePrefs: {
-        ...DEFAULT_THEME_PREFERENCES,
-        ...(parsed.themePrefs || {}),
-        appTheme: parsed.themePrefs?.appTheme
-          ? resolveAppThemeId(parsed.themePrefs.appTheme)
-          : DEFAULT_THEME_PREFERENCES.appTheme,
-        tableTheme: resolveTableThemeId(parsed.themePrefs?.tableTheme),
-        fontFamily: resolveArabicFontId(parsed.themePrefs?.fontFamily),
-        savedProfiles:
-          Array.isArray(parsed.themePrefs?.savedProfiles) &&
-          parsed.themePrefs!.savedProfiles!.length > 0
-            ? parsed.themePrefs!.savedProfiles!
-            : DEFAULT_APPEARANCE_PROFILES,
-        customSavedThemes: Array.isArray(parsed.themePrefs?.customSavedThemes)
-          ? parsed.themePrefs!.customSavedThemes!
-          : [],
-        conditionalFormatting: {
-          ...DEFAULT_THEME_PREFERENCES.conditionalFormatting!,
-          ...(parsed.themePrefs?.conditionalFormatting || {}),
-        },
-      },
-      expertTableConfig: {
-        ...DEFAULT_EXPERT_TABLE_CONFIG,
-        ...(parsed.expertTableConfig || {}),
-      },
-      quickExtractPrefs: {
-        ...DEFAULT_QUICK_EXTRACT_PREFS,
-        ...(parsed.quickExtractPrefs || {}),
-      },
-      relationsPrefs: {
-        ...DEFAULT_RELATIONS_PREFS,
-        ...(parsed.relationsPrefs || {}),
-      },
-      generalPrefs: mergedGeneralPrefs,
-      securityPrefs: {
-        ...DEFAULT_SECURITY_PREFS,
-        ...(parsed.securityPrefs || {}),
-        secondaryCloud: {
-          ...DEFAULT_SECURITY_PREFS.secondaryCloud!,
-          ...(parsed.securityPrefs?.secondaryCloud || {}),
-        },
-        driveAccountMeta: {
-          ...DEFAULT_SECURITY_PREFS.driveAccountMeta!,
-          ...(parsed.securityPrefs?.driveAccountMeta || {}),
-        },
-        smartSync: {
-          ...DEFAULT_SECURITY_PREFS.smartSync!,
-          ...(parsed.securityPrefs?.smartSync || {}),
-        },
-      },
-      recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
-      workspaceNotes: Array.isArray(parsed.workspaceNotes)
-        ? parsed.workspaceNotes
-        : INITIAL_DATABASE_STATE.workspaceNotes || [],
-      activePeriod: resolvePeriodMeta(
-        parsed.activePeriod,
-        INITIAL_DATABASE_STATE.activePeriod?.fullDate
-      ),
-      monthlyArchives: Array.isArray(parsed.monthlyArchives)
-        ? parsed.monthlyArchives
-        : INITIAL_DATABASE_STATE.monthlyArchives || [],
-      ucrsSessions: Array.isArray(parsed.ucrsSessions)
-        ? parsed.ucrsSessions
-        : [],
-      ucrsLearningRules: Array.isArray(parsed.ucrsLearningRules)
-        ? parsed.ucrsLearningRules
-        : [],
-    };
-  } catch {
-    return INITIAL_DATABASE_STATE;
-  }
-}
-
-export function useAgencyStore() {
-  const [state, setState] = useState<AppDatabaseState>(loadInitialState);
-  const [past, setPast] = useState<DataSnapshot[]>([]);
-  const [future, setFuture] = useState<DataSnapshot[]>([]);
-
+  // Pre-save compression -> per-uid IndexedDB vault
   useEffect(() => {
+    if (!activeUid || loadedUidRef.current !== activeUid) return;
     const offlineEnabled = state.securityPrefs?.offlineCacheEnabled !== false;
     if (!offlineEnabled) return;
-    try {
-      localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [state]);
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void saveTenantWorkspace(activeUid, state)
+        .then((stats) => {
+          if (!cancelled && loadedUidRef.current === activeUid) {
+            setCompressionStats(stats);
+          }
+        })
+        .catch(() => {});
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeUid, state]);
 
   const activeThemePrefs: ThemePreferences = {
     ...DEFAULT_THEME_PREFERENCES,
     ...(state.themePrefs || {}),
+    appTheme: 'obsidian-gold',
+    themeColorMode: 'dark',
+    customBgColor: '',
+    customSurfaceColor: '',
+    customTextColor: '',
+    customAccentColor: '',
   };
 
   const activeCosmos: WorkspaceCosmosState = mergeWorkspaceCosmos(state.workspaceCosmos);
@@ -398,7 +484,6 @@ export function useAgencyStore() {
     }
   }, [
     uiDensity,
-    activeThemePrefs.appTheme,
     activeThemePrefs.tableTheme,
     activeThemePrefs.fontFamily,
     activeThemePrefs.fontSize,
@@ -411,11 +496,6 @@ export function useAgencyStore() {
     activeThemePrefs.cardShadowLevel,
     activeThemePrefs.glassEffect,
     activeThemePrefs.glassOpacityPct,
-    activeThemePrefs.themeColorMode,
-    activeThemePrefs.customBgColor,
-    activeThemePrefs.customSurfaceColor,
-    activeThemePrefs.customTextColor,
-    activeThemePrefs.customAccentColor,
     activeCosmos.accessibility.reduceMotion,
     activeCosmos.accessibility.oneHandedMode,
     activeCosmos.accessibility.numeralSystem,
@@ -488,14 +568,16 @@ export function useAgencyStore() {
     }));
   }, []);
 
-  const setDarkTheme = useCallback((darkTheme: boolean) => {
+  const setDarkTheme = useCallback((_darkTheme: boolean) => {
+    // Locked single-theme architecture: always Obsidian & Gold dark surface
     setState((prev) => ({
       ...prev,
-      darkTheme,
+      darkTheme: true,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
-        appTheme: darkTheme ? 'obsidian-gold' : 'arctic-snow',
+        appTheme: 'obsidian-gold',
+        themeColorMode: 'dark',
       },
     }));
   }, []);
@@ -506,15 +588,20 @@ export function useAgencyStore() {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
         ...patch,
+        appTheme: 'obsidian-gold',
+        themeColorMode: 'dark',
+        customBgColor: '',
+        customSurfaceColor: '',
+        customTextColor: '',
+        customAccentColor: '',
         activeProfileId:
           patch.activeProfileId !== undefined
             ? patch.activeProfileId
             : prev.themePrefs?.activeProfileId ?? null,
       };
-      const themeMeta = getAppThemeById(merged.appTheme);
       return {
         ...prev,
-        darkTheme: themeMeta.isDark,
+        darkTheme: true,
         themePrefs: merged,
       };
     });
@@ -523,63 +610,26 @@ export function useAgencyStore() {
   const resetThemePrefs = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      darkTheme: false,
+      darkTheme: true,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
-        // Rule 1: Reset never touches saved profiles or custom saved themes
+        appTheme: 'obsidian-gold',
+        themeColorMode: 'dark',
         savedProfiles:
           prev.themePrefs?.savedProfiles && prev.themePrefs.savedProfiles.length > 0
             ? prev.themePrefs.savedProfiles
             : DEFAULT_APPEARANCE_PROFILES,
-        customSavedThemes: prev.themePrefs?.customSavedThemes || [],
+        customSavedThemes: [],
       },
     }));
   }, []);
 
-  const saveCustomThemePreset = useCallback((preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => {
-    const newPreset: CustomThemePreset = {
-      ...preset,
-      id: `custom_theme_${Date.now().toString(36)}`,
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    setState((prev) => {
-      const cur = {
-        ...DEFAULT_THEME_PREFERENCES,
-        ...(prev.themePrefs || {}),
-      };
-      const existing = cur.customSavedThemes || [];
-      return {
-        ...prev,
-        themePrefs: {
-          ...cur,
-          customSavedThemes: [newPreset, ...existing].slice(0, 20),
-          customBgColor: newPreset.bgMain,
-          customSurfaceColor: newPreset.bgSurface,
-          customTextColor: newPreset.textPrimary,
-          customAccentColor: newPreset.accent,
-          borderRadiusPx: newPreset.borderRadiusPx,
-          glassOpacityPct: newPreset.glassOpacityPct,
-          cardShadowLevel: newPreset.cardShadowLevel,
-          themeColorMode: newPreset.isDark ? 'dark' : 'light',
-        },
-      };
-    });
+  const saveCustomThemePreset = useCallback((_preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => {
+    // No-op: Theme locked to Obsidian & Gold
   }, []);
 
-  const deleteCustomThemePreset = useCallback((presetId: string) => {
-    setState((prev) => {
-      const cur = {
-        ...DEFAULT_THEME_PREFERENCES,
-        ...(prev.themePrefs || {}),
-      };
-      return {
-        ...prev,
-        themePrefs: {
-          ...cur,
-          customSavedThemes: (cur.customSavedThemes || []).filter((c) => c.id !== presetId),
-        },
-      };
-    });
+  const deleteCustomThemePreset = useCallback((_presetId: string) => {
+    // No-op: Theme locked to Obsidian & Gold
   }, []);
 
   const updateWorkspaceCosmos = useCallback(
@@ -761,19 +811,19 @@ export function useAgencyStore() {
       const profile: AppearanceProfile = {
         id,
         name: cleanName.slice(0, 80),
-        appTheme: resolveAppThemeId(cur.appTheme),
+        appTheme: 'obsidian-gold',
         tableTheme: resolveTableThemeId(cur.tableTheme),
         fontFamily: resolveArabicFontId(cur.fontFamily),
         fontSizePx: cur.fontSizePx ?? 15,
         rowHeightPx: cur.rowHeightPx ?? 42,
         colWidthScale: cur.colWidthScale ?? 100,
-        borderRadiusPx: cur.borderRadiusPx ?? 12,
+        borderRadiusPx: cur.borderRadiusPx ?? 22,
         cardShadowLevel: cur.cardShadowLevel ?? 'soft',
         glassEffect: Boolean(cur.glassEffect),
-        customBgColor: cur.customBgColor || '',
-        customSurfaceColor: cur.customSurfaceColor || '',
-        customTextColor: cur.customTextColor || '',
-        customAccentColor: cur.customAccentColor || '',
+        customBgColor: '',
+        customSurfaceColor: '',
+        customTextColor: '',
+        customAccentColor: '',
         conditionalFormatting: cur.conditionalFormatting,
         createdAt: new Date().toISOString().slice(0, 10),
       };
@@ -806,13 +856,13 @@ export function useAgencyStore() {
       const list = cur.savedProfiles || DEFAULT_APPEARANCE_PROFILES;
       const found = list.find((p) => p.id === profileId);
       if (!found) return prev;
-      const themeMeta = getAppThemeById(found.appTheme);
       return {
         ...prev,
-        darkTheme: themeMeta.isDark,
+        darkTheme: true,
         themePrefs: {
           ...cur,
-          appTheme: resolveAppThemeId(found.appTheme),
+          appTheme: 'obsidian-gold',
+          themeColorMode: 'dark',
           tableTheme: resolveTableThemeId(found.tableTheme),
           fontFamily: resolveArabicFontId(found.fontFamily),
           fontSizePx: found.fontSizePx,
@@ -821,10 +871,10 @@ export function useAgencyStore() {
           borderRadiusPx: found.borderRadiusPx,
           cardShadowLevel: found.cardShadowLevel,
           glassEffect: found.glassEffect,
-          customBgColor: found.customBgColor || '',
-          customSurfaceColor: found.customSurfaceColor || '',
-          customTextColor: found.customTextColor || '',
-          customAccentColor: found.customAccentColor || '',
+          customBgColor: '',
+          customSurfaceColor: '',
+          customTextColor: '',
+          customAccentColor: '',
           conditionalFormatting:
             found.conditionalFormatting || cur.conditionalFormatting,
           activeProfileId: found.id,
@@ -2444,6 +2494,24 @@ export function useAgencyStore() {
     [commitDataMutation]
   );
 
+  const loadStarterDemoData = useCallback(() => {
+    commitDataMutation((prev) => ({
+      ...prev,
+      agencies: INITIAL_DATABASE_STATE.agencies.map((a) => ({ ...a })),
+      persons: INITIAL_DATABASE_STATE.persons.map((p) => ({ ...p })),
+      expenses: INITIAL_DATABASE_STATE.expenses.map((e) => ({ ...e })),
+      readyLists: INITIAL_DATABASE_STATE.readyLists.map((l) => ({ ...l })),
+      readyListItems: INITIAL_DATABASE_STATE.readyListItems.map((i) => ({ ...i })),
+      relations: INITIAL_DATABASE_STATE.relations.map((r) => ({ ...r })),
+      monthlyArchives: (INITIAL_DATABASE_STATE.monthlyArchives || []).map((m) => ({
+        ...m,
+      })),
+      workspaceNotes: (INITIAL_DATABASE_STATE.workspaceNotes || []).map((n) => ({
+        ...n,
+      })),
+    }));
+  }, [commitDataMutation]);
+
   const syncWorkspaceToServer = useCallback(async () => {
     const token = await getActiveBearerToken();
     const sess = getStoredSession();
@@ -2483,16 +2551,15 @@ export function useAgencyStore() {
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
     if (data?.exists && data.snapshot) {
-      setState((prev) => ({
-        ...prev,
-        ...data.snapshot,
-      }));
+      setState(() =>
+        normalizeLoadedWorkspaceState(data.snapshot, activeUid ?? null)
+      );
       setPast([]);
       setFuture([]);
       return true;
     }
     return false;
-  }, []);
+  }, [activeUid]);
 
   // --- Monthly Archives & Active Period Management ---
   const activePeriod = resolvePeriodMeta(state.activePeriod);
@@ -2863,5 +2930,8 @@ export function useAgencyStore() {
     applyAssistantAutoFixes,
     syncWorkspaceToServer,
     restoreWorkspaceFromServer,
+    compressionStats,
+    storageReady,
+    loadStarterDemoData,
   };
 }

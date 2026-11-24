@@ -5,11 +5,9 @@ import {
   Cpu,
   FileSpreadsheet,
   Globe2,
-  Moon,
   Search,
   ShieldAlert,
   Sparkles,
-  Sun,
   UserCheck,
   Users,
   X,
@@ -143,9 +141,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       {
         id: 'cmd_settings_appearance',
         group: 'الإعدادات الهرمية',
-        label: 'استوديو المظهر والسمات والألوان',
-        sublabel: 'الانتقال مباشرة إلى إعدادات الوضع الليلي والسمات داخل قسم الإعدادات',
-        icon: darkTheme ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />,
+        label: 'استوديو الجداول والهندسة البصرية (السبج والذهب)',
+        sublabel: 'تصاميم الجداول الـ 8، الخطوط العربية، والهندسة الزجاجية',
+        icon: <Sparkles className="h-4 w-4" />,
         onRun: () => {
           onNavigateView('settings', 'appearance');
           onClose();

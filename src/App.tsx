@@ -27,7 +27,10 @@ import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
 import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
-import { getStoredSession } from './lib/authClient';
+import { clearSession, getStoredSession } from './lib/authClient';
+import { OnboardingFlow } from './components/auth/OnboardingFlow';
+import { FlipAuthGuard } from './components/auth/FlipAuthGuard';
+import { getTenantOnboardingKey } from './services/storage/tenantStorage';
 import type {
   AssistantExternalTableCommand,
   MorrowCanvasMode,
@@ -59,10 +62,8 @@ import {
 } from './utils/hierarchyRegistry';
 import { getUnifiedCapabilities } from './utils/modePermissions';
 import {
-  ALL_APP_THEMES,
   ARABIC_FONTS,
   DEFAULT_APPEARANCE_PROFILES,
-  resolveAppThemeId,
   resolveTableThemeId,
   TABLE_THEMES,
 } from './utils/themes';
@@ -93,6 +94,21 @@ type DeleteTarget =
   | { kind: 'relation'; item: RelationEntry };
 
 export default function App() {
+  // Multi-Auth state lifted above store to guarantee strict per-uid isolation
+  const [authUser, setAuthUser] = useState<AuthUser | null>(
+    () => getStoredSession()?.user || null
+  );
+  const [onboardingDone, setOnboardingDone] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autostart') === '1') return true;
+      return localStorage.getItem(getTenantOnboardingKey(null)) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   const {
     state,
     workspaceCosmos,
@@ -188,7 +204,9 @@ export default function App() {
     applyAssistantAutoFixes,
     syncWorkspaceToServer,
     restoreWorkspaceFromServer,
-  } = useAgencyStore();
+    compressionStats,
+    loadStarterDemoData,
+  } = useAgencyStore(authUser?.uid ?? null);
 
   const [activeView, setActiveView] = useState<AppView>('hub');
   const [previousView, setPreviousView] = useState<AppView>('hub');
@@ -232,18 +250,41 @@ export default function App() {
   const pointerNearTopRef = useRef(false);
   const headerFocusActiveRef = useRef(false);
   const [selectedAgencyId, setSelectedAgencyId] = useState<number>(
-    state.agencies[0]?.id ?? 1
+    state.agencies[0]?.id ?? 0
   );
+
+  useEffect(() => {
+    if (state.agencies.length === 0) {
+      setSelectedAgencyId(0);
+    } else if (!state.agencies.some((a) => a.id === selectedAgencyId)) {
+      setSelectedAgencyId(state.agencies[0].id);
+    }
+  }, [state.agencies, selectedAgencyId]);
+
+  const handleAuthenticated = (user: AuthUser) => {
+    setAuthUser(user);
+    setAuthModalOpen(false);
+    setActiveView('hub');
+    try {
+      localStorage.setItem(getTenantOnboardingKey(user.uid), '1');
+      localStorage.setItem(getTenantOnboardingKey(null), '1');
+    } catch {
+      // ignore storage failures
+    }
+    setOnboardingDone(true);
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    setAuthUser(null);
+    setAuthModalOpen(false);
+    setDrawerOpen(false);
+    setActiveView('hub');
+  };
 
   // Privacy lock overlay input state
   const [unlockPinInput, setUnlockPinInput] = useState('');
   const [unlockPinError, setUnlockPinError] = useState('');
-
-  // Multi-Auth state
-  const [authUser, setAuthUser] = useState<AuthUser | null>(
-    () => getStoredSession()?.user || null
-  );
-  const [authModalOpen, setAuthModalOpen] = useState(false);
 
   // Editor modals state
   const [addPersonOpen, setAddPersonOpen] = useState(false);
@@ -421,7 +462,7 @@ export default function App() {
     return 'إعدادات التطبيق';
   }, [activeView, currentAgency]);
 
-  const isAuthGateLocked = Boolean(state.requireLoginOnStart && !authUser);
+  const isAuthGateLocked = !authUser;
 
   const handleNavigate = (
     view: AppView,
@@ -467,10 +508,7 @@ export default function App() {
     [state.persons]
   );
 
-  const activeThemeLabel = useMemo(() => {
-    const resolvedId = resolveAppThemeId(themePrefs.appTheme);
-    return ALL_APP_THEMES.find((t) => t.id === resolvedId)?.name || 'كلاسيكي';
-  }, [themePrefs.appTheme]);
+  const activeThemeLabel = 'السبج والذهب';
 
   const activeTableThemeLabel = useMemo(() => {
     const resolvedId = resolveTableThemeId(themePrefs.tableTheme);
@@ -941,8 +979,40 @@ export default function App() {
     activeView === 'morrow_center' ||
     isRosterViewingModeActive;
 
+  if (!authUser) {
+    if (!onboardingDone) {
+      return (
+        <>
+          <OnboardingFlow
+            onComplete={() => {
+              try {
+                localStorage.setItem(getTenantOnboardingKey(null), '1');
+              } catch {
+                // ignore storage failures
+              }
+              setOnboardingDone(true);
+            }}
+          />
+          <ToastHost toasts={toasts} onDismiss={dismissToast} />
+        </>
+      );
+    }
+    return (
+      <>
+        <FlipAuthGuard
+          onAuthenticated={handleAuthenticated}
+          onReplayOnboarding={() => setOnboardingDone(false)}
+        />
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen flex-col [overflow-x:clip]">
+    <div className="ambient-obsidian-canvas relative flex min-h-screen flex-col [overflow-x:clip]">
+      <div className="ambient-orb-gold ambient-orb-gold-1" />
+      <div className="ambient-orb-gold ambient-orb-gold-2" />
+
       {!isDedicatedFullScreenView && (
         <TopBar
           capabilities={capabilities}
@@ -969,7 +1039,6 @@ export default function App() {
           onNavigateHome={() => handleNavigate('hub')}
           onNavigateView={handleNavigate}
           onOpenSettings={(sec) => handleNavigate('settings', sec)}
-          onToggleDarkTheme={setDarkTheme}
           onQuickAddPerson={() => {
             setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
             setAddPersonOpen(true);
@@ -1005,7 +1074,7 @@ export default function App() {
         />
       )}
 
-      <div className="flex flex-1 min-h-0">
+      <div className="relative z-10 flex flex-1 min-h-0">
         {!isDedicatedFullScreenView && (
           <AppSidebar
             activeView={activeView}
@@ -1018,6 +1087,7 @@ export default function App() {
             readyListsCount={state.readyLists.length}
             archivesCount={monthlyArchives.length}
             pendingDraftsCount={assistant.pendingDraftsCount}
+            compressionStats={compressionStats}
             calculationSettings={state.calculationSettings}
             capabilities={capabilities}
             collapsed={sidebarCollapsed}
@@ -1030,12 +1100,15 @@ export default function App() {
               setSelectedAgencyId(id);
               setActiveView('agency_roster');
             }}
+            onLogout={handleLogout}
           />
         )}
 
         <div
           key={activeView}
-          className="flex-1 min-w-0 flex flex-col tabrix-view-enter"
+          className={`flex-1 min-w-0 flex flex-col tabrix-view-enter ${
+            !isDedicatedFullScreenView ? 'pb-24' : ''
+          }`}
         >
           {activeView === 'hub' && (
             <AgenciesHubView
@@ -1058,6 +1131,7 @@ export default function App() {
               onAddAgency={addAgencyDirect}
               onUpdateAgencyDetails={updateAgencyDetails}
               onNavigateView={handleNavigate}
+              onLoadStarterData={loadStarterDemoData}
             />
           )}
 
@@ -1297,7 +1371,7 @@ export default function App() {
         <GoogleWorkspaceView
           activePeriod={activePeriod}
           relations={state.relations}
-          onAuthenticatedUser={(user) => setAuthUser(user)}
+          onAuthenticatedUser={handleAuthenticated}
         />
       )}
 
@@ -1309,8 +1383,8 @@ export default function App() {
           securityPrefs={securityPrefs}
           recycleBin={recycleBin}
           workspaceNotes={workspaceNotes}
-          onAuthenticated={(user) => setAuthUser(user)}
-          onLoggedOut={() => setAuthUser(null)}
+          onAuthenticated={handleAuthenticated}
+          onLoggedOut={handleLogout}
           onToggleRequireLogin={setRequireLoginOnStart}
           onUpdateSecurityPrefs={setSecurityPrefs}
           onUpdateSmartSyncCheckpoint={updateSmartSyncCheckpoint}
@@ -1561,12 +1635,12 @@ export default function App() {
 
       {/* Multi-Login Modal (Gmail, Username, Phone) */}
       <AuthModal
-        open={authModalOpen || isAuthGateLocked}
-        lockedGate={isAuthGateLocked}
+        open={authModalOpen}
+        lockedGate={false}
         currentUser={authUser}
         onClose={() => setAuthModalOpen(false)}
-        onAuthenticated={(user) => setAuthUser(user)}
-        onLoggedOut={() => setAuthUser(null)}
+        onAuthenticated={handleAuthenticated}
+        onLoggedOut={handleLogout}
       />
 
       {/* Privacy Lock Overlay */}
@@ -1755,7 +1829,7 @@ export default function App() {
         />
       )}
 
-      {/* Mobile One-Thumb Bottom Navigation Bar (hidden in dedicated Full-Screen views) */}
+      {/* Floating Smoked-Glass Navigation Dock (hidden in dedicated Full-Screen views) */}
       {!isAuthGateLocked && !securityPrefs.privacyLocked && !isDedicatedFullScreenView && (
         <CosmosBottomNav
           activeView={activeView}
@@ -1768,7 +1842,6 @@ export default function App() {
           }}
           onOpenAssistant={() => openMorrowStudio('chat')}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-          isAssistantThinking={assistant.isThinking}
           pendingDraftsCount={assistant.pendingDraftsCount}
         />
       )}

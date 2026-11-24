@@ -1,23 +1,24 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-main: #121212;
-  --bg-surface: #1A1A24;
-  --bg-header: #121216;
-  --bg-table-header: #1E1F2B;
-  --bg-nav-active: rgba(245, 176, 65, 0.14);
-  --bg-zebra: rgba(255, 255, 255, 0.025);
-  --bg-numeric: rgba(245, 176, 65, 0.06);
-  --row-hover-bg: rgba(245, 176, 65, 0.11);
-  --text-primary: #F0F0F5;
-  --text-muted: #8A8A9E;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --grid-color: rgba(255, 255, 255, 0.07);
-  --accent: #F5B041;
-  --accent-fg: #121212;
-  --accent-ai: #5B4FE9;
-  --accent-ai-glow: rgba(91, 79, 233, 0.42);
+  --bg-main: #09090B;
+  --bg-surface: #121216;
+  --bg-header: #0D0D11;
+  --bg-table-header: #16161C;
+  --bg-nav-active: rgba(212, 175, 55, 0.14);
+  --bg-zebra: rgba(255, 255, 255, 0.024);
+  --bg-numeric: rgba(212, 175, 55, 0.055);
+  --row-hover-bg: rgba(212, 175, 55, 0.11);
+  --text-primary: #F4F4F6;
+  --text-muted: #9898AA;
+  --border-color: rgba(212, 175, 55, 0.22);
+  --grid-color: rgba(212, 175, 55, 0.12);
+  --accent: #D4AF37;
+  --accent-fg: #09090B;
+  --accent-ai: #D4AF37;
+  --accent-ai-glow: rgba(212, 175, 55, 0.42);
   --success: #10B981;
   --success-fg: #04271D;
   --success-bg: rgba(16, 185, 129, 0.16);
@@ -33,14 +34,14 @@
   --table-cell-py: 10px;
   --table-line-height: 1.6;
   --table-col-scale: 1;
-  --card-radius: 24px;
+  --card-radius: 22px;
   --btn-radius: 9999px;
   --modal-radius: 24px;
-  --world-radius: 26px;
-  --galaxy-radius: 24px;
-  --capsule-radius: 24px;
-  --glass-opacity: 0.62;
-  --card-shadow: 0 12px 32px -14px rgba(0, 0, 0, 0.45);
+  --world-radius: 24px;
+  --galaxy-radius: 22px;
+  --capsule-radius: 22px;
+  --glass-opacity: 0.68;
+  --card-shadow: 0 18px 42px -18px rgba(0, 0, 0, 0.72);
 
   /* Unified Cosmos Spacing & Elevation Tokens */
   --shell-topbar-h: 56px;
@@ -64,13 +65,13 @@ body {
   font-family: var(--app-font-family);
   font-size: var(--app-font-size);
   font-weight: var(--app-font-weight);
-  background-color: var(--bg-main);
+  background-color: #09090B;
   color: var(--text-primary);
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
   scrollbar-width: thin;
-  scrollbar-color: var(--border-color) transparent;
+  scrollbar-color: rgba(212, 175, 55, 0.25) transparent;
 }
 
 *:focus-visible {
@@ -796,24 +797,16 @@ html[data-glass="1"] .glass-surface {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-/* Living Theme Canvas Atmosphere */
-html[data-app-theme="alabaster-glass"] body,
-html[data-app-theme="midnight-indigo"] body,
-html[data-glass="1"] body {
+/* Obsidian & Gold Canvas Atmosphere */
+html[data-glass="1"] body,
+html[data-app-theme="obsidian-gold"] body,
+body {
+  background-color: #09090B;
   background-image:
-    radial-gradient(900px circle at 88% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 62%),
-    radial-gradient(700px circle at 10% 105%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%);
-}
-
-html[data-app-theme="cyberpunk"] body {
-  background-image:
-    radial-gradient(840px circle at 82% 4%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 58%),
-    radial-gradient(720px circle at 15% 96%, rgba(34, 211, 238, 0.06), transparent 60%);
-}
-
-html[data-app-theme="desert-mirage"] body {
-  background-image:
-    linear-gradient(180deg, rgba(154, 91, 19, 0.025) 0%, transparent 280px);
+    radial-gradient(960px circle at 86% -8%, rgba(212, 175, 55, 0.085), transparent 60%),
+    radial-gradient(720px circle at 12% 106%, rgba(243, 229, 171, 0.045), transparent 58%),
+    linear-gradient(180deg, #09090B 0%, #101014 100%);
+  background-attachment: fixed;
 }
 
 /* Legacy Fallback Classes (for seamless transition) */
@@ -835,7 +828,7 @@ html[data-app-theme="desert-mirage"] body {
 
 .agency-table.has-focused-row tbody tr:not(.row-focused) {
   opacity: 0.52;
-  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .assistant-glow-btn {
@@ -856,63 +849,56 @@ html[data-app-theme="desert-mirage"] body {
   scroll-margin-top: 90px;
 }
 
-/* Nexus Slate Design System Primitives */
-html[data-app-theme="obsidian-gold"] body {
-  background-color: #121212;
-  background-image:
-    radial-gradient(960px circle at 85% -10%, rgba(245, 176, 65, 0.06), transparent 60%),
-    linear-gradient(180deg, #121212 0%, #1A1A24 100%);
-  background-attachment: fixed;
-}
-
 .nexus-squircle {
-  border-radius: 24px;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  background-color: rgba(18, 18, 22, 0.72);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  backdrop-filter: blur(20px) saturate(155%);
+  -webkit-backdrop-filter: blur(20px) saturate(155%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 12px 28px -16px rgba(0, 0, 0, 0.55);
+    inset 0 1px 0 rgba(243, 229, 171, 0.13),
+    0 14px 32px -18px rgba(0, 0, 0, 0.72);
   transition:
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nexus-squircle-interactive:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-color));
+  border-color: rgba(212, 175, 55, 0.44);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 18px 36px -18px rgba(0, 0, 0, 0.68),
-    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+    inset 0 1px 0 rgba(243, 229, 171, 0.18),
+    0 20px 40px -18px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(212, 175, 55, 0.18);
 }
 
 .nexus-glass-lite {
-  background-color: color-mix(in srgb, var(--bg-surface) 60%, transparent);
-  border-color: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px) saturate(145%);
-  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  background-color: rgba(18, 18, 22, 0.68);
+  border-color: rgba(212, 175, 55, 0.22);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 10px 28px -14px rgba(0, 0, 0, 0.45);
+    inset 0 1px 0 rgba(243, 229, 171, 0.14),
+    0 12px 30px -14px rgba(0, 0, 0, 0.65);
 }
 
 .nexus-pill-btn {
   border-radius: 9999px;
   box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.12),
-    inset -1px -1px 0 rgba(0, 0, 0, 0.2),
-    0 4px 12px -4px rgba(0, 0, 0, 0.35);
+    inset 1px 1px 0 rgba(243, 229, 171, 0.12),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.24),
+    0 4px 12px -4px rgba(0, 0, 0, 0.42);
   transition:
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    filter 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nexus-pill-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-color));
+  border-color: rgba(212, 175, 55, 0.52);
 }
 
 .nexus-pill-btn:active:not(:disabled) {
@@ -920,16 +906,16 @@ html[data-app-theme="obsidian-gold"] body {
 }
 
 .nexus-progress-track {
-  background-color: color-mix(in srgb, var(--text-muted) 18%, var(--bg-main));
+  background-color: rgba(255, 255, 255, 0.07);
   border-radius: 9999px;
   overflow: hidden;
 }
 
 .nexus-progress-glow {
   border-radius: 9999px;
-  background: linear-gradient(90deg, #F5B041 0%, #FBBF24 100%);
-  box-shadow: 0 0 12px rgba(245, 176, 65, 0.55);
-  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  background: linear-gradient(90deg, #D4AF37 0%, #F3E5AB 100%);
+  box-shadow: 0 0 14px rgba(212, 175, 55, 0.55);
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes nexusPagePushEnter {

@@ -13,8 +13,8 @@ import { DEFAULT_CALCULATION_SETTINGS } from '../utils/agencyLogic';
 import { DEFAULT_GRANULAR_CONTROLS } from '../utils/modePermissions';
 
 export const DEFAULT_WORKSPACE_COSMOS: WorkspaceCosmosState = {
-  pinnedNodeIds: ['cap_master_roster_portal', 'cap_calc_fees', 'cap_themes_classic'],
-  recentNodeIds: ['world_agencies_tables', 'world_calculator', 'world_themes'],
+  pinnedNodeIds: ['cap_master_roster_portal', 'cap_calc_fees'],
+  recentNodeIds: ['world_agencies_tables', 'world_calculator'],
   hiddenWorldIds: [],
   dismissedSuggestionIds: [],
   accessibility: {
@@ -211,7 +211,6 @@ export const DEFAULT_HUB_SHORTCUT_IDS = [
 ];
 
 export const DEFAULT_QUICK_TOGGLE_IDS = [
-  'qt_dark_mode',
   'qt_fullscreen',
   'qt_fee_250',
   'qt_confirm_delete',

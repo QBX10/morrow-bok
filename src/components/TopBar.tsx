@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Menu,
-  Moon,
-  Palette,
   Plus,
   Redo2,
   ScanLine,
@@ -18,7 +16,6 @@ import {
   Shield,
   Sliders,
   Sparkles,
-  Sun,
   Undo2,
   UserCheck,
   UserCircle2,
@@ -394,9 +391,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       case 'hub':
       case 'google_workspace':
         return {
-          label: 'المظهر',
-          title: 'تخصيص المظهر وثيمات الدفتر',
-          icon: Palette,
+          label: 'الجداول والخطوط',
+          title: 'محركات الجداول الـ 8 والخطوط العربية',
+          icon: Sliders,
           onClick: () => onOpenSettings('appearance'),
         };
       default:
@@ -820,43 +817,18 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             )}
 
-          {onToggleDarkTheme && typeof darkTheme === 'boolean' && (
-            <button
-              type="button"
-              onClick={() => onToggleDarkTheme(!darkTheme)}
-              title={
-                activeThemeName
-                  ? `تبديل النمط (${activeThemeName})`
-                  : darkTheme
-                  ? 'التبديل إلى النمط النهاري'
-                  : 'التبديل إلى النمط الليلي'
-              }
-              aria-label={darkTheme ? 'التبديل إلى النمط النهاري' : 'التبديل إلى النمط الليلي'}
-              className="nexus-pill-btn hidden sm:inline-flex h-8 w-8 shrink-0 items-center justify-center border"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              {darkTheme ? (
-                <Sun className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              ) : (
-                <Moon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              )}
-            </button>
-          )}
-
-          {/* Primary Smart AI Studio CTA (Electric Indigo AI Accent) */}
+          {/* Primary Smart AI Studio CTA (Obsidian & Gold Accent) */}
           <button
             type="button"
             onClick={onOpenMorrowStudio}
-            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 px-3 sm:px-3.5 text-xs font-extrabold whitespace-nowrap shrink-0"
+            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3 sm:px-3.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
             style={{
               background:
-                'linear-gradient(135deg, var(--accent-ai, #5B4FE9) 0%, #4338CA 100%)',
-              color: '#FFFFFF',
+                'linear-gradient(135deg, rgba(212, 175, 55, 0.22) 0%, rgba(20, 20, 26, 0.92) 100%)',
+              borderColor: 'rgba(212, 175, 55, 0.45)',
+              color: '#F3E5AB',
               boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 16px -6px rgba(91, 79, 233, 0.55)',
+                'inset 0 1px 0 rgba(243, 229, 171, 0.2), 0 6px 16px -6px rgba(212, 175, 55, 0.28)',
             }}
           >
             <Bot className="h-3.5 w-3.5 shrink-0" />

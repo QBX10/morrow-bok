@@ -1,10 +1,10 @@
-export async function compressImageFileToDataUrl(
+export async function optimizeImageToWebP(
   file: File,
   options?: { maxDim?: number; maxChars?: number; quality?: number }
 ): Promise<string> {
-  const maxDim = options?.maxDim ?? 320;
+  const maxDim = options?.maxDim ?? 480;
   const maxChars = options?.maxChars ?? 320000;
-  const initialQuality = options?.quality ?? 0.82;
+  const initialQuality = options?.quality ?? 0.75;
 
   if (!file.type.startsWith('image/')) {
     throw new Error('يرجى اختيار ملف صورة صالح (PNG أو JPG أو WebP).');
@@ -39,16 +39,30 @@ export async function compressImageFileToDataUrl(
 
   let q = initialQuality;
   let result = canvas.toDataURL('image/webp', q);
-  if (!result.startsWith('data:image/')) {
+  if (!result.startsWith('data:image/webp')) {
     result = canvas.toDataURL('image/jpeg', q);
   }
   while (result.length > maxChars && q > 0.35) {
-    q = Number((q - 0.12).toFixed(2));
-    result = canvas.toDataURL('image/jpeg', q);
+    q = Number((q - 0.1).toFixed(2));
+    result = canvas.toDataURL('image/webp', q);
+    if (!result.startsWith('data:image/webp')) {
+      result = canvas.toDataURL('image/jpeg', q);
+    }
   }
 
   if (result.length > maxChars) {
-    throw new Error('حجم الصورة كبير جداً حتى بعد الضغط، يرجى اختيار صورة أصغر.');
+    throw new Error('حجم الصورة كبير جداً حتى بعد التحويل إلى WebP، يرجى اختيار صورة أصغر.');
   }
   return result;
+}
+
+export async function compressImageFileToDataUrl(
+  file: File,
+  options?: { maxDim?: number; maxChars?: number; quality?: number }
+): Promise<string> {
+  return optimizeImageToWebP(file, {
+    maxDim: options?.maxDim ?? 320,
+    maxChars: options?.maxChars ?? 320000,
+    quality: options?.quality ?? 0.75,
+  });
 }

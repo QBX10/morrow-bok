@@ -202,8 +202,8 @@ import {
 } from './excelExport';
 import type { ReadyList, ReadyListItem } from '../types/agency';
 
-test('themes registry defines 8 app themes, 8 table themes, and 6 Arabic fonts with fg tokens', () => {
-  assert.equal(APP_THEMES.length, 8);
+test('themes registry locks Obsidian & Gold theme, 8 table themes, and 6 Arabic fonts with fg tokens', () => {
+  assert.equal(APP_THEMES.length, 1);
   assert.equal(TABLE_THEMES.length, 8);
   assert.equal(ARABIC_FONTS.length, 6);
   for (const theme of APP_THEMES) {
@@ -212,11 +212,7 @@ test('themes registry defines 8 app themes, 8 table themes, and 6 Arabic fonts w
     assert.ok(theme.vars['--danger-fg']);
   }
   assert.equal(getAppThemeById('obsidian-gold').isDark, true);
-  assert.equal(getAppThemeById('desert-mirage').isDark, false);
-  assert.equal(getAppThemeById('emerald-forest').isDark, true);
-  assert.equal(getAppThemeById('aurora').isDark, true);
-  assert.equal(getAppThemeById('zen-minimal').isDark, false);
-  // Legacy aliases migrate transparently
+  assert.equal(getAppThemeById('desert-mirage').id, 'obsidian-gold');
   assert.equal(getAppThemeById('midnight-slate').id, 'obsidian-gold');
   assert.equal(DEFAULT_THEME_PREFERENCES.tabularNumerals, true);
 });

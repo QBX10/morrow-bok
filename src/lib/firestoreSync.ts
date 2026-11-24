@@ -13,6 +13,7 @@ import {
   auth,
   db,
   handleFirestoreError,
+  isFirestoreConfigured,
   OperationType,
 } from './firebase';
 import type { AppearanceProfile, ThemePreferences } from '../types/agency';
@@ -30,6 +31,7 @@ function clampStr(value: string | undefined | null, maxLen: number): string {
 }
 
 function canWriteFirestoreFor(uid: string): boolean {
+  if (!isFirestoreConfigured) return false;
   const cur = auth.currentUser;
   return Boolean(
     cur &&

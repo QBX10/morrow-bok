@@ -82,10 +82,10 @@ test('hierarchyRegistry builds multi-level pyramid tree, resolves active nodes, 
   assert.ok(calcPreviewCap);
   assert.equal(calcPreviewCap.level, 4);
 
-  const modernThemesCap = getHierarchyNodeById(tree, 'appearance_themes_modern_cap');
-  assert.ok(modernThemesCap);
-  assert.equal(modernThemesCap.level, 5);
-  assert.equal(modernThemesCap.parentId, 'appearance_themes_cap');
+  const geometryCap = getHierarchyNodeById(tree, 'appearance_geometry_cap');
+  assert.ok(geometryCap);
+  assert.equal(geometryCap.level, 4);
+  assert.equal(geometryCap.parentId, 'settings_appearance_node');
 
   const displayCap = getHierarchyNodeById(tree, 'general_display_cap');
   assert.ok(displayCap);
@@ -106,8 +106,8 @@ test('hierarchyRegistry builds multi-level pyramid tree, resolves active nodes, 
   const hitsFee = searchHierarchyNodes(tree, 'رسم الفرد');
   assert.ok(hitsFee.some((h) => h.node.id === 'calc_fees_cap'));
 
-  const hitsGlassTheme = searchHierarchyNodes(tree, 'المرمر الزجاجي');
-  assert.ok(hitsGlassTheme.some((h) => h.node.id === 'appearance_themes_modern_cap'));
+  const hitsGeometry = searchHierarchyNodes(tree, 'التحكم الهندسي');
+  assert.ok(hitsGeometry.some((h) => h.node.id === 'appearance_geometry_cap'));
 
   const hitsFullscreen = searchHierarchyNodes(tree, 'ملء الشاشة');
   assert.ok(hitsFullscreen.some((h) => h.node.id === 'general_display_cap'));
