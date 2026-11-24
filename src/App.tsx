@@ -1269,7 +1269,19 @@ export default function App() {
             setSelectedAgencyId(agId);
             setActiveView('agency_roster');
           }}
-          initialCanvasMode={initialMorrowCanvas}
+          initialCanvasMode={assistant.requestedCanvasHandoff || initialMorrowCanvas}
+          collaborationMode={assistant.assistantSettings.collaborationMode}
+          onChangeCollaborationMode={(mode) =>
+            assistant.updateAssistantSettings({ collaborationMode: mode })
+          }
+          responseStyle={assistant.assistantSettings.responseStyle || 'balanced'}
+          onChangeResponseStyle={(style) =>
+            assistant.updateAssistantSettings({ responseStyle: style })
+          }
+          chatThreads={assistant.chatThreads}
+          activeThreadId={assistant.activeThreadId}
+          onSwitchThread={assistant.switchChatThread}
+          onDeleteThread={assistant.deleteChatThread}
           onHandoffFilesToQuickExtract={(files) => {
             setPendingExtractFiles({ files, nonce: Date.now() });
             setActiveView('quick_extract');
@@ -1283,6 +1295,8 @@ export default function App() {
           onClearMessages={assistant.clearMessages}
           onRetryLastPrompt={assistant.retryLastPrompt}
           modelHealthSnapshots={assistant.modelHealthSnapshots}
+          canViewFinance={capabilities.canViewFinance}
+          canUseQuickExtract={capabilities.canUseQuickExtract}
         />
       )}
 
@@ -1538,6 +1552,13 @@ export default function App() {
           onUndoLastAction={assistant.undoLastAssistantAction}
           pendingDraftsCount={assistant.pendingDraftsCount}
           onOpenCommandCenter={openMorrowStudio}
+          onTriggerCanvasHandoff={(handoff) =>
+            assistant.openCanvasMode(handoff.canvasMode, handoff.agencyId)
+          }
+          collaborationMode={assistant.assistantSettings.collaborationMode}
+          onChangeCollaborationMode={(mode) =>
+            assistant.updateAssistantSettings({ collaborationMode: mode })
+          }
           hideLauncher={activeView === 'morrow_center'}
           onQuickCameraExtract={() => {
             if (capabilities.canUseQuickExtract) {

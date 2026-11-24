@@ -14,6 +14,7 @@ import {
   getAiModelSpec,
   getServerProviderApiKeys,
   MORROW_LOCAL_MODEL_ID,
+  resolveCollaborativeReviewerChain,
   resolveOrderedTaskChain,
   SIX_FREE_CLOUD_MODELS,
   type AiPipelineKind,
@@ -22,7 +23,13 @@ import {
   type AnyAiModelId,
   type ApprovedCloudModelId,
 } from '../aiConfig.ts';
-import type { AssistantToolCall } from '../types/assistant.ts';
+import type {
+  AiCollaborationMode,
+  AssistantCollaborationStep,
+  AssistantSmartSuggestion,
+  AssistantToolCall,
+  MorrowCanvasMode,
+} from '../types/assistant.ts';
 import { enforceSafeArabicTerminology } from '../utils/assistantPrivacy.ts';
 import { validateToolCall } from '../utils/assistantTools.ts';
 
@@ -70,6 +77,20 @@ export interface ExecuteWithFallbackResult {
   attempts: ModelAttemptTrace[];
   latencyMs: number;
   errorSummary?: string;
+}
+
+export interface ExecuteCollaborativeOptions extends ExecuteWithFallbackOptions {
+  collaborationMode?: AiCollaborationMode;
+  taskKey?: AiTaskKey;
+  workspaceSummary?: string;
+  originalUserPrompt?: string;
+}
+
+export interface ExecuteCollaborativeResult extends ExecuteWithFallbackResult {
+  collaborationMode: AiCollaborationMode;
+  collaborationTrace: AssistantCollaborationStep[];
+  suggestedFollowUps: AssistantSmartSuggestion[];
+  recommendedCanvasMode?: MorrowCanvasMode;
 }
 
 export interface ExecuteAudioTranscriptionOptions {
@@ -653,6 +674,234 @@ export async function executeWithFallback(
     errorSummary:
       lastErr ||
       'لم يتوفر أي نموذج سحابي مفعّل (يرجى التحقق من مفاتيح GEMINI_API_KEY / OPENROUTER_API_KEY).',
+  };
+}
+
+const VALID_CANVAS_MODES = new Set<MorrowCanvasMode>([
+  'overview_charts',
+  'editable_table',
+  'executive_report',
+  'forecast',
+  'text_analysis',
+  'macro_studio',
+]);
+
+/**
+ * Multi-Model Collaborative Pipeline:
+ * 1. Primary Planner/Executor runs first with tool calling and workspace grounding.
+ * 2. When collaborationMode is 'council_review' or 'multi_step_agent', an independent
+ *    complementary model reviews numeric consistency, Arabic terminology (الأفراد),
+ *    Zero-Trust safety of toolCalls, recommended Canvas mode, and follow-up actions.
+ */
+export async function executeCollaborativeOrchestration(
+  options: ExecuteCollaborativeOptions
+): Promise<ExecuteCollaborativeResult> {
+  const collaborationMode: AiCollaborationMode =
+    options.collaborationMode === 'single' ||
+    options.collaborationMode === 'multi_step_agent'
+      ? options.collaborationMode
+      : 'council_review';
+
+  const primary = await executeWithFallback(options);
+  const trace: AssistantCollaborationStep[] = [
+    {
+      id: `collab_primary_${Date.now()}`,
+      role: primary.toolCalls.length > 0 ? 'executor' : 'planner',
+      roleLabel:
+        primary.toolCalls.length > 0 ? 'المخطط ومنفذ الأدوات' : 'المحلل الأساسي',
+      modelId: primary.modelId,
+      modelLabel: primary.shortLabel,
+      provider: primary.provider,
+      status: primary.ok
+        ? primary.fallbackUsed
+          ? 'fallback'
+          : 'done'
+        : 'fallback',
+      latencyMs: primary.latencyMs,
+      summary: primary.ok
+        ? primary.toolCalls.length > 0
+          ? `صاغ الإجابة وجهّز ${primary.toolCalls.length} أداة تنفيذية للمراجعة.`
+          : 'أنتج الاستجابة الأولية استناداً إلى بيانات العمل الحية.'
+        : primary.errorSummary || 'تعذر الاتصال بالنموذج الأساسي.',
+    },
+  ];
+
+  if (!primary.ok) {
+    return {
+      ...primary,
+      collaborationMode,
+      collaborationTrace: trace,
+      suggestedFollowUps: [],
+    };
+  }
+
+  const promptLen = (options.originalUserPrompt || options.promptText || '').trim().length;
+  const shouldVerify =
+    collaborationMode === 'multi_step_agent' ||
+    (collaborationMode === 'council_review' &&
+      (primary.toolCalls.length > 0 || promptLen >= 28 || primary.text.length >= 90));
+
+  if (!shouldVerify) {
+    return {
+      ...primary,
+      collaborationMode,
+      collaborationTrace: trace,
+      suggestedFollowUps: [],
+    };
+  }
+
+  const keys = getServerProviderApiKeys();
+  const candidateReviewers = resolveCollaborativeReviewerChain(
+    primary.modelId,
+    options.taskKey || 'command_orchestration'
+  ).filter((id) => {
+    const spec = getAiModelSpec(id);
+    if (spec.provider === 'google') return Boolean(keys.geminiApiKey);
+    if (spec.provider === 'openrouter') return Boolean(keys.openRouterApiKey);
+    return false;
+  });
+
+  if (candidateReviewers.length === 0) {
+    return {
+      ...primary,
+      collaborationMode,
+      collaborationTrace: trace,
+      suggestedFollowUps: [],
+    };
+  }
+
+  const reviewSchema = {
+    type: Type.OBJECT,
+    properties: {
+      auditPassed: { type: Type.BOOLEAN },
+      auditSummary: { type: Type.STRING },
+      refinedReply: { type: Type.STRING, nullable: true },
+      recommendedCanvasMode: { type: Type.STRING, nullable: true },
+      followUps: {
+        type: Type.ARRAY,
+        nullable: true,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            label: { type: Type.STRING },
+            prompt: { type: Type.STRING },
+          },
+          required: ['label', 'prompt'],
+        },
+      },
+    },
+    required: ['auditPassed', 'auditSummary'],
+  };
+
+  const reviewPrompt = [
+    `طلب المستخدم: ${options.originalUserPrompt || options.promptText || ''}`,
+    `إجابة النموذج الأول (${primary.shortLabel}):\n${primary.text || '(رد عبر أداة فقط)'}`,
+    primary.toolCalls.length > 0
+      ? `الأدوات المقترحة:\n${JSON.stringify(primary.toolCalls)}`
+      : 'لا توجد أدوات مقترحة.',
+    options.workspaceSummary
+      ? `ملخص الأرقام الحية للتحقق:\n${options.workspaceSummary.slice(0, 2200)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const reviewerResult = await executeWithFallback({
+    pipeline: 'data_processing',
+    preferredChain: candidateReviewers.slice(0, 2),
+    systemInstruction: `أنت «المدقق المستقل» في مجلس نماذج Morrow (AI Council).
+مهمتك:
+1. تدقيق مسودة النموذج الأول ضد الأرقام الحية وقواعد السلامة (استخدام مصطلح «الأفراد» حصراً، وعدم اقتراح حذف نهائي أو أرقام مختلقة).
+2. إذا كانت المسودة ممتازة ودقيقة، اجعل auditPassed: true ولا تُطل في refinedReply (اجعله فارغاً أو حسّنه فقط عند وجود نقص حقيقي).
+3. اقترح تبويب اللوحة التفاعلية الأنسب (recommendedCanvasMode: overview_charts | editable_table | executive_report | forecast | text_analysis | macro_studio) إن كان يفيد المستخدم، واقتراحين عمليين للمتابعة في followUps.
+أعد JSON صالح فقط.`,
+    promptText: reviewPrompt,
+    responseMimeType: 'application/json',
+    responseSchema: reviewSchema,
+    maxRetriesPerModel: 1,
+    timeoutMs: 7500,
+    temperature: 0.1,
+  });
+
+  if (!reviewerResult.ok || !reviewerResult.text) {
+    return {
+      ...primary,
+      collaborationMode,
+      collaborationTrace: trace,
+      suggestedFollowUps: [],
+    };
+  }
+
+  let finalText = primary.text;
+  let suggestedFollowUps: AssistantSmartSuggestion[] = [];
+  let recommendedCanvasMode: MorrowCanvasMode | undefined;
+  let auditSummary = 'تم تدقيق المصطلحات وسلامة المخرجات عبر نموذج مستقل.';
+
+  try {
+    const parsed = JSON.parse(reviewerResult.text) as {
+      auditPassed?: boolean;
+      auditSummary?: string;
+      refinedReply?: string | null;
+      recommendedCanvasMode?: string | null;
+      followUps?: Array<{ label?: string; prompt?: string }>;
+    };
+    if (typeof parsed.auditSummary === 'string' && parsed.auditSummary.trim()) {
+      auditSummary = enforceSafeArabicTerminology(parsed.auditSummary.trim());
+    }
+    if (
+      typeof parsed.refinedReply === 'string' &&
+      parsed.refinedReply.trim().length >= 16 &&
+      parsed.refinedReply.trim() !== primary.text.trim()
+    ) {
+      finalText = enforceSafeArabicTerminology(parsed.refinedReply.trim());
+    }
+    if (
+      typeof parsed.recommendedCanvasMode === 'string' &&
+      VALID_CANVAS_MODES.has(parsed.recommendedCanvasMode.trim() as MorrowCanvasMode)
+    ) {
+      recommendedCanvasMode = parsed.recommendedCanvasMode.trim() as MorrowCanvasMode;
+    }
+    if (Array.isArray(parsed.followUps)) {
+      suggestedFollowUps = parsed.followUps
+        .filter(
+          (f) =>
+            f &&
+            typeof f.label === 'string' &&
+            f.label.trim() &&
+            typeof f.prompt === 'string' &&
+            f.prompt.trim()
+        )
+        .slice(0, 3)
+        .map((f, idx) => ({
+          id: `collab_fu_${Date.now()}_${idx}`,
+          label: enforceSafeArabicTerminology(f.label!.trim()).slice(0, 42),
+          prompt: enforceSafeArabicTerminology(f.prompt!.trim()).slice(0, 140),
+        }));
+    }
+  } catch {
+    // Keep Stage 1 reply intact if reviewer JSON parsing fails
+  }
+
+  trace.push({
+    id: `collab_verifier_${Date.now()}`,
+    role: 'verifier',
+    roleLabel: 'المدقق المستقل (AI Council)',
+    modelId: reviewerResult.modelId,
+    modelLabel: reviewerResult.shortLabel,
+    provider: reviewerResult.provider,
+    status: reviewerResult.fallbackUsed ? 'fallback' : 'done',
+    latencyMs: reviewerResult.latencyMs,
+    summary: auditSummary,
+  });
+
+  return {
+    ...primary,
+    text: enforceSafeArabicTerminology(finalText),
+    latencyMs: primary.latencyMs + reviewerResult.latencyMs,
+    collaborationMode,
+    collaborationTrace: trace,
+    suggestedFollowUps,
+    recommendedCanvasMode,
   };
 }
 

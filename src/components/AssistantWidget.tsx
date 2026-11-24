@@ -5,14 +5,13 @@ import {
   BookmarkCheck,
   Bot,
   Camera,
-  Check,
   CheckCircle2,
   Clock,
-  Copy,
   Cpu,
   Download,
   ExternalLink,
   FileSpreadsheet,
+  GitMerge,
   Maximize2,
   MessageSquare,
   Mic,
@@ -20,7 +19,6 @@ import {
   Minimize2,
   MoreHorizontal,
   Navigation,
-  Pin,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -34,9 +32,7 @@ import {
   Users,
   Wifi,
   WifiOff,
-  Wrench,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   CORE_SIX_SPECIALIZED_MODELS,
@@ -44,7 +40,9 @@ import {
   type ModelHealthRecord,
 } from '../lib/aiConfig';
 import type {
+  AiCollaborationMode,
   AssistantBrainMode,
+  AssistantCanvasHandoff,
   AssistantChoiceChip,
   AssistantConnectivityState,
   AssistantMessage,
@@ -56,14 +54,13 @@ import type {
   MorrowCenterTab,
 } from '../types/assistant';
 import type { QuotaCheckResult } from '../utils/assistantQuota';
-import { getEngineDisplayMeta } from '../utils/morrowRouter';
 import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
   type MediaPermissionGuide,
 } from '../utils/mediaPermissions';
 import { BottomSheet } from './cosmos/BottomSheet';
-import { ResultCard } from './cosmos/ResultCard';
+import { MorrowMessageCard } from './morrow/MorrowMessageCard';
 import { PermissionGuardModal } from './permissions/PermissionGuardModal';
 
 interface AssistantWidgetProps {
@@ -106,6 +103,9 @@ interface AssistantWidgetProps {
   onOpenAssistantSettings?: () => void;
   pendingDraftsCount?: number;
   onOpenCommandCenter?: (tab?: MorrowCenterTab) => void;
+  onTriggerCanvasHandoff?: (handoff: AssistantCanvasHandoff) => void;
+  collaborationMode?: AiCollaborationMode;
+  onChangeCollaborationMode?: (mode: AiCollaborationMode) => void;
   onQuickCameraExtract?: () => void;
   onQuickBackupJson?: () => void;
   onTogglePinMessage?: (messageId: string) => void;
@@ -275,6 +275,9 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onOpenAssistantSettings,
   pendingDraftsCount = 0,
   onOpenCommandCenter,
+  onTriggerCanvasHandoff,
+  collaborationMode = 'council_review',
+  onChangeCollaborationMode,
   onQuickCameraExtract,
   onQuickBackupJson,
   onTogglePinMessage,
@@ -610,7 +613,22 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <h2 className="text-xs sm:text-sm font-extrabold whitespace-nowrap">Morrow</h2>
+                  {onOpenCommandCenter ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToggleOpen(false);
+                        onOpenCommandCenter('chat');
+                      }}
+                      title="فتح واجهة Morrow الكاملة"
+                      className="text-xs sm:text-sm font-black tracking-tight whitespace-nowrap hover:underline"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      Morrow
+                    </button>
+                  ) : (
+                    <h2 className="text-xs sm:text-sm font-extrabold whitespace-nowrap">Morrow</h2>
+                  )}
                   <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
                   <span
                     title={statusMeta.title}
@@ -877,378 +895,31 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
 
           {/* Chat Messages Feed */}
           <div className="flex-1 space-y-3 overflow-y-auto p-3.5 text-xs sm:text-[13px]">
-            {messages.map((msg) => {
-              const isUser = msg.role === 'user';
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col gap-1.5 ${isUser ? 'items-start' : 'items-stretch'}`}
-                >
-                  <div
-                    className="rounded-[20px] border px-3.5 py-3 leading-relaxed whitespace-pre-line shadow-sm"
-                    style={{
-                      backgroundColor: isUser ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                      borderColor: isUser ? 'var(--accent)' : 'var(--border-color)',
-                      maxWidth: isUser ? '88%' : '100%',
-                    }}
-                  >
-                    {!isUser && (msg.engineLabel || msg.engineUsed) && (
-                      <div
-                        className="mb-1.5 flex items-center justify-between gap-2 text-[11px]"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
-                          <span className="inline-flex items-center gap-1 font-bold" style={{ color: 'var(--accent)' }}>
-                            {msg.engineUsed === 'gemini_3_8_flash' ||
-                            msg.engineUsed === 'gemini_3_8_live' ||
-                            msg.engineUsed === 'nemotron_free' ? (
-                              <Sparkles className="h-3 w-3 shrink-0" />
-                            ) : msg.engineUsed === 'gemini_3_5_flash' ||
-                              msg.engineUsed === 'gemini_3_5_flash_lite' ||
-                              msg.engineUsed === 'openrouter_free' ? (
-                              <Zap className="h-3 w-3 shrink-0" />
-                            ) : (
-                              <Cpu className="h-3 w-3 shrink-0" />
-                            )}
-                            <span className="truncate">
-                              {msg.engineLabel || getEngineDisplayMeta(msg.engineUsed, msg.modelId).badgeLabel}
-                            </span>
-                          </span>
-                          {msg.modelId && (
-                            <span dir="ltr" className="hidden sm:inline font-mono text-[10px] opacity-80">
-                              · {msg.modelId}
-                            </span>
-                          )}
-                          {typeof msg.latencyMs === 'number' && msg.latencyMs > 0 && (
-                            <span dir="ltr" className="font-mono text-[10px] tabular-nums opacity-75">
-                              · {(msg.latencyMs / 1000).toFixed(1)}s
-                            </span>
-                          )}
-                        </span>
-
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          {onRetryLastPrompt && (
-                            <button
-                              type="button"
-                              onClick={() => onRetryLastPrompt()}
-                              title="إعادة توليد الرد"
-                              aria-label="إعادة توليد الرد"
-                              className="rounded-lg p-1 hover:opacity-75"
-                              style={{ color: 'var(--text-muted)' }}
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMessage(msg.id, msg.text)}
-                            title="نسخ الرد"
-                            aria-label="نسخ الرد"
-                            className="rounded-lg p-1 hover:opacity-75"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {copiedMsgId === msg.id ? (
-                              <Check className="h-3 w-3" style={{ color: 'var(--success)' }} />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                          </button>
-                          {onTogglePinMessage && (
-                            <button
-                              type="button"
-                              onClick={() => onTogglePinMessage(msg.id)}
-                              title={msg.isPinned ? 'إلغاء تثبيت الرسالة' : 'تثبيت الرسالة'}
-                              aria-label="تثبيت الرسالة"
-                              className="rounded-lg p-1 hover:opacity-75"
-                              style={{
-                                color: msg.isPinned ? 'var(--accent)' : 'var(--text-muted)',
-                              }}
-                            >
-                              <Pin className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>{msg.text}</div>
-
-                    {/* Visual Result Card */}
-                    {msg.resultCard && (
-                      <div className="mt-2.5">
-                        <ResultCard
-                          title={msg.resultCard.title}
-                          summary={msg.resultCard.summary}
-                          scorePercent={msg.resultCard.scorePercent}
-                          scoreLabel={msg.resultCard.scoreLabel}
-                          tone={msg.resultCard.tone}
-                          bars={msg.resultCard.bars}
-                          details={msg.resultCard.details}
-                        />
-                      </div>
-                    )}
-
-                    {/* Inline Undo */}
-                    {msg.canUndo && !msg.undoUsed && hasUndoableAction && onUndoLastAction && (
-                      <div className="mt-2">
-                        <button
-                          type="button"
-                          onClick={() => onUndoLastAction(msg.id)}
-                          className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
-                          style={{
-                            backgroundColor: 'var(--bg-surface)',
-                            borderColor: 'var(--warning)',
-                            color: 'var(--warning)',
-                          }}
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          <span>تراجع عن هذه العملية</span>
-                        </button>
-                      </div>
-                    )}
-                    {msg.undoUsed && (
-                      <div
-                        className="mt-1.5 text-[10px] font-semibold"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        تم التراجع عن هذا التعديل.
-                      </div>
-                    )}
-
-                    {/* Sandbox Read-Only Notice */}
-                    {msg.sandboxNotice && (
-                      <div
-                        className="mt-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold"
-                        style={{
-                          backgroundColor: 'var(--success-bg)',
-                          borderColor: 'var(--success)',
-                          color: 'var(--success)',
-                        }}
-                      >
-                        {msg.sandboxNotice}
-                      </div>
-                    )}
-
-                    {/* Spotlight "وريني" */}
-                    {msg.spotlightAction && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onTriggerSpotlight({
-                            view: msg.spotlightAction!.view,
-                            settingsSection: msg.spotlightAction!.settingsSection,
-                            targetId: msg.spotlightAction!.targetId,
-                            title: msg.spotlightAction!.label,
-                            description: 'شاهد الموضع المحدد باللون المميز داخل الشاشة',
-                          })
-                        }
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold"
-                        style={{
-                          backgroundColor: 'var(--accent)',
-                          color: 'var(--accent-fg)',
-                        }}
-                      >
-                        <Navigation className="h-3.5 w-3.5" />
-                        <span>{msg.spotlightAction.label}</span>
-                      </button>
-                    )}
-
-                    {/* Choices */}
-                    {msg.choices && msg.choices.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                        {msg.choices.map((ch) => (
-                          <button
-                            key={ch.id}
-                            type="button"
-                            onClick={() => onChoiceClick(ch)}
-                            className="rounded-xl border px-2.5 py-1.5 text-right text-[11px] font-bold transition-colors hover:opacity-90"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              borderColor:
-                                ch.tone === 'warning' ? 'var(--warning)' : 'var(--accent)',
-                              color: 'var(--text-primary)',
-                            }}
-                          >
-                            <div>{ch.label}</div>
-                            {ch.sublabel && (
-                              <div
-                                className="text-[10px] font-normal"
-                                style={{ color: 'var(--text-muted)' }}
-                              >
-                                {ch.sublabel}
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Compact Diagnostics Details */}
-                    {msg.diagnosticsReport && msg.diagnosticsReport.issues.length > 0 && (
-                      <div
-                        className="mt-2.5 divide-y border-t pt-2 text-[11px]"
-                        style={{ borderColor: 'var(--border-color)' }}
-                      >
-                        {msg.diagnosticsReport.issues.slice(0, 4).map((issue) => (
-                          <div key={issue.id} className="py-1.5">
-                            <div
-                              className="font-bold"
-                              style={{
-                                color:
-                                  issue.severity === 'high' ? 'var(--danger)' : 'var(--text-primary)',
-                              }}
-                            >
-                              {issue.title}
-                            </div>
-                            <div style={{ color: 'var(--text-muted)' }}>{issue.detail}</div>
-                          </div>
-                        ))}
-                        {msg.diagnosticsReport.autoFixableCount > 0 && (
-                          <div className="pt-2">
-                            <button
-                              type="button"
-                              onClick={() => onSendMessage('صلح مشاكل الفحص تلقائياً')}
-                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 font-bold"
-                              style={{
-                                backgroundColor: 'var(--accent)',
-                                color: 'var(--accent-fg)',
-                              }}
-                            >
-                              <Wrench className="h-3.5 w-3.5" />
-                              <span>
-                                إصلاح تلقائي ({msg.diagnosticsReport.autoFixableCount})
-                              </span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Before <- After Confirmation Diff Section (Flat Hairline Table) */}
-                    {msg.confirmationDiff && (
-                      <div
-                        className="mt-2.5 space-y-2 border-t pt-2.5 text-[11px]"
-                        style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' }}
-                      >
-                        <div>
-                          <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
-                            {msg.confirmationDiff.title}
-                          </div>
-                          <div style={{ color: 'var(--text-muted)' }}>
-                            {msg.confirmationDiff.summary}
-                          </div>
-                        </div>
-
-                        <div
-                          className="divide-y rounded-xl border"
-                          style={{
-                            backgroundColor: 'var(--bg-surface)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          {msg.confirmationDiff.changes.map((c, idx) => (
-                            <div
-                              key={idx}
-                              className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5"
-                            >
-                              <span
-                                className="text-[10px] font-bold"
-                                style={{ color: 'var(--text-muted)' }}
-                              >
-                                {c.fieldLabel}
-                              </span>
-                              <div className="flex flex-wrap items-center gap-1.5 font-semibold tabular-nums">
-                                <span className="line-through opacity-75">{c.beforeValue}</span>
-                                <span style={{ color: 'var(--accent)' }}>←</span>
-                                <span style={{ color: 'var(--success)' }}>{c.afterValue}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {msg.confirmationDiff.status === 'pending' ? (
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => onResolveDiff(msg.id, true)}
-                              className="cosmos-touch-target inline-flex flex-1 items-center justify-center gap-1 rounded-xl px-3 py-2 font-bold"
-                              style={{
-                                backgroundColor: 'var(--success)',
-                                color: 'var(--success-fg)',
-                              }}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              <span>موافق وتنفيذ</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onResolveDiff(msg.id, false)}
-                              className="cosmos-touch-target inline-flex flex-1 items-center justify-center gap-1 rounded-xl border px-3 py-2 font-bold"
-                              style={{
-                                borderColor: 'var(--danger)',
-                                color: 'var(--danger)',
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              <span>إلغاء</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div
-                            className="inline-flex items-center gap-1 font-bold"
-                            style={{
-                              color:
-                                msg.confirmationDiff.status === 'approved'
-                                  ? 'var(--success)'
-                                  : 'var(--text-muted)',
-                            }}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span>
-                              {msg.confirmationDiff.status === 'approved'
-                                ? 'تمت الموافقة والتنفيذ'
-                                : 'ملغى'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Offline Queue CTA */}
-                    {msg.queuePrompt && (
-                      <div className="mt-2">
-                        {savedPromptSet.has(msg.id) ? (
-                          <div
-                            className="inline-flex items-center gap-1 font-bold"
-                            style={{ color: 'var(--success)' }}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span>تم حفظ الطلب وسيظهر لك فور عودة الإنترنت</span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSaveToQueue(msg.queuePrompt!.prompt, 'بانتظار السحابة');
-                              setSavedPromptSet((prev) => new Set(prev).add(msg.id));
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              borderColor: 'var(--accent)',
-                              color: 'var(--accent)',
-                            }}
-                          >
-                            <Clock className="h-3.5 w-3.5" />
-                            <span>احفظ الطلب وأنفذه لما يرجع النت</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {messages.map((msg) => (
+              <MorrowMessageCard
+                key={msg.id}
+                message={msg}
+                compact
+                copied={copiedMsgId === msg.id}
+                savedToQueue={savedPromptSet.has(msg.id)}
+                hasUndoableAction={hasUndoableAction}
+                onCopy={handleCopyMessage}
+                onTogglePin={onTogglePinMessage}
+                onRetry={onRetryLastPrompt ? () => onRetryLastPrompt() : undefined}
+                onChoiceClick={onChoiceClick}
+                onResolveDiff={onResolveDiff}
+                onTriggerSpotlight={onTriggerSpotlight}
+                onTriggerCanvasHandoff={onTriggerCanvasHandoff}
+                onUndoLastAction={onUndoLastAction}
+                onSendPrompt={(promptText) =>
+                  onSendMessage(promptText, { fromFloatingWidget: true })
+                }
+                onSavePromptToQueue={(msgId, promptText) => {
+                  onSaveToQueue(promptText, 'بانتظار السحابة');
+                  setSavedPromptSet((prev) => new Set(prev).add(msgId));
+                }}
+              />
+            ))}
 
             {isThinking && (
               <div
@@ -1451,6 +1122,41 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         icon={<Cpu className="h-5 w-5" />}
       >
         <div className="space-y-4">
+          {onChangeCollaborationMode && (
+            <div className="space-y-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="flex items-center gap-1.5 text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
+                <GitMerge className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>تعاون النماذج والتدقيق المتبادل</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                {(
+                  [
+                    ['council_review', 'مجلس النماذج'],
+                    ['multi_step_agent', 'تحليل متعمق'],
+                    ['single', 'نموذج واحد'],
+                  ] as const
+                ).map(([modeId, modeLabel]) => {
+                  const active = collaborationMode === modeId;
+                  return (
+                    <button
+                      key={modeId}
+                      type="button"
+                      onClick={() => onChangeCollaborationMode(modeId)}
+                      className="rounded-xl border px-2 py-2 font-bold transition-colors"
+                      style={{
+                        backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                        borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                        color: active ? 'var(--accent)' : 'var(--text-primary)',
+                      }}
+                    >
+                      {modeLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             {BRAIN_MODES.map((m) => {
               const active = brainMode === m.id;

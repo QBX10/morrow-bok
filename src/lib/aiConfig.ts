@@ -6,6 +6,7 @@ import {
   DEFAULT_TASK_ROUTING,
   MORROW_LOCAL_MODEL_ID,
   getAiModelSpec,
+  resolveCollaborativeReviewerChain,
   resolveOrderedTaskChain,
   sanitizeAiModelId,
   type AiModelSpec,
@@ -30,6 +31,7 @@ export {
   DEFAULT_TASK_ROUTING,
   MORROW_LOCAL_MODEL_ID,
   getAiModelSpec,
+  resolveCollaborativeReviewerChain,
   resolveOrderedTaskChain,
   sanitizeAiModelId,
 };

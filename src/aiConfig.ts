@@ -592,6 +592,48 @@ export function resolveOrderedTaskChain(
 }
 
 /**
+ * Resolves complementary reviewer models distinct from the primary model so
+ * different model families (e.g. Gemini 3.8 Flash <-> Nemotron 3.5 VL <-> Gemini 3.5 Flash)
+ * collaborate as Planner/Executor + Independent Verifier.
+ */
+export function resolveCollaborativeReviewerChain(
+  primaryModelId: ApprovedCloudModelId,
+  taskKey: AiTaskKey = 'command_orchestration'
+): ApprovedCloudModelId[] {
+  const pool: ApprovedCloudModelId[] = [
+    AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+  ];
+  const preferredOrder: ApprovedCloudModelId[] =
+    primaryModelId === AI_FREE_MODELS.GEMINI_3_8_FLASH
+      ? [
+          AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+          AI_FREE_MODELS.GEMINI_3_5_FLASH,
+          AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+        ]
+      : primaryModelId === AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL
+        ? [
+            AI_FREE_MODELS.GEMINI_3_8_FLASH,
+            AI_FREE_MODELS.GEMINI_3_5_FLASH,
+            AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+          ]
+        : taskKey === 'structured_excel_csv'
+          ? [
+              AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+              AI_FREE_MODELS.GEMINI_3_8_FLASH,
+              AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+            ]
+          : pool;
+
+  return Array.from(new Set(preferredOrder)).filter(
+    (id) => id !== primaryModelId
+  );
+}
+
+/**
  * Converts a 2D spreadsheet/table matrix into structured CSV + Markdown preview text
  * suitable for the data_processing pipeline (Gemini 3.5 Flash / Nemotron / OpenRouter).
  */

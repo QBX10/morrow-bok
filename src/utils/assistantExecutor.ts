@@ -9,16 +9,19 @@ import type {
   SettingsSectionId,
 } from '../types/agency.ts';
 import type {
+  AssistantCanvasHandoff,
   AssistantChoiceChip,
   AssistantExternalTableCommand,
   AssistantMessage,
   AssistantMutationHandlers,
   AssistantQuickNote,
   AssistantSlotSession,
+  AssistantSmartSuggestion,
   AssistantToolCall,
   AssistantUiContext,
   AssistantUserPref,
   DiagnosticSummary,
+  MorrowCanvasMode,
 } from '../types/assistant.ts';
 import { runAsyncExportTask } from '../hooks/useToastQueue.ts';
 import {
@@ -33,8 +36,15 @@ import {
 } from './assistantKnowledgeBase.ts';
 import { fuzzyMatchPersons } from './assistantOfflineBrain.ts';
 import {
+  computeProactiveInsightsAndForecasts,
+  executeMorrowMacro,
+  findMatchingMacroByPrompt,
+  loadUserMacros,
+} from './morrowWorkspaceEngine.ts';
+import {
   buildBeforeAfterDiff,
   cloneReadOnlySandbox,
+  computeWhatIfSimulation,
   findAgencyByIdOrFallback,
   resolvePersonTarget,
 } from './assistantTools.ts';
@@ -79,6 +89,7 @@ export interface AssistantActionRuntime {
     overridePersonId?: number | null;
     syncToPerson?: boolean;
   }) => AssistantQuickNote | null;
+  openCanvasMode?: (canvasMode: MorrowCanvasMode, agencyId?: number | null) => void;
 }
 
 export interface ToolExecutionResolution {
@@ -91,6 +102,9 @@ export interface ToolExecutionResolution {
   sandboxNotice?: string;
   diagnosticsReport?: DiagnosticSummary;
   resultCard?: AssistantMessage['resultCard'];
+  canvasHandoff?: AssistantCanvasHandoff;
+  suggestedFollowUps?: AssistantSmartSuggestion[];
+  extraDraftTools?: AssistantToolCall[];
   switchedToOffline?: boolean;
   stealthExecuted?: boolean;
   autoCloseChat?: boolean;
@@ -417,6 +431,16 @@ export function resolveToolExecution(
             `العائلات المحجوبة/الموقوفة: ${m.blockedCount}`,
           ],
         },
+        canvasHandoff: {
+          canvasMode: 'overview_charts',
+          label: 'عرض الرسوم البيانية التفاعلية',
+          description: `تحليل مرئي لحصص وأرباح ${scopeName} داخل اللوحة`,
+          agencyId: ag?.id ?? null,
+        },
+        suggestedFollowUps: [
+          { id: 'fu_stats_fc', label: 'توقعات الحصة القادمة', prompt: 'توقعات الشهر القادم' },
+          { id: 'fu_stats_cmp', label: 'مقارنة الوكالات', prompt: 'قارن بين الوكالات' },
+        ],
       };
     }
 
@@ -500,6 +524,15 @@ export function resolveToolExecution(
             `الفرق عن الأعلى قابل للمتابعة في اللوحة التفاعلية`,
           ],
         },
+        canvasHandoff: {
+          canvasMode: 'overview_charts',
+          label: 'فتح لوحة المقارنة الرسومية',
+          description: 'تبديل بين الأفراد والأكياس وصافي الربح بصرياً',
+        },
+        suggestedFollowUps: [
+          { id: 'fu_cmp_rep', label: 'توليد تقرير تنفيذي', prompt: 'جهز تقرير تنفيذي شامل' },
+          { id: 'fu_cmp_xls', label: 'تصدير إكسل معزول', prompt: 'صدر تقرير اكسل' },
+        ],
       };
     }
 
@@ -976,10 +1009,460 @@ export function resolveToolExecution(
         gracefulLevel: 'A',
         diagnosticsReport: report,
         resultCard: diagResultCard,
+        canvasHandoff:
+          report.totalIssues > 0
+            ? {
+                canvasMode: 'editable_table',
+                label: 'مراجعة السجلات في الجدول التفاعلي',
+                description: 'تعديل الصفوف مباشرة وتجميعها في مسودات الموافقة',
+              }
+            : undefined,
+        suggestedFollowUps:
+          report.autoFixableCount > 0
+            ? [
+                {
+                  id: 'fu_diag_fix',
+                  label: 'تجهيز مسودة الإصلاح الآمن',
+                  prompt: 'صلح مشاكل الفحص تلقائياً',
+                },
+              ]
+            : [
+                {
+                  id: 'fu_diag_fc',
+                  label: 'توقعات الحصة القادمة',
+                  prompt: 'توقعات الشهر القادم',
+                },
+              ],
         replyText:
           report.totalIssues === 0
             ? `فحص التطبيق مكتمل (${report.healthScore}%): ما لقيت أي مشاكل أو تكرارات.`
             : `فحص التطبيق مكتمل (${report.healthScore}%): لقيت ${report.totalIssues} ملاحظة (${report.highCount} مهمة · ${report.autoFixableCount} قابلة للإصلاح التلقائي).`,
+      };
+    }
+
+    case 'analyze_period_forecast': {
+      const targetAg = findAgencyByIdOrFallback(state, toolCall.args.agencyId);
+      const { forecast, analytics } = computeProactiveInsightsAndForecasts({
+        state,
+        monthlyArchives: state.monthlyArchives,
+        activePeriod: state.activePeriod,
+        lastBackupAt: uiContext.lastBackupAt,
+      });
+
+      const scopedForecast = targetAg
+        ? forecast.agencyForecasts.find((f) => f.agencyId === targetAg.id)
+        : null;
+
+      const deltaSign = forecast.deltaPercent >= 0 ? '+' : '';
+      const maxInd = Math.max(
+        1,
+        ...forecast.agencyForecasts.map((f) =>
+          Math.max(f.currentIndividuals, f.projectedIndividuals)
+        )
+      );
+
+      const replyLines = scopedForecast
+        ? [
+            `توقعات الحصة القادمة لـ «${scopedForecast.agencyName}» (${forecast.baselineLabel}):`,
+            `• الحالي: ${scopedForecast.currentIndividuals} فرد (${scopedForecast.currentBags} كيس)`,
+            `• المتوقع: ${scopedForecast.projectedIndividuals} فرد (${scopedForecast.projectedBags} كيس · ${scopedForecast.changePercent >= 0 ? '+' : ''}${scopedForecast.changePercent}%)`,
+            `• الملاحظة التحليلية: ${scopedForecast.note}`,
+          ]
+        : [
+            `${forecast.horizonLabel} — ${forecast.baselineLabel}:`,
+            `• الأفراد المتوقعون: ${forecast.projectedIndividuals} فرد (الحالي ${analytics.totals.activeIndividuals} · ${deltaSign}${forecast.deltaPercent}%)`,
+            `• الأكياس المتوقعة: ${forecast.projectedBags} كيس كامل`,
+            `• صافي الربح التقديري: ${formatIqd(forecast.projectedProfit)}`,
+            ...(forecast.recommendations[0] ? [`• توصية: ${forecast.recommendations[0]}`] : []),
+          ];
+
+      return {
+        gracefulLevel: 'A',
+        replyText: replyLines.join('\n'),
+        resultCard: {
+          title: scopedForecast
+            ? `توقعات ${scopedForecast.agencyName}`
+            : 'توقعات الحصة القادمة',
+          summary: `${forecast.projectedIndividuals} فرد متوقع · ${forecast.projectedBags} كيس · ${formatIqd(
+            forecast.projectedProfit
+          )}`,
+          tone: forecast.agencyForecasts.some((f) => f.riskLevel === 'high')
+            ? 'warning'
+            : 'accent',
+          bars: forecast.agencyForecasts.slice(0, 5).map((f) => ({
+            label: f.agencyName,
+            value: f.projectedIndividuals,
+            max: maxInd,
+            displayValue: `${f.projectedIndividuals} فرد (${f.projectedBags} كيس)`,
+            color:
+              f.riskLevel === 'high'
+                ? 'var(--danger)'
+                : f.riskLevel === 'medium'
+                  ? 'var(--warning)'
+                  : 'var(--accent)',
+          })),
+          details: forecast.recommendations.slice(0, 3),
+        },
+        canvasHandoff: {
+          canvasMode: 'forecast',
+          label: 'فتح لوحة التوقعات الكاملة',
+          description: 'استعراض انحراف كل وكالة والتوصيات التنبؤية',
+          agencyId: targetAg?.id ?? null,
+        },
+        suggestedFollowUps: [
+          { id: 'fu_fc_rep', label: 'بناء تقرير تنفيذي', prompt: 'جهز تقرير تنفيذي شامل' },
+          { id: 'fu_fc_mac', label: 'تشغيل جرد الصباح', prompt: 'شغل ماكرو جرد الصباح' },
+        ],
+      };
+    }
+
+    case 'run_morrow_macro': {
+      const macros = loadUserMacros();
+      const requestedId = String(toolCall.args.macroId || '').trim();
+      const triggerPhrase = String(toolCall.args.triggerPhrase || '').trim();
+      const matched =
+        (requestedId ? macros.find((m) => m.id === requestedId) : null) ||
+        (triggerPhrase ? findMatchingMacroByPrompt(triggerPhrase, macros) : null) ||
+        macros[0];
+
+      if (!matched) {
+        return {
+          gracefulLevel: 'B',
+          replyText: 'لم يتم العثور على ماكرو مطابق لتشغيله.',
+        };
+      }
+
+      const macroResult = executeMorrowMacro({
+        macro: matched,
+        state,
+        monthlyArchives: state.monthlyArchives,
+        activePeriod: state.activePeriod,
+        lastBackupAt: uiContext.lastBackupAt,
+      });
+
+      const stepLines = macroResult.steps.map(
+        (s, idx) => `${idx + 1}. ${s.label}: ${s.detail}`
+      );
+
+      return {
+        gracefulLevel: 'A',
+        replyText: `تم تنفيذ ماكرو «${matched.name}» (${macroResult.steps.length} خطوات):\n${stepLines.join(
+          '\n'
+        )}`,
+        diagnosticsReport: macroResult.diagnosticsSummary,
+        extraDraftTools: macroResult.stagedDraftTools,
+        resultCard: {
+          title: `مخرجات ماكرو: ${matched.name}`,
+          summary: `${macroResult.steps.length} خطوات منفذة · ${macroResult.stagedDraftTools.length} إجراء محفوظ في المراجعة الآمنة`,
+          scorePercent: macroResult.diagnosticsSummary?.healthScore,
+          scoreLabel: macroResult.diagnosticsSummary ? 'سلامة السجلات' : undefined,
+          tone: macroResult.steps.some((s) => s.status === 'warning')
+            ? 'warning'
+            : 'success',
+          details: macroResult.steps.map((s) => `${s.label} — ${s.detail}`),
+        },
+        canvasHandoff: {
+          canvasMode: 'macro_studio',
+          label: 'فتح استوديو الماكرو في اللوحة',
+          description: 'متابعة خطوات الماكرو أو تعديل القوالب المخصصة',
+        },
+        suggestedFollowUps:
+          macroResult.stagedDraftTools.length > 0
+            ? [
+                {
+                  id: 'fu_macro_rev',
+                  label: 'عرض إحصائيات التقرير',
+                  prompt: 'احصائيات جميع الوكالات',
+                },
+              ]
+            : undefined,
+      };
+    }
+
+    case 'summon_workspace_canvas': {
+      const mode = (String(toolCall.args.canvasMode || 'overview_charts') as MorrowCanvasMode);
+      const agencyId = toolCall.args.agencyId ? Number(toolCall.args.agencyId) : null;
+      const modeLabels: Record<MorrowCanvasMode, string> = {
+        overview_charts: 'الرسوم البيانية ومؤشرات الوكالات',
+        editable_table: 'جدول التعديل المباشر الآمن (Zero-Trust)',
+        executive_report: 'مولد التقرير التنفيذي التلقائي',
+        forecast: 'نموذج توقع التغييرات والحصة القادمة',
+        text_analysis: 'محلل النصوص الذكي واستخراج البيانات',
+        macro_studio: 'استوديو الماكرو والأتمتة متعددة الخطوات',
+      };
+      const label = modeLabels[mode] || modeLabels.overview_charts;
+      runtime.openCanvasMode?.(mode, agencyId);
+      return {
+        gracefulLevel: 'A',
+        replyText: cloudText || `تم فتح اللوحة التفاعلية على وضع «${label}».`,
+        canvasHandoff: {
+          canvasMode: mode,
+          label: `الانتقال إلى ${label}`,
+          agencyId,
+        },
+      };
+    }
+
+    case 'simulate_what_if': {
+      const sim = computeWhatIfSimulation(state, toolCall.args);
+      const revSign = sim.deltas.revenue >= 0 ? '+' : '';
+      const profitSign = sim.deltas.profit >= 0 ? '+' : '';
+      const bagsSign = sim.deltas.bags >= 0 ? '+' : '';
+      const indSign = sim.deltas.individuals >= 0 ? '+' : '';
+
+      const maxMoney = Math.max(
+        1,
+        Math.abs(sim.current.revenue),
+        Math.abs(sim.simulated.revenue),
+        Math.abs(sim.current.profit),
+        Math.abs(sim.simulated.profit)
+      );
+
+      const lines = [
+        `### نتائج محاكاة «ماذا لو» — ${sim.scopeName}`,
+        `السيناريو المختبر: **${sim.scenarioLabel}** (محاكاة آمنة دون تعديل السجلات):`,
+        `- **الأفراد المستحقون**: ${sim.current.activeIndividuals} ← **${sim.simulated.activeIndividuals}** (${indSign}${sim.deltas.individuals})`,
+        `- **إجمالي الحصة**: ${sim.current.fullBags} كيس ← **${sim.simulated.fullBags} كيس** (${bagsSign}${sim.deltas.bags} كيس · ${sim.deltas.totalKg >= 0 ? '+' : ''}${sim.deltas.totalKg} كغم)`,
+        `- **الإيرادات المتوقعة**: ${formatIqd(sim.current.revenue)} ← **${formatIqd(sim.simulated.revenue)}** (${revSign}${formatIqd(sim.deltas.revenue)})`,
+        `- **صافي الربح بعد المصاريف**: ${formatIqd(sim.current.profit)} ← **${formatIqd(sim.simulated.profit)}** (${profitSign}${formatIqd(sim.deltas.profit)})`,
+      ];
+
+      const applyChoices: AssistantChoiceChip[] = [];
+      if (sim.simulatedSettingsPatch?.feePerIndividualIqd !== undefined) {
+        const fee = Number(sim.simulatedSettingsPatch.feePerIndividualIqd);
+        applyChoices.push({
+          id: `whatif_apply_fee_${fee}`,
+          label: `تجهيز مسودة اعتماد رسم الفرد ${formatIqd(fee)}`,
+          sublabel: 'يمر عبر بوابة الموافقة الآمنة قبل ← بعد',
+          tone: 'accent',
+          actionType: 'send_prompt',
+          payload: { prompt: `خلّي رسم الفرد ${fee}` },
+        });
+      } else if (sim.simulatedSettingsPatch?.kgPerIndividual !== undefined) {
+        const kg = Number(sim.simulatedSettingsPatch.kgPerIndividual);
+        applyChoices.push({
+          id: `whatif_apply_kg_${kg}`,
+          label: `تجهيز مسودة اعتماد حصة الفرد ${kg} كغم`,
+          sublabel: 'يمر عبر بوابة الموافقة الآمنة قبل ← بعد',
+          tone: 'accent',
+          actionType: 'send_prompt',
+          payload: { prompt: `خلّي حصة الفرد ${kg}` },
+        });
+      }
+
+      return {
+        gracefulLevel: 'A',
+        replyText: lines.join('\n'),
+        resultCard: {
+          title: `محاكاة: ${sim.scenarioLabel}`,
+          summary: `${sim.scopeName} · فرق الصافي ${profitSign}${formatIqd(sim.deltas.profit)} · فرق الأكياس ${bagsSign}${sim.deltas.bags}`,
+          tone: sim.deltas.profit >= 0 ? 'success' : 'warning',
+          bars: [
+            {
+              label: 'صافي الربح الحالي',
+              value: Math.max(0, sim.current.profit),
+              max: maxMoney,
+              displayValue: formatIqd(sim.current.profit),
+              color: 'var(--text-muted)',
+            },
+            {
+              label: 'صافي الربح في المحاكاة',
+              value: Math.max(0, sim.simulated.profit),
+              max: maxMoney,
+              displayValue: `${formatIqd(sim.simulated.profit)} (${profitSign}${formatIqd(sim.deltas.profit)})`,
+              color: sim.deltas.profit >= 0 ? 'var(--success)' : 'var(--danger)',
+            },
+            {
+              label: 'الإيراد المتوقع في المحاكاة',
+              value: Math.max(0, sim.simulated.revenue),
+              max: maxMoney,
+              displayValue: formatIqd(sim.simulated.revenue),
+              color: 'var(--accent)',
+            },
+          ],
+          details: [
+            `العائلات النشطة: ${sim.simulated.activeHouseholds}`,
+            `المصاريف المخصومة: ${formatIqd(sim.simulated.totalExpenses)}`,
+            `الوضع: محاكاة افتراضية معزولة دون مساس بقاعدة البيانات`,
+          ],
+        },
+        choices: applyChoices.length > 0 ? applyChoices : undefined,
+        suggestedFollowUps: [
+          { id: 'fu_wi_fc', label: 'توقعات الشهر القادم', prompt: 'توقعات الشهر القادم' },
+          { id: 'fu_wi_brief', label: 'الإيجاز التنفيذي لليوم', prompt: 'أعطني ملخص اليوم' },
+        ],
+      };
+    }
+
+    case 'executive_briefing': {
+      const targetAg = findAgencyByIdOrFallback(state, toolCall.args.agencyId);
+      const scopedPersons = targetAg
+        ? state.persons.filter((p) => p.agencyId === targetAg.id)
+        : state.persons;
+      const scopedExpenses = targetAg
+        ? state.expenses.filter((e) => e.agencyId === targetAg.id)
+        : state.expenses;
+      const metrics = computeAgencyMetrics(
+        scopedPersons,
+        scopedExpenses,
+        state.calculationSettings
+      );
+      const diag = runAppDiagnostics(state, uiContext.lastBackupAt);
+      const { forecast, insights } = computeProactiveInsightsAndForecasts({
+        state,
+        monthlyArchives: state.monthlyArchives,
+        activePeriod: state.activePeriod,
+        lastBackupAt: uiContext.lastBackupAt,
+      });
+
+      const agencySummaries = state.agencies.map((ag) => {
+        const agP = state.persons.filter((p) => p.agencyId === ag.id);
+        const agE = state.expenses.filter((e) => e.agencyId === ag.id);
+        return {
+          agency: ag,
+          metrics: computeAgencyMetrics(agP, agE, state.calculationSettings),
+        };
+      });
+      const topAgency = [...agencySummaries].sort(
+        (a, b) => b.metrics.activeIndividuals - a.metrics.activeIndividuals
+      )[0];
+      const mostBlockedAgency = [...agencySummaries].sort(
+        (a, b) => b.metrics.blockedCount - a.metrics.blockedCount
+      )[0];
+      const maxInd = Math.max(
+        1,
+        ...agencySummaries.map((a) => a.metrics.activeIndividuals)
+      );
+      const scopeName = targetAg ? targetAg.name : 'جميع الوكالات';
+      const periodLabel = state.activePeriod?.quotaName || 'الحصة الحالية';
+
+      const replyLines = [
+        `### الإيجاز التنفيذي اليومي — ${scopeName} (${periodLabel})`,
+        `- **الاستحقاق الفعلي**: ${metrics.activeHouseholds} عائلة نشطة · **${metrics.activeIndividuals} فرد** · **${metrics.fullBags} كيس** (${formatTotalQuota(metrics.totalKg, state.calculationSettings)})`,
+        `- **الموقف المالي**: إيرادات ${formatIqd(metrics.revenue)} · مصاريف ${formatIqd(metrics.totalExpenses)} · **صافي ${formatIqd(metrics.profit)}**`,
+        topAgency
+          ? `- **الوكالة الأكثر نشاطاً**: ${topAgency.agency.name} (${topAgency.metrics.activeIndividuals} فرد · ${topAgency.metrics.fullBags} كيس)`
+          : '',
+        `- **السلامة والرقابة**: درجة السلامة **${diag.healthScore}%** (${diag.totalIssues} ملاحظة · ${metrics.blockedCount} عائلة محجوبة/موقوفة${mostBlockedAgency && mostBlockedAgency.metrics.blockedCount > 0 ? `، أعلاها في ${mostBlockedAgency.agency.name}` : ''})`,
+        insights[0] ? `- **أهم تنبيه استباقي**: ${insights[0].title} — ${insights[0].detail}` : '',
+        `- **توقع القادم**: ${forecast.projectedIndividuals} فرد (${forecast.projectedBags} كيس متوقع)`,
+      ].filter(Boolean);
+
+      return {
+        gracefulLevel: 'A',
+        replyText: replyLines.join('\n'),
+        resultCard: {
+          title: `الإيجاز التنفيذي — ${scopeName}`,
+          summary: `${metrics.activeIndividuals} فرد · ${metrics.fullBags} كيس · صافي ${formatIqd(metrics.profit)}`,
+          scorePercent: diag.healthScore,
+          scoreLabel: 'مؤشر سلامة السجلات',
+          tone: diag.healthScore >= 85 && metrics.profit >= 0 ? 'success' : 'warning',
+          bars: agencySummaries.slice(0, 5).map((item) => ({
+            label: item.agency.name,
+            value: item.metrics.activeIndividuals,
+            max: maxInd,
+            displayValue: `${item.metrics.activeIndividuals} فرد · ${item.metrics.fullBags} كيس`,
+            color: 'var(--accent)',
+          })),
+          details: [
+            `الحصص المسجلة: ${metrics.registeredHouseholds} عائلة (${metrics.blockedCount} محجوب)`,
+            `الأرشيفات المحفوظة: ${(state.monthlyArchives || []).length}`,
+            ...(forecast.recommendations[0] ? [forecast.recommendations[0]] : []),
+          ],
+        },
+        canvasHandoff: {
+          canvasMode: 'executive_report',
+          label: 'فتح التقرير التنفيذي الكامل في اللوحة',
+          description: 'عرض تفصيلي قابل للطباعة والتدقيق لجميع الوكالات',
+          agencyId: targetAg?.id ?? null,
+        },
+        suggestedFollowUps: [
+          { id: 'fu_eb_wi', label: 'اختبر سيناريو ماذا لو؟', prompt: 'ماذا لو رسم الفرد 500' },
+          { id: 'fu_eb_blk', label: 'من هم المحجوبون؟', prompt: 'من هم المحجوبين' },
+          { id: 'fu_eb_cmp', label: 'قارن بين الوكالات', prompt: 'قارن بين الوكالات' },
+        ],
+      };
+    }
+
+    case 'query_status_breakdown': {
+      const status = String(toolCall.args.status || 'blocked');
+      const targetAg = findAgencyByIdOrFallback(state, toolCall.args.agencyId);
+      const pool = targetAg
+        ? state.persons.filter((p) => p.agencyId === targetAg.id)
+        : state.persons;
+
+      const matched = pool.filter((p) => {
+        if (status === 'partial') return p.blockType === 'partial';
+        if (status === 'archived') return p.blockType === 'archived';
+        if (status === 'active') return p.blockType === 'none' || p.blockType === 'partial';
+        return p.blockType === 'full' || p.blockType === 'partial';
+      });
+
+      const statusTitle =
+        status === 'partial'
+          ? 'حالات الحجب الجزئي'
+          : status === 'archived'
+            ? 'السجلات المؤرشفة'
+            : status === 'active'
+              ? 'العائلات النشطة'
+              : 'العائلات المحجوبة (كلياً وجزئياً)';
+
+      const scopeName = targetAg ? targetAg.name : 'جميع الوكالات';
+
+      if (matched.length === 0) {
+        return {
+          gracefulLevel: 'A',
+          replyText: `فحصت ${scopeName}: لا توجد أي عائلات ضمن تصنيف **${statusTitle}** حالياً.`,
+          suggestedFollowUps: [
+            { id: 'fu_sb_all', label: 'إيجاز اليوم الشامل', prompt: 'أعطني ملخص اليوم' },
+          ],
+        };
+      }
+
+      const affectedIndividuals = matched.reduce((acc, p) => {
+        if (status === 'partial') return acc + Math.max(0, p.blockedIndividuals ?? 0);
+        return acc + Math.max(0, p.individuals ?? 0);
+      }, 0);
+
+      const previewLines = matched.slice(0, 8).map((p, idx) => {
+        const agLabel = agencyMap.get(p.agencyId) || 'وكالة';
+        const extra =
+          p.blockType === 'partial'
+            ? `جزئي (${p.blockedIndividuals ?? 0} من ${p.individuals ?? 0})`
+            : p.blockType === 'full'
+              ? `حظر كامل (${p.individuals ?? 0} أفراد)`
+              : p.blockType === 'archived'
+                ? `مؤرشف (${p.individuals ?? 0} أفراد)`
+                : `${p.individuals ?? 0} أفراد`;
+        return `${idx + 1}. **${p.name}** — ${agLabel} · ${extra}${p.blockReason ? ` (${p.blockReason})` : ''}`;
+      });
+
+      return {
+        gracefulLevel: 'A',
+        replyText: [
+          `### ${statusTitle} — ${scopeName}`,
+          `الإجمالي: **${matched.length} سجل** (بمجموع ${affectedIndividuals} فرد):`,
+          ...previewLines,
+          ...(matched.length > 8 ? [`...و ${matched.length - 8} سجلات أخرى متوفرة في الجدول.`] : []),
+        ].join('\n'),
+        choices: matched.slice(0, 5).map((p) => ({
+          id: `sb_${p.id}`,
+          label: p.name,
+          sublabel: `${agencyMap.get(p.agencyId) || ''} · ${p.individuals ?? 0} أفراد`,
+          tone: p.blockType === 'full' ? 'warning' : 'default',
+          actionType: 'select_person',
+          payload: { personId: p.id, followUpAction: 'focus_person' },
+        })),
+        suggestedFollowUps:
+          status === 'blocked' || status === 'partial'
+            ? [
+                {
+                  id: 'fu_sb_tbl',
+                  label: 'فتح الجدول مفلتر على المحجوبين',
+                  prompt: 'اعرض المحجوبين',
+                },
+              ]
+            : undefined,
       };
     }
   }

@@ -41,6 +41,33 @@ export type AssistantEngineSource =
 
 export type AiRoutingStrategy = 'strongest_first' | 'local_first_economy';
 
+export type AiCollaborationMode = 'single' | 'council_review' | 'multi_step_agent';
+
+export type AssistantResponseStyle =
+  | 'balanced'
+  | 'concise'
+  | 'financial_auditor'
+  | 'deep_advisor';
+
+export interface AssistantCollaborationStep {
+  id: string;
+  role: 'planner' | 'executor' | 'verifier' | 'analyzer';
+  roleLabel: string;
+  modelId: string;
+  modelLabel: string;
+  provider: 'google' | 'groq' | 'openrouter' | 'local';
+  status: 'done' | 'skipped' | 'fallback';
+  latencyMs: number;
+  summary: string;
+}
+
+export interface AssistantCanvasHandoff {
+  canvasMode: MorrowCanvasMode;
+  label: string;
+  description?: string;
+  agencyId?: number | null;
+}
+
 export type AiTaskRoutingMap = Record<AiTaskKey, AiTaskRouteConfigItem>;
 
 export type MorrowCenterTab = 'chat' | 'approvals' | 'memory' | 'quick_notes';
@@ -51,6 +78,8 @@ export interface AssistantSettingsConfig {
   preferredModelId: string;
   fallbackModelId: string;
   routingStrategy: AiRoutingStrategy;
+  collaborationMode: AiCollaborationMode;
+  responseStyle?: AssistantResponseStyle;
   taskRouting: AiTaskRoutingMap;
   onlineDisabled: boolean;
   cacheEnabled: boolean;
@@ -99,7 +128,13 @@ export type AssistantToolName =
   | 'navigate_focus'
   | 'update_settings'
   | 'explain_feature'
-  | 'run_diagnostics';
+  | 'run_diagnostics'
+  | 'run_morrow_macro'
+  | 'analyze_period_forecast'
+  | 'summon_workspace_canvas'
+  | 'simulate_what_if'
+  | 'executive_briefing'
+  | 'query_status_breakdown';
 
 export interface AssistantToolCall {
   name: AssistantToolName;
@@ -227,10 +262,22 @@ export interface AssistantMessage {
   sandboxNotice?: string;
   diagnosticsReport?: DiagnosticSummary;
   resultCard?: AssistantResultCardPayload;
+  collaborationTrace?: AssistantCollaborationStep[];
+  suggestedFollowUps?: AssistantSmartSuggestion[];
+  canvasHandoff?: AssistantCanvasHandoff;
   queuePrompt?: {
     prompt: string;
     saved: boolean;
   };
+}
+
+export interface AssistantChatThread {
+  id: string;
+  title: string;
+  previewText: string;
+  updatedAt: string;
+  brainMode: AssistantBrainMode;
+  messages: AssistantMessage[];
 }
 
 export interface AssistantQueuedTask {

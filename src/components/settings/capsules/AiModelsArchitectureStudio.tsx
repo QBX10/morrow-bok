@@ -555,6 +555,70 @@ export const AiModelsArchitectureStudio: React.FC<
         </div>
       </div>
 
+      {/* Multi-Model Collaboration Mode Selector */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-extrabold">
+            وضع تعاون النماذج والتدقيق المتعدد (AI Council)
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            تخطيط بالأساسي ← مراجعة وتدقيق بنموذج مكمل مستقل
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {(
+            [
+              {
+                id: 'council_review' as const,
+                title: 'مجلس النماذج (المخطط + المدقق)',
+                desc: 'ينفذ النموذج الأساسي، ثم يدقق نموذج مكمل مستقل الرد ويقترح الخطوة التالية أو لوحة العرض الأنسب.',
+              },
+              {
+                id: 'multi_step_agent' as const,
+                title: 'وكيل متعدد المراحل (استدلال عميق)',
+                desc: 'تدقيق مكثف دائماً على القرارات المالية وتنسيق الجداول والماكرو لرفع الدقة في كل رد.',
+              },
+              {
+                id: 'single' as const,
+                title: 'نموذج منفرد فقط (مقتصد)',
+                desc: 'اكتفاء بالنموذج الأساسي وحده دون طبقة مراجعة ثانية لتوفير سرعة وحصة الطلبات.',
+              },
+            ]
+          ).map((opt) => {
+            const active = normalizedSettings.collaborationMode === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() =>
+                  onUpdateAssistantSettings?.({ collaborationMode: opt.id })
+                }
+                className="flex items-start justify-between gap-2.5 rounded-xl border px-3.5 py-3 text-right transition-colors"
+                style={{
+                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                }}
+              >
+                <div className="space-y-1">
+                  <div className="text-xs font-extrabold">{opt.title}</div>
+                  <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {opt.desc}
+                  </p>
+                </div>
+                <CheckCircle2
+                  className="h-4 w-4 shrink-0 mt-0.5"
+                  style={{
+                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    opacity: active ? 1 : 0.35,
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Interactive Architecture Tabs */}
       <div
         className="flex flex-wrap items-center gap-1.5 rounded-xl border p-1.5"

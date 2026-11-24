@@ -1,6 +1,7 @@
 import type { Agency, AppDatabaseState, AppView, Person } from '../types/agency.ts';
 import type {
   AssistantChoiceChip,
+  AssistantCanvasHandoff,
   AssistantConversationMemory,
   AssistantMessage,
   AssistantSlotSession,
@@ -330,6 +331,8 @@ export interface OfflineBrainOutcome {
   confirmationDiff?: ReturnType<typeof buildBeforeAfterDiff>;
   spotlightAction?: AssistantMessage['spotlightAction'];
   diagnosticsReport?: ReturnType<typeof runAppDiagnostics>;
+  canvasHandoff?: AssistantCanvasHandoff;
+  suggestedFollowUps?: AssistantSmartSuggestion[];
   needsCloudReason?: string;
   memoryPatch?: Partial<AssistantConversationMemory>;
   compoundSteps?: OfflineBrainOutcome[];
@@ -481,6 +484,7 @@ function runSingleOfflineClause(params: {
 
   // Detect tasks specifically needing Cloud Gemini in Auto mode (summarization, copywriting, open-ended advice)
   if (
+    !/^(?:ملخص اليوم|ملخص الوضع)(?=\s|$)/.test(norm) &&
     /^(?:لخص|ملخص|اكتب رساله|صيغ رساله|جهز رساله|اقترح|ما رايك|شنو رايك|نصحني|انصحني)(?=\s|$)/.test(
       norm
     )
@@ -674,6 +678,124 @@ function runSingleOfflineClause(params: {
         args: { action: 'set_dark_theme', value: 'false' },
       },
       memoryPatch: { lastIntent: 'update_settings' },
+    };
+  }
+
+  // 1.82 Hypothetical "What-If" Financial & Quantity Simulation (must run before direct Section 1.9 update_calc)
+  const isWhatIfIntent =
+    /(ماذا لو|لو فرضنا|فرضنا|افتراض|محاكاه|محاكاة|سيناريو|لو كان رسم|لو صار|لو خلينا|لو غيرنا|لو زاد|لو نقص|لو قل)/.test(
+      norm
+    ) || /(%|بالميه|بالمئة)/.test(norm);
+
+  if (
+    isWhatIfIntent &&
+    /(رسم|سعر|حصه|حصة|افراد|أفراد|فرد|كيس|اكياس|ربح|بطاقه|بطاقة|زياده|زيادة|نقص|%)/.test(norm)
+  ) {
+    const matchedAg = matchAgencyInText(rawFixed, state.agencies);
+    const cleanDigits = convertArabicIndicDigits(rawFixed);
+    const pctMatch = cleanDigits.match(/([+-]?\d+(?:\.\d+)?)\s*(?:%|بالمئة|بالميه|بالمية)/);
+    const decimalMatch = cleanDigits.match(/(-?\d+(?:\.\d+)?)/);
+    const rawNum = decimalMatch ? Number(decimalMatch[1]) : extractFirstNumber(rawFixed);
+
+    const args: Record<string, unknown> = {
+      ...(matchedAg ? { agencyId: matchedAg.id } : {}),
+    };
+
+    if (pctMatch) {
+      const pctRaw = Math.abs(Number(pctMatch[1]));
+      const isNeg = /(نقص|نقصان|قل|قله|تقليل|خصم|انخفاض)/.test(norm);
+      args.individualsDeltaPercent = isNeg ? -pctRaw : pctRaw;
+    } else if (rawNum !== null && Number.isFinite(rawNum)) {
+      if (/(رسم البطاقه|رسم البطاقة)/.test(norm)) {
+        args.fixedCardFeeIqd = Math.max(0, rawNum);
+      } else if (/(حصه الفرد|حصة الفرد)/.test(norm)) {
+        args.kgPerIndividual = Math.max(0.5, rawNum);
+      } else if (/(رسم الفرد|رسوم الفرد|سعر الفرد|الرسم)/.test(norm)) {
+        args.feePerIndividualIqd = Math.max(0, rawNum);
+      } else if (/(افراد|أفراد|فرد)/.test(norm)) {
+        const isNeg = /(نقص|نقصان|قل|حجب|خصم|خروج)/.test(norm);
+        args.individualsDelta = isNeg ? -Math.abs(Math.round(rawNum)) : Math.abs(Math.round(rawNum));
+      } else {
+        args.feePerIndividualIqd = Math.max(0, rawNum);
+      }
+    }
+
+    if (
+      args.feePerIndividualIqd !== undefined ||
+      args.fixedCardFeeIqd !== undefined ||
+      args.kgPerIndividual !== undefined ||
+      args.individualsDelta !== undefined ||
+      args.individualsDeltaPercent !== undefined
+    ) {
+      return {
+        handled: true,
+        confidence: 0.96,
+        gracefulLevel: 'A',
+        replyText: 'جاري تشغيل محاكاة «ماذا لو» بدون تغيير البيانات الفعلية...',
+        toolCall: {
+          name: 'simulate_what_if',
+          args,
+        },
+        memoryPatch: {
+          lastAgencyId: matchedAg?.id ?? undefined,
+          lastIntent: 'simulate_what_if',
+        },
+      };
+    }
+  }
+
+  // 1.84 Executive Daily Briefing ("أعطني ملخص اليوم" / "إيجاز تنفيذي" / "وضع الوكالات اليوم")
+  if (
+    /(ملخص اليوم|ايجاز اليوم|إيجاز اليوم|ايجاز تنفيذي|إيجاز تنفيذي|ايجاز الصباح|وضع الوكالات اليوم|شنو الوضع اليوم|اعطني ملخص|تقرير سريع للوضع)/.test(
+      norm
+    )
+  ) {
+    const matchedAg = matchAgencyInText(rawFixed, state.agencies);
+    return {
+      handled: true,
+      confidence: 0.96,
+      gracefulLevel: 'A',
+      replyText: 'تم تجهيز الإيجاز التنفيذي الشامل للوكالات والعمليات:',
+      toolCall: {
+        name: 'executive_briefing',
+        args: matchedAg ? { agencyId: matchedAg.id } : {},
+      },
+      memoryPatch: {
+        lastAgencyId: matchedAg?.id ?? undefined,
+        lastIntent: 'executive_briefing',
+      },
+    };
+  }
+
+  // 1.86 Status Breakdown Inquiry ("من هم المحجوبين" / "كم محجوب" / "الحجب الجزئي" / "قائمة المؤرشفين")
+  // Note: Imperative table commands ("اعرض المحجوبين" / "فلتر المحجوبين") intentionally stay on Section 8 stealth filter_sort_table.
+  if (
+    /(من هم المحجوبين|منو المحجوب|منو محجوب|كم محجوب|تفاصيل المحجوبين|قائمه المحجوبين|قائمة المحجوبين|حالات الحجب|الحجب الجزئي|المحجوبين جزئيا|من هم المؤرشفين|قائمه المؤرشفين|قائمة المؤرشفين|كم مؤرشف)/.test(
+      norm
+    )
+  ) {
+    const matchedAg = matchAgencyInText(rawFixed, state.agencies);
+    const status: 'blocked' | 'partial' | 'archived' | 'active' = /(جزئي)/.test(norm)
+      ? 'partial'
+      : /(مؤرشف)/.test(norm)
+        ? 'archived'
+        : 'blocked';
+    return {
+      handled: true,
+      confidence: 0.95,
+      gracefulLevel: 'A',
+      replyText: 'تم حصر السجلات حسب الحالة المطلوبة:',
+      toolCall: {
+        name: 'query_status_breakdown',
+        args: {
+          status,
+          ...(matchedAg ? { agencyId: matchedAg.id } : {}),
+        },
+      },
+      memoryPatch: {
+        lastAgencyId: matchedAg?.id ?? undefined,
+        lastIntent: 'query_status_breakdown',
+      },
     };
   }
 
@@ -984,6 +1106,82 @@ function runSingleOfflineClause(params: {
         args: { source: 'quick_extract' },
       },
       memoryPatch: { lastIntent: 'open_import_compare' },
+    };
+  }
+
+  // 7.3 Morrow Macros ("إغلاق الشهر" / "جرد الصباح" / "كشف التوزيع" / "شغل ماكرو")
+  if (
+    /(اغلاق الشهر|قفل الشهر|ماكرو|جرد الصباح|جرد وتدقيق|كشف التوزيع|تجهيز كشف)/.test(
+      norm
+    )
+  ) {
+    const triggerPhrase = /(جرد الصباح|جرد وتدقيق)/.test(norm)
+      ? 'جرد الصباح'
+      : /(كشف التوزيع|تجهيز كشف)/.test(norm)
+        ? 'تجهيز كشف التوزيع'
+        : 'إغلاق الشهر';
+    return {
+      handled: true,
+      confidence: 0.95,
+      gracefulLevel: 'A',
+      replyText: `جاري تشغيل ماكرو «${triggerPhrase}» وفحص المسودات الآمنة...`,
+      toolCall: {
+        name: 'run_morrow_macro',
+        args: { triggerPhrase },
+      },
+      memoryPatch: { lastIntent: 'run_morrow_macro' },
+    };
+  }
+
+  // 7.5 Period Forecasting & Predictions ("توقعات الشهر القادم" / "تنبؤ الأكياس" / "توقع التغييرات")
+  if (/(توقع|توقعات|تنبؤ|تنبؤات|الشهر القادم|الحصه القادمه|مقارنه بالشهر الماضي)/.test(norm)) {
+    const matchedAg = matchAgencyInText(rawFixed, state.agencies);
+    return {
+      handled: true,
+      confidence: 0.94,
+      gracefulLevel: 'A',
+      replyText: 'تم تحليل توقعات الحصة القادمة ومقارنتها بالأرشيف.',
+      toolCall: {
+        name: 'analyze_period_forecast',
+        args: matchedAg ? { agencyId: matchedAg.id } : {},
+      },
+      memoryPatch: {
+        lastAgencyId: matchedAg?.id ?? undefined,
+        lastIntent: 'analyze_period_forecast',
+      },
+    };
+  }
+
+  // 7.7 Summon Dynamic Workspace Canvas ("افتح اللوحة التفاعلية" / "التقرير التنفيذي" / "محلل النصوص")
+  if (
+    /(اللوحه التفاعليه|اللوحة التفاعلية|محلل النصوص|تحليل نص|استوديو الماكرو|مولد التقارير|تقرير تنفيذي|تعديل مباشر في اللوحه|افتح الرسوم)/.test(
+      norm
+    )
+  ) {
+    const matchedAg = matchAgencyInText(rawFixed, state.agencies);
+    const canvasMode =
+      /(محلل النصوص|تحليل نص)/.test(norm)
+        ? 'text_analysis'
+        : /(تقرير تنفيذي|مولد التقارير)/.test(norm)
+          ? 'executive_report'
+          : /(استوديو الماكرو)/.test(norm)
+            ? 'macro_studio'
+            : /(تعديل مباشر)/.test(norm)
+              ? 'editable_table'
+              : 'overview_charts';
+    return {
+      handled: true,
+      confidence: 0.94,
+      gracefulLevel: 'A',
+      replyText: 'فتحت اللوحة التفاعلية على الأداة المطلوبة مباشرة.',
+      toolCall: {
+        name: 'summon_workspace_canvas',
+        args: {
+          canvasMode,
+          ...(matchedAg ? { agencyId: matchedAg.id } : {}),
+        },
+      },
+      memoryPatch: { lastIntent: 'summon_workspace_canvas' },
     };
   }
 

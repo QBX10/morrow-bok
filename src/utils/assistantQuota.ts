@@ -10,6 +10,7 @@ import {
   sanitizeAiModelId,
   SIX_FREE_CLOUD_MODELS,
   type AiTaskKey,
+  type ApprovedCloudModelId,
 } from '../aiConfig.ts';
 import type {
   AiTaskRoutingMap,
@@ -60,6 +61,8 @@ export const DEFAULT_ASSISTANT_SETTINGS: AssistantSettingsConfig = {
   preferredModelId: GEMINI_HEAVY_MODEL,
   fallbackModelId: OPENROUTER_NEMOTRON_MODEL,
   routingStrategy: 'strongest_first',
+  collaborationMode: 'council_review',
+  responseStyle: 'balanced',
   taskRouting: structuredClone(DEFAULT_TASK_ROUTING),
   onlineDisabled: false,
   cacheEnabled: true,
@@ -68,7 +71,7 @@ export const DEFAULT_ASSISTANT_SETTINGS: AssistantSettingsConfig = {
   quotaWarningPercent: 80,
 };
 
-export function sanitizeAssistantModelId(raw?: string | null): string {
+export function sanitizeAssistantModelId(raw?: string | null): ApprovedCloudModelId {
   return sanitizeAiModelId(raw);
 }
 
@@ -114,6 +117,16 @@ export function normalizeAssistantSettings(
       base.routingStrategy === 'local_first_economy'
         ? 'local_first_economy'
         : 'strongest_first',
+    collaborationMode:
+      base.collaborationMode === 'single' || base.collaborationMode === 'multi_step_agent'
+        ? base.collaborationMode
+        : 'council_review',
+    responseStyle:
+      base.responseStyle === 'concise' ||
+      base.responseStyle === 'financial_auditor' ||
+      base.responseStyle === 'deep_advisor'
+        ? base.responseStyle
+        : 'balanced',
     taskRouting: normalizedRouting,
     onlineDisabled: Boolean(base.onlineDisabled),
     cacheEnabled: base.cacheEnabled ?? true,

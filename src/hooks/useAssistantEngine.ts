@@ -4,7 +4,10 @@ import type {
   AssistantApprovalDraft,
   AssistantBeforeAfterDiff,
   AssistantBrainMode,
+  AssistantCanvasHandoff,
+  AssistantChatThread,
   AssistantChoiceChip,
+  AssistantCollaborationStep,
   AssistantConnectivityState,
   AssistantConversationMemory,
   AssistantEngineSource,
@@ -14,9 +17,11 @@ import type {
   AssistantQuotaStats,
   AssistantSettingsConfig,
   AssistantSlotSession,
+  AssistantSmartSuggestion,
   AssistantSpotlightState,
   AssistantToolCall,
   AssistantUserPref,
+  MorrowCanvasMode,
   MorrowCenterTab,
   MorrowSystemCheckItem,
   MorrowSystemVerificationReport,
@@ -83,6 +88,7 @@ const SETTINGS_STORAGE_KEY = 'morrow_assistant_settings_v1';
 const QUOTA_STORAGE_KEY = 'morrow_assistant_quota_v1';
 const DRAFTS_STORAGE_KEY = 'morrow_assistant_drafts_v1';
 const QUICK_NOTES_STORAGE_KEY = 'morrow_quick_notes_v1';
+const THREADS_STORAGE_KEY = 'morrow_assistant_threads_v1';
 
 function readStoredArray<T>(key: string): T[] {
   try {
@@ -121,6 +127,11 @@ export function useAssistantEngine(params: {
   const [brainMode, setBrainMode] = useState<AssistantBrainMode>('auto');
   const [activeCommandCenterTab, setActiveCommandCenterTab] =
     useState<MorrowCenterTab>('chat');
+  const [requestedCanvasHandoff, setRequestedCanvasHandoff] = useState<{
+    mode: MorrowCanvasMode;
+    agencyId?: number | null;
+    nonce: number;
+  } | null>(null);
   const [browserOnline, setBrowserOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
@@ -198,9 +209,54 @@ export function useAssistantEngine(params: {
     };
   }, []);
 
+  const [chatThreads, setChatThreads] = useState<AssistantChatThread[]>(() =>
+    readStoredArray<AssistantChatThread>(THREADS_STORAGE_KEY).slice(0, 15)
+  );
+  const [activeThreadId, setActiveThreadId] = useState<string>(
+    () => `thread_${Date.now().toString(36)}`
+  );
+
   const [messages, setMessages] = useState<AssistantMessage[]>(() => [
     createWelcomeMessage(),
   ]);
+
+  // Persist thread archive snapshot whenever substantive conversation updates occur
+  useEffect(() => {
+    try {
+      localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(chatThreads.slice(0, 15)));
+    } catch {
+      // ignore quota error
+    }
+  }, [chatThreads]);
+
+  useEffect(() => {
+    const firstUserMsg = messages.find((m) => m.role === 'user');
+    if (!firstUserMsg || messages.length <= 1) return;
+
+    const cleanTitle = firstUserMsg.text.replace(/\s+/g, ' ').trim().slice(0, 48);
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant' && !m.id.startsWith('welcome_msg_'));
+    const previewText = (lastAssistant?.text || firstUserMsg.text)
+      .replace(/^#+\s*/gm, '')
+      .replace(/\*\*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 90);
+
+    setChatThreads((prev) => {
+      const nextThread: AssistantChatThread = {
+        id: activeThreadId,
+        title: cleanTitle || 'محادثة Morrow',
+        previewText,
+        updatedAt: new Date().toISOString(),
+        brainMode,
+        messages: messages.slice(-30),
+      };
+      const others = prev.filter((t) => t.id !== activeThreadId);
+      return [nextThread, ...others].slice(0, 15);
+    });
+  }, [messages, activeThreadId, brainMode]);
 
   useEffect(() => {
     return () => {
@@ -428,8 +484,33 @@ export function useAssistantEngine(params: {
   }, []);
 
   const openCommandCenter = useCallback(
-    (tab: MorrowCenterTab = 'chat') => {
-      setActiveCommandCenterTab(tab);
+    (tab: MorrowCenterTab = 'chat', canvasMode?: MorrowCanvasMode) => {
+      if (canvasMode) {
+        setActiveCommandCenterTab('chat');
+        setRequestedCanvasHandoff({
+          mode: canvasMode,
+          nonce: Date.now(),
+        });
+      } else {
+        setActiveCommandCenterTab(tab);
+      }
+      runtime.navigate('morrow_center');
+      setIsOpen(false);
+    },
+    [runtime]
+  );
+
+  const openCanvasMode = useCallback(
+    (canvasMode: MorrowCanvasMode, agencyId?: number | null) => {
+      if (typeof agencyId === 'number' && agencyId > 0) {
+        runtime.selectAgency(agencyId);
+      }
+      setActiveCommandCenterTab('chat');
+      setRequestedCanvasHandoff({
+        mode: canvasMode,
+        agencyId: agencyId ?? null,
+        nonce: Date.now(),
+      });
       runtime.navigate('morrow_center');
       setIsOpen(false);
     },
@@ -515,6 +596,7 @@ export function useAssistantEngine(params: {
       triggerSpotlight,
       exportBackupJson,
       addQuickNote,
+      openCanvasMode,
     }),
     [
       runtime,
@@ -525,6 +607,7 @@ export function useAssistantEngine(params: {
       triggerSpotlight,
       exportBackupJson,
       addQuickNote,
+      openCanvasMode,
     ]
   );
 
@@ -889,6 +972,46 @@ export function useAssistantEngine(params: {
             ? `${overrideNote}\n\n${resolved.replyText}`
             : resolved.replyText;
 
+          const localTrace: AssistantCollaborationStep[] = [
+            {
+              id: `loc_nlu_${Date.now()}`,
+              role: 'analyzer',
+              roleLabel: 'محلل اللهجة والنية',
+              modelId: 'morrow-local',
+              modelLabel: 'Morrow المحلي',
+              provider: 'local',
+              status: 'done',
+              latencyMs: 2,
+              summary: 'فك اللهجة العراقية واستخراج الكيانات والأداة المناسبة',
+            },
+            {
+              id: `loc_exec_${Date.now()}`,
+              role: 'executor',
+              roleLabel: 'محرك السجلات والأدوات',
+              modelId: 'morrow-local',
+              modelLabel: outcome.toolCall.name,
+              provider: 'local',
+              status: 'done',
+              latencyMs: 4,
+              summary: resolved.resultCard?.title || resolved.diagnosticsReport ? 'تشغيل التحليل اللحظي على بيانات الوكالات' : 'تنفيذ الأداة الآمنة على السياق الحالي',
+            },
+            ...(effectiveDiff || (resolved.extraDraftTools?.length ?? 0) > 0
+              ? [
+                  {
+                    id: `loc_zt_${Date.now()}`,
+                    role: 'verifier' as const,
+                    roleLabel: 'حارس الصفّر-ثقة',
+                    modelId: 'morrow-local',
+                    modelLabel: 'بوابة قبل ← بعد',
+                    provider: 'local' as const,
+                    status: 'done' as const,
+                    latencyMs: 1,
+                    summary: 'عزل التعديلات كمسودات بانتظار موافقتك الصريحة',
+                  },
+                ]
+              : []),
+          ];
+
           appendMessage({
             role: 'assistant',
             text: finalText,
@@ -896,6 +1019,10 @@ export function useAssistantEngine(params: {
             confidence: outcome.confidence,
             stealthExecuted: stealth,
             gracefulLevel: resolved.gracefulLevel,
+            collaborationTrace: localTrace,
+            canvasHandoff: resolved.canvasHandoff || outcome.canvasHandoff,
+            suggestedFollowUps:
+              resolved.suggestedFollowUps || outcome.suggestedFollowUps,
             choices: [
               ...(resolved.choices || outcome.choices || []),
               ...(draftId
@@ -917,6 +1044,10 @@ export function useAssistantEngine(params: {
               resolved.diagnosticsReport || outcome.diagnosticsReport,
             resultCard: resolved.resultCard,
           });
+
+          if (resolved.extraDraftTools && resolved.extraDraftTools.length > 0) {
+            stageToolDrafts(resolved.extraDraftTools, 'أمر الماكرو التلقائي');
+          }
 
           if (stealth) {
             emitAppToast({
@@ -999,6 +1130,7 @@ export function useAssistantEngine(params: {
       fullRuntime,
       appendMessage,
       registerDraftFromDiff,
+      stageToolDrafts,
       assistantSettings.onlineDisabled,
       connectivity,
     ]
@@ -1041,8 +1173,40 @@ export function useAssistantEngine(params: {
     setSlotSession(null);
     setPendingCompoundQueue([]);
     lastUserPromptRef.current = '';
+    setActiveThreadId(`thread_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`);
     setMessages([createWelcomeMessage()]);
   }, [createWelcomeMessage]);
+
+  const switchChatThread = useCallback(
+    (threadId: string) => {
+      const found = chatThreads.find((t) => t.id === threadId);
+      if (!found) return;
+      if (activeRequestControllerRef.current) {
+        activeRequestControllerRef.current.abort();
+        activeRequestControllerRef.current = null;
+      }
+      setIsThinking(false);
+      setSlotSession(null);
+      setPendingCompoundQueue([]);
+      setActiveThreadId(found.id);
+      setBrainMode(found.brainMode);
+      setMessages(
+        found.messages.length > 0 ? found.messages : [createWelcomeMessage()]
+      );
+    },
+    [chatThreads, createWelcomeMessage]
+  );
+
+  const deleteChatThread = useCallback(
+    (threadId: string) => {
+      setChatThreads((prev) => prev.filter((t) => t.id !== threadId));
+      if (activeThreadId === threadId) {
+        setActiveThreadId(`thread_${Date.now().toString(36)}`);
+        setMessages([createWelcomeMessage()]);
+      }
+    },
+    [activeThreadId, createWelcomeMessage]
+  );
 
   const modelHealthSnapshots = useMemo(
     () => getAllModelHealthSnapshots(),
@@ -1151,7 +1315,7 @@ export function useAssistantEngine(params: {
         prompt: cleanPrompt,
         brainMode,
         modelId: activeModel,
-        chainSignature: `${assistantSettings.routingStrategy}:${specialtyDecision.specialty}:${fallbackChain.join('>')}`,
+        chainSignature: `${assistantSettings.routingStrategy}:${assistantSettings.responseStyle || 'balanced'}:${specialtyDecision.specialty}:${fallbackChain.join('>')}`,
         activeView: fullRuntime.uiContext.activeView,
         selectedAgencyId: fullRuntime.uiContext.selectedAgencyId,
       });
@@ -1255,6 +1419,10 @@ export function useAssistantEngine(params: {
           engineLabel?: string;
           modelId?: string;
           latencyMs?: number;
+          collaborationMode?: string;
+          collaborationTrace?: AssistantCollaborationStep[];
+          suggestedFollowUps?: AssistantSmartSuggestion[];
+          recommendedCanvasMode?: MorrowCanvasMode;
           attempts?: Array<{
             modelId?: string;
             status?: string;
@@ -1293,6 +1461,8 @@ export function useAssistantEngine(params: {
                 prompt: cleanPrompt,
                 brainMode,
                 routingStrategy: assistantSettings.routingStrategy,
+                collaborationMode: assistantSettings.collaborationMode,
+                responseStyle: assistantSettings.responseStyle || 'balanced',
                 taskKey: specialtyDecision.specialty,
                 taskRouting: assistantSettings.taskRouting,
                 pipeline: specialtyDecision.pipeline,
@@ -1427,6 +1597,15 @@ export function useAssistantEngine(params: {
             }
           }
 
+          const recommendedHandoff: AssistantCanvasHandoff | undefined =
+            resolved.canvasHandoff ||
+            (data.recommendedCanvasMode
+              ? {
+                  canvasMode: data.recommendedCanvasMode,
+                  label: 'عرض النتيجة في اللوحة التفاعلية',
+                }
+              : undefined);
+
           appendMessage({
             role: 'assistant',
             text:
@@ -1440,6 +1619,12 @@ export function useAssistantEngine(params: {
             latencyMs: elapsedMs,
             stealthExecuted: resolved.stealthExecuted,
             gracefulLevel: resolved.gracefulLevel,
+            collaborationTrace: data.collaborationTrace,
+            canvasHandoff: recommendedHandoff,
+            suggestedFollowUps:
+              data.suggestedFollowUps && data.suggestedFollowUps.length > 0
+                ? data.suggestedFollowUps
+                : resolved.suggestedFollowUps,
             choices: [
               ...(resolved.choices || []),
               ...(draftId
@@ -1460,6 +1645,9 @@ export function useAssistantEngine(params: {
             diagnosticsReport: resolved.diagnosticsReport,
             resultCard: resolved.resultCard,
           });
+          if (resolved.extraDraftTools && resolved.extraDraftTools.length > 0) {
+            stageToolDrafts(resolved.extraDraftTools, engineMeta.shortLabel);
+          }
           if (resolved.stealthExecuted) {
             emitAppToast({
               title: `تنفيذ صامت (${engineMeta.shortLabel})`,
@@ -1518,6 +1706,14 @@ export function useAssistantEngine(params: {
           specialtyTitle: specialtyDecision.specialtyTitle,
           latencyMs: elapsedMs,
           gracefulLevel: 'A',
+          collaborationTrace: data.collaborationTrace,
+          suggestedFollowUps: data.suggestedFollowUps,
+          canvasHandoff: data.recommendedCanvasMode
+            ? {
+                canvasMode: data.recommendedCanvasMode,
+                label: 'متابعة التحليل في اللوحة التفاعلية',
+              }
+            : undefined,
           choices: [
             {
               id: `center_link_${Date.now()}`,
@@ -1568,6 +1764,7 @@ export function useAssistantEngine(params: {
       runLocalAndRespond,
       presentOfflineOutcome,
       registerDraftFromDiff,
+      stageToolDrafts,
     ]
   );
 
@@ -1622,11 +1819,16 @@ export function useAssistantEngine(params: {
           gracefulLevel: resolved.gracefulLevel,
           spotlightAction: resolved.spotlightAction,
           resultCard: resolved.resultCard,
+          canvasHandoff: resolved.canvasHandoff,
+          suggestedFollowUps: resolved.suggestedFollowUps,
         });
+      }
+      if (resolved.extraDraftTools && resolved.extraDraftTools.length > 0) {
+        stageToolDrafts(resolved.extraDraftTools, 'جلسة لايف المباشرة');
       }
       return resolved.replyText || 'تم تنفيذ الطلب في التطبيق.';
     },
-    [fullRuntime, registerDraftFromDiff, appendMessage]
+    [fullRuntime, registerDraftFromDiff, stageToolDrafts, appendMessage]
   );
 
   const verifyMorrowSystemIntegrity = useCallback(async (): Promise<MorrowSystemVerificationReport> => {
@@ -2181,7 +2383,9 @@ export function useAssistantEngine(params: {
     setBrainMode,
     activeCommandCenterTab,
     setActiveCommandCenterTab,
+    requestedCanvasHandoff,
     openCommandCenter,
+    openCanvasMode,
     connectivity,
     cloudConfigured,
     isThinking,
@@ -2229,6 +2433,10 @@ export function useAssistantEngine(params: {
     verifyMorrowSystemIntegrity,
     cancelActiveRequest,
     clearMessages,
+    chatThreads,
+    activeThreadId,
+    switchChatThread,
+    deleteChatThread,
     retryLastPrompt,
     modelHealthSnapshots,
   };

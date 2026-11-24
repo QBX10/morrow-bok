@@ -52,6 +52,7 @@ import {
 import {
   createGoogleAiClient,
   executeAudioTranscriptionWithFallback,
+  executeCollaborativeOrchestration,
   executeWithFallback,
   getOrchestrationStatusSnapshot,
   liveTestAiModelOrTask,
@@ -61,7 +62,12 @@ import type {
   InferredDocumentMetadata,
   QuickExtractRawRow,
 } from './src/types/agency.ts';
-import type { AssistantBrainMode, AssistantToolCall } from './src/types/assistant.ts';
+import type {
+  AiCollaborationMode,
+  AssistantBrainMode,
+  AssistantResponseStyle,
+  AssistantToolCall,
+} from './src/types/assistant.ts';
 import { normalizePhoneNumber } from './src/utils/agencyLogic.ts';
 import { enforceSafeArabicTerminology } from './src/utils/assistantPrivacy.ts';
 import {
@@ -2467,6 +2473,9 @@ async function startServer() {
       const body = (req.body || {}) as {
         prompt?: string;
         brainMode?: AssistantBrainMode;
+        collaborationMode?: AiCollaborationMode;
+        responseStyle?: AssistantResponseStyle;
+        taskKey?: AiTaskKey;
         pipeline?: AiPipelineKind;
         preferredModel?: string;
         preferredChain?: string[];
@@ -2504,6 +2513,27 @@ async function startServer() {
           ? body.brainMode
           : 'auto';
 
+      const collaborationMode: AiCollaborationMode =
+        body.collaborationMode === 'single' || body.collaborationMode === 'multi_step_agent'
+          ? body.collaborationMode
+          : 'council_review';
+
+      const responseStyle: AssistantResponseStyle =
+        body.responseStyle === 'concise' ||
+        body.responseStyle === 'financial_auditor' ||
+        body.responseStyle === 'deep_advisor'
+          ? body.responseStyle
+          : 'balanced';
+
+      const styleDirective =
+        responseStyle === 'concise'
+          ? 'أسلوب الإجابة المطلوب: مختصر وفوري — أعطِ الخلاصة والأرقام الأساسية بنقاط قصيرة جداً دون إطالة.'
+          : responseStyle === 'financial_auditor'
+            ? 'أسلوب الإجابة المطلوب: مدقق مالي دقيق — ركّز على تطابق الأكياس والدينار، صافي الأرباح، المصاريف، والفروقات العددية بدقة محاسبية.'
+            : responseStyle === 'deep_advisor'
+              ? 'أسلوب الإجابة المطلوب: مستشار استراتيجي معمّق — قدّم تحليلاً متعدد الأبعاد، تقييماً للمخاطر، وتوصيات عملية مدعومة بسيناريوهات بديلة.'
+              : 'أسلوب الإجابة المطلوب: متوازن ومهني — اجمع بين الوضوح السريع والتفاصيل العملية المفيدة.';
+
       const liveSummaryBlock = buildLiveWorkspaceSummaryText(body.cloudContext);
       const contextText = JSON.stringify(body.cloudContext || {}, null, 0).slice(0, 7500);
       const historyLines = Array.isArray(body.cloudHistory)
@@ -2514,11 +2544,18 @@ async function startServer() {
         : '';
 
       const systemInstruction = `أنت المساعد الذكي الشخصي «Morrow» المرتبط ارتباطاً جذرياً ومباشراً ببيانات وإجراءات تطبيق إدارة وكالات الكمية الغذائية (توزيع الطحين).
+${styleDirective}
 قواعدك الصارمة:
-1. تحدث باللهجة العراقية المهنية المختصرة والواضحة وقدم تحليل عملي وذكي.
+1. تحدث باللهجة العراقية المهنية الواضحة ونسّق الرد بعناوين واضحة (**نص عريض** ونقاط مرتبة) عند وجود تفصيل.
 2. التزم تماماً بكلمة «الأفراد» و«أفراد» و«فرد» حصرياً في جميع الردود والتقارير عند الإشارة لعدد الأشخاص.
 3. لا تكتب أوامر SQL أو كود برمجي نهائياً — اختر الأداة المناسبة من Function Calling بالوسائط الدقيقة فور طلب المستخدم:
+   - لمحاكاة سيناريوهات «ماذا لو» المالية أو تغيير الرسم أو زيادة الأفراد: simulate_what_if
+   - للإيجاز التنفيذي اليومي وملخص الوضع الشامل: executive_briefing
+   - لحصر المحجوبين أو الحجب الجزئي أو المؤرشفين: query_status_breakdown
    - للمقارنة أو ترتيب الوكالات: compare_agencies
+   - لتوقعات الحصة القادمة والمخاطر: analyze_period_forecast
+   - لتشغيل ماكرو (إغلاق الشهر / جرد الصباح / كشف التوزيع): run_morrow_macro
+   - لفتح اللوحة التفاعلية مباشرة على الرسوم/الجدول/التقرير/التوقعات/تحليل النصوص/الماكرو: summon_workspace_canvas
    - لحفظ ملاحظة سريعة وربطها بالعائلة: add_quick_note
    - لفك الحظر عن مستفيد: update_person مع blockType='none'
    - لنقل مستفيد بين الوكالات: update_person مع agencyId الجديد
@@ -2570,16 +2607,30 @@ ${contextText}`;
         ];
       }
 
-      const orch = await executeWithFallback({
+      const orch = await executeCollaborativeOrchestration({
         pipeline: requestedPipeline,
         preferredChain,
         systemInstruction,
         promptText: userContent,
         tools: ASSISTANT_TOOL_DECLARATIONS,
         timeoutMs: 12000,
+        collaborationMode,
+        taskKey:
+          body.taskKey && body.taskKey in AI_TASK_PROFILES
+            ? body.taskKey
+            : 'command_orchestration',
+        workspaceSummary: liveSummaryBlock,
+        originalUserPrompt: prompt,
       });
 
       if (orch.ok) {
+        const sanitizedToolCalls: AssistantToolCall[] = [];
+        for (const tc of orch.toolCalls) {
+          const checked = validateToolCall(tc);
+          if (checked.valid && checked.sanitized) {
+            sanitizedToolCalls.push(checked.sanitized);
+          }
+        }
         res.json({
           ok: true,
           engineUsed: mapModelIdToEngineSource(orch.modelId),
@@ -2591,10 +2642,14 @@ ${contextText}`;
           engineLabel: orch.modelLabel,
           text:
             orch.text ||
-            (orch.toolCalls.length > 0
+            (sanitizedToolCalls.length > 0
               ? 'تم فهم الطلب وتجهيز الإجراء المناسب.'
               : 'تفضل، كيف أقدر أساعدك أكثر؟'),
-          toolCalls: orch.toolCalls,
+          toolCalls: sanitizedToolCalls,
+          collaborationMode: orch.collaborationMode,
+          collaborationTrace: orch.collaborationTrace,
+          suggestedFollowUps: orch.suggestedFollowUps,
+          recommendedCanvasMode: orch.recommendedCanvasMode,
           latencyMs: Date.now() - startedAt,
         });
         return;
@@ -3180,6 +3235,50 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
           required: ['toolName'],
         },
       },
+      {
+        name: 'run_morrow_macro',
+        description:
+          'تشغيل ماكرو متكامل مثل إغلاق الشهر أو جرد الصباح أو تجهيز كشف التوزيع مع الحفاظ على مسودات الموافقة.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            triggerPhrase: { type: Type.STRING },
+          },
+        },
+      },
+      {
+        name: 'analyze_period_forecast',
+        description: 'تحليل توقعات الحصة القادمة والأكياس والأرباح ومقارنتها بالأرشيف.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            agencyId: { type: Type.INTEGER, nullable: true },
+          },
+        },
+      },
+      {
+        name: 'summon_workspace_canvas',
+        description:
+          'فتح اللوحة التفاعلية في مركز Morrow على تبويب محدد (الرسوم، الجدول، التقرير التنفيذي، التوقعات، تحليل النصوص، أو الماكرو).',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            canvasMode: {
+              type: Type.STRING,
+              enum: [
+                'overview_charts',
+                'editable_table',
+                'executive_report',
+                'forecast',
+                'text_analysis',
+                'macro_studio',
+              ],
+            },
+            agencyId: { type: Type.INTEGER, nullable: true },
+          },
+          required: ['canvasMode'],
+        },
+      },
     ];
 
     const liveSystemInstruction = `أنت المساعد الذكي الشخصي Morrow في جلسة صوتية ومشاهدة مباشرة مرتبطة جذرياً بتطبيق إدارة وكالات توزيع الطحين والمستفيدين.
@@ -3337,6 +3436,22 @@ ${liveWorkspaceSummary ? `\nبيانات التطبيق الحية المرتب�
                   };
                 } else {
                   responseObj = { ok: false, reason: checked.error || 'وسائط غير مكتملة' };
+                }
+              } else if (
+                fc.name === 'run_morrow_macro' ||
+                fc.name === 'analyze_period_forecast' ||
+                fc.name === 'summon_workspace_canvas'
+              ) {
+                const checked = validateToolCall({ name: fc.name, args });
+                if (checked.valid && checked.sanitized) {
+                  uiToolCall = checked.sanitized;
+                  responseObj = {
+                    ok: true,
+                    executedOnClientWorkspace: true,
+                    tool: checked.sanitized.name,
+                  };
+                } else {
+                  responseObj = { ok: false, reason: checked.error || 'وسائط غير صالحة' };
                 }
               }
 

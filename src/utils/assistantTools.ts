@@ -7,6 +7,7 @@ import type {
 } from '../types/assistant.ts';
 import {
   calculateAllocation,
+  computeAgencyMetrics,
   formatIqd,
   formatQuota,
   normalizeArabic,
@@ -31,6 +32,12 @@ export const ALLOWED_ASSISTANT_TOOLS: ReadonlySet<AssistantToolName> = new Set([
   'update_settings',
   'explain_feature',
   'run_diagnostics',
+  'run_morrow_macro',
+  'analyze_period_forecast',
+  'summon_workspace_canvas',
+  'simulate_what_if',
+  'executive_briefing',
+  'query_status_breakdown',
 ]);
 
 export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
@@ -297,7 +304,98 @@ export const ASSISTANT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
       },
     },
   },
+  {
+    name: 'run_morrow_macro',
+    description:
+      'تشغيل ماكرو متكامل متعدد الخطوات مثل «إغلاق الشهر»، «جرد الصباح»، أو «تجهيز كشف التوزيع» مع تجهيز مسودات الموافقة بأمان (Zero-Trust).',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        macroId: { type: Type.STRING, description: 'معرف الماكرو اختياري' },
+        triggerPhrase: {
+          type: Type.STRING,
+          description: 'اسم أو عبارة الماكرو مثل: إغلاق الشهر، جرد الصباح، تجهيز كشف التوزيع',
+        },
+      },
+    },
+  },
+  {
+    name: 'analyze_period_forecast',
+    description:
+      'تحليل وتوقع تغيرات الحصة القادمة مقارنة بأرشيف الشهر السابق وحساب الأكياس والأرباح المتوقعة ومؤشرات المخاطر.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        agencyId: { type: Type.INTEGER, description: 'اختياري لوكالة معينة' },
+      },
+    },
+  },
+  {
+    name: 'summon_workspace_canvas',
+    description:
+      'استدعاء أو فتح اللوحة التفاعلية في مركز Morrow على تبويب محدد (الرسوم البيانية، تعديل الجدول، التقرير التنفيذي، التوقعات، محلل النصوص، أو استوديو الماكرو).',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        canvasMode: {
+          type: Type.STRING,
+          description:
+            'overview_charts | editable_table | executive_report | forecast | text_analysis | macro_studio',
+        },
+        agencyId: { type: Type.INTEGER, description: 'اختياري لتصفية وكالة محددة' },
+      },
+      required: ['canvasMode'],
+    },
+  },
+  {
+    name: 'simulate_what_if',
+    description:
+      'محاكاة سيناريوهات «ماذا لو» المالية والكمية دون تعديل قاعدة البيانات: اختبار أثر تغيير رسم الفرد أو حصة الفرد أو زيادة/نقصان عدد الأفراد على الأكياس والإيرادات وصافي الربح.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        agencyId: { type: Type.INTEGER, description: 'اختياري لوكالة معينة أو لجميع الوكالات' },
+        feePerIndividualIqd: { type: Type.NUMBER, description: 'رسم الفرد الافتراضي بالدينار' },
+        fixedCardFeeIqd: { type: Type.NUMBER, description: 'رسم البطاقة الافتراضي بالدينار' },
+        kgPerIndividual: { type: Type.NUMBER, description: 'حصة الفرد الافتراضية بالكغم' },
+        individualsDelta: { type: Type.INTEGER, description: 'تغيير عددي على الأفراد (+/-)' },
+        individualsDeltaPercent: { type: Type.NUMBER, description: 'نسبة التغيير المئوية على الأفراد (+/- %)' },
+      },
+    },
+  },
+  {
+    name: 'executive_briefing',
+    description:
+      'إيجاز يومي وتنفيذي ذكي يجمع ملخص الأكياس والأرباح وأكثر الوكالات نشاطاً ومخاطر الحجب وحالة السلامة.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        agencyId: { type: Type.INTEGER, description: 'اختياري لوكالة محددة' },
+      },
+    },
+  },
+  {
+    name: 'query_status_breakdown',
+    description:
+      'استعلام فوري عن قوائم العائلات حسب الحالة (المحجوبون، الحجب الجزئي، المؤرشفون، أو النشطون) مع الإحصائيات.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        status: { type: Type.STRING, description: 'blocked | partial | archived | active' },
+        agencyId: { type: Type.INTEGER, description: 'اختياري لوكالة محددة' },
+      },
+    },
+  },
 ];
+
+const VALID_CANVAS_MODES = new Set([
+  'overview_charts',
+  'editable_table',
+  'executive_report',
+  'forecast',
+  'text_analysis',
+  'macro_studio',
+]);
 
 const DANGEROUS_SQL_OR_CODE_RE =
   /(;\s*(drop|delete|truncate|alter|insert|update)\s+|union\s+select|<script|eval\s*\(|Function\s*\()/i;
@@ -341,6 +439,15 @@ export function validateToolCall(call: {
       sanitizedArgs[k] = enforceSafeArabicTerminology(v.trim());
     } else {
       sanitizedArgs[k] = v;
+    }
+  }
+
+  if (name === 'summon_workspace_canvas') {
+    const modeStr = String(sanitizedArgs.canvasMode || '').trim();
+    if (!VALID_CANVAS_MODES.has(modeStr)) {
+      sanitizedArgs.canvasMode = 'overview_charts';
+    } else {
+      sanitizedArgs.canvasMode = modeStr;
     }
   }
 
@@ -728,4 +835,182 @@ export function buildBeforeAfterDiff(
   }
 
   return null;
+}
+
+export interface WhatIfSimulationResult {
+  scopeName: string;
+  agencyId: number | null;
+  scenarioLabel: string;
+  current: {
+    activeHouseholds: number;
+    activeIndividuals: number;
+    fullBags: number;
+    remainderKg: number;
+    totalKg: number;
+    revenue: number;
+    totalExpenses: number;
+    profit: number;
+  };
+  simulated: {
+    activeHouseholds: number;
+    activeIndividuals: number;
+    fullBags: number;
+    remainderKg: number;
+    totalKg: number;
+    revenue: number;
+    totalExpenses: number;
+    profit: number;
+  };
+  deltas: {
+    individuals: number;
+    bags: number;
+    totalKg: number;
+    revenue: number;
+    profit: number;
+  };
+  simulatedSettingsPatch?: Record<string, unknown>;
+}
+
+export function computeWhatIfSimulation(
+  state: AppDatabaseState,
+  args: Record<string, unknown>
+): WhatIfSimulationResult {
+  const ag = findAgencyByIdOrFallback(state, args.agencyId);
+  const scopedPersons = ag
+    ? state.persons.filter((p) => p.agencyId === ag.id)
+    : state.persons;
+  const scopedExpenses = ag
+    ? state.expenses.filter((e) => e.agencyId === ag.id)
+    : state.expenses;
+
+  const baseSettings = state.calculationSettings;
+  const current = computeAgencyMetrics(scopedPersons, scopedExpenses, baseSettings);
+
+  const nextSettings = {
+    ...baseSettings,
+    ...(args.feePerIndividualIqd !== undefined &&
+    Number.isFinite(Number(args.feePerIndividualIqd))
+      ? { feePerIndividualIqd: Math.max(0, Number(args.feePerIndividualIqd)) }
+      : {}),
+    ...(args.fixedCardFeeIqd !== undefined &&
+    Number.isFinite(Number(args.fixedCardFeeIqd))
+      ? { fixedCardFeeIqd: Math.max(0, Number(args.fixedCardFeeIqd)) }
+      : {}),
+    ...(args.kgPerIndividual !== undefined &&
+    Number.isFinite(Number(args.kgPerIndividual))
+      ? { kgPerIndividual: Math.max(0.5, Number(args.kgPerIndividual)) }
+      : {}),
+  };
+
+  const pct = Number(args.individualsDeltaPercent);
+  const absDelta = Number(args.individualsDelta);
+  const hasPct = Number.isFinite(pct) && pct !== 0;
+  const hasAbs = Number.isFinite(absDelta) && absDelta !== 0;
+
+  let simulatedPersons = scopedPersons;
+  if (hasPct || hasAbs) {
+    const activeList = scopedPersons.filter(
+      (p) => p.blockType !== 'full' && p.blockType !== 'archived'
+    );
+    const activeCount = Math.max(1, activeList.length);
+    const perRowExtra = hasAbs ? absDelta / activeCount : 0;
+
+    simulatedPersons = scopedPersons.map((p) => {
+      if (p.blockType === 'full' || p.blockType === 'archived') return p;
+      const baseInd = Math.max(0, p.individuals ?? 0);
+      const scaled = hasPct ? baseInd * (1 + pct / 100) : baseInd;
+      const nextInd = Math.max(0, Math.round(scaled + perRowExtra));
+      return { ...p, individuals: nextInd };
+    });
+
+    // If absolute delta is small and rounding left total individuals off, apply remainder to first active row
+    if (hasAbs && !hasPct) {
+      const targetTotalInd = Math.max(0, current.activeIndividuals + Math.round(absDelta));
+      const actualSimInd = simulatedPersons
+        .filter((p) => p.blockType !== 'full' && p.blockType !== 'archived')
+        .reduce((acc, p) => {
+          const partialBlocked = p.blockType === 'partial' ? p.blockedIndividuals ?? 0 : 0;
+          return acc + Math.max(0, (p.individuals ?? 0) - partialBlocked);
+        }, 0);
+      const diff = targetTotalInd - actualSimInd;
+      if (diff !== 0) {
+        const firstIdx = simulatedPersons.findIndex(
+          (p) => p.blockType !== 'full' && p.blockType !== 'archived'
+        );
+        if (firstIdx >= 0) {
+          simulatedPersons = simulatedPersons.map((p, idx) =>
+            idx === firstIdx
+              ? { ...p, individuals: Math.max(0, (p.individuals ?? 0) + diff) }
+              : p
+          );
+        }
+      }
+    }
+  }
+
+  const simulated = computeAgencyMetrics(
+    simulatedPersons,
+    scopedExpenses,
+    nextSettings
+  );
+
+  const labelParts: string[] = [];
+  const simulatedSettingsPatch: Record<string, unknown> = {};
+  if (nextSettings.feePerIndividualIqd !== baseSettings.feePerIndividualIqd) {
+    labelParts.push(`رسم الفرد ${formatIqd(nextSettings.feePerIndividualIqd)}`);
+    simulatedSettingsPatch.feePerIndividualIqd = nextSettings.feePerIndividualIqd;
+  }
+  if (nextSettings.fixedCardFeeIqd !== baseSettings.fixedCardFeeIqd) {
+    labelParts.push(`رسم البطاقة ${formatIqd(nextSettings.fixedCardFeeIqd)}`);
+    simulatedSettingsPatch.fixedCardFeeIqd = nextSettings.fixedCardFeeIqd;
+  }
+  if (nextSettings.kgPerIndividual !== baseSettings.kgPerIndividual) {
+    labelParts.push(`حصة الفرد ${nextSettings.kgPerIndividual} كغم`);
+    simulatedSettingsPatch.kgPerIndividual = nextSettings.kgPerIndividual;
+  }
+  if (hasPct) {
+    labelParts.push(`${pct > 0 ? 'زيادة' : 'نقص'} الأفراد بنسبة ${Math.abs(pct)}%`);
+  }
+  if (hasAbs) {
+    labelParts.push(
+      `${absDelta > 0 ? 'إضافة' : 'خصم'} ${Math.abs(Math.round(absDelta))} فرد`
+    );
+  }
+
+  return {
+    scopeName: ag ? ag.name : 'جميع الوكالات',
+    agencyId: ag?.id ?? null,
+    scenarioLabel: labelParts.length > 0 ? labelParts.join(' · ') : 'السيناريو الافتراضي',
+    current: {
+      activeHouseholds: current.activeHouseholds,
+      activeIndividuals: current.activeIndividuals,
+      fullBags: current.fullBags,
+      remainderKg: current.remainderKg,
+      totalKg: current.totalKg,
+      revenue: current.revenue,
+      totalExpenses: current.totalExpenses,
+      profit: current.profit,
+    },
+    simulated: {
+      activeHouseholds: simulated.activeHouseholds,
+      activeIndividuals: simulated.activeIndividuals,
+      fullBags: simulated.fullBags,
+      remainderKg: simulated.remainderKg,
+      totalKg: simulated.totalKg,
+      revenue: simulated.revenue,
+      totalExpenses: simulated.totalExpenses,
+      profit: simulated.profit,
+    },
+    deltas: {
+      individuals: simulated.activeIndividuals - current.activeIndividuals,
+      bags: simulated.fullBags - current.fullBags,
+      totalKg: simulated.totalKg - current.totalKg,
+      revenue: simulated.revenue - current.revenue,
+      profit: simulated.profit - current.profit,
+    },
+    simulatedSettingsPatch:
+      Object.keys(simulatedSettingsPatch).length > 0
+        ? simulatedSettingsPatch
+        : undefined,
+  };
 }

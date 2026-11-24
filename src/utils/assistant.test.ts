@@ -9,6 +9,7 @@ import {
   MORROW_LOCAL_MODEL_ID,
   SIX_FREE_CLOUD_MODELS,
   formatMatrixAsCsvMarkdown,
+  resolveCollaborativeReviewerChain,
   resolveOrderedTaskChain,
 } from '../aiConfig';
 import {
@@ -57,6 +58,7 @@ import {
 import {
   buildBeforeAfterDiff,
   cloneReadOnlySandbox,
+  computeWhatIfSimulation,
   validateToolCall,
 } from './assistantTools';
 import {
@@ -971,4 +973,315 @@ test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-bre
   resetModelHealthRegistry();
 });
 
+test('validateToolCall validates and sanitizes run_morrow_macro, analyze_period_forecast, and summon_workspace_canvas', () => {
+  const validMacro = validateToolCall({
+    name: 'run_morrow_macro',
+    args: { triggerPhrase: 'إغلاق الشهر' },
+  });
+  assert.equal(validMacro.valid, true);
+  assert.equal(validMacro.sanitized?.args.triggerPhrase, 'إغلاق الشهر');
 
+  const validForecast = validateToolCall({
+    name: 'analyze_period_forecast',
+    args: { agencyId: 1 },
+  });
+  assert.equal(validForecast.valid, true);
+  assert.equal(validForecast.sanitized?.args.agencyId, 1);
+
+  const validCanvas = validateToolCall({
+    name: 'summon_workspace_canvas',
+    args: { canvasMode: 'text_analysis', agencyId: 2 },
+  });
+  assert.equal(validCanvas.valid, true);
+  assert.equal(validCanvas.sanitized?.args.canvasMode, 'text_analysis');
+  assert.equal(validCanvas.sanitized?.args.agencyId, 2);
+
+  // Invalid canvasMode safely falls back to overview_charts
+  const invalidCanvasMode = validateToolCall({
+    name: 'summon_workspace_canvas',
+    args: { canvasMode: 'unknown_panel' },
+  });
+  assert.equal(invalidCanvasMode.valid, true);
+  assert.equal(invalidCanvasMode.sanitized?.args.canvasMode, 'overview_charts');
+
+  // SQL/XSS payloads rejected even on new tools
+  const badMacroXss = validateToolCall({
+    name: 'run_morrow_macro',
+    args: { triggerPhrase: '<script>alert(1)</script>' },
+  });
+  assert.equal(badMacroXss.valid, false);
+});
+
+test('normalizeAssistantSettings preserves collaborationMode and resolveCollaborativeReviewerChain picks complementary models', () => {
+  assert.equal(normalizeAssistantSettings({}).collaborationMode, 'council_review');
+  assert.equal(
+    normalizeAssistantSettings({ collaborationMode: 'multi_step_agent' }).collaborationMode,
+    'multi_step_agent'
+  );
+  assert.equal(
+    normalizeAssistantSettings({ collaborationMode: 'single' }).collaborationMode,
+    'single'
+  );
+  assert.equal(
+    normalizeAssistantSettings({ collaborationMode: 'bad_value' as never }).collaborationMode,
+    'council_review'
+  );
+
+  const reviewFor38 = resolveCollaborativeReviewerChain('gemini-3.8-flash', 'command_orchestration');
+  assert.ok(reviewFor38.length >= 2);
+  assert.equal(reviewFor38.includes('gemini-3.8-flash'), false);
+  assert.equal(reviewFor38[0], 'nvidia/nemotron-3.5-super-vl:free');
+
+  const reviewForNemotron = resolveCollaborativeReviewerChain(
+    'nvidia/nemotron-3.5-super-vl:free',
+    'heavy_pdf_vision'
+  );
+  assert.equal(reviewForNemotron.includes('nvidia/nemotron-3.5-super-vl:free'), false);
+  assert.equal(reviewForNemotron[0], 'gemini-3.8-flash');
+});
+
+test('offline brain and executor handle forecast, macro execution (zero-trust drafts), and workspace canvas summoning', () => {
+  const state = makeSeedState();
+  const uiContext = makeTestContext(state);
+  const initialPersonCount = state.persons.length;
+
+  let openedCanvasMode = '';
+  const runtime: AssistantActionRuntime = {
+    state,
+    uiContext,
+    mutations: {
+      addPersonDirect: () => {},
+      updatePersonConfirmed: () => {},
+      createReadyList: () => 1,
+      addPersonsToReadyList: () => 1,
+      addExpense: () => {},
+      upsertRelationEntry: () => {},
+    },
+    navigate: () => {},
+    selectAgency: () => {},
+    focusPerson: () => {},
+    issueTableCommand: () => {},
+    triggerSpotlight: () => {},
+    openCanvasMode: (canvasMode) => {
+      openedCanvasMode = canvasMode;
+    },
+    setModeTier: () => {},
+    setAppTheme: () => {},
+    setDarkTheme: () => {},
+    setAllowCloudNames: () => {},
+    saveUserPref: () => {},
+    deleteUserPref: () => {},
+    applyAutoFixes: () => ({ fixedCount: 0, summaryLines: [] }),
+    exportBackupJson: () => {},
+    archiveCurrentPeriod: () => {},
+    addQuickNote: ({ text }) => ({
+      id: 'qn_test',
+      text,
+      source: 'text',
+      createdAt: new Date().toISOString(),
+      syncedToPersonNotes: false,
+    }),
+  };
+
+  // 1. Forecast tool end-to-end
+  const forecastOutcome = runOfflineBrain({
+    prompt: 'توقعات الشهر القادم',
+    state,
+    uiContext,
+  });
+  assert.equal(forecastOutcome.handled, true);
+  assert.equal(forecastOutcome.toolCall?.name, 'analyze_period_forecast');
+  const forecastExec = resolveToolExecution(forecastOutcome.toolCall!, runtime);
+  assert.equal(forecastExec.gracefulLevel, 'A');
+  assert.ok(forecastExec.resultCard);
+  assert.equal(forecastExec.canvasHandoff?.canvasMode, 'forecast');
+
+  // 2. Macro execution end-to-end (non-mutating, prepares drafts for approval)
+  const macroOutcome = runOfflineBrain({
+    prompt: 'شغل ماكرو إغلاق الشهر',
+    state,
+    uiContext,
+  });
+  assert.equal(macroOutcome.handled, true);
+  assert.equal(macroOutcome.toolCall?.name, 'run_morrow_macro');
+  const macroExec = resolveToolExecution(macroOutcome.toolCall!, runtime);
+  assert.equal(macroExec.gracefulLevel, 'A');
+  assert.ok(macroExec.resultCard);
+  assert.equal(macroExec.canvasHandoff?.canvasMode, 'macro_studio');
+  assert.ok((macroExec.extraDraftTools?.length || 0) >= 1);
+  assert.equal(state.persons.length, initialPersonCount);
+
+  // 3. Summon workspace canvas end-to-end
+  const summonOutcome = runOfflineBrain({
+    prompt: 'افتح محلل النصوص',
+    state,
+    uiContext,
+  });
+  assert.equal(summonOutcome.handled, true);
+  assert.equal(summonOutcome.toolCall?.name, 'summon_workspace_canvas');
+  const summonExec = resolveToolExecution(summonOutcome.toolCall!, runtime);
+  assert.equal(summonExec.gracefulLevel, 'A');
+  assert.equal(openedCanvasMode, 'text_analysis');
+  assert.equal(summonExec.canvasHandoff?.canvasMode, 'text_analysis');
+});
+
+test('computeWhatIfSimulation simulates fee, percentage headcount, and kg deltas without mutating state', () => {
+  const state = makeSeedState();
+  const baseFee = state.calculationSettings.feePerIndividualIqd;
+  const targetFee = baseFee + 250;
+  const snapshotBefore = JSON.stringify(state);
+
+  const feeSim = computeWhatIfSimulation(state, { feePerIndividualIqd: targetFee });
+  assert.ok(feeSim.simulated.revenue > feeSim.current.revenue);
+  assert.equal(feeSim.deltas.profit, feeSim.deltas.revenue);
+  assert.equal(feeSim.simulatedSettingsPatch?.feePerIndividualIqd, targetFee);
+  assert.equal(feeSim.deltas.individuals, 0);
+
+  const pctSim = computeWhatIfSimulation(state, { individualsDeltaPercent: 10 });
+  assert.ok(pctSim.simulated.activeIndividuals > pctSim.current.activeIndividuals);
+  assert.ok(pctSim.deltas.totalKg > 0);
+  assert.equal(pctSim.simulatedSettingsPatch, undefined);
+
+  const kgSim = computeWhatIfSimulation(state, { kgPerIndividual: 11 });
+  assert.notEqual(kgSim.deltas.totalKg, 0);
+  assert.equal(kgSim.simulatedSettingsPatch?.kgPerIndividual, 11);
+
+  assert.equal(JSON.stringify(state), snapshotBefore);
+});
+
+test('offline brain and executor handle What-If simulation, Executive Briefing, and status breakdown while preserving stealth filter', () => {
+  const state = makeSeedState();
+  const sample = state.persons[0];
+  const blockedSample = {
+    ...sample,
+    blockType: 'full' as const,
+    blockedIndividuals: sample.individuals ?? 4,
+    status: 'محجوب' as const,
+    blockReason: 'مراجعة',
+  };
+  const testState = {
+    ...state,
+    persons: [blockedSample, ...state.persons.slice(1)],
+  };
+  const uiContext = makeTestContext(testState);
+
+  const runtime: AssistantActionRuntime = {
+    state: testState,
+    uiContext,
+    mutations: {
+      addPersonDirect: () => {},
+      updatePersonConfirmed: () => {},
+      createReadyList: () => 1,
+      addPersonsToReadyList: () => 1,
+      addExpense: () => {},
+      upsertRelationEntry: () => {},
+    },
+    navigate: () => {},
+    selectAgency: () => {},
+    focusPerson: () => {},
+    issueTableCommand: () => {},
+    triggerSpotlight: () => {},
+    openCanvasMode: () => {},
+    setModeTier: () => {},
+    setAppTheme: () => {},
+    setDarkTheme: () => {},
+    setAllowCloudNames: () => {},
+    saveUserPref: () => {},
+    deleteUserPref: () => {},
+    applyAutoFixes: () => ({ fixedCount: 0, summaryLines: [] }),
+    exportBackupJson: () => {},
+    archiveCurrentPeriod: () => {},
+    addQuickNote: ({ text }) => ({
+      id: 'qn_test',
+      text,
+      source: 'text',
+      createdAt: new Date().toISOString(),
+      syncedToPersonNotes: false,
+    }),
+  };
+
+  // 1. Fee simulation: "ماذا لو رسم الفرد 500"
+  const whatIfFee = runOfflineBrain({
+    prompt: 'ماذا لو رسم الفرد 500',
+    state: testState,
+    uiContext,
+  });
+  assert.equal(whatIfFee.handled, true);
+  assert.equal(whatIfFee.toolCall?.name, 'simulate_what_if');
+  assert.equal(whatIfFee.toolCall?.args.feePerIndividualIqd, 500);
+  const whatIfExec = resolveToolExecution(whatIfFee.toolCall!, runtime);
+  assert.equal(whatIfExec.gracefulLevel, 'A');
+  assert.ok(whatIfExec.resultCard);
+  assert.ok(
+    whatIfExec.choices?.some((c) =>
+      String(c.payload?.prompt || '').includes('خلّي رسم الفرد 500')
+    )
+  );
+
+  // 2. Headcount percentage simulation: "لو زادوا الأفراد 10%"
+  const whatIfPct = runOfflineBrain({
+    prompt: 'لو زادوا الأفراد 10%',
+    state: testState,
+    uiContext,
+  });
+  assert.equal(whatIfPct.handled, true);
+  assert.equal(whatIfPct.toolCall?.name, 'simulate_what_if');
+  assert.equal(whatIfPct.toolCall?.args.individualsDeltaPercent, 10);
+
+  // 3. Executive briefing: "أعطني ملخص اليوم"
+  const briefing = runOfflineBrain({
+    prompt: 'أعطني ملخص اليوم',
+    state: testState,
+    uiContext,
+  });
+  assert.equal(briefing.handled, true);
+  assert.equal(briefing.toolCall?.name, 'executive_briefing');
+  const briefingExec = resolveToolExecution(briefing.toolCall!, runtime);
+  assert.equal(briefingExec.gracefulLevel, 'A');
+  assert.ok(briefingExec.resultCard);
+  assert.ok(briefingExec.canvasHandoff);
+
+  // 4. Analytical status breakdown: "من هم المحجوبين"
+  const statusQ = runOfflineBrain({
+    prompt: 'من هم المحجوبين',
+    state: testState,
+    uiContext,
+  });
+  assert.equal(statusQ.handled, true);
+  assert.equal(statusQ.toolCall?.name, 'query_status_breakdown');
+  const statusExec = resolveToolExecution(statusQ.toolCall!, runtime);
+  assert.equal(statusExec.gracefulLevel, 'A');
+  assert.ok(statusExec.replyText.includes('المحجوبة'));
+  assert.ok(statusExec.choices?.some((c) => c.actionType === 'select_person'));
+
+  // 5. Stealth filter preserved for imperative command: "اعرض المحجوبين"
+  const stealthFilter = runOfflineBrain({
+    prompt: 'اعرض المحجوبين',
+    state: testState,
+    uiContext,
+  });
+  assert.equal(stealthFilter.handled, true);
+  assert.equal(stealthFilter.stealthAutoExecute, true);
+  assert.equal(stealthFilter.toolCall?.name, 'filter_sort_table');
+  assert.equal(stealthFilter.toolCall?.args.statusFilter, 'blocked');
+});
+
+test('normalizeAssistantSettings preserves valid responseStyle and defaults invalid values to balanced', () => {
+  assert.equal(normalizeAssistantSettings({}).responseStyle, 'balanced');
+  assert.equal(
+    normalizeAssistantSettings({ responseStyle: 'financial_auditor' }).responseStyle,
+    'financial_auditor'
+  );
+  assert.equal(
+    normalizeAssistantSettings({ responseStyle: 'concise' }).responseStyle,
+    'concise'
+  );
+  assert.equal(
+    normalizeAssistantSettings({ responseStyle: 'deep_advisor' }).responseStyle,
+    'deep_advisor'
+  );
+  assert.equal(
+    normalizeAssistantSettings({ responseStyle: 'unknown_style' as never }).responseStyle,
+    'balanced'
+  );
+});
