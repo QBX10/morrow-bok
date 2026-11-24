@@ -28,6 +28,7 @@ import {
   searchHierarchyNodes,
 } from '../utils/hierarchyRegistry.ts';
 import { SectionLogo } from './settings/sectionLogos';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 interface CommandPaletteModalProps {
   open: boolean;
@@ -154,9 +155,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         ? [
             {
               id: 'cmd_world_switcher',
-              group: 'الأكوان والعوالم',
-              label: 'مبدّل العوالم الـ14 والخريطة المدارية',
-              sublabel: 'الانتقال السريع بين كل عوالم التطبيق وإدارة ظهورها',
+              group: 'التنقل والأقسام',
+              label: 'دليل أقسام النظام والخريطة التفاعلية',
+              sublabel: 'الانتقال السريع بين كل أقسام التطبيق وإدارة ظهورها',
               icon: <Globe2 className="h-4 w-4" />,
               onRun: () => {
                 onClose();
@@ -189,8 +190,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'cmd_settings_hub',
-        group: 'الإعدادات الهرمية',
-        label: 'فتح الإعدادات الشاملة (ملء الشاشة — نظام الكبسولات)',
+        group: 'الإعدادات',
+        label: 'فتح مركز الإعدادات الشامل (ملء الشاشة)',
         sublabel: 'استوديو المظهر، الخطوط، الحاسبة (250 د.ع)، السحب الذكي، والأمان',
         icon: <Zap className="h-4 w-4" />,
         onRun: () => {
@@ -199,10 +200,21 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'cmd_account_security',
+        group: 'الحساب والأمان',
+        label: 'الحساب والبيانات والأمان (التصدير المنظم، النسخ الذكي، والملاحظات)',
+        sublabel: 'إدارة الحسابات، السحابة، تصدير بياناتك، قفل الخصوصية وسلة الاسترجاع',
+        icon: <UserCheck className="h-4 w-4" />,
+        onRun: () => {
+          onNavigateView('account_security');
+          onClose();
+        },
+      },
+      {
         id: 'cmd_settings_calc',
-        group: 'الإعدادات الهرمية',
+        group: 'الإعدادات',
         label: 'ضبط حاسبة الجدول (رسم الفرد: 250 د.ع)',
-        sublabel: 'الانتقال مباشرة إلى كبسولة الحاسبة ومعادلات الحصص',
+        sublabel: 'الانتقال مباشرة إلى قسم الحاسبة ومعادلات الحصص',
         icon: <ArrowLeft className="h-4 w-4" />,
         onRun: () => {
           onNavigateView('settings', 'calculator');
@@ -263,7 +275,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         seenTitles.add(labelNorm);
         results.push({
           id: `cosmos_${hit.node.id}`,
-          group: `أكوان وعوالم · ${hit.matchedReason}`,
+          group: `الأقسام والأدوات · ${hit.matchedReason}`,
           label: hit.node.title,
           sublabel: hit.path.map((n) => n.title).join(' ◂ '),
           icon: (
@@ -390,23 +402,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="لوحة الأوامر السريعة — Morrow"
-      data-testid="command-palette-modal"
-      className="fixed inset-0 z-[80] flex items-start justify-center bg-black/55 px-4 pt-[10vh] backdrop-blur-sm"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title="لوحة الأوامر السريعة — Morrow"
+      subtitle="تنفيذ الأوامر الذكية، البحث الفوري، والتبديل بين الأدمغة"
+      icon={<Search className="h-4 w-4" />}
+      ariaLabel="لوحة الأوامر السريعة — Morrow"
+      maxWidthClass="max-w-3xl"
+      zIndexClass="z-[80]"
     >
       <div
-        className="w-full max-w-2xl overflow-hidden rounded-2xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
+        data-testid="command-palette-modal"
+        className="nexus-squircle overflow-hidden"
         onKeyDown={handleKeyDown}
       >
         {/* Top Command Input */}
@@ -424,24 +432,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             aria-label="حقل الأوامر السريعة"
             className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none"
           />
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق لوحة الأوامر"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         {/* 3-Brain Mode Selector Strip */}
         <div
-          className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-[11px]"
+          className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 text-[11px]"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -450,7 +445,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           <span className="font-bold" style={{ color: 'var(--text-muted)' }}>
             توجيه الدماغ الذكي:
           </span>
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
                 { id: 'auto', label: 'تلقائي ذكي', icon: <Bot className="h-3 w-3" /> },
@@ -468,11 +463,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   key={opt.id}
                   type="button"
                   onClick={() => onChangeBrainMode(opt.id)}
-                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 font-bold whitespace-nowrap shrink-0 transition-colors"
+                  className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 font-bold whitespace-nowrap shrink-0"
                   style={{
-                    backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
-                    borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                    color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                    backgroundColor: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--bg-surface)',
+                    borderColor: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--border-color)',
+                    color: active ? '#FFFFFF' : 'var(--text-primary)',
                   }}
                 >
                   {opt.icon}
@@ -484,7 +479,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         </div>
 
         {/* Results & Actions List */}
-        <div className="max-h-[54vh] overflow-y-auto p-2 space-y-1">
+        <div className="p-2.5 space-y-1.5">
           {entries.map((item, idx) => {
             const isSelected = idx === activeIndex;
             return (
@@ -562,6 +557,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           </span>
         </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

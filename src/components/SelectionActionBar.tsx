@@ -39,6 +39,7 @@ import {
   type SmartCopyMode,
 } from '../utils/selectionActions';
 import { SnippetExportModal } from './modals/SnippetExportModal';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 export interface SelectablePersonRecord {
   selectionKey: string;
@@ -137,13 +138,13 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   const [batchEditOpen, setBatchEditOpen] = useState(false);
   const [createListOpen, setCreateListOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [copyMenuOpen, setCopyMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [lastDeletedBanner, setLastDeletedBanner] = useState<{
     count: number;
   } | null>(null);
   const [exportingImg, setExportingImg] = useState(false);
-  const copyMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Batch status & category edit state
   const [batchBlockType, setBatchBlockType] = useState<'keep' | BlockScope>('keep');
@@ -186,15 +187,15 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   );
 
   useEffect(() => {
-    if (!copyMenuOpen) return;
+    if (!moreMenuOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (copyMenuRef.current && !copyMenuRef.current.contains(e.target as Node)) {
-        setCopyMenuOpen(false);
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [copyMenuOpen]);
+  }, [moreMenuOpen]);
 
   const aggregates = useMemo(
     () => computeSelectionAggregates(selectedRecords, calculationSettings),
@@ -264,7 +265,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   };
 
   const handleCopyMode = async (mode: SmartCopyMode = 'details_table') => {
-    setCopyMenuOpen(false);
+    setMoreMenuOpen(false);
     const text = formatSelectedRecordsCopy(
       selectedRecords,
       mode,
@@ -318,23 +319,22 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
 
   return (
     <section
-      aria-label="شريط الإجراءات العلوي للمحددين"
+      aria-label="شريط إجراءات التحديد المنظم"
       data-testid="selection-action-bar"
-      className="no-print md:sticky md:top-2 z-[35] space-y-2.5 rounded-xl border p-3 shadow-md"
+      className="no-print nexus-glass-lite md:sticky md:top-2 z-[35] space-y-2 rounded-3xl border px-3.5 py-2.5"
       style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderColor: 'var(--accent)',
+        borderColor: 'color-mix(in srgb, var(--accent) 55%, var(--border-color))',
         color: 'var(--text-primary)',
       }}
     >
-      {/* Top Row: Selection Count + Live Multi-Metric Aggregates */}
+      {/* Compact Single Summary Strip */}
       <div
-        className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5 text-xs"
+        className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-xs"
         style={{ borderColor: 'var(--border-color)' }}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span
-            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold tabular-nums whitespace-nowrap"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2.5 font-extrabold tabular-nums whitespace-nowrap"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
@@ -348,7 +348,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             <button
               type="button"
               onClick={onSelectAll}
-              className="min-h-[34px] rounded-lg border px-2.5 py-1 font-semibold whitespace-nowrap hover:opacity-85"
+              className="living-control h-7 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -363,63 +363,89 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             onClick={() => {
               setShowQuickDetails(false);
               setConfirmDeleteOpen(false);
+              setMoreMenuOpen(false);
               onClearSelection();
             }}
-            className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 font-semibold whitespace-nowrap hover:opacity-85"
+            className="living-control inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-bold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
               color: 'var(--text-muted)',
             }}
           >
-            <X className="h-3.5 w-3.5" />
-            <span>إلغاء التحديد</span>
+            <X className="h-3 w-3" />
+            <span>إلغاء</span>
           </button>
         </div>
 
-        {/* Live Aggregate Totals Strip */}
+        {/* Concise Live Totals */}
         <div
           data-testid="selection-aggregates-strip"
-          className="flex flex-wrap items-center gap-3 text-xs tabular-nums"
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums"
         >
-          <div className="flex items-center gap-1">
-            <span style={{ color: 'var(--text-muted)' }}>صافي الأفراد:</span>
-            <span className="font-extrabold">
-              {aggregates.totalEligibleIndividuals} فرد
-            </span>
-          </div>
-          <span style={{ color: 'var(--border-color)' }}>|</span>
-          <div className="flex items-center gap-1">
-            <span style={{ color: 'var(--text-muted)' }}>إجمالي الحصة:</span>
-            <span className="font-extrabold" style={{ color: 'var(--accent)' }}>
+          <span>
+            <span style={{ color: 'var(--text-muted)' }}>الأفراد: </span>
+            <strong className="font-extrabold">
+              {aggregates.totalEligibleIndividuals}
+            </strong>
+          </span>
+          <span style={{ color: 'var(--border-color)' }}>·</span>
+          <span>
+            <span style={{ color: 'var(--text-muted)' }}>الحصة: </span>
+            <strong className="font-extrabold" style={{ color: 'var(--accent)' }}>
               {aggregates.quotaLabel}
-            </span>
-          </div>
-          <span style={{ color: 'var(--border-color)' }}>|</span>
-          <div className="flex items-center gap-1">
-            <span style={{ color: 'var(--text-muted)' }}>إجمالي المبلغ:</span>
-            <span className="font-extrabold" style={{ color: 'var(--success)' }}>
+            </strong>
+          </span>
+          <span style={{ color: 'var(--border-color)' }}>·</span>
+          <span>
+            <span style={{ color: 'var(--text-muted)' }}>المبلغ: </span>
+            <strong className="font-extrabold" style={{ color: 'var(--success)' }}>
               {aggregates.priceLabel}
-            </span>
-          </div>
+            </strong>
+          </span>
           {aggregates.blockedRecordsCount > 0 && (
             <>
-              <span style={{ color: 'var(--border-color)' }}>|</span>
+              <span style={{ color: 'var(--border-color)' }}>·</span>
               <span className="font-bold" style={{ color: 'var(--warning)' }}>
-                {aggregates.blockedRecordsCount} مستبعد/محجوب
+                {aggregates.blockedRecordsCount} محجوب
               </span>
             </>
           )}
         </div>
       </div>
 
-      {/* Action Buttons Row */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+      {/* Primary Actions (Max 4) + Clean "المزيد ▾" Overflow Menu */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
+          {!readOnlyArchiveMode &&
+            linkedPersonIds.length > 0 &&
+            onBulkUpdateStatusAndCategory && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBatchBlockType('keep');
+                  setBatchCategory('__keep__');
+                  setBatchBlockReason('');
+                  setBatchEditOpen(true);
+                }}
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <SlidersHorizontal
+                  className="h-3.5 w-3.5"
+                  style={{ color: 'var(--accent)' }}
+                />
+                <span>تعديل جماعي</span>
+              </button>
+            )}
+
           <button
             type="button"
             onClick={() => setShowQuickDetails((v) => !v)}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
             style={{
               backgroundColor: showQuickDetails
                 ? 'var(--bg-nav-active)'
@@ -434,19 +460,6 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             <span>إظهار التفاصيل</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setFullInfoOpen(true)}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <FileText className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-            <span>معلومات كاملة</span>
-          </button>
-
           {!readOnlyArchiveMode && (
             <button
               type="button"
@@ -457,7 +470,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 }
                 setMoveModalOpen(true);
               }}
-              className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -468,122 +481,33 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             </button>
           )}
 
-          {!readOnlyArchiveMode &&
-            linkedPersonIds.length > 0 &&
-            onBulkUpdateStatusAndCategory && (
-              <button
-                type="button"
-                onClick={() => {
-                  setBatchBlockType('keep');
-                  setBatchCategory('__keep__');
-                  setBatchBlockReason('');
-                  setBatchEditOpen(true);
-                }}
-                className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <SlidersHorizontal
-                  className="h-3.5 w-3.5"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <span>تعديل جماعي</span>
-              </button>
-            )}
+          {/* Overflow Menu ("المزيد ▾") housing all secondary tools cleanly */}
+          <div ref={moreMenuRef} className="relative">
+            <button
+              type="button"
+              data-testid="selection-more-actions-btn"
+              aria-expanded={moreMenuOpen}
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-3.5 font-extrabold whitespace-nowrap"
+              style={{
+                backgroundColor: moreMenuOpen
+                  ? 'var(--bg-nav-active)'
+                  : 'var(--bg-main)',
+                borderColor: moreMenuOpen
+                  ? 'var(--accent)'
+                  : 'var(--border-color)',
+                color: moreMenuOpen ? 'var(--accent)' : 'var(--text-primary)',
+              }}
+            >
+              <span>المزيد</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
 
-          {!readOnlyArchiveMode &&
-            linkedPersonIds.length > 0 &&
-            onCreateReadyListFromSelection && (
-              <button
-                type="button"
-                onClick={() => {
-                  setNewReadyListName(
-                    `قائمة توزيع (${linkedPersonIds.length}) · ${new Date()
-                      .toISOString()
-                      .slice(0, 10)}`
-                  );
-                  setCreateListOpen(true);
-                }}
-                className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <FilePlus2
-                  className="h-3.5 w-3.5"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <span>إنشاء قائمة توزيع</span>
-              </button>
-            )}
-
-          <button
-            type="button"
-            onClick={() => setSnippetModalOpen(true)}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-3 py-1.5 font-bold whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--accent)',
-              color: 'var(--accent-fg)',
-            }}
-          >
-            <Scissors className="h-3.5 w-3.5" />
-            <span>تصدير حقل / قصاصة</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={exportingImg}
-            onClick={handleExportImage}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap disabled:opacity-50"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <ImageIcon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-            <span>{exportingImg ? 'جارٍ التحويل...' : 'تحويله كصورة'}</span>
-          </button>
-
-          {/* Smart Formatted Copy Dropdown */}
-          <div ref={copyMenuRef} className="relative">
-            <div className="inline-flex items-stretch">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex min-h-[36px] items-center gap-1 rounded-r-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <Copy className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>نسخ سريع</span>
-              </button>
-              <button
-                type="button"
-                aria-label="خيارات صيغة النسخ الذكي"
-                aria-expanded={copyMenuOpen}
-                onClick={() => setCopyMenuOpen((v) => !v)}
-                className="inline-flex min-h-[36px] items-center rounded-l-lg border border-r-0 px-2 py-1.5 font-bold"
-                style={{
-                  backgroundColor: copyMenuOpen
-                    ? 'var(--bg-nav-active)'
-                    : 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {copyMenuOpen && (
+            {moreMenuOpen && (
               <div
                 role="menu"
-                aria-label="صيغ النسخ الذكي"
-                className="absolute left-0 top-full z-40 mt-1.5 w-64 rounded-xl border p-1.5 shadow-xl space-y-1"
+                aria-label="إجراءات إضافية للتحديد"
+                className="tabrix-popover-enter absolute right-0 top-full z-40 mt-1.5 w-64 rounded-2xl border p-1.5 shadow-2xl space-y-1"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -593,68 +517,132 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => handleCopyMode('names_only')}
-                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    setFullInfoOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-right font-bold hover:bg-[var(--bg-main)]"
                 >
-                  <span className="font-bold">نسخ الأسماء فقط</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    قائمة مرقمة للأسماء المحددة دون أرقام
-                  </span>
+                  <FileText className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>معلومات كاملة ومفصلة</span>
                 </button>
+
+                {!readOnlyArchiveMode &&
+                  linkedPersonIds.length > 0 &&
+                  onCreateReadyListFromSelection && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        setNewReadyListName(
+                          `قائمة توزيع (${linkedPersonIds.length}) · ${new Date()
+                            .toISOString()
+                            .slice(0, 10)}`
+                        );
+                        setCreateListOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-right font-bold hover:bg-[var(--bg-main)]"
+                    >
+                      <FilePlus2 className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                      <span>إنشاء قائمة توزيع</span>
+                    </button>
+                  )}
+
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => handleCopyMode('details_table')}
-                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    setSnippetModalOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-right font-bold hover:bg-[var(--bg-main)]"
                 >
-                  <span className="font-bold">الأسماء + الأفراد + الحصة + المبلغ</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    تفاصيل الأكياس والكغم والمبالغ مع الإجمالي
-                  </span>
+                  <Scissors className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>تصدير حقل / قصاصة</span>
                 </button>
+
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => handleCopyMode('share_summary')}
-                  className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-right hover:bg-[var(--bg-main)]"
+                  disabled={exportingImg}
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    void handleExportImage();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-right font-bold hover:bg-[var(--bg-main)] disabled:opacity-50"
                 >
-                  <span className="font-bold">تقرير جاهز للمشاركة (واتساب / طباعة)</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    كشف منسق بعنوان وتاريخ ومجاميع ختامية
-                  </span>
+                  <ImageIcon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>{exportingImg ? 'جارٍ التحويل...' : 'تحويله كصورة'}</span>
                 </button>
+
+                {!readOnlyArchiveMode && linkedPersonIds.length > 0 && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      setRelNote('');
+                      setRelAddress('');
+                      setRelPhone('');
+                      setRelTime('');
+                      setRelationModalOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-right font-bold hover:bg-[var(--bg-main)]"
+                  >
+                    <HeartHandshake className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                    <span>إضافة للعلاقات</span>
+                  </button>
+                )}
+
+                <div
+                  className="my-1 border-t pt-1"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <div
+                    className="px-3 py-1 text-[10px] font-bold"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    نسخ سريع للحافظة
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleCopyMode('details_table')}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-right font-bold hover:bg-[var(--bg-main)]"
+                  >
+                    <Copy className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                    <span>البيانات + الحصة + المبلغ</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleCopyMode('names_only')}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-right font-bold hover:bg-[var(--bg-main)]"
+                  >
+                    <Copy className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                    <span>نسخ الأسماء فقط</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleCopyMode('share_summary')}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-right font-bold hover:bg-[var(--bg-main)]"
+                  >
+                    <Copy className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
+                    <span>تقرير جاهز للمشاركة</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
-
-          {!readOnlyArchiveMode && linkedPersonIds.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setRelNote('');
-                setRelAddress('');
-                setRelPhone('');
-                setRelTime('');
-                setRelationModalOpen(true);
-              }}
-              className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
-              style={{
-                backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-              }}
-            >
-              <HeartHandshake className="h-3.5 w-3.5" />
-              <span>إضافة للعلاقات</span>
-            </button>
-          )}
         </div>
 
         {!readOnlyArchiveMode && onBulkDeleteSelected && (
           <button
             type="button"
             onClick={() => setConfirmDeleteOpen((v) => !v)}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold whitespace-nowrap"
+            className="living-control inline-flex h-8 items-center gap-1 rounded-xl border px-3 font-extrabold whitespace-nowrap"
             style={{
               backgroundColor: confirmDeleteOpen
                 ? 'var(--danger)'
@@ -664,7 +652,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            <span>حذف المحدد ({selectedRecords.length})</span>
+            <span>حذف ({selectedRecords.length})</span>
           </button>
         )}
       </div>
@@ -796,39 +784,40 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
         </div>
       )}
 
-      {/* Full Info Modal */}
-      {fullInfoOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="المعلومات الكاملة والمفصلة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setFullInfoOpen(false)}
-        >
-          <div
-            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                معلومات كاملة ومفصلة ({selectedRecords.length})
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFullInfoOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
+      {/* Full Info Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={fullInfoOpen}
+        onClose={() => setFullInfoOpen(false)}
+        title={`معلومات كاملة ومفصلة (${selectedRecords.length})`}
+        subtitle="التفاصيل الكاملة للحصص والمبالغ والملاحظات والعلاقات المرتبطة"
+        icon={<FileText className="h-4 w-4" />}
+        maxWidthClass="max-w-3xl"
+        footer={
+          <div className="mx-auto flex max-w-3xl justify-end gap-2 text-xs">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 font-bold"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              <span>نسخ التقرير</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFullInfoOpen(false)}
+              className="nexus-pill-btn px-5 py-2 font-bold"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
+            >
+              إغلاق
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
               {selectedRecords.map((rec) => {
                 const eff = getEffectiveAllocationForPerson(
                   rec,
@@ -941,65 +930,19 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   </div>
                 );
               })}
-            </div>
-
-            <div className="mt-4 flex justify-end gap-2 text-xs">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 font-bold"
-                style={{ borderColor: 'var(--border-color)' }}
-              >
-                <Copy className="h-3.5 w-3.5" />
-                <span>نسخ التقرير</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setFullInfoOpen(false)}
-                className="rounded-lg px-4 py-2 font-bold"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
 
-      {/* Move Modal (To Another Agency OR To Ready List) */}
-      {moveModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="نقل الأسماء المحددة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setMoveModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                نقل أو إلحاق المحددين ({selectedRecords.length})
-              </h3>
-              <button
-                type="button"
-                onClick={() => setMoveModalOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Move Full-Screen Push Page (To Another Agency OR To Ready List) */}
+      <FullScreenPushPage
+        open={moveModalOpen}
+        onClose={() => setMoveModalOpen(false)}
+        title={`نقل أو إلحاق المحددين (${selectedRecords.length})`}
+        subtitle="إلحاق بقائمة جاهزة أو نقل إلى وكالة أخرى"
+        icon={<ArrowRightLeft className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
 
             {linkedPersonIds.length === 0 ? (
               <div className="space-y-3 text-xs">
@@ -1123,7 +1066,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   <button
                     type="button"
                     onClick={() => setMoveModalOpen(false)}
-                    className="rounded-lg border px-4 py-2 font-semibold"
+                    className="nexus-pill-btn border px-4 py-2 font-semibold"
                     style={{ borderColor: 'var(--border-color)' }}
                   >
                     إلغاء
@@ -1153,7 +1096,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                       }
                       setMoveModalOpen(false);
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold disabled:opacity-45"
+                    className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold disabled:opacity-45"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -1165,41 +1108,19 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 </div>
               </div>
             )}
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
 
-      {/* Add to Relationships Modal */}
-      {relationModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="إضافة المحددين إلى قسم العلاقات"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setRelationModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                إضافة إلى قسم العلاقات ({linkedPersonIds.length})
-              </h3>
-              <button
-                type="button"
-                onClick={() => setRelationModalOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Add to Relationships Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={relationModalOpen}
+        onClose={() => setRelationModalOpen(false)}
+        title={`إضافة إلى قسم العلاقات (${linkedPersonIds.length})`}
+        subtitle="تعيين تصنيف المتابعة أو التذكير أو التوصيل"
+        icon={<HeartHandshake className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
 
             <form
               onSubmit={(e) => {
@@ -1335,14 +1256,14 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 <button
                   type="button"
                   onClick={() => setRelationModalOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1353,19 +1274,19 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
 
-      {/* Batch Status & Category Modal */}
-      {batchEditOpen && onBulkUpdateStatusAndCategory && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="التعديل الجماعي للحالة والفئة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setBatchEditOpen(false)}
-        >
+      {/* Batch Status & Category Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={Boolean(batchEditOpen && onBulkUpdateStatusAndCategory)}
+        onClose={() => setBatchEditOpen(false)}
+        title={`تعديل جماعي للحالة والفئة (${linkedPersonIds.length})`}
+        subtitle="تطبيق حالة الحجب أو الفئة المخصصة على السجلات المحددة دفعة واحدة"
+        icon={<SlidersHorizontal className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        {onBulkUpdateStatusAndCategory && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1396,27 +1317,8 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               );
               setBatchEditOpen(false);
             }}
-            className="w-full max-w-md space-y-4 rounded-xl border p-5 text-xs shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="nexus-squircle p-5 space-y-4 text-xs"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                تعديل جماعي للحالة والفئة ({linkedPersonIds.length})
-              </h3>
-              <button
-                type="button"
-                onClick={() => setBatchEditOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
             <div>
               <label className="mb-1 block font-bold">تحديث الحالة / الحجب</label>
@@ -1500,7 +1402,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               <button
                 type="button"
                 onClick={() => setBatchEditOpen(false)}
-                className="rounded-lg border px-4 py-2 font-semibold"
+                className="nexus-pill-btn border px-4 py-2 font-semibold"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 إلغاء
@@ -1510,7 +1412,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 disabled={
                   batchBlockType === 'keep' && batchCategory === '__keep__'
                 }
-                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold disabled:opacity-45"
+                className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold disabled:opacity-45"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -1521,18 +1423,19 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               </button>
             </div>
           </form>
-        </div>
-      )}
+        )}
+      </FullScreenPushPage>
 
-      {/* Create Ready List Directly From Selection Modal */}
-      {createListOpen && onCreateReadyListFromSelection && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="إنشاء قائمة توزيع مباشرة من المحددين"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setCreateListOpen(false)}
-        >
+      {/* Create Ready List Directly From Selection Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={Boolean(createListOpen && onCreateReadyListFromSelection)}
+        onClose={() => setCreateListOpen(false)}
+        title={`إنشاء قائمة توزيع جديدة (${linkedPersonIds.length} مستفيد)`}
+        subtitle="توليد قائمة توزيع جاهزة ومستقلة من الأسماء المحددة"
+        icon={<FilePlus2 className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        {onCreateReadyListFromSelection && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1549,28 +1452,8 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               );
               setCreateListOpen(false);
             }}
-            className="w-full max-w-md space-y-4 rounded-xl border p-5 text-xs shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="nexus-squircle p-5 space-y-4 text-xs"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                إنشاء قائمة توزيع جديدة ({linkedPersonIds.length} مستفيد)
-              </h3>
-              <button
-                type="button"
-                onClick={() => setCreateListOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
             <div>
               <label className="mb-1 block font-bold">اسم القائمة الجاهزة</label>
               <input
@@ -1588,7 +1471,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             </div>
 
             <div
-              className="rounded-lg border p-3 tabular-nums"
+              className="rounded-xl border p-3 tabular-nums"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -1605,14 +1488,14 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               <button
                 type="button"
                 onClick={() => setCreateListOpen(false)}
-                className="rounded-lg border px-4 py-2 font-semibold"
+                className="nexus-pill-btn border px-4 py-2 font-semibold"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 إلغاء
               </button>
               <button
                 type="submit"
-                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
+                className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -1623,8 +1506,8 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               </button>
             </div>
           </form>
-        </div>
-      )}
+        )}
+      </FullScreenPushPage>
 
       <SnippetExportModal
         open={snippetModalOpen}

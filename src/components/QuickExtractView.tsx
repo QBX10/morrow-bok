@@ -105,6 +105,7 @@ import {
   ZeroTrustDraftWorkspace,
   type DraftFilterMode,
 } from './quickExtract/ZeroTrustDraftWorkspace';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -3634,26 +3635,21 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         </>
       )}
 
-      {/* Confirmation Modal for Existing Record Updates or Replacement */}
-      {showConfirmUpdates && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="تأكيد التعديلات قبل الترحيل"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+      {/* Confirmation Full-Screen Push Page for Existing Record Updates or Replacement */}
+      <FullScreenPushPage
+        open={showConfirmUpdates}
+        onClose={() => setShowConfirmUpdates(false)}
+        title="تأكيد اعتماد التغييرات والترحيل النهائي"
+        subtitle="مراجعة أعداد الإضافة والتحديث والاستبدال قبل تنفيذ الترحيل"
+        icon={<Check className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-6 space-y-5">
             <h3 className="text-base font-bold">
               تأكيد اعتماد التغييرات والترحيل النهائي
             </h3>
             <p
-              className="mt-2 text-xs leading-relaxed"
+              className="text-xs leading-relaxed"
               style={{ color: 'var(--text-muted)' }}
             >
               يشمل الترحيل: إضافة <strong>{selectedPlanCounts.add}</strong> سجل
@@ -3664,11 +3660,11 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 : ''}
               . هل توافق على التنفيذ؟
             </p>
-            <div className="mt-5 flex justify-end gap-2 text-xs">
+            <div className="flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setShowConfirmUpdates(false)}
-                className="rounded-lg border px-4 py-2 font-medium"
+                className="nexus-pill-btn border px-4 py-2 font-medium"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 مراجعة وإلغاء
@@ -3676,7 +3672,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               <button
                 type="button"
                 onClick={executeCommit}
-                className="rounded-lg px-4 py-2 font-bold"
+                className="nexus-pill-btn px-5 py-2 font-bold"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -3685,9 +3681,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 موافق — تنفيذ الترحيل الآن
               </button>
             </div>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
 
       <ReferenceTemplateModal
         open={templateModalOpen}

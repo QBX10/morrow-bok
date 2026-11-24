@@ -151,13 +151,16 @@ test('Quick Extract doubt engine flags corrupted Arabic names and missing fields
   assert.equal(afterSuggestion.doubtConfirmed, false);
 });
 
-test('Mode permissions enforce beginner read-only and editor confirmation rules', () => {
-  const beginner = getModeCapabilities('beginner', false);
-  assert.equal(beginner.isReadOnlyPdfView, true);
-  assert.equal(beginner.canUseQuickExtract, false);
-  assert.equal(beginner.canEditRecords, false);
+test('Unified capabilities keep all tools active while respecting confirmation rules', () => {
+  const strict = getModeCapabilities('beginner', false, false, true, true);
+  assert.equal(strict.isReadOnlyPdfView, false);
+  assert.equal(strict.canUseQuickExtract, true);
+  assert.equal(strict.canEditRecords, true);
+  assert.equal(strict.requireDeleteConfirm, true);
+  assert.equal(strict.requireEditConfirm, true);
+  assert.equal(strict.requireAddConfirm, false);
 
-  const pro = getModeCapabilities('professional', true);
+  const pro = getModeCapabilities('professional', true, false, true, true);
   assert.equal(pro.isReadOnlyPdfView, false);
   assert.equal(pro.canUseQuickExtract, true);
   assert.equal(pro.canEditRecords, true);
@@ -767,34 +770,26 @@ test('computeQuickExtractRoutingPlan evaluates custom dynamic rules, existing_re
   assert.equal(plan.counts.skip, 1);
 });
 
-test('Expert mode grants unrestricted table/category/bulk permissions and respects no-confirm override', () => {
-  const beginner = getModeCapabilities('beginner', false, true, false, false);
-  assert.equal(beginner.isExpertMode, false);
-  assert.equal(beginner.canCustomizeColumns, false);
-  assert.equal(beginner.canManageCustomCategories, false);
-  assert.equal(beginner.canBulkEdit, false);
-  assert.equal(beginner.canBypassEditConfirm, false);
+test('Unified capabilities keep table/category/bulk permissions open and respect no-confirm override', () => {
+  const defaultStrict = getModeCapabilities('beginner', false, false, true, true);
+  assert.equal(defaultStrict.isExpertMode, true);
+  assert.equal(defaultStrict.canCustomizeColumns, true);
+  assert.equal(defaultStrict.canManageCustomCategories, true);
+  assert.equal(defaultStrict.canBulkEdit, true);
+  assert.equal(defaultStrict.canBypassEditConfirm, false);
+  assert.equal(defaultStrict.requireEditConfirm, true);
+  assert.equal(defaultStrict.requireDeleteConfirm, true);
 
-  const pro = getModeCapabilities('professional', true, true, true, true);
-  assert.equal(pro.isExpertMode, false);
-  assert.equal(pro.canCustomizeColumns, false);
-  assert.equal(pro.canBypassEditConfirm, false);
-  assert.equal(pro.requireEditConfirm, true);
-  assert.equal(pro.requireDeleteConfirm, true);
+  const selectiveConfirm = getModeCapabilities('professional', true, false, false, true);
+  assert.equal(selectiveConfirm.canCustomizeColumns, true);
+  assert.equal(selectiveConfirm.canBypassEditConfirm, false);
+  assert.equal(selectiveConfirm.requireEditConfirm, false);
+  assert.equal(selectiveConfirm.requireDeleteConfirm, true);
 
-  const expertStrict = getModeCapabilities('expert', false, false, true, true);
-  assert.equal(expertStrict.isExpertMode, true);
-  assert.equal(expertStrict.canCustomizeColumns, true);
-  assert.equal(expertStrict.canManageCustomCategories, true);
-  assert.equal(expertStrict.canBulkEdit, true);
-  assert.equal(expertStrict.canBypassEditConfirm, false);
-  assert.equal(expertStrict.requireEditConfirm, true);
-  assert.equal(expertStrict.requireDeleteConfirm, true);
-
-  const expertFree = getModeCapabilities('expert', false, true, true, true);
-  assert.equal(expertFree.canBypassEditConfirm, true);
-  assert.equal(expertFree.requireEditConfirm, false);
-  assert.equal(expertFree.requireDeleteConfirm, false);
+  const directFastSave = getModeCapabilities('expert', false, true, true, true);
+  assert.equal(directFastSave.canBypassEditConfirm, true);
+  assert.equal(directFastSave.requireEditConfirm, false);
+  assert.equal(directFastSave.requireDeleteConfirm, false);
 });
 
 test('applyFeeRules and computeAgencyMetrics respect discount, rounding step, and includeBlockedInFees', () => {

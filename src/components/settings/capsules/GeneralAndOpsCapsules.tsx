@@ -129,7 +129,7 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح الأداة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );
@@ -168,7 +168,7 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
               وضع العرض الافتراضي لشاشة الإعدادات والأدوات
             </h2>
             <p style={{ color: 'var(--text-muted)' }}>
-              الوضع الافتراضي هو ملء الشاشة بالكامل (100dvh × 100vw) لراحة العين وتوسيع الكبسولات، مع حفظ اختيارك فوراً.
+              الوضع الافتراضي هو ملء الشاشة بالكامل (100dvh × 100vw) لراحة العين واتساع المساحة، مع حفظ اختيارك فوراً.
             </p>
           </div>
 
@@ -178,7 +178,7 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
                 {
                   id: 'fullscreen' as const,
                   title: 'ملء الشاشة بالكامل (افتراضي)',
-                  desc: 'يفتح استوديو الإعدادات والكبسولات على كامل مساحة الجهاز مع احترام الحواف الآمنة.',
+                  desc: 'يفتح استوديو الإعدادات والأدوات على كامل مساحة الجهاز مع احترام الحواف الآمنة.',
                 },
                 {
                   id: 'contained' as const,
@@ -602,7 +602,7 @@ export const QuickExtractCapsules: React.FC<QuickExtractCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح الأداة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );
@@ -952,7 +952,7 @@ export const RelationsListsCapsules: React.FC<RelationsListsCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح الأداة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );

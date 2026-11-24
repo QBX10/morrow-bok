@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
-  BookmarkCheck,
   Bot,
   Camera,
   Check,
@@ -9,29 +8,20 @@ import {
   ChevronDown,
   ClipboardCheck,
   Cpu,
-  Download,
-  Edit3,
   FileSearch,
   FileText,
-  FolderKanban,
-  GitMerge,
   History,
-  LayoutPanelLeft,
   Link2,
   Loader2,
   Menu,
-  MessageSquare,
   Mic,
   MicOff,
   Paperclip,
-  Pin,
   Plus,
   Radio,
-  RotateCcw,
-  Search,
   Send,
+  ShieldAlert,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Square,
   SquarePen,
@@ -73,13 +63,10 @@ import type {
   MorrowCenterTab,
   MorrowMacroDefinition,
   MorrowMacroExecutionResult,
-  MorrowProactiveInsight,
   MorrowSystemVerificationReport,
 } from '../types/assistant.ts';
 import {
   AI_FREE_MODELS,
-  CORE_SIX_SPECIALIZED_MODELS,
-  type ApprovedCloudModelId,
   type ModelHealthRecord,
 } from '../lib/aiConfig.ts';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic.ts';
@@ -107,7 +94,19 @@ import {
   MorrowModelMenuPopover,
   type BrainOptionItem,
 } from './morrow/MorrowModelMenuPopover';
-import { PermissionGuardModal } from './permissions/PermissionGuardModal';
+import { MorrowLeftDrawer } from './morrow/MorrowLeftDrawer';
+import { MorrowSubPageHeader } from './morrow/MorrowSubPageHeader';
+import { MorrowHistoryPage } from './morrow/MorrowHistoryPage';
+import { MorrowModelsPage } from './morrow/MorrowModelsPage';
+import { MorrowAssistantsPage } from './morrow/MorrowAssistantsPage';
+import { MorrowVoiceSettingsPage } from './morrow/MorrowVoiceSettingsPage';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  SPECIALIZED_ASSISTANTS,
+  type MorrowWorkspacePage,
+  type SpecializedAssistantProfile,
+} from './morrow/morrowWorkspaceTypes';
 
 interface MorrowCommandCenterViewProps {
   activeTab: MorrowCenterTab;
@@ -311,20 +310,6 @@ const BRAIN_BUTTONS: BrainOptionItem[] = [
   },
 ];
 
-const COMMAND_LIBRARY_ITEMS = [
-  { id: 'cmd_brief', label: 'أعطني ملخص اليوم', desc: 'إيجاز تنفيذي شامل للأكياس والأرباح والمخاطر' },
-  { id: 'cmd_whatif', label: 'ماذا لو رسم الفرد 500', desc: 'محاكاة مالية فورية لأثر تغيير الرسم دون تعديل' },
-  { id: 'cmd_who_blocked', label: 'من هم المحجوبين', desc: 'حصر العائلات المحجوبة والحجب الجزئي بالأسماء' },
-  { id: 'cmd_compare', label: 'قارن بين الوكالات', desc: 'ترتيب الوكالات بالأفراد والأكياس وصافي الربح' },
-  { id: 'cmd_close_month', label: 'إغلاق الشهر', desc: 'تشغيل ماكرو إغلاق الشهر والمطابقة والتدقيق' },
-  { id: 'cmd_stats', label: 'احصائيات جميع الوكالات', desc: 'الأفراد والأكياس وصافي الأرباح بصرياً' },
-  { id: 'cmd_diag', label: 'افحص التطبيق', desc: 'تحليل شامل للأخطاء والمكررين والنسخ الاحتياطي' },
-  { id: 'cmd_fee_250', label: 'خلّي رسم الفرد 250', desc: 'تحديث رسم الفرد التلقائي مع مقارنة قبل ← بعد' },
-  { id: 'cmd_dups', label: 'المكررين', desc: 'كشف السجلات المتطابقة أو المتشابهة' },
-  { id: 'cmd_blocked', label: 'اعرض المحجوبين', desc: 'فلترة صامتة للجدول على المحجوبين فقط' },
-  { id: 'cmd_excel', label: 'صدر تقرير اكسل', desc: 'تصدير معزول للقراءة فقط بصيغة RTL' },
-];
-
 const MEMORY_PRESETS: Array<{ key: string; label: string; desc: string }> = [
   {
     key: 'hide_amount_in_reports',
@@ -473,11 +458,21 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   canViewFinance = true,
   canUseQuickExtract = true,
 }) => {
-  // Dual Hamburger Drawers + Clickable Morrow Brand/Models Menu
+  // Dual Hamburger Drawers + Clickable Center Morrow Model Selector + Standalone Page State
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
   const [sideDrawerOpen, setSideDrawerOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [canvasOverlayActive, setCanvasOverlayActive] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [activePage, setActivePage] = useState<MorrowWorkspacePage>(() =>
+    activeTab === 'chat' ? 'chat' : activeTab
+  );
+  const [activeAssistantId, setActiveAssistantId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('morrow_active_assistant_v1') || 'general_morrow';
+    } catch {
+      return 'general_morrow';
+    }
+  });
   const [canvasMode, setCanvasMode] = useState<MorrowCanvasMode>(
     initialCanvasMode?.mode || 'overview_charts'
   );
@@ -485,7 +480,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const [lastMacroResult, setLastMacroResult] = useState<MorrowMacroExecutionResult | null>(null);
   const [summonNotice, setSummonNotice] = useState<string | null>(null);
 
-  // Core Triad States: (1) Chat + Voice Messages, (2) Live Modal, (3) Files + Camera
+  // Core Triad States: (1) Chat + Voice Messages, (2) Live Page, (3) Files + Camera Page
   const [chatInput, setChatInput] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
   const [historySearch, setHistorySearch] = useState('');
@@ -495,8 +490,6 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  const [liveModalOpen, setLiveModalOpen] = useState(false);
-  const [cameraModalOpen, setCameraModalOpen] = useState(false);
   const [attachedFile, setAttachedFile] = useState<AttachedDocumentItem | null>(null);
   const [analyzingAttachment, setAnalyzingAttachment] = useState(false);
   const [multimodalFeed, setMultimodalFeed] = useState<MultimodalFeedEntry[]>([]);
@@ -546,6 +539,44 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const chatTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const filePickerRef = useRef<HTMLInputElement | null>(null);
+  const audioPickerRef = useRef<HTMLInputElement | null>(null);
+  const plusMenuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const openWorkspacePage = (
+    page: MorrowWorkspacePage,
+    nextCanvasMode?: MorrowCanvasMode
+  ) => {
+    setPlusMenuOpen(false);
+    if (nextCanvasMode) {
+      setCanvasMode(nextCanvasMode);
+    }
+    if (page === 'approvals' || page === 'memory' || page === 'quick_notes') {
+      onChangeTab(page);
+    } else {
+      onChangeTab('chat');
+    }
+    setActivePage(page);
+  };
+
+  const handleSelectAssistantProfile = (
+    profile: SpecializedAssistantProfile,
+    initialPrompt?: string
+  ) => {
+    setActiveAssistantId(profile.id);
+    try {
+      localStorage.setItem('morrow_active_assistant_v1', profile.id);
+    } catch {
+      // ignore
+    }
+    onChangeBrainMode(profile.recommendedBrain);
+    onChangeResponseStyle?.(profile.recommendedStyle);
+    onChangeCollaborationMode?.(profile.recommendedCollaboration);
+    setSummonNotice(`تم تفعيل «${profile.name}» وضبط النموذج وأسلوب التحليل تلقائياً.`);
+    openWorkspacePage('chat');
+    if (initialPrompt) {
+      onSendMessage(initialPrompt);
+    }
+  };
 
   const updateVoiceTargetMode = (mode: 'instruction' | 'quick_note' | 'draft_text') => {
     voiceTargetModeRef.current = mode;
@@ -569,13 +600,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   };
 
   useEffect(() => {
+    if (activeTab === 'approvals' || activeTab === 'memory' || activeTab === 'quick_notes') {
+      setActivePage(activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!initialCanvasMode) return;
     if (typeof initialCanvasMode.agencyId === 'number') {
       onSelectActiveAgency?.(initialCanvasMode.agencyId);
     }
     onChangeTab('chat');
     setCanvasMode(initialCanvasMode.mode);
-    setCanvasOverlayActive(true);
+    setActivePage('canvas');
   }, [initialCanvasMode]);
 
   useEffect(() => {
@@ -586,21 +623,36 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   }, [chatInput]);
 
   useEffect(() => {
-    if (activeTab !== 'chat' || canvasOverlayActive) return;
+    if (activePage !== 'chat') return;
     chatScrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, multimodalFeed.length, isThinking, activeTab, canvasOverlayActive]);
+  }, [messages.length, multimodalFeed.length, isThinking, activePage]);
 
   useEffect(() => {
-    if (!sideDrawerOpen && !appDrawerOpen) return;
+    if (!plusMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (
+        plusMenuContainerRef.current &&
+        !plusMenuContainerRef.current.contains(e.target as Node)
+      ) {
+        setPlusMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [plusMenuOpen]);
+
+  useEffect(() => {
+    if (!sideDrawerOpen && !appDrawerOpen && !plusMenuOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setSideDrawerOpen(false);
         setAppDrawerOpen(false);
+        setPlusMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [sideDrawerOpen, appDrawerOpen]);
+  }, [sideDrawerOpen, appDrawerOpen, plusMenuOpen]);
 
   useEffect(() => {
     return () => {
@@ -633,6 +685,13 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const activeAgency = useMemo(
     () => agencies.find((a) => a.id === activeAgencyId) || agencies[0],
     [agencies, activeAgencyId]
+  );
+
+  const activeAssistant = useMemo(
+    () =>
+      SPECIALIZED_ASSISTANTS.find((a) => a.id === activeAssistantId) ||
+      SPECIALIZED_ASSISTANTS[0],
+    [activeAssistantId]
   );
 
   const filteredMessages = useMemo(() => {
@@ -807,37 +866,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       lastBackupAt,
     });
     setLastMacroResult(res);
-    setCanvasMode('macro_studio');
-    setCanvasOverlayActive(true);
+    openWorkspacePage('canvas', 'macro_studio');
     setSideDrawerOpen(false);
     setSummonNotice(`تم تشغيل ماكرو «${macro.name}» وعرض النتائج في اللوحة التفاعلية.`);
-  };
-
-  const handleProactiveInsightAction = (insight: MorrowProactiveInsight) => {
-    setSideDrawerOpen(false);
-    if (insight.resolutionMode === 'summon_canvas') {
-      if (insight.targetCanvasMode) {
-        setCanvasMode(insight.targetCanvasMode);
-        setCanvasOverlayActive(true);
-        onChangeTab('chat');
-        setSummonNotice(`تم جلب «${insight.title}» داخل مساحة العمل التفاعلية.`);
-      }
-      if (insight.promptToRun) {
-        onSendMessage(insight.promptToRun);
-      }
-      return;
-    }
-
-    if (insight.targetView && insight.targetId) {
-      onTriggerSpotlight({
-        view: insight.targetView,
-        targetId: insight.targetId,
-        title: insight.title,
-        description: insight.detail,
-      });
-    } else if (insight.targetView && onNavigateView) {
-      onNavigateView(insight.targetView);
-    }
   };
 
   // --- Voice Message Recording (Chat Instructions / Quick Notes / Draft Text + Live Waveform) ---
@@ -1281,7 +1312,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     }
   };
 
-  // --- File Upload & Camera Attachment Handling ---
+  // --- File, Audio & Camera Attachment Handling ---
   const handleQueueFile = async (file: File) => {
     if (attachedFile?.previewUrl) {
       URL.revokeObjectURL(attachedFile.previewUrl);
@@ -1299,6 +1330,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         previewUrl,
         dataBase64,
       });
+      if (activePage !== 'chat') {
+        openWorkspacePage('chat');
+      }
     } catch {
       setVoiceError('تعذر تجهيز الملف المرفق للقراءة.');
     }
@@ -1310,7 +1344,83 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     setAnalyzingAttachment(true);
     setAttachedFile(null);
 
+    const isAudio =
+      target.mimeType.startsWith('audio/') ||
+      /\.(mp3|wav|m4a|ogg|webm|aac|flac)$/i.test(target.name);
+    const isPlainText =
+      target.mimeType.startsWith('text/') ||
+      target.mimeType === 'application/json' ||
+      /\.(txt|csv|json|md)$/i.test(target.name);
+
     try {
+      if (isAudio) {
+        const audioUrl = URL.createObjectURL(target.file);
+        const res = await fetch('/api/morrow/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64: target.dataBase64,
+            mimeType: target.mimeType.startsWith('audio/')
+              ? target.mimeType
+              : 'audio/mpeg',
+            targetMode: 'instruction',
+            agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+            taskRouting,
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          transcript?: string;
+          modelId?: string;
+          modelLabel?: string;
+          error?: string;
+        };
+        if (!res.ok || !json.ok || !json.transcript) {
+          setMultimodalFeed((prev) => [
+            ...prev.slice(-15),
+            {
+              id: `audio_${Date.now()}`,
+              createdAt: new Date().toISOString(),
+              kind: 'voice_note',
+              title: target.name,
+              body: '',
+              audioUrl,
+              errorText:
+                json.error || 'تعذر تفريغ الملف الصوتي سحابياً — يمكنك الاستماع إليه هنا.',
+            },
+          ]);
+          return;
+        }
+        const transcript = json.transcript.trim();
+        setMultimodalFeed((prev) => [
+          ...prev.slice(-15),
+          {
+            id: `audio_${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            kind: 'voice_note',
+            title: `تفريغ ملف صوتي: ${target.name}`,
+            body: transcript,
+            modelId: json.modelId,
+            modelLabel: json.modelLabel,
+            voiceMode: 'instruction',
+            audioUrl,
+          },
+        ]);
+        if (customQuestion) {
+          onSendMessage(`${customQuestion}\n\nالنص المفرّغ من الملف الصوتي:\n${transcript}`);
+        }
+        return;
+      }
+
+      if (isPlainText) {
+        const rawText = (await target.file.text()).slice(0, 6000).trim();
+        const promptBody = customQuestion
+          ? `${customQuestion}\n\nمحتوى الملف (${target.name}):\n${rawText}`
+          : `حلل محتوى الملف التالي (${target.name}) ولخّص أهم النقاط:\n${rawText}`;
+        onSendMessage(promptBody);
+        return;
+      }
+
       const res = await fetch('/api/morrow/multimodal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1430,8 +1540,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       if (matchedMacro) {
         handleExecuteMacro(matchedMacro);
       } else if (decision.canvasMode) {
-        setCanvasMode(decision.canvasMode);
-        setCanvasOverlayActive(true);
+        openWorkspacePage('canvas', decision.canvasMode);
         setSummonNotice(`${decision.title} — ${decision.reason}`);
       }
     } else if (decision.mode === 'navigate_spotlight' && decision.targetView && decision.targetDomId) {
@@ -1457,65 +1566,20 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     }
   };
 
-  const sideSections: Array<{
-    id: MorrowCenterTab;
-    label: string;
-    desc: string;
-    count?: number;
-    icon: React.ReactNode;
-  }> = [
-    {
-      id: 'chat',
-      label: 'المحادثة والملفات ولايف',
-      desc: 'الواجهة الرئيسية الهادئة',
-      icon: <MessageSquare className="h-4 w-4" />,
-    },
-    {
-      id: 'approvals',
-      label: 'المهام والمراجعة',
-      desc: 'مسودات التعديل التي تنتظر موافقتك',
-      count: pendingDrafts.length,
-      icon: <ClipboardCheck className="h-4 w-4" />,
-    },
-    {
-      id: 'memory',
-      label: 'الذاكرة والقواعد الدائمة',
-      desc: 'تفضيلات التقارير وتنفيذ الأوامر تلقائياً',
-      count: preferences.length,
-      icon: <BookmarkCheck className="h-4 w-4" />,
-    },
-    {
-      id: 'quick_notes',
-      label: 'الملاحظات الصوتية والسريعة',
-      desc: 'مذكرات مرتبطة بالعوائل تلقائياً',
-      count: quickNotes.length,
-      icon: <StickyNote className="h-4 w-4" />,
-    },
-  ];
+  const isMainConversationView = activePage === 'chat';
 
-  const isMainConversationView = activeTab === 'chat' && !canvasOverlayActive;
-
-  const activeSubSectionLabel = canvasOverlayActive
-    ? 'اللوحة التفاعلية 2.0'
-    : activeTab === 'approvals'
-      ? 'المهام والمراجعة'
-      : activeTab === 'memory'
-        ? 'الذاكرة والقواعد الدائمة'
-        : activeTab === 'quick_notes'
-          ? 'الملاحظات الصوتية والسريعة'
-          : null;
-
-  const reasoningLensLabel =
-    responseStyle === 'concise'
-      ? 'مختصر فوري'
-      : responseStyle === 'financial_auditor'
-        ? 'مدقق مالي'
-        : responseStyle === 'deep_advisor'
-          ? 'مستشار معمّق'
-          : 'متوازن';
+  const hasConversationContent =
+    !(
+      filteredMessages.length <= 1 &&
+      (!filteredMessages[0] || filteredMessages[0].id.startsWith('welcome_msg_')) &&
+      multimodalFeed.length === 0 &&
+      !historySearch &&
+      !showPinnedOnly
+    );
 
   return (
     <div
+      dir="rtl"
       data-testid="morrow-command-center"
       onDragOver={(e) => {
         if (!isMainConversationView) return;
@@ -1538,21 +1602,45 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           void handleQueueFile(dropped);
         }
       }}
-      className="capsule-fullscreen-shell morrow-studio-shell relative flex min-h-[100dvh] flex-col [overflow-x:clip]"
+      className="capsule-fullscreen-shell morrow-obsidian-shell relative flex min-h-[100dvh] flex-col [overflow-x:clip]"
     >
-      {/* Drag-and-Drop Overlay for Instant PDF / Image Inspection */}
+      {/* Hidden File & Audio Pickers */}
+      <input
+        ref={filePickerRef}
+        type="file"
+        accept="image/*,application/pdf,.txt,.csv,.json,.md"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void handleQueueFile(f);
+        }}
+      />
+      <input
+        ref={audioPickerRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void handleQueueFile(f);
+        }}
+      />
+
+      {/* Drag-and-Drop Overlay for Instant PDF / Image / Audio Inspection */}
       {isDraggingFile && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none"
           style={{
-            backgroundColor: 'rgba(15, 23, 42, 0.35)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'rgba(2, 3, 8, 0.72)',
+            backdropFilter: 'blur(8px)',
           }}
         >
           <div
-            className="rounded-3xl border-2 border-dashed px-8 py-6 text-center shadow-xl"
+            className="rounded-3xl border-2 border-dashed px-8 py-6 text-center shadow-2xl"
             style={{
-              backgroundColor: 'var(--bg-surface)',
+              backgroundColor: 'rgba(13, 15, 22, 0.95)',
               borderColor: 'var(--accent)',
               color: 'var(--text-primary)',
             }}
@@ -1560,59 +1648,77 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             <Paperclip className="mx-auto mb-2 h-7 w-7" style={{ color: 'var(--accent)' }} />
             <div className="text-sm font-black">أفلت الملف هنا لتحليله فوراً</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-              يدعم كشوفات PDF وصور القوائم والسجلات
+              يدعم كشوفات PDF، الصور، الملفات الصوتية، والنصوص
             </div>
           </div>
         </div>
       )}
-      {/* GEMINI-STYLE MINIMALIST TOP HEADER
-          Right Hamburger (App Menu) · Clickable Morrow Wordmark Switcher · Left Hamburger (Assistant Sections) */}
+
+      {/* ====================================================================
+          DUAL HAMBURGER TOP NAVIGATION BAR (RTL)
+          Right (RTL Start): App Main Menu (☰)
+          Center: Active Model / Assistant Pill (Morrow ▾)
+          Left (RTL End): New Chat + Morrow AI & Models Menu (☰)
+         ==================================================================== */}
       <header
-        className="no-print sticky top-0 z-30 border-b backdrop-blur-xl"
+        className="no-print nexus-glass-lite sticky top-0 z-30 border-b"
         style={{
-          backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
           borderColor: 'var(--border-color)',
         }}
       >
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-3 sm:px-5">
-          {/* Right (RTL Start): App Hamburger Menu + Clickable Morrow Brand Switcher */}
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <div className="mx-auto grid h-12 max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-5">
+          {/* Right Side (RTL Start): App Main Hamburger Menu */}
+          <div className="flex items-center justify-start min-w-0">
             <button
               type="button"
               data-testid="morrow-app-drawer-toggle"
               onClick={() => setAppDrawerOpen(true)}
               aria-label="قائمة أقسام التطبيق الرئيسية"
-              title="أقسام التطبيق"
-              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-2.5 sm:px-3 text-xs font-bold transition-colors hover:bg-[var(--bg-main)]"
-              style={{ color: 'var(--text-primary)' }}
+              title="قائمة التطبيق"
+              className="nexus-pill-btn inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 sm:px-3 text-xs font-bold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
             >
-              <Menu className="h-5 w-5 shrink-0" />
-              <span className="hidden md:inline">التطبيق</span>
+              <Menu className="h-4 w-4 shrink-0" />
+              <span className="hidden md:inline whitespace-nowrap">التطبيق</span>
             </button>
+          </div>
 
+          {/* Center: Active Model / Assistant Selector Pill */}
+          <div className="flex items-center justify-center min-w-0">
             <button
               type="button"
               data-testid="morrow-brand-switcher"
               onClick={() => setModelMenuOpen((v) => !v)}
               aria-expanded={modelMenuOpen}
               aria-haspopup="dialog"
-              aria-label="فتح قائمة نماذج وإعدادات Morrow"
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl px-2.5 text-right transition-colors hover:bg-[var(--bg-main)] min-w-0"
+              aria-label="تبديل النموذج أو نمط Morrow"
+              className="topbar-context-enter nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 text-xs font-bold min-w-0"
               style={{
-                backgroundColor: modelMenuOpen ? 'var(--bg-nav-active)' : 'transparent',
+                backgroundColor: modelMenuOpen
+                  ? 'var(--bg-nav-active)'
+                  : 'var(--bg-surface)',
+                borderColor: modelMenuOpen
+                  ? 'var(--accent-ai, #5B4FE9)'
+                  : 'var(--border-color)',
+                color: 'var(--text-primary)',
               }}
             >
-              <span className="text-lg font-black tracking-tight leading-none">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+              <span className="text-xs sm:text-sm font-black tracking-tight leading-none whitespace-nowrap">
                 Morrow
               </span>
               <span
-                className="hidden sm:inline truncate text-xs font-semibold"
+                className="hidden sm:inline truncate max-w-[120px] text-[11px] font-semibold"
                 style={{ color: 'var(--text-muted)' }}
               >
                 · {activeBrain.shortLabel}
               </span>
               <ChevronDown
-                className={`h-4 w-4 shrink-0 transition-transform ${
+                className={`h-3.5 w-3.5 shrink-0 transition-transform ${
                   modelMenuOpen ? 'rotate-180' : ''
                 }`}
                 style={{ color: 'var(--text-muted)' }}
@@ -1620,47 +1726,23 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </button>
           </div>
 
-          {/* Center (Optional Quiet Sub-View Context) */}
-          {activeSubSectionLabel && (
-            <div
-              className="hidden sm:block truncate text-xs font-bold"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {activeSubSectionLabel}
-            </div>
-          )}
-
-          {/* Left (RTL End): Return / New Chat + Assistant Sections Hamburger Menu */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-            {!isMainConversationView && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCanvasOverlayActive(false);
-                  onChangeTab('chat');
-                }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <MessageSquare className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>المحادثة</span>
-              </button>
-            )}
-
+          {/* Left Side (RTL End): New Chat + Morrow AI & Models Hamburger Menu */}
+          <div className="flex items-center justify-end gap-1.5 min-w-0">
             {isMainConversationView && onClearMessages && messages.length > 1 && (
               <button
                 type="button"
                 onClick={onClearMessages}
                 aria-label="بدء محادثة جديدة"
                 title="محادثة جديدة"
-                className="inline-flex h-10 items-center gap-1.5 rounded-full px-2.5 sm:px-3 text-xs font-bold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)]"
-                style={{ color: 'var(--text-primary)' }}
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
               >
-                <SquarePen className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                <span className="hidden sm:inline">محادثة جديدة</span>
+                <SquarePen className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                <span className="hidden md:inline">جديد</span>
               </button>
             )}
 
@@ -1668,41 +1750,43 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               type="button"
               data-testid="morrow-side-drawer-toggle"
               onClick={() => setSideDrawerOpen(true)}
-              aria-label="قائمة أقسام وميزات المساعد"
-              title="أقسام المساعدين"
-              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-2.5 sm:px-3 text-xs font-bold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)]"
+              aria-label="قائمة أدوات ونماذج Morrow"
+              title="قائمة Morrow والنماذج"
+              className="nexus-pill-btn inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 sm:px-3 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor:
-                  sideFeatureBadgeCount > 0 ? 'var(--bg-nav-active)' : 'transparent',
-                color: sideFeatureBadgeCount > 0 ? 'var(--accent)' : 'var(--text-primary)',
+                  sideFeatureBadgeCount > 0 ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                borderColor:
+                  sideFeatureBadgeCount > 0 ? 'var(--accent-ai, #5B4FE9)' : 'var(--border-color)',
+                color: sideFeatureBadgeCount > 0 ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
               }}
             >
-              <Menu className="h-5 w-5 shrink-0" />
-              <span className="hidden md:inline">المساعدين</span>
+              <span className="hidden md:inline">ذكاء Morrow</span>
               {sideFeatureBadgeCount > 0 && (
                 <span
                   className="text-[11px] font-black tabular-nums"
-                  style={{ color: 'var(--accent)' }}
+                  style={{ color: 'var(--accent-ai, #5B4FE9)' }}
                 >
                   {sideFeatureBadgeCount}
                 </span>
               )}
+              <Menu className="h-4 w-4 shrink-0" />
             </button>
           </div>
         </div>
       </header>
 
       {/* ====================================================================
-          PRIMARY SCREEN (DEFAULT): Gemini-Style Centered Chat + Bottom Composer
+          PAGE 1 (DEFAULT): CENTERED CHAT WORKSPACE + FLOATING PILL BAR
          ==================================================================== */}
       {isMainConversationView && (
-        <main className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-3xl flex-col px-3 pt-3 pb-3 sm:px-6 sm:pt-5 sm:pb-5 min-h-0">
+        <main className="mx-auto flex h-[calc(100dvh-3rem)] w-full max-w-3xl flex-col px-3 pt-3 pb-4 sm:px-6 sm:pt-4 sm:pb-6 min-h-0">
           {summonNotice && (
             <div
-              className="mb-3 flex items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold"
+              className="mb-3 flex items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold shrink-0"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))',
+                borderColor: 'rgba(129, 140, 248, 0.42)',
                 color: 'var(--accent)',
               }}
             >
@@ -1718,211 +1802,119 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </div>
           )}
 
-          {/* Conversation Scroll Stream */}
-          <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pb-4">
-            {/* Serene Gemini Welcome Canvas when thread is fresh */}
-            {filteredMessages.length <= 1 && multimodalFeed.length === 0 && !historySearch && (
+          {/* Scrollable Conversation Area / Centered Minimal Empty State */}
+          <div className="flex-1 min-h-0 overflow-y-auto pb-4 flex flex-col">
+            {!hasConversationContent ? (
               <section
-                aria-label="ترحيب Morrow الذكي"
-                className="mx-auto max-w-2xl py-2 sm:py-6 space-y-4 sm:space-y-5"
+                aria-label="شاشة بداية Morrow"
+                className="my-auto mx-auto flex w-full max-w-xl flex-col items-center justify-center py-6 text-center space-y-6"
               >
-                <div className="space-y-2 text-center">
-                  <h1
-                    className="text-2xl sm:text-3xl font-black tracking-tight"
-                    style={{ textWrap: 'balance' }}
+                {/* Centered Glowing 3D Electric Indigo AI Orb */}
+                <div
+                  className="nexus-orb-3d relative flex h-24 w-24 items-center justify-center"
+                  aria-hidden="true"
+                >
+                  <svg
+                    viewBox="0 0 48 48"
+                    className="h-10 w-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.35)]"
+                    fill="none"
                   >
-                    <span>مرحباً بك في </span>
-                    <span style={{ color: 'var(--accent)' }}>Morrow</span>
-                  </h1>
-                  <p
-                    className="mx-auto max-w-lg text-xs sm:text-sm leading-relaxed"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    مساحة عمل ذكية تجمع بين النماذج الستة ومرجع Morrow المحلي — اسأل، صوّر، أملِ بالصوت، أو استدعِ التحليل واللوحة التفاعلية.
-                  </p>
-                  {liveCloudContext?.liveWorkspace && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px]">
-                      {agencies.length > 0 && onSelectActiveAgency ? (
-                        <select
-                          aria-label="اختيار سياق الوكالة في شاشة الترحيب"
-                          value={activeAgency?.id ?? agencies[0].id}
-                          onChange={(e) => onSelectActiveAgency(Number(e.target.value))}
-                          className="rounded-lg border px-2 py-0.5 text-[11px] font-bold outline-none focus:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-surface)',
-                            borderColor: 'var(--border-color)',
-                            color: 'var(--text-primary)',
-                          }}
-                        >
-                          {agencies.map((ag) => (
-                            <option key={ag.id} value={ag.id}>
-                              {ag.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {activeAgency?.name || 'جميع الوكالات'}
-                        </span>
-                      )}
-
-                      <span className="font-semibold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                        {liveCloudContext.liveWorkspace.periodName} ·{' '}
-                        {liveCloudContext.liveWorkspace.totalActiveIndividuals.toLocaleString('ar-IQ')} فرد ·{' '}
-                        {liveCloudContext.liveWorkspace.totalFullBags.toLocaleString('ar-IQ')} كيس · صافي{' '}
-                        {liveCloudContext.liveWorkspace.totalProfitIqd.toLocaleString('ar-IQ')} د.ع
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => setModelMenuOpen(true)}
-                        className="rounded-lg border px-2 py-0.5 text-[10px] font-bold transition-colors hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--accent)',
-                        }}
-                      >
-                        الأسلوب: {reasoningLensLabel}
-                      </button>
-                    </div>
-                  )}
+                    <path
+                      d="M24 6C25.9 15.8 32.2 22.1 42 24C32.2 25.9 25.9 32.2 24 42C22.1 32.2 15.8 25.9 6 24C15.8 22.1 22.1 15.8 24 6Z"
+                      stroke="#FFFFFF"
+                      strokeWidth="2.1"
+                      strokeLinejoin="round"
+                      fill="rgba(255, 255, 255, 0.22)"
+                    />
+                    <circle cx="24" cy="24" r="3.4" fill="#FFFFFF" />
+                  </svg>
                 </div>
 
-                {/* 4 Clean Gemini Prompt Cards (Single Elevation) */}
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div className="space-y-2.5">
+                  <h1
+                    className="text-3xl sm:text-4xl font-black tracking-tight"
+                    style={{ textWrap: 'balance', color: 'var(--text-primary)' }}
+                  >
+                    من أين نبدأ؟
+                  </h1>
+                  <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {activeAssistant.name} ·{' '}
+                    <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                      {activeAgency?.name || 'جميع الوكالات'}
+                    </span>
+                    {activePeriodLabel ? ` · ${activePeriodLabel}` : ''}
+                  </p>
+                </div>
+
+                {/* Minimal Quick-Action Chips */}
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => submitChatPrompt('أعطني ملخص اليوم')}
-                    className="flex items-start gap-3 rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
                     }}
                   >
-                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                    <div className="min-w-0">
-                      <div className="text-xs font-extrabold">إيجاز اليوم الذكي</div>
-                      <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                        ملخص تنفيذي للأكياس والأرباح والوكالات والمخاطر في ثوانٍ
-                      </div>
-                    </div>
+                    <Sparkles className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <span>ملخص اليوم</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => submitChatPrompt('ماذا لو رسم الفرد 500')}
-                    className="flex items-start gap-3 rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
                     }}
                   >
-                    <TrendingUp className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                    <div className="min-w-0">
-                      <div className="text-xs font-extrabold">محاكاة «ماذا لو؟»</div>
-                      <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                        اختبر أثر تغيير الرسم أو الأفراد على الأرباح قبل اعتماده
-                      </div>
-                    </div>
+                    <TrendingUp className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <span>محاكاة مالية</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => submitChatPrompt('قارن بين الوكالات')}
-                    className="flex items-start gap-3 rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
                     }}
                   >
-                    <BarChart3 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                    <div className="min-w-0">
-                      <div className="text-xs font-extrabold">مقارنة بين الوكالات</div>
-                      <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                        ترتيب الوكالات بالأفراد والأكياس وصافي الربح مباشرة
-                      </div>
-                    </div>
+                    <BarChart3 className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <span>مقارنة الوكالات</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => submitChatPrompt('افحص التطبيق')}
-                    className="flex items-start gap-3 rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
+                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
                     }}
                   >
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                    <div className="min-w-0">
-                      <div className="text-xs font-extrabold">فحص شامل للسجلات</div>
-                      <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                        كشف المكررين والنواقص وسلامة الجداول والنسخ الاحتياطي
-                      </div>
-                    </div>
+                    <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <span>فحص السجلات</span>
                   </button>
                 </div>
 
-                {/* Live Proactive Insights Strip (from actual workspace data) */}
-                {proactiveBundle.insights.length > 0 && (
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {proactiveBundle.insights.slice(0, 2).map((ins) => (
-                      <button
-                        key={ins.id}
-                        type="button"
-                        onClick={() => handleProactiveInsightAction(ins)}
-                        className="flex items-start justify-between gap-2.5 rounded-2xl border p-3 text-right transition-colors hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor:
-                            ins.severity === 'high'
-                              ? 'color-mix(in srgb, var(--warning) 55%, var(--border-color))'
-                              : 'var(--border-color)',
-                        }}
-                      >
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-1.5 text-xs font-bold">
-                            <span
-                              className="h-1.5 w-1.5 rounded-full shrink-0"
-                              style={{
-                                backgroundColor:
-                                  ins.severity === 'high' ? 'var(--warning)' : 'var(--accent)',
-                              }}
-                            />
-                            <span className="truncate">{ins.title}</span>
-                          </div>
-                          <div className="line-clamp-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            {ins.detail}
-                          </div>
-                        </div>
-                        {ins.metricLabel && (
-                          <span
-                            className="shrink-0 text-[10px] font-bold tabular-nums"
-                            style={{ color: 'var(--accent)' }}
-                          >
-                            {ins.metricLabel}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Curated quick prompt suggestions */}
+                {/* Subtle Dynamic Suggestion Chips if present */}
                 {smartSuggestions.length > 0 && (
                   <div className="flex flex-wrap items-center justify-center gap-1.5">
-                    {smartSuggestions.slice(0, 3).map((sug) => (
+                    {smartSuggestions.slice(0, 2).map((sug) => (
                       <button
                         key={sug.id}
                         type="button"
                         onClick={() => submitChatPrompt(sug.prompt)}
-                        className="rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition-colors hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--text-secondary)',
-                        }}
+                        className="rounded-full px-3 py-1 text-[11px] font-semibold transition-colors hover:text-slate-100"
+                        style={{ color: 'var(--text-muted)' }}
                       >
                         {sug.label}
                       </button>
@@ -1930,276 +1922,328 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   </div>
                 )}
               </section>
-            )}
-
-            {/* Unified Serene Message Cards */}
-            {!(
-              filteredMessages.length === 1 &&
-              filteredMessages[0]?.id.startsWith('welcome_msg_') &&
-              multimodalFeed.length === 0 &&
-              !historySearch &&
-              !showPinnedOnly
-            ) &&
-              filteredMessages.map((msg) => (
-              <MorrowMessageCard
-                key={msg.id}
-                message={msg}
-                copied={copiedMsgId === msg.id}
-                speaking={speakingMsgId === msg.id}
-                hasUndoableAction={hasUndoableAction}
-                onCopy={handleCopyMessage}
-                onTogglePin={onTogglePinMessage}
-                onRetry={onRetryLastPrompt ? () => onRetryLastPrompt() : undefined}
-                onSpeak={(id, text) => void handleSpeakMessage(id, text)}
-                onSaveQuickNote={(txt) => {
-                  onAddQuickNote({
-                    text: txt,
-                    source: 'text',
-                    syncToPerson: true,
-                  });
-                  setSummonNotice('تم حفظ الرد في الملاحظات السريعة وربطه تلقائياً إذا تضمن اسماً.');
-                }}
-                onChoiceClick={onChoiceClick}
-                onResolveDiff={onResolveDiff}
-                onTriggerSpotlight={onTriggerSpotlight}
-                onTriggerCanvasHandoff={(handoff: AssistantCanvasHandoff) => {
-                  if (typeof handoff.agencyId === 'number') {
-                    onSelectActiveAgency?.(handoff.agencyId);
-                  }
-                  setCanvasMode(handoff.canvasMode);
-                  setCanvasOverlayActive(true);
-                }}
-                onUndoLastAction={onUndoLastAction}
-                onSendPrompt={(prompt) => submitChatPrompt(prompt)}
-              />
-            ))}
-
-            {/* Multimodal Voice Notes, File Analyses & Live Transcripts */}
-            {multimodalFeed.map((item) => (
-              <div
-                key={item.id}
-                className="morrow-studio-surface rounded-[22px] border p-4 space-y-2.5 text-xs sm:text-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 font-extrabold">
-                    {item.kind === 'voice_note' ? (
-                      <Volume2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                    ) : item.kind === 'live_summary' ? (
-                      <Radio className="h-4 w-4" style={{ color: '#10b981' }} />
-                    ) : (
-                      <FileText className="h-4 w-4" style={{ color: '#0ea5e9' }} />
-                    )}
-                    <span>{item.title}</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                    {item.modelId && (
-                      <span
-                        dir="ltr"
-                        style={{ color: 'var(--accent)' }}
-                        title={item.modelLabel || item.modelId}
-                      >
-                        {item.modelId}
-                      </span>
-                    )}
-                    {item.durationSec !== undefined && (
-                      <span>
-                        {item.modelId ? '· ' : ''}
-                        {String(Math.floor(item.durationSec / 60)).padStart(2, '0')}:
-                        {String(item.durationSec % 60).padStart(2, '0')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {item.audioUrl && (
-                  <audio controls src={item.audioUrl} className="w-full h-9" />
-                )}
-
-                {item.previewUrl && (
-                  <img
-                    src={item.previewUrl}
-                    alt={item.title}
-                    referrerPolicy="no-referrer"
-                    className="max-h-56 rounded-xl border object-contain"
-                    style={{ borderColor: 'var(--border-color)' }}
+            ) : (
+              <div className="space-y-4">
+                {filteredMessages.map((msg) => (
+                  <MorrowMessageCard
+                    key={msg.id}
+                    message={msg}
+                    copied={copiedMsgId === msg.id}
+                    speaking={speakingMsgId === msg.id}
+                    hasUndoableAction={hasUndoableAction}
+                    onCopy={handleCopyMessage}
+                    onTogglePin={onTogglePinMessage}
+                    onRetry={onRetryLastPrompt ? () => onRetryLastPrompt() : undefined}
+                    onSpeak={(id, text) => void handleSpeakMessage(id, text)}
+                    onSaveQuickNote={(txt) => {
+                      onAddQuickNote({
+                        text: txt,
+                        source: 'text',
+                        syncToPerson: true,
+                      });
+                      setSummonNotice(
+                        'تم حفظ الرد في الملاحظات السريعة وربطه تلقائياً إذا تضمن اسماً.'
+                      );
+                    }}
+                    onChoiceClick={onChoiceClick}
+                    onResolveDiff={onResolveDiff}
+                    onTriggerSpotlight={onTriggerSpotlight}
+                    onTriggerCanvasHandoff={(handoff: AssistantCanvasHandoff) => {
+                      if (typeof handoff.agencyId === 'number') {
+                        onSelectActiveAgency?.(handoff.agencyId);
+                      }
+                      openWorkspacePage('canvas', handoff.canvasMode);
+                    }}
+                    onUndoLastAction={onUndoLastAction}
+                    onSendPrompt={(prompt) => submitChatPrompt(prompt)}
                   />
-                )}
+                ))}
 
-                {item.body && (
-                  <div className="leading-relaxed whitespace-pre-line">{item.body}</div>
-                )}
-
-                {item.linkedPersonName && (
+                {multimodalFeed.map((item) => (
                   <div
-                    className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-nav-active)',
-                      borderColor: 'var(--accent)',
-                      color: 'var(--accent)',
-                    }}
+                    key={item.id}
+                    className="nexus-squircle p-4 space-y-2.5 text-xs sm:text-sm"
                   >
-                    <Link2 className="h-3 w-3" />
-                    <span>
-                      مربوطة تلقائياً بالعائلة: {item.linkedPersonName}
-                      {item.linkedAgencyName ? ` (${item.linkedAgencyName})` : ''}
-                    </span>
-                  </div>
-                )}
-
-                {item.kind === 'voice_note' && item.body && (
-                  <div className="pt-1 flex flex-wrap gap-1.5">
-                    {item.voiceMode === 'quick_note' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onChangeTab('quick_notes')}
-                          className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                          <span>فتح في الملاحظات السريعة</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => submitChatPrompt(item.body)}
-                          className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <Sparkles className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                          <span>تنفيذ كتعليمة للذكاء</span>
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onAddQuickNote({
-                            text: item.body,
-                            source: 'voice',
-                            syncToPerson: true,
-                          });
-                          setSummonNotice('تم حفظ نص التسجيل الصوتي كملاحظة سريعة.');
-                        }}
-                        className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-extrabold">
+                        {item.kind === 'voice_note' ? (
+                          <Volume2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                        ) : item.kind === 'live_summary' ? (
+                          <Radio className="h-4 w-4" style={{ color: '#34d399' }} />
+                        ) : (
+                          <FileText className="h-4 w-4" style={{ color: '#38bdf8' }} />
+                        )}
+                        <span>{item.title}</span>
+                      </div>
+                      <div
+                        className="flex items-center gap-2 font-mono text-[11px] tabular-nums"
+                        style={{ color: 'var(--text-muted)' }}
                       >
-                        <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                        <span>حفظ أيضاً كملاحظة سريعة</span>
-                      </button>
+                        {item.modelId && (
+                          <span
+                            dir="ltr"
+                            style={{ color: 'var(--accent)' }}
+                            title={item.modelLabel || item.modelId}
+                          >
+                            {item.modelId}
+                          </span>
+                        )}
+                        {item.durationSec !== undefined && (
+                          <span>
+                            {item.modelId ? '· ' : ''}
+                            {String(Math.floor(item.durationSec / 60)).padStart(2, '0')}:
+                            {String(item.durationSec % 60).padStart(2, '0')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {item.audioUrl && (
+                      <audio controls src={item.audioUrl} className="w-full h-9" />
                     )}
-                  </div>
-                )}
 
-                {item.errorText && (
-                  <div
-                    className="rounded-xl border px-3 py-2 text-xs font-semibold"
-                    style={{
-                      backgroundColor: 'var(--warning-bg)',
-                      borderColor: 'var(--warning)',
-                    }}
-                  >
-                    {item.errorText}
-                  </div>
-                )}
+                    {item.previewUrl && (
+                      <img
+                        src={item.previewUrl}
+                        alt={item.title}
+                        referrerPolicy="no-referrer"
+                        className="max-h-56 rounded-xl border object-contain"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      />
+                    )}
 
-                {(item.file || (item.suggestedTools && item.suggestedTools.length > 0)) && (
-                  <div className="pt-1 flex flex-wrap gap-2">
-                    {item.suggestedTools && item.suggestedTools.length > 0 && onStageToolDrafts && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const staged = onStageToolDrafts(
-                            item.suggestedTools!,
-                            `تحليل مرفق: ${item.title}`
-                          );
-                          if (staged > 0) onChangeTab('approvals');
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold hover:border-[var(--accent)]"
+                    {item.body && (
+                      <div className="leading-relaxed whitespace-pre-line">{item.body}</div>
+                    )}
+
+                    {item.linkedPersonName && (
+                      <div
+                        className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold"
                         style={{
                           backgroundColor: 'var(--bg-nav-active)',
                           borderColor: 'var(--accent)',
                           color: 'var(--accent)',
                         }}
                       >
-                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        <Link2 className="h-3 w-3" />
                         <span>
-                          تجهيز {item.suggestedTools.length} مسودة للموافقة
+                          مربوطة تلقائياً بالعائلة: {item.linkedPersonName}
+                          {item.linkedAgencyName ? ` (${item.linkedAgencyName})` : ''}
                         </span>
-                      </button>
+                      </div>
                     )}
 
-                    {item.file && onHandoffFilesToQuickExtract && (
-                      <button
-                        type="button"
-                        onClick={() => onHandoffFilesToQuickExtract([item.file!])}
-                        className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold"
+                    {item.kind === 'voice_note' && item.body && (
+                      <div className="pt-1 flex flex-wrap gap-1.5">
+                        {item.voiceMode === 'quick_note' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openWorkspacePage('quick_notes')}
+                              className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                              style={{
+                                backgroundColor: 'rgba(19, 20, 26, 0.85)',
+                                borderColor: 'var(--border-color)',
+                              }}
+                            >
+                              <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                              <span>فتح في الملاحظات السريعة</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => submitChatPrompt(item.body)}
+                              className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                              style={{
+                                backgroundColor: 'rgba(19, 20, 26, 0.85)',
+                                borderColor: 'var(--border-color)',
+                              }}
+                            >
+                              <Sparkles className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                              <span>تنفيذ كتعليمة للذكاء</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onAddQuickNote({
+                                text: item.body,
+                                source: 'voice',
+                                syncToPerson: true,
+                              });
+                              setSummonNotice('تم حفظ نص التسجيل الصوتي كملاحظة سريعة.');
+                            }}
+                            className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold hover:border-[var(--accent)]"
+                            style={{
+                              backgroundColor: 'rgba(19, 20, 26, 0.85)',
+                              borderColor: 'var(--border-color)',
+                            }}
+                          >
+                            <StickyNote className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                            <span>حفظ أيضاً كملاحظة سريعة</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {item.errorText && (
+                      <div
+                        className="rounded-xl border px-3 py-2 text-xs font-semibold"
                         style={{
-                          backgroundColor: 'var(--accent)',
-                          color: 'var(--accent-fg)',
+                          backgroundColor: 'var(--warning-bg)',
+                          borderColor: 'var(--warning)',
                         }}
                       >
-                        <FileSearch className="h-3.5 w-3.5" />
-                        <span>فتح في السحب الذكي مع التحقق البصري</span>
+                        {item.errorText}
+                      </div>
+                    )}
+
+                    {(item.file || (item.suggestedTools && item.suggestedTools.length > 0)) && (
+                      <div className="pt-1 flex flex-wrap gap-2">
+                        {item.suggestedTools && item.suggestedTools.length > 0 && onStageToolDrafts && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const staged = onStageToolDrafts(
+                                item.suggestedTools!,
+                                `تحليل مرفق: ${item.title}`
+                              );
+                              if (staged > 0) openWorkspacePage('approvals');
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold hover:border-[var(--accent)]"
+                            style={{
+                              backgroundColor: 'var(--bg-nav-active)',
+                              borderColor: 'var(--accent)',
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            <ClipboardCheck className="h-3.5 w-3.5" />
+                            <span>تجهيز {item.suggestedTools.length} مسودة للموافقة</span>
+                          </button>
+                        )}
+
+                        {item.file && onHandoffFilesToQuickExtract && (
+                          <button
+                            type="button"
+                            onClick={() => onHandoffFilesToQuickExtract([item.file!])}
+                            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold"
+                            style={{
+                              backgroundColor: 'var(--accent)',
+                              color: 'var(--accent-fg)',
+                            }}
+                          >
+                            <FileSearch className="h-3.5 w-3.5" />
+                            <span>فتح في السحب الذكي مع التحقق البصري</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {(isThinking || analyzingAttachment || transcribingVoice) && (
+                  <div
+                    className="flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-xs font-semibold"
+                    style={{
+                      backgroundColor: 'rgba(13, 15, 22, 0.9)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent)' }} />
+                      <span>
+                        {analyzingAttachment
+                          ? 'جاري قراءة وتحليل الملف المرفق...'
+                          : transcribingVoice
+                            ? 'جاري تفريغ الرسالة الصوتية ومعالجتها...'
+                            : 'جاري اختيار النموذج الأنسب ومعالجة طلبك...'}
+                      </span>
+                    </div>
+                    {isThinking && onCancelRequest && (
+                      <button
+                        type="button"
+                        onClick={onCancelRequest}
+                        className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+                        style={{
+                          backgroundColor: 'rgba(19, 20, 26, 0.85)',
+                          borderColor: 'var(--danger)',
+                          color: 'var(--danger)',
+                        }}
+                      >
+                        <Square className="h-3 w-3" />
+                        <span>إيقاف</span>
                       </button>
                     )}
                   </div>
                 )}
-              </div>
-            ))}
 
-            {(isThinking || analyzingAttachment || transcribingVoice) && (
-              <div
-                className="flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-xs font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent)' }} />
-                  <span>
-                    {analyzingAttachment
-                      ? 'جاري قراءة وتحليل الملف المرفق...'
-                      : transcribingVoice
-                        ? 'جاري تفريغ الرسالة الصوتية ومعالجتها...'
-                        : 'جاري اختيار النموذج الأنسب ومعالجة طلبك...'}
-                  </span>
-                </div>
-                {isThinking && onCancelRequest && (
-                  <button
-                    type="button"
-                    onClick={onCancelRequest}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--danger)',
-                      color: 'var(--danger)',
-                    }}
-                  >
-                    <Square className="h-3 w-3" />
-                    <span>إيقاف</span>
-                  </button>
-                )}
+                <div ref={chatScrollRef} />
               </div>
             )}
-
-            <div ref={chatScrollRef} />
           </div>
 
-          {/* Voice / File Error Feedback if any */}
-          {voiceError && (
+          {/* Inline Microphone Permission Recovery Card (Zero Stacked Modal) */}
+          {micPermissionGuide && (
             <div
-              className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold"
+              className="mb-2.5 rounded-2xl border p-3.5 text-xs space-y-2 shrink-0"
+              style={{
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                borderColor: 'rgba(251, 191, 36, 0.4)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 font-extrabold" style={{ color: 'var(--warning)' }}>
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>{micPermissionGuide.title}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    pendingMicRetryTargetRef.current = null;
+                    setMicPermissionGuide(null);
+                  }}
+                  aria-label="إغلاق تنبيه إذن الميكروفون"
+                  className="p-0.5 hover:opacity-75"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p style={{ color: 'var(--text-secondary)' }}>{micPermissionGuide.reason}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = pendingMicRetryTargetRef.current;
+                    setMicPermissionGuide(null);
+                    if (target === 'note') void toggleNoteVoiceDictation();
+                    else void startVoiceMessageRecording();
+                  }}
+                  className="rounded-xl px-3 py-1.5 text-[11px] font-extrabold whitespace-nowrap"
+                  style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                >
+                  إعادة طلب الإذن
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    pendingMicRetryTargetRef.current = null;
+                    setMicPermissionGuide(null);
+                    window.setTimeout(() => chatTextareaRef.current?.focus(), 60);
+                  }}
+                  className="rounded-xl border px-3 py-1.5 text-[11px] font-bold whitespace-nowrap"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  الكتابة النصية الآن
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Voice / File Error Feedback if any */}
+          {voiceError && !micPermissionGuide && (
+            <div
+              className="mb-2.5 flex items-center justify-between gap-2 rounded-2xl border px-3.5 py-2 text-xs font-semibold shrink-0"
               style={{
                 backgroundColor: 'var(--warning-bg)',
                 borderColor: 'var(--warning)',
@@ -2217,235 +2261,129 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </div>
           )}
 
-          {/* GEMINI-STYLE UNIFIED COMPOSER DOCK */}
-          <div
-            className="morrow-studio-surface mt-auto shrink-0 rounded-[26px] border px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-sm space-y-2"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'color-mix(in srgb, var(--accent) 28%, var(--border-color))',
-            }}
-          >
-            {/* Pending Attached Document / Photo Preview */}
-            {attachedFile && (
-              <div
-                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-2.5 text-xs"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--accent)',
-                }}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {attachedFile.previewUrl ? (
-                    <img
-                      src={attachedFile.previewUrl}
-                      alt={attachedFile.name}
-                      referrerPolicy="no-referrer"
-                      className="h-11 w-11 rounded-xl border object-cover shrink-0"
-                      style={{ borderColor: 'var(--border-color)' }}
-                    />
-                  ) : (
-                    <span
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <FileText className="h-5 w-5" style={{ color: 'var(--accent)' }} />
-                    </span>
-                  )}
+          {/* ================================================================
+              FLOATING DARK GLASSMORPHIC PILL INPUT BAR (#13141A)
+              Right (+ Attachment) | Center (Auto-Expanding Input) | Left (Mic + Live Waveform)
+             ================================================================ */}
+          <div className="relative mt-auto shrink-0" ref={plusMenuContainerRef}>
+            {/* Full-Screen Push Attachment & Quick Tool Menu */}
+            <FullScreenPushPage
+              open={plusMenuOpen}
+              onBack={() => setPlusMenuOpen(false)}
+              title="إرفاق ملف أو تشغيل أداة ذكية"
+              subtitle="اختر ملفاً أو صورة أو صوتاً أو افتح أداة التحليل مباشرة"
+              icon={
+                <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+                  <Plus className="h-4 w-4" />
+                </NexusDuotoneIcon>
+              }
+              maxWidthClass="max-w-xl"
+              zIndexClass="z-[var(--z-sheet)]"
+              ariaLabel="قائمة الإرفاق والأدوات السريعة"
+            >
+              <div className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+                <button
+                  type="button"
+                  data-testid="morrow-upload-trigger-card"
+                  onClick={() => {
+                    setPlusMenuOpen(false);
+                    filePickerRef.current?.click();
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-right text-xs font-bold transition-colors hover:border-[var(--accent-ai)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+                    <Paperclip className="h-4 w-4" />
+                  </NexusDuotoneIcon>
                   <div className="min-w-0">
-                    <div className="truncate font-extrabold">{attachedFile.name}</div>
-                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      اكتب سؤالك عن الملف أو افتحه بالسحب الذكي مباشرة
+                    <div className="text-sm font-extrabold">ملف أو صورة (PDF / نصوص)</div>
+                    <div className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                      قراءة الكشوفات، الجداول، والمستندات
                     </div>
                   </div>
-                </div>
+                </button>
 
-                <div className="flex items-center gap-1.5">
-                  {onHandoffFilesToQuickExtract && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const fileToSend = attachedFile.file;
-                        setAttachedFile(null);
-                        onHandoffFilesToQuickExtract([fileToSend]);
-                      }}
-                      className="inline-flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold hover:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <FileSearch className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                      <span>السحب الذكي</span>
-                    </button>
-                  )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlusMenuOpen(false);
+                    audioPickerRef.current?.click();
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-right text-xs font-bold transition-colors hover:border-[var(--accent-ai)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+                    <Volume2 className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold">ملف صوتي للتفريغ والتحليل</div>
+                    <div className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                      MP3, WAV, M4A عبر محرك Whisper
+                    </div>
+                  </div>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => void analyzeAttachedDocument(chatInput.trim())}
-                    className="inline-flex h-8 items-center gap-1 rounded-xl px-3 text-[11px] font-extrabold"
-                    style={{
-                      backgroundColor: 'var(--accent)',
-                      color: 'var(--accent-fg)',
-                    }}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>قراءة وتحليل</span>
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlusMenuOpen(false);
+                    openWorkspacePage('camera');
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-right text-xs font-bold transition-colors hover:border-[var(--accent-ai)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+                    <Camera className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold">التقاط مباشر بالكاميرا</div>
+                    <div className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                      تصوير كشف أو ورقة وتحليلها فوراً
+                    </div>
+                  </div>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setAttachedFile(null)}
-                    aria-label="إزالة المرفق"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlusMenuOpen(false);
+                    openWorkspacePage('canvas');
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-right text-xs font-bold transition-colors hover:border-[var(--accent-ai)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+                    <BarChart3 className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold">فتح اللوحة التفاعلية 2.0</div>
+                    <div className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                      رسوم الأرباح، الجداول، والتوقعات
+                    </div>
+                  </div>
+                </button>
               </div>
-            )}
+            </FullScreenPushPage>
 
-            {/* Active Voice Recording Studio Strip (Live Waveform + Destination Switcher + Interim Speech) */}
-            {isRecordingVoiceMsg && (
-              <div
-                data-testid="morrow-voice-recording-strip"
-                className="rounded-2xl border p-3 text-xs space-y-2.5"
-                style={{
-                  backgroundColor: 'var(--danger-bg)',
-                  borderColor: 'var(--danger)',
-                }}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 font-extrabold" style={{ color: 'var(--danger)' }}>
-                    <Mic className="h-4 w-4 shrink-0" />
-                    <span>جاري التسجيل الصوتي...</span>
-                    <span className="font-mono tabular-nums">
-                      {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
-                      {String(recordingSeconds % 60).padStart(2, '0')}
-                    </span>
-
-                    {/* Live Audio Spectrum Bars */}
-                    <span className="inline-flex h-4 items-end gap-0.5 px-1" aria-hidden="true">
-                      {audioLevels.map((lvl, idx) => (
-                        <span
-                          key={idx}
-                          className="w-1 rounded-full transition-all duration-75"
-                          style={{
-                            height: `${Math.max(20, lvl)}%`,
-                            backgroundColor: 'var(--danger)',
-                          }}
-                        />
-                      ))}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => void stopVoiceMessageRecording(false)}
-                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      إلغاء
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void stopVoiceMessageRecording(true)}
-                      className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-extrabold whitespace-nowrap"
-                      style={{
-                        backgroundColor: 'var(--danger)',
-                        color: '#ffffff',
-                      }}
-                    >
-                      <Square className="h-3 w-3" />
-                      <span>
-                        {voiceTargetMode === 'quick_note'
-                          ? 'إيقاف وحفظ الملاحظة'
-                          : voiceTargetMode === 'draft_text'
-                            ? 'إيقاف وإدراج النص'
-                            : 'إيقاف وتنفيذ'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Live Destination Selector */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-                      الوجهة عند الإيقاف:
-                    </span>
-                    {(
-                      [
-                        { id: 'instruction', label: 'تعليمات للذكاء' },
-                        { id: 'quick_note', label: 'ملاحظة سريعة' },
-                        { id: 'draft_text', label: 'تحرير في المربع' },
-                      ] as const
-                    ).map((opt) => {
-                      const active = voiceTargetMode === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => updateVoiceTargetMode(opt.id)}
-                          className="rounded-lg border px-2.5 py-1 text-[11px] font-extrabold whitespace-nowrap"
-                          style={{
-                            backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
-                            borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                            color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {liveInterimText && (
-                  <div
-                    className="rounded-xl border px-3 py-1.5 text-[11px] font-semibold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    {liveInterimText}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <input
-              ref={filePickerRef}
-              type="file"
-              accept="image/*,application/pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) void handleQueueFile(f);
-              }}
-            />
-
-            {/* Slash Command Quick Launcher (when typing / with full keyboard nav) */}
+            {/* Slash Command Quick Launcher (above pill when typing /) */}
             {filteredSlashCommands.length > 0 && (
               <div
-                className="rounded-2xl border p-2 space-y-1 max-h-52 overflow-y-auto"
+                className="mb-2.5 rounded-2xl border p-2 space-y-1 max-h-52 overflow-y-auto shadow-2xl"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--accent)',
+                  backgroundColor: '#13141a',
+                  borderColor: 'rgba(129, 140, 248, 0.35)',
                 }}
               >
                 <div className="px-2 py-1 text-[10px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
@@ -2465,18 +2403,16 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                           return;
                         }
                         if (sc.openTab) {
-                          setCanvasOverlayActive(false);
-                          onChangeTab(sc.openTab);
+                          openWorkspacePage(sc.openTab);
                           return;
                         }
                         if (sc.runVerifier) {
-                          setSideDrawerOpen(true);
+                          openWorkspacePage('diagnostics');
                           void handleRunSystemVerifier();
                           return;
                         }
                         if (sc.canvasMode) {
-                          setCanvasMode(sc.canvasMode);
-                          setCanvasOverlayActive(true);
+                          openWorkspacePage('canvas', sc.canvasMode);
                           return;
                         }
                         if (sc.prompt) {
@@ -2503,111 +2439,303 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               </div>
             )}
 
-            {/* Main Borderless Gemini Prompt Field + Unified Action Bar */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitChatPrompt();
-              }}
-              className="space-y-2"
-            >
-              <textarea
-                ref={chatTextareaRef}
-                rows={1}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (filteredSlashCommands.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setSlashIndex((i) => (i + 1) % filteredSlashCommands.length);
-                      return;
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setSlashIndex((i) =>
-                        (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length
+            <div className="morrow-composer-pill rounded-[28px] border px-2.5 py-2 sm:px-3 sm:py-2.5 space-y-2">
+              {/* Pending Attached Document / Photo / Audio Preview */}
+              {attachedFile && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-2 text-xs"
+                  style={{
+                    backgroundColor: 'rgba(5, 5, 8, 0.72)',
+                    borderColor: 'var(--accent)',
+                  }}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {attachedFile.previewUrl ? (
+                      <img
+                        src={attachedFile.previewUrl}
+                        alt={attachedFile.name}
+                        referrerPolicy="no-referrer"
+                        className="h-10 w-10 rounded-xl border object-cover shrink-0"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      />
+                    ) : (
+                      <span
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+                        style={{
+                          backgroundColor: 'rgba(19, 20, 26, 0.9)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <FileText className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate font-extrabold">{attachedFile.name}</div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        اكتب سؤالك عن الملف أو اضغط تحليل مباشرة
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {onHandoffFilesToQuickExtract && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const fileToSend = attachedFile.file;
+                          setAttachedFile(null);
+                          onHandoffFilesToQuickExtract([fileToSend]);
+                        }}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold hover:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'rgba(19, 20, 26, 0.9)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <FileSearch className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                        <span>السحب الذكي</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => void analyzeAttachedDocument(chatInput.trim())}
+                      className="inline-flex h-8 items-center gap-1 rounded-xl px-3 text-[11px] font-extrabold"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>قراءة وتحليل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAttachedFile(null)}
+                      aria-label="إزالة المرفق"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl border"
+                      style={{
+                        backgroundColor: 'rgba(19, 20, 26, 0.9)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Active Voice Recording Studio Strip (Live Waveform + Destination Switcher) */}
+              {isRecordingVoiceMsg && (
+                <div
+                  data-testid="morrow-voice-recording-strip"
+                  className="rounded-2xl border p-3 text-xs space-y-2"
+                  style={{
+                    backgroundColor: 'var(--danger-bg)',
+                    borderColor: 'var(--danger)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 font-extrabold" style={{ color: 'var(--danger)' }}>
+                      <Mic className="h-4 w-4 shrink-0" />
+                      <span>جاري التسجيل الصوتي...</span>
+                      <span className="font-mono tabular-nums">
+                        {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
+                        {String(recordingSeconds % 60).padStart(2, '0')}
+                      </span>
+
+                      <span className="inline-flex h-4 items-end gap-0.5 px-1" aria-hidden="true">
+                        {audioLevels.map((lvl, idx) => (
+                          <span
+                            key={idx}
+                            className="w-1 rounded-full transition-all duration-75"
+                            style={{
+                              height: `${Math.max(20, lvl)}%`,
+                              backgroundColor: 'var(--danger)',
+                            }}
+                          />
+                        ))}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void stopVoiceMessageRecording(false)}
+                        className="rounded-lg border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+                        style={{
+                          backgroundColor: 'rgba(19, 20, 26, 0.9)',
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void stopVoiceMessageRecording(true)}
+                        className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-extrabold whitespace-nowrap"
+                        style={{
+                          backgroundColor: 'var(--danger)',
+                          color: '#ffffff',
+                        }}
+                      >
+                        <Square className="h-3 w-3" />
+                        <span>
+                          {voiceTargetMode === 'quick_note'
+                            ? 'إيقاف وحفظ الملاحظة'
+                            : voiceTargetMode === 'draft_text'
+                              ? 'إيقاف وإدراج النص'
+                              : 'إيقاف وتنفيذ'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                      الوجهة عند الإيقاف:
+                    </span>
+                    {(
+                      [
+                        { id: 'instruction', label: 'تعليمات للذكاء' },
+                        { id: 'quick_note', label: 'ملاحظة سريعة' },
+                        { id: 'draft_text', label: 'تحرير في المربع' },
+                      ] as const
+                    ).map((opt) => {
+                      const active = voiceTargetMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => updateVoiceTargetMode(opt.id)}
+                          className="rounded-lg border px-2.5 py-1 text-[11px] font-extrabold whitespace-nowrap"
+                          style={{
+                            backgroundColor: active ? 'var(--accent)' : 'rgba(19, 20, 26, 0.85)',
+                            borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                            color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
                       );
-                      return;
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      setChatInput('');
-                      return;
+                    })}
+                  </div>
+
+                  {liveInterimText && (
+                    <div
+                      className="rounded-xl border px-3 py-1.5 text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: 'rgba(19, 20, 26, 0.9)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {liveInterimText}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Main Pill Row: Right (+) | Center (Input) | Left (Mic + Live Waveform) */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitChatPrompt();
+                }}
+                className="flex items-end gap-1.5 sm:gap-2"
+              >
+                {/* Right inside pill (RTL Start): + Attachment Trigger */}
+                <button
+                  type="button"
+                  data-testid="morrow-plus-attach-btn"
+                  onClick={() => setPlusMenuOpen((v) => !v)}
+                  aria-expanded={plusMenuOpen}
+                  aria-label="إرفاق ملف أو صورة أو صوت"
+                  title="إرفاق ملف، صورة، أو صوت"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: plusMenuOpen
+                      ? 'var(--bg-nav-active)'
+                      : 'rgba(255, 255, 255, 0.04)',
+                    borderColor: plusMenuOpen
+                      ? 'var(--accent)'
+                      : 'rgba(148, 163, 184, 0.14)',
+                    color: plusMenuOpen ? 'var(--accent)' : 'var(--text-primary)',
+                  }}
+                >
+                  <Plus
+                    className={`h-5 w-5 transition-transform ${plusMenuOpen ? 'rotate-45' : ''}`}
+                  />
+                </button>
+
+                {/* Center: Auto-Expanding Textarea */}
+                <textarea
+                  ref={chatTextareaRef}
+                  rows={1}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (filteredSlashCommands.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSlashIndex((i) => (i + 1) % filteredSlashCommands.length);
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSlashIndex(
+                          (i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length
+                        );
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setChatInput('');
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const sc = filteredSlashCommands[slashIndex] || filteredSlashCommands[0];
+                        setChatInput('');
+                        if (sc.startVoice) void startVoiceMessageRecording(sc.startVoice);
+                        else if (sc.openTab) openWorkspacePage(sc.openTab);
+                        else if (sc.runVerifier) {
+                          openWorkspacePage('diagnostics');
+                          void handleRunSystemVerifier();
+                        } else if (sc.canvasMode) openWorkspacePage('canvas', sc.canvasMode);
+                        else if (sc.prompt) submitChatPrompt(sc.prompt);
+                        return;
+                      }
                     }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      const sc = filteredSlashCommands[slashIndex] || filteredSlashCommands[0];
-                      setChatInput('');
-                      if (sc.startVoice) void startVoiceMessageRecording(sc.startVoice);
-                      else if (sc.openTab) {
-                        setCanvasOverlayActive(false);
-                        onChangeTab(sc.openTab);
-                      } else if (sc.runVerifier) {
-                        setSideDrawerOpen(true);
-                        void handleRunSystemVerifier();
-                      } else if (sc.canvasMode) {
-                        setCanvasMode(sc.canvasMode);
-                        setCanvasOverlayActive(true);
-                      } else if (sc.prompt) {
-                        submitChatPrompt(sc.prompt);
-                      }
-                      return;
+                      submitChatPrompt();
                     }
+                  }}
+                  placeholder={
+                    attachedFile
+                      ? 'اكتب سؤالك حول الملف المرفق أو اضغط إرسال...'
+                      : 'يمكنك كتابة سؤالك هنا...'
                   }
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submitChatPrompt();
-                  }
-                }}
-                placeholder={
-                  attachedFile
-                    ? 'اكتب سؤالك حول الملف المرفق أو اضغط إرسال...'
-                    : 'اسأل Morrow أو اكتب / للأوامر السريعة...'
-                }
-                className="w-full min-w-0 resize-none bg-transparent px-1 py-1 text-xs sm:text-sm outline-none"
-                style={{ color: 'var(--text-primary)' }}
-              />
+                  className="min-h-[40px] w-full min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-xs sm:text-sm leading-relaxed outline-none"
+                  style={{ color: 'var(--text-primary)' }}
+                />
 
-              {/* Single Clean Bottom Control Row inside Gemini Box */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                {/* Media & Voice Actions (Right in RTL) */}
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    type="button"
-                    data-testid="morrow-upload-trigger-card"
-                    onClick={() => filePickerRef.current?.click()}
-                    title="رفع ملف PDF أو صورة"
-                    aria-label="رفع ملف PDF أو صورة"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)]"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    <Paperclip className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                    <span className="hidden sm:inline">ملف</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCameraModalOpen(true)}
-                    title="تصوير مباشر بالكاميرا"
-                    aria-label="تصوير مباشر بالكاميرا"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)]"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    <Camera className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                    <span className="hidden sm:inline">تصوير</span>
-                  </button>
-
+                {/* Left inside pill (RTL End): Quick Mic + Send/Stop + Glowing Live Waveform */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     data-testid="morrow-voice-record-btn"
                     disabled={checkingMicPermission || transcribingVoice}
                     onClick={() => void startVoiceMessageRecording()}
-                    title="التسجيل الصوتي الذكي"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)]"
+                    title="تسجيل ملاحظة صوتية"
+                    aria-label="تسجيل ملاحظة صوتية"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-[rgba(255,255,255,0.06)]"
                     style={{
                       backgroundColor: isRecordingVoiceMsg ? 'var(--danger)' : 'transparent',
-                      color: isRecordingVoiceMsg ? '#ffffff' : 'var(--text-primary)',
+                      color: isRecordingVoiceMsg ? '#ffffff' : 'var(--text-secondary)',
                     }}
                   >
                     {checkingMicPermission || transcribingVoice ? (
@@ -2615,108 +2743,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     ) : isRecordingVoiceMsg ? (
                       <MicOff className="h-4 w-4" />
                     ) : (
-                      <Mic className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <Mic className="h-4 w-4" />
                     )}
-                    <span>
-                      {transcribingVoice
-                        ? 'تفريغ...'
-                        : isRecordingVoiceMsg
-                          ? 'إيقاف'
-                          : 'صوتي'}
-                    </span>
-                  </button>
-
-                  {!isRecordingVoiceMsg && (
-                    <div
-                      className="hidden md:inline-flex h-8 items-center rounded-full border p-0.5 text-[10px]"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                      title="وجهة التسجيل الصوتي: أمر ذكي أو ملاحظة سريعة أو تحرير نصي"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => updateVoiceTargetMode('instruction')}
-                        className="rounded-full px-2 py-0.5 font-bold whitespace-nowrap"
-                        style={{
-                          backgroundColor:
-                            voiceTargetMode === 'instruction' ? 'var(--accent)' : 'transparent',
-                          color:
-                            voiceTargetMode === 'instruction'
-                              ? 'var(--accent-fg)'
-                              : 'var(--text-muted)',
-                        }}
-                      >
-                        للذكاء
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateVoiceTargetMode('quick_note')}
-                        className="rounded-full px-2 py-0.5 font-bold whitespace-nowrap"
-                        style={{
-                          backgroundColor:
-                            voiceTargetMode === 'quick_note' ? 'var(--accent)' : 'transparent',
-                          color:
-                            voiceTargetMode === 'quick_note'
-                              ? 'var(--accent-fg)'
-                              : 'var(--text-muted)',
-                        }}
-                      >
-                        ملاحظة
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateVoiceTargetMode('draft_text')}
-                        className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 font-bold whitespace-nowrap"
-                        style={{
-                          backgroundColor:
-                            voiceTargetMode === 'draft_text' ? 'var(--accent)' : 'transparent',
-                          color:
-                            voiceTargetMode === 'draft_text'
-                              ? 'var(--accent-fg)'
-                              : 'var(--text-muted)',
-                        }}
-                      >
-                        <Edit3 className="h-2.5 w-2.5" />
-                        <span>تحرير</span>
-                      </button>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    data-testid="morrow-start-live-btn"
-                    onClick={() => setLiveModalOpen(true)}
-                    title="بدء محادثة صوتية ومرئية لايف (3.8 Live)"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full border px-2.5 sm:px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'color-mix(in srgb, #10b981 10%, var(--bg-main))',
-                      borderColor: 'color-mix(in srgb, #10b981 40%, var(--border-color))',
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    <Radio className="h-3.5 w-3.5" style={{ color: '#10b981' }} />
-                    <span>لايف</span>
-                  </button>
-                </div>
-
-                {/* Model Quick Selector + Send / Stop CTA (Left in RTL) */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setModelMenuOpen(true)}
-                    title="تغيير النموذج أو نمط التعاون"
-                    className="inline-flex h-9 items-center gap-1 rounded-full border px-2.5 text-[11px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    <Sparkles className="h-3 w-3 shrink-0" style={{ color: 'var(--accent)' }} />
-                    <span>{activeBrain.shortLabel}</span>
-                    <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-muted)' }} />
                   </button>
 
                   {isThinking && onCancelRequest ? (
@@ -2724,41 +2752,126 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       type="button"
                       onClick={onCancelRequest}
                       aria-label="إيقاف"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border shrink-0"
+                      className="nexus-pill-btn inline-flex h-10 w-10 items-center justify-center border shrink-0"
                       style={{
-                        backgroundColor: 'var(--bg-surface)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.14)',
                         borderColor: 'var(--danger)',
                         color: 'var(--danger)',
                       }}
                     >
                       <Square className="h-4 w-4" />
                     </button>
-                  ) : (
+                  ) : (chatInput.trim() || attachedFile) ? (
                     <button
                       type="submit"
-                      disabled={(!chatInput.trim() && !attachedFile) || isThinking || analyzingAttachment}
+                      disabled={isThinking || analyzingAttachment}
                       aria-label="إرسال"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full shrink-0 disabled:opacity-40 transition-opacity"
+                      className="nexus-pill-btn inline-flex h-10 w-10 items-center justify-center shrink-0 hover:opacity-95 disabled:opacity-45"
                       style={{
-                        backgroundColor: 'var(--accent)',
-                        color: 'var(--accent-fg)',
+                        backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                        color: '#FFFFFF',
                       }}
                     >
                       <Send className="h-4 w-4" />
                     </button>
-                  )}
+                  ) : null}
+
+                  {/* Circular Glowing Electric Indigo Live Audio Waveform Button */}
+                  <button
+                    type="button"
+                    data-testid="morrow-start-live-btn"
+                    onClick={() => openWorkspacePage('live')}
+                    title="محادثة صوتية مباشرة لايف"
+                    aria-label="بدء المحادثة الصوتية المباشرة لايف"
+                    className="nexus-pill-btn inline-flex h-10 w-10 items-center justify-center shrink-0 transition-transform hover:scale-[1.04]"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, #5B4FE9 0%, #818CF8 100%)',
+                      color: '#FFFFFF',
+                      boxShadow:
+                        '0 0 22px rgba(91, 79, 233, 0.58), 0 0 8px rgba(129, 140, 248, 0.35)',
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <rect x="4" y="9" width="2.2" height="6" rx="1.1" fill="currentColor" />
+                      <rect x="8.2" y="5" width="2.2" height="14" rx="1.1" fill="currentColor" />
+                      <rect x="12.4" y="7" width="2.2" height="10" rx="1.1" fill="currentColor" />
+                      <rect x="16.6" y="4" width="2.2" height="16" rx="1.1" fill="currentColor" />
+                    </svg>
+                  </button>
                 </div>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </main>
       )}
 
       {/* ====================================================================
-          SECONDARY EXTENSION VIEW: WORKSPACE 2.0 DYNAMIC CANVAS (Opened via Side Button)
+          STANDALONE FULL-PAGE SUB-VIEWS (Zero Nested Modals / Popups)
          ==================================================================== */}
-      {activeTab === 'chat' && canvasOverlayActive && (
-        <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 px-4 py-6 sm:px-6">
+      {activePage === 'history' && (
+        <MorrowHistoryPage
+          chatThreads={chatThreads}
+          activeThreadId={activeThreadId}
+          messages={messages}
+          historySearch={historySearch}
+          onChangeHistorySearch={setHistorySearch}
+          showPinnedOnly={showPinnedOnly}
+          onTogglePinnedOnly={() => setShowPinnedOnly((v) => !v)}
+          onSwitchThread={onSwitchThread}
+          onDeleteThread={onDeleteThread}
+          onNewChat={onClearMessages}
+          onExportChatHistory={onExportChatHistory}
+          onOpenChat={() => openWorkspacePage('chat')}
+        />
+      )}
+
+      {activePage === 'models' && (
+        <MorrowModelsPage
+          brainMode={brainMode}
+          onChangeBrainMode={onChangeBrainMode}
+          brainOptions={BRAIN_BUTTONS}
+          collaborationMode={collaborationMode}
+          onChangeCollaborationMode={onChangeCollaborationMode}
+          collaborationOptions={COLLABORATION_MODE_OPTIONS}
+          responseStyle={responseStyle}
+          onChangeResponseStyle={onChangeResponseStyle}
+          connectivity={connectivity}
+          modelHealthSnapshots={modelHealthSnapshots}
+          onOpenAppAiStudio={
+            onOpenAiModelsStudio
+              ? onOpenAiModelsStudio
+              : onNavigateView
+                ? () => onNavigateView('settings', 'ai_assistant')
+                : undefined
+          }
+          onBackToChat={() => openWorkspacePage('chat')}
+        />
+      )}
+
+      {activePage === 'assistants' && (
+        <MorrowAssistantsPage
+          activeAssistantId={activeAssistantId}
+          onActivateAssistant={handleSelectAssistantProfile}
+          onBackToChat={() => openWorkspacePage('chat')}
+        />
+      )}
+
+      {activePage === 'canvas' && (
+        <main
+          aria-label="اللوحة التفاعلية والأدوات الذكية"
+          className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
+        >
+          <MorrowSubPageHeader
+            title="اللوحة التفاعلية والأدوات 2.0"
+            subtitle="رسوم بيانية حية، تحرير جدول مباشر، تقارير تنفيذية، وتوقعات الماكرو"
+            onBack={() => openWorkspacePage('chat')}
+          />
           <DynamicWorkspaceCanvas
             canvasMode={canvasMode}
             onChangeCanvasMode={setCanvasMode}
@@ -2778,8 +2891,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             onStageToolDrafts={(tools, sourceLabel) => {
               if (onStageToolDrafts) {
                 onStageToolDrafts(tools, sourceLabel);
-                setCanvasOverlayActive(false);
-                onChangeTab('approvals');
+                openWorkspacePage('approvals');
               }
             }}
             onOpenAgencyRoster={(agId) => {
@@ -2791,7 +2903,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               }
             }}
             onSendPrompt={(prompt) => {
-              setCanvasOverlayActive(false);
+              openWorkspacePage('chat');
               submitChatPrompt(prompt);
             }}
             cloudConfigured={cloudConfigured}
@@ -2800,45 +2912,50 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         </main>
       )}
 
-      {/* TAB 2: المهام والمراجعة (Approvals Draft Queue) */}
-      {activeTab === 'approvals' && (
+      {activePage === 'approvals' && (
         <main
           aria-label="طابور المهام والمراجعة"
           data-testid="morrow-approvals-panel"
           className="mx-auto w-full max-w-5xl flex-1 space-y-5 px-4 py-6 sm:px-6 sm:py-8"
         >
-          <div className="morrow-studio-surface rounded-[24px] border p-5 sm:p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-extrabold">
-                  مسودات بانتظار موافقتك ({pendingDrafts.length})
-                </h2>
-                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  لا يعدّل المساعد أي سجل أو مصروف أو معادلة حاسبة بشكل مباشر — كل عملية تصل هنا للمراجعة أولاً وتُنفذ فقط بعد موافقتك.
-                </p>
-              </div>
+          <MorrowSubPageHeader
+            title="طابور المهام والمراجعة"
+            subtitle="مراجعة واعتماد مسودات التعديل قبل تطبيقها على الجداول والمصاريف"
+            onBack={() => openWorkspacePage('chat')}
+            rightSlot={
               <button
                 type="button"
                 onClick={() => {
-                  onChangeTab('chat');
+                  openWorkspacePage('chat');
                   onSendMessage('صلح مشاكل الفحص تلقائياً');
                 }}
-                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+                className="nexus-pill-btn inline-flex h-9 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
                 <span>فحص وتوليد مسودة إصلاح</span>
               </button>
+            }
+          />
+
+          <div className="nexus-squircle p-5 sm:p-6 space-y-4">
+            <div>
+              <h2 className="text-base font-extrabold">
+                مسودات بانتظار موافقتك ({pendingDrafts.length})
+              </h2>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                لا يعدّل المساعد أي سجل أو مصروف أو معادلة حاسبة بشكل مباشر — كل عملية تصل هنا للمراجعة أولاً وتُنفذ فقط بعد موافقتك.
+              </p>
             </div>
 
             {pendingDrafts.length === 0 ? (
               <div
                 className="rounded-2xl border px-4 py-10 text-center text-xs space-y-2"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'rgba(19, 20, 26, 0.7)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
@@ -2856,7 +2973,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     key={draft.id}
                     className="rounded-2xl border p-4 space-y-3"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'rgba(19, 20, 26, 0.88)',
                       borderColor: 'var(--accent)',
                     }}
                   >
@@ -2885,7 +3002,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                           key={idx}
                           className="rounded-xl border px-3 py-2 text-xs"
                           style={{
-                            backgroundColor: 'var(--bg-surface)',
+                            backgroundColor: 'rgba(13, 15, 22, 0.9)',
                             borderColor: 'var(--border-color)',
                           }}
                         >
@@ -2920,7 +3037,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         onClick={() => onRejectDraft(draft.id)}
                         className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold whitespace-nowrap"
                         style={{
-                          backgroundColor: 'var(--bg-surface)',
+                          backgroundColor: 'rgba(13, 15, 22, 0.9)',
                           borderColor: 'var(--danger)',
                           color: 'var(--danger)',
                         }}
@@ -2936,7 +3053,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           </div>
 
           {resolvedDrafts.length > 0 && (
-            <div className="morrow-studio-surface rounded-[24px] border p-5 sm:p-6 space-y-3">
+            <div className="nexus-squircle p-5 sm:p-6 space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold">
                 <History className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
                 <span>سجل المسودات المنفذة / الملغاة ({resolvedDrafts.length})</span>
@@ -2947,7 +3064,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     key={draft.id}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'rgba(19, 20, 26, 0.72)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
@@ -2975,21 +3092,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         </main>
       )}
 
-      {/* TAB 3: الذاكرة (Persistent Behavioral Memory Rules) */}
-      {activeTab === 'memory' && (
+      {activePage === 'memory' && (
         <main
           aria-label="قواعد الذاكرة الدائمة"
           data-testid="morrow-memory-panel"
           className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
         >
-          <div className="morrow-studio-surface rounded-[24px] border p-5 sm:p-6 space-y-5">
-            <div>
-              <h2 className="text-base font-extrabold">الذاكرة والقواعد الدائمة</h2>
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                القواعد المحفوظة هنا تُطبّق تلقائياً على جميع صادرات PDF وExcel عبر التطبيق دون الحاجة لتكرار التعليمات.
-              </p>
-            </div>
+          <MorrowSubPageHeader
+            title="الذاكرة والقواعد الدائمة"
+            subtitle="القواعد المحفوظة هنا تُطبّق تلقائياً على جميع صادرات PDF وExcel دون الحاجة لتكرار التعليمات"
+            onBack={() => openWorkspacePage('chat')}
+          />
 
+          <div className="nexus-squircle p-5 sm:p-6 space-y-5">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {MEMORY_PRESETS.map((preset) => {
                 const enabled = preferences.some(
@@ -3000,7 +3115,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     key={preset.key}
                     className="flex flex-col justify-between gap-3 rounded-2xl border p-4 text-xs"
                     style={{
-                      backgroundColor: enabled ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      backgroundColor: enabled
+                        ? 'var(--bg-nav-active)'
+                        : 'rgba(19, 20, 26, 0.72)',
                       borderColor: enabled ? 'var(--accent)' : 'var(--border-color)',
                     }}
                   >
@@ -3022,7 +3139,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       }}
                       className="cosmos-touch-target inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 font-bold whitespace-nowrap"
                       style={{
-                        backgroundColor: enabled ? 'var(--accent)' : 'var(--bg-surface)',
+                        backgroundColor: enabled ? 'var(--accent)' : 'rgba(13, 15, 22, 0.9)',
                         borderColor: enabled ? 'var(--accent)' : 'var(--border-color)',
                         color: enabled ? 'var(--accent-fg)' : 'var(--text-primary)',
                       }}
@@ -3053,7 +3170,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               }}
               className="flex flex-wrap items-center gap-2 rounded-2xl border p-3"
               style={{
-                backgroundColor: 'var(--bg-main)',
+                backgroundColor: 'rgba(19, 20, 26, 0.75)',
                 borderColor: 'var(--border-color)',
               }}
             >
@@ -3064,7 +3181,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 placeholder="أضف قاعدة جديدة في الذاكرة (مثال: دائماً أخفي الملاحظات في التقرير)..."
                 className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-xs sm:text-sm"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'rgba(13, 15, 22, 0.9)',
                   borderColor: 'var(--border-color)',
                 }}
               />
@@ -3088,7 +3205,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 <div
                   className="rounded-2xl border px-4 py-8 text-center text-xs"
                   style={{
-                    backgroundColor: 'var(--bg-main)',
+                    backgroundColor: 'rgba(19, 20, 26, 0.72)',
                     borderColor: 'var(--border-color)',
                     color: 'var(--text-muted)',
                   }}
@@ -3101,7 +3218,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     key={pref.id}
                     className="flex items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-xs"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      backgroundColor: 'rgba(19, 20, 26, 0.72)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
@@ -3117,7 +3234,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       aria-label={`حذف قاعدة ${pref.label}`}
                       className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 font-bold"
                       style={{
-                        backgroundColor: 'var(--bg-surface)',
+                        backgroundColor: 'rgba(13, 15, 22, 0.9)',
                         borderColor: 'var(--danger)',
                         color: 'var(--danger)',
                       }}
@@ -3133,31 +3250,25 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         </main>
       )}
 
-      {/* TAB 4: الملاحظات السريعة (Text + Voice Dictation + Auto Beneficiary Linking) */}
-      {activeTab === 'quick_notes' && (
+      {activePage === 'quick_notes' && (
         <main
           aria-label="الملاحظات السريعة والإملاء الصوتي"
           data-testid="morrow-quick-notes-panel"
           className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
         >
-          <div className="morrow-studio-surface rounded-[24px] border p-5 sm:p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-base font-extrabold">
-                  الملاحظات السريعة والربط التلقائي بالعائلة
-                </h2>
-                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  اكتب أو أمْلِ ملاحظتك بالصوت وسيكتشف Morrow العائلة المطابقة تلقائياً ويربط الملاحظة بسجلها.
-                </p>
-              </div>
+          <MorrowSubPageHeader
+            title="الملاحظات السريعة والتفريغ الصوتي"
+            subtitle="اكتب أو أمْلِ ملاحظتك بالصوت وسيكتشف Morrow العائلة المطابقة تلقائياً ويربطها بسجلها"
+            onBack={() => openWorkspacePage('chat')}
+            rightSlot={
               <button
                 type="button"
                 data-testid="morrow-note-voice-btn"
                 disabled={checkingMicPermission || transcribingNoteVoice}
                 onClick={() => void toggleNoteVoiceDictation()}
-                className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold whitespace-nowrap"
+                className="inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-xs font-extrabold whitespace-nowrap"
                 style={{
-                  backgroundColor: isNoteRecording ? 'var(--danger)' : 'var(--bg-main)',
+                  backgroundColor: isNoteRecording ? 'var(--danger)' : 'rgba(19, 20, 26, 0.88)',
                   borderColor: isNoteRecording ? 'var(--danger)' : 'var(--accent)',
                   color: isNoteRecording ? '#ffffff' : 'var(--text-primary)',
                 }}
@@ -3175,17 +3286,34 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 ) : (
                   <>
                     <Mic className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                    <span>{speechSupported ? 'التسجيل الصوتي' : 'التسجيل الصوتي الذكي'}</span>
+                    <span>{speechSupported ? 'إملاء صوتي' : 'تسجيل صوتي ذكي'}</span>
                   </>
                 )}
               </button>
-            </div>
+            }
+          />
+
+          <div className="nexus-squircle p-5 sm:p-6 space-y-5">
+            {micPermissionGuide && (
+              <div
+                className="rounded-2xl border p-3.5 text-xs space-y-2"
+                style={{
+                  backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                  borderColor: 'rgba(251, 191, 36, 0.4)',
+                }}
+              >
+                <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
+                  {micPermissionGuide.title}
+                </div>
+                <p style={{ color: 'var(--text-secondary)' }}>{micPermissionGuide.reason}</p>
+              </div>
+            )}
 
             <form
               onSubmit={handleSaveNote}
               className="rounded-2xl border p-4 space-y-3"
               style={{
-                backgroundColor: 'var(--bg-main)',
+                backgroundColor: 'rgba(19, 20, 26, 0.72)',
                 borderColor: 'var(--border-color)',
               }}
             >
@@ -3199,7 +3327,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 placeholder="مثال: مراجعة عائلة حيدر كاظم بخصوص استلام الكيس الثاني يوم الخميس..."
                 className="w-full rounded-xl border p-3 text-xs sm:text-sm"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'rgba(13, 15, 22, 0.9)',
                   borderColor: 'var(--border-color)',
                 }}
               />
@@ -3207,7 +3335,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               <div
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'rgba(13, 15, 22, 0.9)',
                   borderColor: effectivePreviewPerson ? 'var(--accent)' : 'var(--border-color)',
                 }}
               >
@@ -3238,7 +3366,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   }}
                   className="rounded-xl border px-2.5 py-1.5 text-xs font-semibold"
                   style={{
-                    backgroundColor: 'var(--bg-main)',
+                    backgroundColor: 'rgba(19, 20, 26, 0.9)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
@@ -3282,7 +3410,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 <div
                   className="rounded-2xl border px-4 py-8 text-center text-xs"
                   style={{
-                    backgroundColor: 'var(--bg-main)',
+                    backgroundColor: 'rgba(19, 20, 26, 0.72)',
                     borderColor: 'var(--border-color)',
                     color: 'var(--text-muted)',
                   }}
@@ -3299,7 +3427,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       key={note.id}
                       className="rounded-2xl border p-3.5 text-xs space-y-2"
                       style={{
-                        backgroundColor: 'var(--bg-main)',
+                        backgroundColor: 'rgba(19, 20, 26, 0.72)',
                         borderColor: 'var(--border-color)',
                       }}
                     >
@@ -3345,7 +3473,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                             }}
                             className="rounded-xl border px-2 py-1 text-[11px]"
                             style={{
-                              backgroundColor: 'var(--bg-surface)',
+                              backgroundColor: 'rgba(13, 15, 22, 0.9)',
                               borderColor: 'var(--border-color)',
                             }}
                           >
@@ -3363,7 +3491,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                               onClick={() => onSyncQuickNoteToPerson(note.id)}
                               className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold"
                               style={{
-                                backgroundColor: 'var(--bg-surface)',
+                                backgroundColor: 'rgba(13, 15, 22, 0.9)',
                                 borderColor: 'var(--accent)',
                                 color: 'var(--accent)',
                               }}
@@ -3379,7 +3507,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                               onClick={() => onJumpToPerson(linkedPerson)}
                               className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-bold"
                               style={{
-                                backgroundColor: 'var(--bg-surface)',
+                                backgroundColor: 'rgba(13, 15, 22, 0.9)',
                                 borderColor: 'var(--border-color)',
                               }}
                             >
@@ -3398,674 +3526,191 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         </main>
       )}
 
-      {/* ====================================================================
-          SLIDE-OVER SIDE DRAWER FOR ALL SECONDARY FEATURES, MEMORY, NOTES, CANVAS 2.0
-         ==================================================================== */}
-      {sideDrawerOpen && (
-        <div
-          className="fixed inset-0 z-[var(--z-sheet)] flex justify-end"
-          role="dialog"
-          aria-modal="true"
-          aria-label="الأقسام والميزات الجانبية لمساعد Morrow"
+      {activePage === 'diagnostics' && (
+        <main
+          aria-label="فحص التكامل والربط بالتطبيق"
+          data-testid="morrow-diagnostics-page"
+          className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
         >
-          <div
-            onClick={() => setSideDrawerOpen(false)}
-            className="fixed inset-0"
-            style={{
-              backgroundColor: 'rgba(15, 23, 42, 0.45)',
-              backdropFilter: 'blur(4px)',
-            }}
+          <MorrowSubPageHeader
+            title="فحص التكامل والربط الجذري بالتطبيق"
+            subtitle="التحقق من ارتباط النماذج السحابية، محرك Morrow المحلي، السحب الذكي، وقواعد البيانات"
+            onBack={() => openWorkspacePage('chat')}
+            rightSlot={
+              onVerifySystemIntegrity ? (
+                <button
+                  type="button"
+                  data-testid="morrow-verify-binding-btn"
+                  disabled={verifyingSystem}
+                  onClick={() => void handleRunSystemVerifier()}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-xs font-extrabold whitespace-nowrap disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  {verifyingSystem ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" />
+                  )}
+                  <span>{verifyingSystem ? 'جاري الفحص...' : 'تشغيل الفحص الآن'}</span>
+                </button>
+              ) : undefined
+            }
           />
 
-          <aside
-            data-testid="morrow-side-drawer"
-            className="relative z-10 flex h-full w-[320px] sm:w-[370px] max-w-[88vw] flex-col border-r shadow-2xl overflow-hidden"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            {/* Drawer Header */}
+          {verificationReport ? (
             <div
-              className="flex items-center justify-between border-b px-5 py-4"
-              style={{ borderColor: 'var(--border-color)' }}
+              data-testid="morrow-verification-report"
+              className="nexus-squircle p-5 space-y-4"
+              style={{
+                borderColor: verificationReport.allPassed
+                  ? 'var(--success)'
+                  : 'var(--warning)',
+              }}
             >
-              <div>
-                <h2 className="text-sm font-black">أقسام المساعدين (Morrow)</h2>
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  جميع أدوات المساعد، الذاكرة، المهام، واللوحة التفاعلية
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-extrabold">
+                <span
+                  style={{
+                    color: verificationReport.allPassed ? 'var(--success)' : 'var(--warning)',
+                  }}
+                >
+                  {verificationReport.allPassed
+                    ? 'جميع المسارات والنماذج مربوطة بنجاح'
+                    : 'توجد ملاحظات على أحد المسارات'}
+                </span>
+                <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                  {verificationReport.boundAgenciesCount} وكالات ·{' '}
+                  {verificationReport.boundPersonsCount} سجل
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setSideDrawerOpen(false)}
-                aria-label="إغلاق القائمة الجانبية"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            {/* Scrollable Drawer Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
-              {/* Section 0: Recent Saved Conversations (Gemini History Threads) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                    المحادثات الأخيرة ({chatThreads.length})
-                  </div>
-                  {onClearMessages && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClearMessages();
-                        setCanvasOverlayActive(false);
-                        onChangeTab('chat');
-                        setSideDrawerOpen(false);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors hover:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      <SquarePen className="h-3 w-3" />
-                      <span>محادثة جديدة</span>
-                    </button>
-                  )}
-                </div>
-
-                {chatThreads.length === 0 ? (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {verificationReport.checks.map((chk) => (
                   <div
-                    className="rounded-xl border px-3 py-2.5 text-[11px]"
+                    key={chk.id}
+                    className="rounded-2xl border p-3.5"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
-                      color: 'var(--text-muted)',
                     }}
                   >
-                    تُحفظ محادثاتك تلقائياً هنا للرجوع إليها أو التبديل بينها في أي وقت.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
-                    {chatThreads.slice(0, 8).map((th) => {
-                      const isCurrent = th.id === activeThreadId;
-                      return (
-                        <div
-                          key={th.id}
-                          className="flex items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2"
-                          style={{
-                            backgroundColor: isCurrent ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                            borderColor: isCurrent ? 'var(--accent)' : 'var(--border-color)',
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSwitchThread?.(th.id);
-                              setCanvasOverlayActive(false);
-                              onChangeTab('chat');
-                              setSideDrawerOpen(false);
-                            }}
-                            className="min-w-0 flex-1 text-right"
-                          >
-                            <div
-                              className="truncate font-bold"
-                              style={{ color: isCurrent ? 'var(--accent)' : 'var(--text-primary)' }}
-                            >
-                              {th.title}
-                            </div>
-                            <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              {th.previewText.replace(/#+\s*/g, '').replace(/\*\*/g, '')}
-                            </div>
-                          </button>
-
-                          {onDeleteThread && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteThread(th.id)}
-                              aria-label={`حذف محادثة ${th.title}`}
-                              className="shrink-0 rounded-lg p-1 opacity-65 hover:opacity-100"
-                              style={{ color: 'var(--danger)' }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Section 1: Main Sub-views & Extensions */}
-              <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  الأقسام والتقسيمات
-                </div>
-                <div className="space-y-1.5">
-                  {sideSections.map((sec) => {
-                    const active = activeTab === sec.id && !canvasOverlayActive;
-                    return (
-                      <button
-                        key={sec.id}
-                        type="button"
-                        data-testid={`morrow-tab-${sec.id}`}
-                        onClick={() => {
-                          setCanvasOverlayActive(false);
-                          onChangeTab(sec.id);
-                          setSideDrawerOpen(false);
-                        }}
-                        className="flex w-full items-center justify-between gap-2 rounded-2xl border p-3 text-right transition-colors hover:border-[var(--accent)]"
+                    <div className="flex items-center justify-between gap-2 text-xs font-extrabold">
+                      <span>{chk.label}</span>
+                      <span
                         style={{
-                          backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                          borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                          color:
+                            chk.status === 'ok'
+                              ? 'var(--success)'
+                              : chk.status === 'warning'
+                                ? 'var(--warning)'
+                                : 'var(--danger)',
                         }}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
-                            {sec.icon}
-                          </span>
-                          <div className="min-w-0">
-                            <div className="font-extrabold">{sec.label}</div>
-                            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                              {sec.desc}
-                            </div>
-                          </div>
-                        </div>
-                        {sec.count !== undefined && sec.count > 0 && (
-                          <span
-                            className="rounded-lg px-2 py-0.5 text-[11px] font-black tabular-nums"
-                            style={{
-                              backgroundColor: 'var(--accent)',
-                              color: 'var(--accent-fg)',
-                            }}
-                          >
-                            {sec.count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-
-                  {/* Workspace 2.0 Dynamic Canvas */}
-                  <button
-                    type="button"
-                    data-testid="morrow-open-canvas-btn"
-                    onClick={() => {
-                      onChangeTab('chat');
-                      setCanvasOverlayActive(true);
-                      setSideDrawerOpen(false);
-                    }}
-                    className="flex w-full items-center justify-between gap-2 rounded-2xl border p-3 text-right transition-colors hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: canvasOverlayActive ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                      borderColor: canvasOverlayActive ? 'var(--accent)' : 'var(--border-color)',
-                    }}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <LayoutPanelLeft className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                      <div>
-                        <div className="font-extrabold">اللوحة التفاعلية 2.0 والأدوات</div>
-                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                          رسوم بيانية، محرر مباشر، تقارير، توقعات، ماكرو
-                        </div>
-                      </div>
+                        {chk.status === 'ok'
+                          ? 'متصل'
+                          : chk.status === 'warning'
+                            ? 'احتياط'
+                            : 'خطأ'}
+                      </span>
                     </div>
-                  </button>
-
-                  {/* Direct Canvas 6 Sub-Modes */}
-                  <div className="grid grid-cols-2 gap-1.5 pt-1">
-                    {(
-                      [
-                        { mode: 'overview_charts', label: 'الرسوم والأرباح' },
-                        { mode: 'editable_table', label: 'الجدول المباشر' },
-                        { mode: 'executive_report', label: 'التقرير التنفيذي' },
-                        { mode: 'forecast', label: 'توقعات القادم' },
-                        { mode: 'text_analysis', label: 'تحليل نصوص واتساب' },
-                        { mode: 'macro_studio', label: 'استوديو الماكرو' },
-                      ] as Array<{ mode: MorrowCanvasMode; label: string }>
-                    ).map((cm) => {
-                      const active = canvasOverlayActive && canvasMode === cm.mode;
-                      return (
-                        <button
-                          key={cm.mode}
-                          type="button"
-                          onClick={() => {
-                            onChangeTab('chat');
-                            setCanvasMode(cm.mode);
-                            setCanvasOverlayActive(true);
-                            setSideDrawerOpen(false);
-                          }}
-                          className="rounded-xl border px-2.5 py-2 text-right text-[11px] font-bold transition-colors hover:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                            borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                            color: active ? 'var(--accent)' : 'var(--text-primary)',
-                          }}
-                        >
-                          {cm.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Intelligence Brain Engine & Live 6-Model Health */}
-              <div className="space-y-2.5 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  اختيار دماغ Morrow وتوجيه النماذج
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {BRAIN_BUTTONS.map((btn) => {
-                    const selected = brainMode === btn.id;
-                    return (
-                      <button
-                        key={btn.id}
-                        type="button"
-                        onClick={() => onChangeBrainMode(btn.id)}
-                        className="flex items-center gap-1.5 rounded-xl border p-2.5 text-right font-bold"
-                        style={{
-                          backgroundColor: selected ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                          borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-                          color: selected ? 'var(--accent)' : 'var(--text-primary)',
-                        }}
-                      >
-                        {btn.icon}
-                        <span className="truncate">{btn.shortLabel}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div
-                  className="divide-y rounded-xl border text-[11px]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  {CORE_SIX_SPECIALIZED_MODELS.map((spec) => {
-                    const snap = modelHealthSnapshots.find(
-                      (h) => h.modelId === (spec.id as ApprovedCloudModelId)
-                    );
-                    const cooling = snap?.status === 'cooldown';
-                    return (
-                      <div key={spec.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
-                        <span className="truncate font-semibold">{spec.shortLabel}</span>
-                        <span
-                          className="shrink-0 text-[10px] tabular-nums font-bold"
-                          style={{ color: cooling ? 'var(--warning)' : 'var(--success)' }}
-                        >
-                          {cooling ? 'تبريد' : 'جاهز'}
-                          {snap?.avgLatencyMs ? ` · ${(snap.avgLatencyMs / 1000).toFixed(1)}s` : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {onChangeCollaborationMode && (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-                      <GitMerge className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                      <span>نظام تعاون النماذج والتدقيق (AI Council)</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {COLLABORATION_MODE_OPTIONS.map((opt) => {
-                        const active = collaborationMode === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => onChangeCollaborationMode(opt.id)}
-                            title={opt.desc}
-                            className="rounded-xl border px-2 py-2 text-center text-[11px] font-bold transition-colors"
-                            style={{
-                              backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                              borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                              color: active ? 'var(--accent)' : 'var(--text-primary)',
-                            }}
-                          >
-                            {opt.shortLabel}
-                          </button>
-                        );
-                      })}
+                    <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      {chk.detail}
                     </div>
                   </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSideDrawerOpen(false);
-                    if (onOpenAiModelsStudio) {
-                      onOpenAiModelsStudio();
-                    } else {
-                      onNavigateView?.('settings', 'ai_assistant');
-                    }
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors hover:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                  <span>تخصيص النماذج والتوجيه</span>
-                </button>
-              </div>
-
-              {/* Section 3: Conversation Tools & Search */}
-              <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  البحث وإدارة المحادثة
-                </div>
-                <div
-                  className="flex items-center gap-2 rounded-xl border px-3 py-2"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <Search className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} />
-                  <input
-                    type="search"
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    placeholder="تصفية سجل المحادثة..."
-                    className="w-full min-w-0 bg-transparent text-xs outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowPinnedOnly((v) => !v)}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 font-bold"
-                    style={{
-                      backgroundColor: showPinnedOnly ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                      borderColor: showPinnedOnly ? 'var(--accent)' : 'var(--border-color)',
-                    }}
-                  >
-                    <Pin className="h-3.5 w-3.5" />
-                    <span>المثبتة فقط</span>
-                  </button>
-
-                  {onExportChatHistory && (
-                    <button
-                      type="button"
-                      onClick={onExportChatHistory}
-                      className="flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 font-bold"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                      <span>تصدير المحادثة</span>
-                    </button>
-                  )}
-
-                  {hasUndoableAction && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onUndoLastAction();
-                        setSideDrawerOpen(false);
-                      }}
-                      className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 font-bold"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--warning)',
-                        color: 'var(--warning)',
-                      }}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      <span>تراجع عن آخر إجراء للمساعد</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Section 4: Active Agency Context */}
-              <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="flex items-center justify-between text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  <span>الوكالة النشطة</span>
-                  {activePeriodLabel && <span>{activePeriodLabel}</span>}
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {agencies.map((ag) => {
-                    const selected = ag.id === activeAgencyId;
-                    return (
-                      <button
-                        key={ag.id}
-                        type="button"
-                        onClick={() => onSelectActiveAgency?.(ag.id)}
-                        className="flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-right font-bold"
-                        style={{
-                          backgroundColor: selected ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                          borderColor: selected ? 'var(--accent)' : 'var(--border-color)',
-                        }}
-                      >
-                        <FolderKanban className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                        <span className="truncate">{ag.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Section 5: Proactive Alerts & Command Library */}
-              {proactiveBundle.insights.length > 0 && (
-                <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                    تنبيهات وتوقعات استباقية
-                  </div>
-                  <div className="space-y-1.5">
-                    {proactiveBundle.insights.slice(0, 3).map((insight) => (
-                      <button
-                        key={insight.id}
-                        type="button"
-                        onClick={() => handleProactiveInsightAction(insight)}
-                        className="w-full rounded-xl border p-2.5 text-right hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor:
-                            insight.severity === 'high' ? 'var(--warning-bg)' : 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
-                        <div className="font-extrabold">{insight.title}</div>
-                        <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                          {insight.detail}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Section 5.5: Interactive System Integrity & Model Binding Verifier */}
-              {onVerifySystemIntegrity && (
-                <div className="space-y-2.5 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                      فحص التكامل والربط الجذري بالتطبيق
-                    </div>
-                    <button
-                      type="button"
-                      data-testid="morrow-verify-binding-btn"
-                      disabled={verifyingSystem}
-                      onClick={() => void handleRunSystemVerifier()}
-                      className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] font-extrabold hover:border-[var(--accent)] disabled:opacity-50"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--accent)',
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      {verifyingSystem ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="h-3 w-3" />
-                      )}
-                      <span>{verifyingSystem ? 'جاري الفحص...' : 'تشغيل الفحص'}</span>
-                    </button>
-                  </div>
-
-                  {verificationReport && (
-                    <div
-                      data-testid="morrow-verification-report"
-                      className="rounded-2xl border p-3 space-y-2"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: verificationReport.allPassed ? 'var(--success)' : 'var(--warning)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between text-[11px] font-extrabold">
-                        <span style={{ color: verificationReport.allPassed ? 'var(--success)' : 'var(--warning)' }}>
-                          {verificationReport.allPassed
-                            ? 'جميع المسارات والنماذج مربوطة بنجاح'
-                            : 'توجد ملاحظات على أحد المسارات'}
-                        </span>
-                        <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                          {verificationReport.boundAgenciesCount} وكالات · {verificationReport.boundPersonsCount} سجل
-                        </span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {verificationReport.checks.map((chk) => (
-                          <div
-                            key={chk.id}
-                            className="rounded-xl border px-2.5 py-1.5"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              borderColor: 'var(--border-color)',
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2 font-bold text-[11px]">
-                              <span>{chk.label}</span>
-                              <span
-                                style={{
-                                  color:
-                                    chk.status === 'ok'
-                                      ? 'var(--success)'
-                                      : chk.status === 'warning'
-                                        ? 'var(--warning)'
-                                        : 'var(--danger)',
-                                }}
-                              >
-                                {chk.status === 'ok' ? 'متصل' : chk.status === 'warning' ? 'احتياط' : 'خطأ'}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              {chk.detail}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
-                  مكتبة الأوامر السريعة
-                </div>
-                <div className="space-y-1.5">
-                  {COMMAND_LIBRARY_ITEMS.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        setSideDrawerOpen(false);
-                        setCanvasOverlayActive(false);
-                        onChangeTab('chat');
-                        submitChatPrompt(item.label);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-right hover:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-bold">{item.label}</div>
-                        <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                          {item.desc}
-                        </div>
-                      </div>
-                      <Send className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
             </div>
-          </aside>
-        </div>
+          ) : (
+            <div className="nexus-squircle px-5 py-12 text-center space-y-3">
+              <ShieldCheck className="mx-auto h-8 w-8" style={{ color: 'var(--accent)' }} />
+              <div className="text-sm font-extrabold">جاهز لفحص ارتباط النظام بالكامل</div>
+              <p className="mx-auto max-w-md text-xs" style={{ color: 'var(--text-muted)' }}>
+                اضغط على «تشغيل الفحص الآن» لاختبار حالة السحابة، واجهة البث الحي، النماذج الستة، والبيانات الحية المرتبطة بالوكالات.
+              </p>
+            </div>
+          )}
+        </main>
       )}
 
-      {/* Live Voice + Video Session Modal */}
-      <MorrowLiveSessionModal
-        open={liveModalOpen}
-        onClose={() => setLiveModalOpen(false)}
-        liveContext={liveCloudContext}
-        onLiveToolAction={onLiveToolAction}
-        onSessionTranscriptSaved={(summaryText) => {
-          setMultimodalFeed((prev) => [
-            ...prev.slice(-15),
-            {
-              id: `live_${Date.now()}`,
-              createdAt: new Date().toISOString(),
-              kind: 'live_summary',
-              title: 'ملخص المحادثة المباشرة لايف',
-              body: summaryText,
-            },
-          ]);
-        }}
-      />
-
-      {/* Camera Photo Capture Modal */}
-      <MorrowCameraSnapModal
-        open={cameraModalOpen}
-        onClose={() => setCameraModalOpen(false)}
-        onCaptureFile={(file) => {
-          void handleQueueFile(file);
-        }}
-      />
-
-      <PermissionGuardModal
-        open={Boolean(micPermissionGuide)}
-        guide={micPermissionGuide}
-        checking={checkingMicPermission}
-        onClose={() => {
-          pendingMicRetryTargetRef.current = null;
-          setMicPermissionGuide(null);
-        }}
-        onRetryPermission={() => {
-          const target = pendingMicRetryTargetRef.current;
-          setMicPermissionGuide(null);
-          if (target === 'note') {
-            void toggleNoteVoiceDictation();
-          } else {
+      {activePage === 'voice_settings' && (
+        <MorrowVoiceSettingsPage
+          voiceTargetMode={voiceTargetMode}
+          onChangeVoiceTargetMode={updateVoiceTargetMode}
+          speechSupported={speechSupported}
+          onStartLiveCall={() => openWorkspacePage('live')}
+          onStartVoiceNote={() => {
+            openWorkspacePage('chat');
             void startVoiceMessageRecording();
-          }
+          }}
+          onBackToChat={() => openWorkspacePage('chat')}
+        />
+      )}
+
+      {activePage === 'live' && (
+        <MorrowLiveSessionModal
+          open={true}
+          layout="page"
+          onClose={() => openWorkspacePage('chat')}
+          liveContext={liveCloudContext}
+          onLiveToolAction={onLiveToolAction}
+          onSessionTranscriptSaved={(summaryText) => {
+            setMultimodalFeed((prev) => [
+              ...prev.slice(-15),
+              {
+                id: `live_${Date.now()}`,
+                createdAt: new Date().toISOString(),
+                kind: 'live_summary',
+                title: 'ملخص المحادثة المباشرة لايف',
+                body: summaryText,
+              },
+            ]);
+          }}
+        />
+      )}
+
+      {activePage === 'camera' && (
+        <MorrowCameraSnapModal
+          open={true}
+          layout="page"
+          onClose={() => openWorkspacePage('chat')}
+          onCaptureFile={(file) => {
+            void handleQueueFile(file);
+          }}
+        />
+      )}
+
+      {/* ====================================================================
+          LEFT DRAWER: MORROW AI, HISTORY, MODELS, ASSISTANTS, TOOLS & VOICE
+         ==================================================================== */}
+      <MorrowLeftDrawer
+        open={sideDrawerOpen}
+        onClose={() => setSideDrawerOpen(false)}
+        activePage={activePage}
+        activeCanvasMode={canvasMode}
+        onOpenPage={(page, nextCanvasMode) => openWorkspacePage(page, nextCanvasMode)}
+        chatThreads={chatThreads}
+        activeThreadId={activeThreadId}
+        onSwitchThread={onSwitchThread}
+        onNewChat={onClearMessages}
+        brainMode={brainMode}
+        activeBrainLabel={activeBrain.shortLabel}
+        activeAssistantId={activeAssistantId}
+        onSelectAssistant={(assistantId) => {
+          const profile = SPECIALIZED_ASSISTANTS.find((a) => a.id === assistantId);
+          if (profile) handleSelectAssistantProfile(profile);
         }}
-        onUseFallback={() => {
-          pendingMicRetryTargetRef.current = null;
-          window.setTimeout(() => chatTextareaRef.current?.focus(), 60);
+        pendingDraftsCount={pendingDrafts.length}
+        memoryRulesCount={preferences.length}
+        quickNotesCount={quickNotes.length}
+        onTriggerFilePicker={() => {
+          openWorkspacePage('chat');
+          filePickerRef.current?.click();
         }}
-        fallbackLabel="الكتابة النصية الآن"
       />
 
-      {/* Right-Side Hamburger Drawer: Full Application Navigation */}
+      {/* RIGHT DRAWER: MAIN APPLICATION NAVIGATION */}
       <MorrowAppDrawer
         open={appDrawerOpen}
         onClose={() => setAppDrawerOpen(false)}
@@ -4088,7 +3733,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         }}
       />
 
-      {/* Gemini-Style Clickable "Morrow" Wordmark Menu: Models, AI Council, Reasoning Lens & Active Context */}
+      {/* CENTER POPOVER: MODEL, AI COUNCIL, REASONING LENS & AGENCY CONTEXT */}
       <MorrowModelMenuPopover
         open={modelMenuOpen}
         onClose={() => setModelMenuOpen(false)}
@@ -4105,17 +3750,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         agencies={agencies}
         activeAgencyId={activeAgencyId}
         onSelectActiveAgency={onSelectActiveAgency}
-        onOpenCanvas={() => {
-          onChangeTab('chat');
-          setCanvasOverlayActive(true);
-        }}
-        onOpenModelsStudio={() => {
-          if (onOpenAiModelsStudio) {
-            onOpenAiModelsStudio();
-          } else {
-            onNavigateView?.('settings', 'ai_assistant');
-          }
-        }}
+        onOpenCanvas={() => openWorkspacePage('canvas')}
+        onOpenModelsStudio={() => openWorkspacePage('models')}
       />
     </div>
   );

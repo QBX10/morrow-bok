@@ -123,8 +123,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
       }`}
     >
       <div
-        className="cosmos-glass-panel pointer-events-auto flex w-full max-w-md items-center justify-around gap-1 border px-2 py-1.5 shadow-2xl"
-        style={{ borderColor: 'var(--border-color)' }}
+        className="nexus-glass-lite pointer-events-auto flex w-full max-w-md items-center justify-around gap-1 rounded-full border px-2.5 py-1.5 shadow-2xl"
       >
         {items.map((item) => {
           let holdTimer: number | null = null;
@@ -151,7 +150,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
                 onTouchStart={startHold}
                 onTouchEnd={cancelHold}
                 onTouchCancel={cancelHold}
-                className="-mt-4 flex h-12 min-w-[56px] flex-col items-center justify-center rounded-2xl px-3 shadow-lg transition-transform active:scale-95"
+                className="nexus-pill-btn -mt-4 flex h-12 min-w-[60px] flex-col items-center justify-center px-3.5 shadow-lg transition-transform active:scale-95"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',

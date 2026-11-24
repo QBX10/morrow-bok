@@ -41,7 +41,7 @@ export const QuickHome: React.FC<QuickHomeProps> = ({
           className="text-xs font-bold hover:underline"
           style={{ color: world.accentColor || 'var(--accent)' }}
         >
-          عرض جميع المجرات ({world.children.length})
+          عرض جميع الأقسام الفرعية ({world.children.length})
         </button>
       </div>
 

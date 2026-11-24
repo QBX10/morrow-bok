@@ -117,6 +117,9 @@ export function buildIndexedWorkspaceAnalytics(
   let totalKg = 0;
   let totalRevenue = 0;
   let totalWorkerWages = 0;
+  let totalPackagingExpenses = 0;
+  let totalHospitalityExpenses = 0;
+  let totalCustomExpenses = 0;
   let totalGeneralExpenses = 0;
 
   const rawRows: Array<{ agency: Agency; metrics: AgencyFinancialMetrics }> = [];
@@ -142,6 +145,9 @@ export function buildIndexedWorkspaceAnalytics(
     totalKg += metrics.totalKg;
     totalRevenue += metrics.revenue;
     totalWorkerWages += metrics.workerWages;
+    totalPackagingExpenses += metrics.packagingExpenses;
+    totalHospitalityExpenses += metrics.hospitalityExpenses;
+    totalCustomExpenses += metrics.customExpenses;
     totalGeneralExpenses += metrics.generalExpenses;
   }
 
@@ -179,6 +185,9 @@ export function buildIndexedWorkspaceAnalytics(
       remainderKg,
       revenue: totalRevenue,
       workerWages: totalWorkerWages,
+      packagingExpenses: totalPackagingExpenses,
+      hospitalityExpenses: totalHospitalityExpenses,
+      customExpenses: totalCustomExpenses,
       generalExpenses: totalGeneralExpenses,
       totalExpenses,
       profit: totalRevenue - totalExpenses,

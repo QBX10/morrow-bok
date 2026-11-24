@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Check, Clock, Edit3, X } from 'lucide-react';
+import { Calendar, Check, Clock, Edit3 } from 'lucide-react';
 import type { SectionTableHeaderMeta } from '../types/agency';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 interface TableHeaderEditorProps {
   meta: SectionTableHeaderMeta;
@@ -90,7 +91,7 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
           type="button"
           onClick={() => setEditing(true)}
           aria-label="تعديل عنوان الجدول والصفحة والتاريخ"
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition-colors hover:opacity-85"
+          className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-[11px] font-semibold"
           style={{
             backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--border-color)',
@@ -113,34 +114,15 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
         </div>
       )}
 
-      {editing && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="تخصيص عنوان الجدول والصفحة والتاريخ"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setEditing(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">عنونة الجدول والصفحة والتاريخ</h3>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      <FullScreenPushPage
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="عنونة الجدول والصفحة والتاريخ"
+        subtitle="تخصيص اسم الجدول والوصف وتاريخ الوجبة الظاهر"
+        icon={<Edit3 className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
               <div>
@@ -219,14 +201,14 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditing(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -237,9 +219,8 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
     </div>
   );
 };

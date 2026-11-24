@@ -4,13 +4,21 @@ import {
   ArrowRight,
   Bell,
   Bot,
+  Calculator,
   CheckCircle2,
   ChevronDown,
-  Command,
   Menu,
+  Moon,
+  Palette,
+  Plus,
   Redo2,
+  ScanLine,
   Search,
+  Share2,
+  Shield,
+  Sliders,
   Sparkles,
+  Sun,
   Undo2,
   UserCheck,
   UserCircle2,
@@ -23,6 +31,7 @@ import type {
   Person,
   ReadyList,
   RelationEntry,
+  SettingsSectionId,
   TopBarFocusMode,
   UcrsSession,
 } from '../types/agency';
@@ -37,7 +46,11 @@ interface TopBarProps {
   canRedo: boolean;
   effectiveMode: TopBarFocusMode;
   isAutoHidden: boolean;
+  activeView?: AppView;
   activeViewLabel: string;
+  activePeriodLabel?: string;
+  darkTheme?: boolean;
+  activeThemeName?: string;
   showViewTitle?: boolean;
   showUndoRedo?: boolean;
   showAuthButton?: boolean;
@@ -50,6 +63,10 @@ interface TopBarProps {
   pendingDraftsCount?: number;
   onNavigateHome: () => void;
   onNavigateView: (view: AppView) => void;
+  onOpenSettings?: (section?: SettingsSectionId) => void;
+  onToggleDarkTheme?: (dark: boolean) => void;
+  onQuickAddPerson?: () => void;
+  onOpenColumnCustomizer?: () => void;
   onOpenMorrowStudio: () => void;
   onNavigateHierarchyTarget?: (target: HierarchyTarget, nodeId?: string) => void;
   onSelectPersonFromSearch: (person: Person) => void;
@@ -73,7 +90,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   canRedo,
   effectiveMode,
   isAutoHidden,
+  activeView = 'hub',
   activeViewLabel,
+  activePeriodLabel,
+  darkTheme,
+  activeThemeName,
   showViewTitle = true,
   showUndoRedo = true,
   showAuthButton = true,
@@ -85,6 +106,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   pendingDraftsCount = 0,
   onNavigateHome,
   onNavigateView,
+  onOpenSettings,
+  onToggleDarkTheme,
+  onQuickAddPerson,
+  onOpenColumnCustomizer,
   onOpenMorrowStudio,
   onSelectPersonFromSearch,
   onSelectAgencyFromSearch,
@@ -112,6 +137,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isCompact = effectiveMode === 'compact';
   const isHidden = effectiveMode === 'hidden';
 
+  // Collapse search cleanly when switching workspace views
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setNotifOpen(false);
+    setAccountMenuOpen(false);
+  }, [activeView]);
+
   // "/" shortcut to focus top bar search
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -128,21 +161,22 @@ export const TopBar: React.FC<TopBarProps> = ({
       }
       e.preventDefault();
       onRequestReveal();
+      setSearchOpen(true);
       setTimeout(() => {
         searchInputRef.current?.focus();
-        setSearchOpen(true);
       }, 20);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onRequestReveal]);
 
-  // Close popovers on outside click / Escape
+  // Close popovers & on-demand search on outside click / Escape
   useEffect(() => {
     const onDocDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (searchWrapRef.current && !searchWrapRef.current.contains(target)) {
         setSearchOpen(false);
+        setSearchQuery('');
       }
       if (notifWrapRef.current && !notifWrapRef.current.contains(target)) {
         setNotifOpen(false);
@@ -154,6 +188,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setSearchOpen(false);
+        setSearchQuery('');
         setNotifOpen(false);
         setAccountMenuOpen(false);
       }
@@ -282,34 +317,131 @@ export const TopBar: React.FC<TopBarProps> = ({
     onNavigateView,
   ]);
 
+  const searchPlaceholder = useMemo(() => {
+    switch (activeView) {
+      case 'agency_roster':
+      case 'master_roster':
+        return 'بحث فوري في السجل والوكالات... (/)';
+      case 'quick_extract':
+        return 'بحث في الوكالات والأسماء قبل المطابقة... (/)';
+      case 'ready_lists':
+      case 'relationships':
+        return 'بحث في القوائم والعلاقات والأسماء... (/)';
+      case 'finance':
+        return 'بحث في الوكالات والمصروفات... (/)';
+      default:
+        return 'بحث في الوكالات والأسماء والقوائم... (/)';
+    }
+  }, [activeView]);
+
+  const adaptiveAction = useMemo(() => {
+    if (activeView === 'agency_roster' || activeView === 'master_roster') {
+      if (capabilities.canEditRecords && onQuickAddPerson) {
+        return {
+          label: 'إضافة مستفيد',
+          title: 'إضافة مستفيد جديد للسجل الحالي',
+          icon: Plus,
+          onClick: onQuickAddPerson,
+        };
+      }
+      if (onOpenColumnCustomizer) {
+        return {
+          label: 'الأعمدة',
+          title: 'تخصيص أعمدة الجدول',
+          icon: Sliders,
+          onClick: onOpenColumnCustomizer,
+        };
+      }
+    }
+    if (!onOpenSettings) return null;
+    switch (activeView) {
+      case 'quick_extract':
+        return {
+          label: 'إعدادات OCR',
+          title: 'فتح إعدادات السحب الذكي والتعرف الضوئي',
+          icon: ScanLine,
+          onClick: () => onOpenSettings('quick_extract_settings'),
+        };
+      case 'finance':
+        return {
+          label: 'الحاسبة',
+          title: 'تعديل رسوم وحصة الفرد والربح',
+          icon: Calculator,
+          onClick: () => onOpenSettings('calculator'),
+        };
+      case 'ready_lists':
+      case 'relationships':
+        return {
+          label: 'التصدير والمتابعة',
+          title: 'إعدادات القوائم والعلاقات والتصدير',
+          icon: Share2,
+          onClick: () => onOpenSettings('relations_lists'),
+        };
+      case 'data_archives':
+        return {
+          label: 'الأمان والنسخ',
+          title: 'إدارة الحساب والنسخ الاحتياطي وقفل الخصوصية',
+          icon: Shield,
+          onClick: () => onNavigateView('account_security'),
+        };
+      case 'account_security':
+        return {
+          label: 'الأرشفة الشهرية',
+          title: 'الانتقال إلى سجل الأرشيف الشهري',
+          icon: Sliders,
+          onClick: () => onNavigateView('data_archives'),
+        };
+      case 'hub':
+      case 'google_workspace':
+        return {
+          label: 'المظهر',
+          title: 'تخصيص المظهر وثيمات الدفتر',
+          icon: Palette,
+          onClick: () => onOpenSettings('appearance'),
+        };
+      default:
+        return {
+          label: 'الإعدادات',
+          title: 'مركز الإعدادات المتقدم',
+          icon: Sliders,
+          onClick: () => onOpenSettings('appearance'),
+        };
+    }
+  }, [
+    activeView,
+    capabilities.canEditRecords,
+    onQuickAddPerson,
+    onOpenColumnCustomizer,
+    onOpenSettings,
+  ]);
+
   if (isHidden) {
     return null;
   }
 
   return (
     <header
-      className={`sticky top-0 z-30 border-b backdrop-blur-md transition-transform duration-200 ${
+      className={`nexus-glass-lite sticky top-0 z-30 border-b transition-transform duration-200 ${
         isAutoHidden ? '-translate-y-full pointer-events-none' : 'translate-y-0'
       }`}
       style={{
-        backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
         borderColor: 'var(--border-color)',
       }}
     >
       <div
-        className={`mx-auto flex w-full items-center justify-between gap-3 px-3 sm:px-5 ${
+        className={`mx-auto flex w-full flex-nowrap items-center justify-between gap-2 px-3 sm:px-5 ${
           isCompact ? 'h-12' : 'h-14'
         }`}
       >
         {/* Zone 1: Mobile Menu, Back/Forward, Brand & Active View Context */}
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={onOpenMobileSidebar}
             aria-label="فتح القائمة"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border lg:hidden transition-colors hover:border-[var(--accent)]"
+            className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border lg:hidden"
             style={{
-              backgroundColor: 'var(--bg-main)',
+              backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
               color: 'var(--text-primary)',
             }}
@@ -318,16 +450,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
 
           {(onGoBack || onGoForward) && (
-            <div className="hidden sm:flex items-center gap-1">
+            <div className="hidden sm:flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={onGoBack}
                 disabled={!canGoBack}
                 aria-label="رجوع"
                 title="رجوع"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:border-[var(--accent)] disabled:opacity-35"
+                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
@@ -339,9 +471,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                 disabled={!canGoForward}
                 aria-label="تقدم"
                 title="تقدم"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:border-[var(--accent)] disabled:opacity-35"
+                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
@@ -353,10 +485,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onNavigateHome}
-            className="flex min-w-0 items-center gap-2 rounded-xl px-1.5 py-1 text-right transition-opacity hover:opacity-85"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl px-1 py-0.5 text-right transition-opacity hover:opacity-85"
           >
             <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-black shadow-sm"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-black shadow-sm"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -364,13 +496,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               M
             </span>
-            <span className="hidden md:inline text-sm font-extrabold tracking-tight whitespace-nowrap">
+            <span className="hidden md:inline text-xs sm:text-sm font-extrabold tracking-tight whitespace-nowrap">
               Morrow
             </span>
           </button>
 
           {showViewTitle && (
-            <>
+            <div
+              key={`view-ctx-${activeView}`}
+              className="topbar-context-enter flex min-w-0 items-center gap-1.5"
+            >
               <span
                 className="hidden sm:inline text-xs select-none"
                 style={{ color: 'var(--border-color)' }}
@@ -379,65 +514,68 @@ export const TopBar: React.FC<TopBarProps> = ({
                 /
               </span>
               <span
-                className="truncate max-w-[160px] sm:max-w-[240px] text-xs sm:text-sm font-bold"
+                className={`truncate text-xs sm:text-sm font-bold ${
+                  searchOpen
+                    ? 'hidden sm:inline max-w-[110px] md:max-w-[160px]'
+                    : 'max-w-[140px] sm:max-w-[220px]'
+                }`}
                 style={{ color: 'var(--text-primary)' }}
                 title={activeViewLabel}
               >
                 {activeViewLabel}
               </span>
-            </>
+              {activePeriodLabel && !searchOpen && (
+                <span
+                  className="hidden xl:inline truncate max-w-[150px] text-[11px] font-semibold"
+                  style={{ color: 'var(--text-muted)' }}
+                  title={activePeriodLabel}
+                >
+                  · {activePeriodLabel}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Zone 2: Clean Operational Search */}
+        {/* Zone 2: Search On-Demand (Expands cleanly only when triggered) */}
         <div
           ref={searchWrapRef}
-          className="relative flex-1 max-w-md hidden sm:block"
+          className={`relative ${searchOpen ? 'flex-1 max-w-md min-w-[140px]' : 'hidden'}`}
         >
-          <div
-            className="flex items-center gap-2 rounded-xl border px-3 h-9 transition-colors focus-within:border-[var(--accent)]"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: searchOpen ? 'var(--accent)' : 'var(--border-color)',
-            }}
-          >
-            <Search
-              className="h-3.5 w-3.5 shrink-0"
-              style={{ color: 'var(--text-muted)' }}
-            />
-            <input
-              ref={searchInputRef}
-              type="search"
-              value={searchQuery}
-              onFocus={() => setSearchOpen(true)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setSearchOpen(true);
+          {searchOpen && (
+            <div
+              className="topbar-search-expand flex items-center gap-2 rounded-xl border px-2.5 h-8 transition-colors focus-within:border-[var(--accent)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--accent)',
               }}
-              placeholder="بحث في الوكالات والأسماء والقوائم... (/)"
-              className="w-full bg-transparent text-xs outline-none placeholder:text-[var(--text-muted)]"
-            />
-            {searchQuery ? (
+            >
+              <Search
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ color: 'var(--accent)' }}
+              />
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                aria-label="بحث سريع في التطبيق"
+                className="w-full bg-transparent text-xs outline-none placeholder:text-[var(--text-muted)]"
+              />
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="مسح البحث"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchOpen(false);
+                }}
+                aria-label="إغلاق البحث"
                 className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
               >
                 <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
               </button>
-            ) : (
-              <kbd
-                className="hidden md:inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-mono"
-                style={{
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                /
-              </kbd>
-            )}
-          </div>
+            </div>
+          )}
 
           {searchOpen && searchQuery.trim() && (
             <div
@@ -602,59 +740,135 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Zone 3: Quick Actions — Morrow AI Studio, Command Palette, Notifications, Account */}
+        {/* Zone 3: Search Trigger + Context-Smart Controls + Morrow CTA + Notifications + Account */}
         <div className="flex shrink-0 items-center gap-1.5">
-          {showUndoRedo && capabilities.canEditRecords && (
-            <div className="hidden xl:flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onUndo}
-                disabled={!canUndo}
-                title="تراجع"
-                aria-label="تراجع"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors hover:border-[var(--accent)] disabled:opacity-35"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <Undo2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={onRedo}
-                disabled={!canRedo}
-                title="إعادة"
-                aria-label="إعادة"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors hover:border-[var(--accent)] disabled:opacity-35"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <Redo2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
+          {!searchOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen(true);
+                setNotifOpen(false);
+                setAccountMenuOpen(false);
+                setTimeout(() => searchInputRef.current?.focus(), 20);
+              }}
+              title="بحث سريع (/)"
+              aria-label="فتح البحث السريع"
+              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <Search className="h-3.5 w-3.5" />
+            </button>
           )}
 
-          {/* Primary Smart AI Studio CTA */}
+          {adaptiveAction && (() => {
+            const ActionIcon = adaptiveAction.icon;
+            return (
+              <button
+                key={`ctx-act-${activeView}-${adaptiveAction.label}`}
+                type="button"
+                onClick={adaptiveAction.onClick}
+                title={adaptiveAction.title}
+                className="topbar-context-enter nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <ActionIcon className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+                <span>{adaptiveAction.label}</span>
+              </button>
+            );
+          })()}
+
+          {(activeView === 'agency_roster' || activeView === 'master_roster') &&
+            showUndoRedo &&
+            capabilities.canEditRecords && (
+              <div className="hidden xl:flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={onUndo}
+                  disabled={!canUndo}
+                  title="تراجع"
+                  aria-label="تراجع"
+                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onRedo}
+                  disabled={!canRedo}
+                  title="إعادة"
+                  aria-label="إعادة"
+                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <Redo2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+          {onToggleDarkTheme && typeof darkTheme === 'boolean' && (
+            <button
+              type="button"
+              onClick={() => onToggleDarkTheme(!darkTheme)}
+              title={
+                activeThemeName
+                  ? `تبديل النمط (${activeThemeName})`
+                  : darkTheme
+                  ? 'التبديل إلى النمط النهاري'
+                  : 'التبديل إلى النمط الليلي'
+              }
+              aria-label={darkTheme ? 'التبديل إلى النمط النهاري' : 'التبديل إلى النمط الليلي'}
+              className="nexus-pill-btn hidden sm:inline-flex h-8 w-8 shrink-0 items-center justify-center border"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              {darkTheme ? (
+                <Sun className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              ) : (
+                <Moon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              )}
+            </button>
+          )}
+
+          {/* Primary Smart AI Studio CTA (Electric Indigo AI Accent) */}
           <button
             type="button"
             onClick={onOpenMorrowStudio}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold whitespace-nowrap transition-opacity hover:opacity-90"
+            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 px-3 sm:px-3.5 text-xs font-extrabold whitespace-nowrap shrink-0"
             style={{
-              backgroundColor: 'var(--accent)',
-              color: 'var(--accent-fg)',
+              background:
+                'linear-gradient(135deg, var(--accent-ai, #5B4FE9) 0%, #4338CA 100%)',
+              color: '#FFFFFF',
+              boxShadow:
+                'inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 16px -6px rgba(91, 79, 233, 0.55)',
             }}
           >
-            <Bot className="h-4 w-4 shrink-0" />
-            <span className="hidden sm:inline">مساعد Morrow</span>
+            <Bot className="h-3.5 w-3.5 shrink-0" />
+            <span className={searchOpen ? 'hidden lg:inline' : 'hidden sm:inline'}>
+              Morrow
+            </span>
             {pendingDraftsCount > 0 && (
               <span
                 className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-black tabular-nums"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--accent)',
+                  backgroundColor: '#F5B041',
+                  color: '#121212',
                 }}
               >
                 {pendingDraftsCount}
@@ -671,17 +885,17 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setAccountMenuOpen(false);
               }}
               aria-label="تنبيهات الوكالات"
-              className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors hover:border-[var(--accent)]"
+              className="nexus-pill-btn relative inline-flex h-8 w-8 items-center justify-center border"
               style={{
-                backgroundColor: 'var(--bg-main)',
+                backgroundColor: 'var(--bg-surface)',
                 borderColor: notifOpen ? 'var(--accent)' : 'var(--border-color)',
               }}
             >
-              <Bell className="h-4 w-4" />
+              <Bell className="h-3.5 w-3.5" />
               {notifications.length > 0 && (
                 <span
                   className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
-                  style={{ backgroundColor: 'var(--warning)' }}
+                  style={{ backgroundColor: 'var(--accent)' }}
                 />
               )}
             </button>
@@ -746,24 +960,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
 
-          {/* Command Palette Trigger */}
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            title="لوحة الأوامر السريعة (Ctrl+K)"
-            aria-label="لوحة الأوامر السريعة"
-            className="hidden md:inline-flex h-9 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <Command className="h-3.5 w-3.5" />
-            <span>K</span>
-          </button>
-
-          {/* Account Menu (Strictly Account & Quick Actions — ZERO Settings!) */}
+          {/* Account Menu (Includes Quick Command Palette Trigger ⌘K) */}
           {showAuthButton && (
             <div ref={accountWrapRef} className="relative">
               <button
@@ -772,9 +969,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                   setAccountMenuOpen((p) => !p);
                   setNotifOpen(false);
                 }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-2.5 text-xs font-bold whitespace-nowrap"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'var(--bg-surface)',
                   borderColor: accountMenuOpen
                     ? 'var(--accent)'
                     : 'var(--border-color)',
@@ -782,26 +979,25 @@ export const TopBar: React.FC<TopBarProps> = ({
               >
                 {authUser ? (
                   <UserCheck
-                    className="h-4 w-4 shrink-0"
+                    className="h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--success)' }}
                   />
                 ) : (
                   <UserCircle2
-                    className="h-4 w-4 shrink-0"
+                    className="h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--text-muted)' }}
                   />
                 )}
-                <span className="hidden lg:inline max-w-[100px] truncate" dir="auto">
+                <span className="hidden xl:inline max-w-[90px] truncate" dir="auto">
                   {authUser ? authUser.displayName : 'الحساب'}
                 </span>
-                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
 
               {accountMenuOpen && (
                 <div
-                  className="tabrix-popover-enter absolute left-0 top-full z-50 mt-2 w-60 rounded-2xl border p-2.5 shadow-xl space-y-1.5 text-xs"
+                  className="tabrix-popover-enter nexus-glass-lite absolute left-0 top-full z-50 mt-2 w-60 rounded-3xl border p-2.5 shadow-xl space-y-1.5 text-xs"
                   style={{
-                    backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
@@ -829,11 +1025,26 @@ export const TopBar: React.FC<TopBarProps> = ({
                     type="button"
                     onClick={() => {
                       setAccountMenuOpen(false);
+                      onNavigateView('account_security');
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-right font-bold transition-colors hover:bg-[var(--bg-nav-active)]"
+                  >
+                    <span>مركز الحساب والبيانات والأمان</span>
+                    <Shield
+                      className="h-3.5 w-3.5"
+                      style={{ color: 'var(--accent)' }}
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountMenuOpen(false);
                       onOpenAuth();
                     }}
                     className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-right font-bold transition-colors hover:bg-[var(--bg-nav-active)]"
                   >
-                    <span>{authUser ? 'إدارة الحساب والمزامنة' : 'تسجيل الدخول'}</span>
+                    <span>{authUser ? 'نافذة تبديل الحساب' : 'تسجيل الدخول السريع'}</span>
                     <Sparkles
                       className="h-3.5 w-3.5"
                       style={{ color: 'var(--accent)' }}

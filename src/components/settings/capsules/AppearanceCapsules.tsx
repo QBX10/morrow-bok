@@ -310,7 +310,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح الأداة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );

@@ -34,6 +34,8 @@ import {
   type GoogleTaskList,
 } from '../lib/googleWorkspace';
 import type { AuthUser, PeriodQuotaMeta, RelationEntry } from '../types/agency';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 
 interface GoogleWorkspaceViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -335,24 +337,10 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
       {/* Header */}
       <div
         data-assistant-target="google-workspace-root"
-        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
+        className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5"
       >
         <div className="flex items-start gap-3.5 min-w-0">
-          <span
-            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
-              color: 'var(--accent)',
-            }}
-            aria-hidden="true"
-          >
-            <Calendar className="h-5 w-5" />
-          </span>
+          <NexusDuotoneIcon icon={Calendar} size="lg" className="hidden sm:inline-flex" />
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold sm:text-xl">
               تقويم ومهام Google — جدولة الحصص والمتابعة
@@ -1139,22 +1127,28 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
         </>
       )}
 
-      {/* Mandatory Custom React Confirmation Modal before any mutation/deletion */}
-      {pendingConfirm && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="تأكيد تنفيذ العملية في Google Workspace"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 space-y-4 shadow-xl"
+      {/* Mandatory Custom React Confirmation Full-Screen Push Page before any mutation/deletion */}
+      <FullScreenPushPage
+        open={Boolean(pendingConfirm)}
+        onClose={() => setPendingConfirm(null)}
+        title="تأكيد تنفيذ العملية في Google Workspace"
+        subtitle="مراجعة صريحة قبل تعديل أو حذف بيانات تقويم أو مهام Google"
+        icon={
+          <AlertTriangle
+            className="h-4 w-4"
             style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
+              color:
+                pendingConfirm?.kind === 'delete_event' ||
+                pendingConfirm?.kind === 'delete_task'
+                  ? 'var(--danger)'
+                  : 'var(--warning)',
             }}
-          >
+          />
+        }
+        maxWidthClass="max-w-lg"
+      >
+        {pendingConfirm && (
+          <div className="nexus-squircle p-6 space-y-5">
             <div className="flex items-center gap-2 font-bold text-sm">
               <AlertTriangle
                 className="h-5 w-5 shrink-0"
@@ -1188,7 +1182,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               <button
                 type="button"
                 onClick={() => setPendingConfirm(null)}
-                className="rounded-lg border px-4 py-2 font-bold"
+                className="nexus-pill-btn border px-4 py-2 font-bold"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 إلغاء
@@ -1196,7 +1190,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               <button
                 type="button"
                 onClick={() => void executeConfirmedWorkspaceAction()}
-                className="rounded-lg px-4 py-2 font-bold"
+                className="nexus-pill-btn px-5 py-2 font-bold"
                 style={{
                   backgroundColor:
                     pendingConfirm.kind === 'delete_event' ||
@@ -1214,8 +1208,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </FullScreenPushPage>
     </main>
   );
 };

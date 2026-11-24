@@ -9,8 +9,8 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  X,
 } from 'lucide-react';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import type {
   FreeformHeaderAlign,
   FreeformHeaderConfig,
@@ -322,7 +322,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors hover:opacity-85"
+              className="nexus-pill-btn inline-flex shrink-0 items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -341,7 +341,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
           <button
             type="button"
             onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+            className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
@@ -354,39 +354,16 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
         </div>
       )}
 
-      {/* Modal: Edit Period & Designed Freeform Headers */}
-      {modalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="تخصيص الفترة والحصة والترويسة الحرة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border p-5 shadow-2xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-              <h3 className="text-base font-bold">
-                تخصيص الفترة والحصة والترويسة الحرة
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                aria-label="إغلاق"
-                className="rounded-lg p-1.5 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="space-y-5 text-xs">
+      {/* Full-Screen Push Page: Edit Period & Designed Freeform Headers */}
+      <FullScreenPushPage
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="تخصيص الفترة والحصة والترويسة الحرة"
+        subtitle="ضبط التاريخ والشهر ورقم الحصة والترويسة التصميمية أعلى الجدول"
+        icon={<Sparkles className="h-4 w-4" />}
+        maxWidthClass="max-w-3xl"
+      >
+        <form onSubmit={handleSave} className="nexus-squircle p-5 space-y-5 text-xs">
               {/* Section 1: Period & Quota */}
               <div className="space-y-3">
                 <div className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
@@ -771,14 +748,14 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -789,9 +766,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </FullScreenPushPage>
     </section>
   );
 };

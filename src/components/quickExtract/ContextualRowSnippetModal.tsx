@@ -4,12 +4,12 @@ import {
   Eye,
   FileText,
   Maximize2,
-  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import type { NormalizedBox, QuickExtractEvaluatedRow } from '../../types/agency';
 import { getFullRowCropBox } from '../../utils/zeroTrustExtract';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 function useCroppedRowDataUrl(
   imageUrl?: string,
@@ -98,7 +98,7 @@ export const ContextualRowSnippet: React.FC<ContextualRowSnippetProps> = ({
           <button
             type="button"
             onClick={() => onOpenZoom(row)}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
+            className="nexus-pill-btn inline-flex items-center gap-1 border px-2.5 py-1 text-[11px] font-medium"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
@@ -191,160 +191,153 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
   if (!row) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(15, 23, 42, 0.72)' }}
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="space-y-0.5">
-            <div className="text-sm font-bold">
-              التحقق البصري للسطر #{row.rowIndex} — {row.resolvedName || 'اسم غير واضح'}
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              النص المقروء: {row.rawSnippet || 'غير متوفر'}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {sourceImageUrl && (
-              <div
-                className="inline-flex rounded-lg border p-0.5 text-xs"
+    <FullScreenPushPage
+      open={Boolean(row)}
+      onBack={onClose}
+      title={`التحقق البصري للسطر #${row.rowIndex} — ${row.resolvedName || 'اسم غير واضح'}`}
+      subtitle={`النص المقروء: ${row.rawSnippet || 'غير متوفر'}`}
+      icon={<Eye className="h-4 w-4" />}
+      maxWidthClass="max-w-5xl"
+      headerActions={
+        <div className="flex flex-wrap items-center gap-2">
+          {sourceImageUrl && (
+            <div
+              className="inline-flex rounded-full border p-0.5 text-xs"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('row_crop')}
+                className="nexus-pill-btn px-3 py-1 text-xs font-bold"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
+                  backgroundColor:
+                    viewMode === 'row_crop' ? 'var(--accent)' : 'transparent',
+                  color:
+                    viewMode === 'row_crop'
+                      ? 'var(--accent-fg)'
+                      : 'var(--text-primary)',
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setViewMode('row_crop')}
-                  className="rounded-md px-2.5 py-1 font-medium"
-                  style={{
-                    backgroundColor:
-                      viewMode === 'row_crop' ? 'var(--accent)' : 'transparent',
-                    color: viewMode === 'row_crop' ? '#fff' : 'var(--text-primary)',
-                  }}
-                >
-                  قص السطر كاملاً
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('full_source')}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium"
-                  style={{
-                    backgroundColor:
-                      viewMode === 'full_source' ? 'var(--accent)' : 'transparent',
-                    color: viewMode === 'full_source' ? '#fff' : 'var(--text-primary)',
-                  }}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  الصورة الأصلية عند النقطة
-                </button>
-              </div>
-            )}
-
-            <div className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs" style={{ borderColor: 'var(--border-color)' }}>
-              <button
-                type="button"
-                onClick={() => setZoom((z) => Math.max(1, Number((z - 0.5).toFixed(1))))}
-                aria-label="تصغير"
-              >
-                <ZoomOut className="h-3.5 w-3.5" />
+                قص السطر
               </button>
-              <span className="min-w-10 text-center font-mono tabular-nums">{zoom}x</span>
               <button
                 type="button"
-                onClick={() => setZoom((z) => Math.min(3.5, Number((z + 0.5).toFixed(1))))}
-                aria-label="تكبير"
+                onClick={() => setViewMode('full_source')}
+                className="nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold"
+                style={{
+                  backgroundColor:
+                    viewMode === 'full_source' ? 'var(--accent)' : 'transparent',
+                  color:
+                    viewMode === 'full_source'
+                      ? 'var(--accent-fg)'
+                      : 'var(--text-primary)',
+                }}
               >
-                <ZoomIn className="h-3.5 w-3.5" />
+                <Eye className="h-3.5 w-3.5" />
+                الأصل
               </button>
             </div>
+          )}
 
+          <div
+            className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-lg border p-1.5"
-              style={{ borderColor: 'var(--border-color)' }}
-              aria-label="إغلاق"
+              onClick={() => setZoom((z) => Math.max(1, Number((z - 0.5).toFixed(1))))}
+              aria-label="تصغير"
+              className="p-0.5 hover:opacity-75"
             >
-              <X className="h-4 w-4" />
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <span className="min-w-10 text-center font-mono tabular-nums font-bold">
+              {zoom}x
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(3.5, Number((z + 0.5).toFixed(1))))}
+              aria-label="تكبير"
+              className="p-0.5 hover:opacity-75"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
-
-        <div
-          className="flex-1 overflow-auto p-4"
-          style={{ backgroundColor: 'var(--bg-main)' }}
-        >
-          {viewMode === 'row_crop' && croppedUrl ? (
-            <div className="flex min-h-48 items-center justify-center overflow-auto rounded-xl border bg-white p-3" style={{ borderColor: 'var(--border-color)' }}>
-              <img
-                src={croppedUrl}
-                alt={`السطر الكامل ${row.rowIndex}`}
-                style={{
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.15s ease',
-                }}
-                className="max-w-full object-contain"
-              />
-            </div>
-          ) : sourceImageUrl ? (
-            <div className="relative mx-auto w-fit overflow-auto rounded-xl border bg-white p-2" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="relative"
-                style={{
-                  width: `${Math.round(zoom * 100)}%`,
-                  minWidth: '100%',
-                }}
-              >
-                <img
-                  src={sourceImageUrl}
-                  alt="الصورة الأصلية للمستند"
-                  className="block w-full"
-                />
-                {fullBox && (
-                  <div
-                    className="pointer-events-none absolute border-2"
-                    style={{
-                      top: `${fullBox.ymin / 10}%`,
-                      left: `${fullBox.xmin / 10}%`,
-                      height: `${Math.max(2, (fullBox.ymax - fullBox.ymin) / 10)}%`,
-                      width: `${Math.max(10, (fullBox.xmax - fullBox.xmin) / 10)}%`,
-                      borderColor: '#ef4444',
-                      backgroundColor: 'rgba(239, 68, 68, 0.16)',
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-          ) : sourcePdfUrl ? (
-            <iframe
-              src={`${sourcePdfUrl}#page=${row.pageNumber || 1}`}
-              title={`معاينة صفحة ${row.pageNumber || 1}`}
-              className="h-[65vh] w-full rounded-xl border bg-white"
-              style={{ borderColor: 'var(--border-color)' }}
+      }
+    >
+      <div className="nexus-squircle p-4">
+        {viewMode === 'row_crop' && croppedUrl ? (
+          <div
+            className="flex min-h-48 items-center justify-center overflow-auto rounded-2xl border bg-white p-3"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <img
+              src={croppedUrl}
+              alt={`السطر الكامل ${row.rowIndex}`}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: 'center center',
+                transition: 'transform 0.15s ease',
+              }}
+              className="max-w-full object-contain"
             />
-          ) : (
-            <div className="rounded-xl border p-6 text-center text-sm" style={{ borderColor: 'var(--border-color)' }}>
-              لا تتوفر صورة أصلية لهذا السطر. النص المستخرج: <span className="font-mono">{row.rawSnippet}</span>
+          </div>
+        ) : sourceImageUrl ? (
+          <div
+            className="relative mx-auto w-fit overflow-auto rounded-2xl border bg-white p-2"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <div
+              className="relative"
+              style={{
+                width: `${Math.round(zoom * 100)}%`,
+                minWidth: '100%',
+              }}
+            >
+              <img
+                src={sourceImageUrl}
+                alt="الصورة الأصلية للمستند"
+                className="block w-full"
+              />
+              {fullBox && (
+                <div
+                  className="pointer-events-none absolute border-2"
+                  style={{
+                    top: `${fullBox.ymin / 10}%`,
+                    left: `${fullBox.xmin / 10}%`,
+                    height: `${Math.max(2, (fullBox.ymax - fullBox.ymin) / 10)}%`,
+                    width: `${Math.max(10, (fullBox.xmax - fullBox.xmin) / 10)}%`,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+                  }}
+                />
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        ) : sourcePdfUrl ? (
+          <iframe
+            src={`${sourcePdfUrl}#page=${row.pageNumber || 1}`}
+            title={`معاينة صفحة ${row.pageNumber || 1}`}
+            className="h-[72vh] w-full rounded-2xl border bg-white"
+            style={{ borderColor: 'var(--border-color)' }}
+          />
+        ) : (
+          <div
+            className="rounded-2xl border p-6 text-center text-sm"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            لا تتوفر صورة أصلية لهذا السطر. النص المستخرج:{' '}
+            <span className="font-mono">{row.rawSnippet}</span>
+          </div>
+        )}
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

@@ -26,6 +26,7 @@ import {
   saveCustomExpertColumnPreset,
   setExpertColumnRank,
 } from '../utils/recycleBin';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 
 export interface CustomizableColumnMeta {
   id: string;
@@ -106,28 +107,20 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
 
   return (
     <section
-      aria-label="تخصيص الأعمدة والترتيب الحر في وضع الخبير"
+      aria-label="استوديو تخصيص الأعمدة والترتيب الحر"
       data-testid="expert-column-customizer-panel"
-      className="space-y-4 rounded-2xl border p-4 sm:p-5"
+      className="nexus-squircle space-y-4 p-4 sm:p-5"
       style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderColor: 'var(--accent)',
+        borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))',
         color: 'var(--text-primary)',
       }}
     >
       {/* Top Studio Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor: 'var(--accent)',
-              color: 'var(--accent)',
-            }}
-          >
+          <NexusDuotoneIcon sizeClass="h-10 w-10">
             <Sliders className="h-4 w-4" />
-          </span>
+          </NexusDuotoneIcon>
           <div>
             <h2 className="text-sm font-extrabold sm:text-base">
               استوديو تخصيص الأعمدة والترتيب الحر
@@ -140,7 +133,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label
-            className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-semibold"
+            className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 font-semibold"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -159,14 +152,14 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
           </label>
 
           {confirmResetOpen ? (
-            <div className="inline-flex items-center gap-1.5 rounded-lg border p-1" style={{ borderColor: 'var(--danger)' }}>
+            <div className="inline-flex items-center gap-1.5 rounded-full border p-1" style={{ borderColor: 'var(--danger)' }}>
               <button
                 type="button"
                 onClick={() => {
                   onResetExpertTableConfig();
                   setConfirmResetOpen(false);
                 }}
-                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold text-white"
+                className="nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white"
                 style={{ backgroundColor: 'var(--danger)' }}
               >
                 <Check className="h-3.5 w-3.5" />
@@ -175,7 +168,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmResetOpen(false)}
-                className="rounded-md px-2 py-1 text-xs font-semibold"
+                className="nexus-pill-btn px-2.5 py-1 text-xs font-semibold"
                 style={{ color: 'var(--text-muted)' }}
               >
                 إلغاء
@@ -185,7 +178,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
             <button
               type="button"
               onClick={() => setConfirmResetOpen(true)}
-              className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-3 py-1.5 font-bold hover:border-[var(--danger)]"
+              className="nexus-pill-btn inline-flex min-h-[36px] items-center gap-1 border px-3.5 py-1.5 font-bold hover:border-[var(--danger)]"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -274,29 +267,29 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
                 borderColor: 'var(--border-color)',
               }}
             />
-            <button
-              type="button"
-              disabled={!newPresetName.trim()}
-              onClick={() => {
-                if (!newPresetName.trim()) return;
-                onUpdateExpertTableConfig(
-                  saveCustomExpertColumnPreset(
-                    normalizedConfigForOrder,
-                    newPresetName
-                  )
-                );
-                setNewPresetName('');
-              }}
-              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-3 py-1 font-bold disabled:opacity-45"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-              }}
-            >
-              <BookmarkPlus className="h-3.5 w-3.5" />
-              <span>حفظ كقالب</span>
-            </button>
+              <button
+                type="button"
+                disabled={!newPresetName.trim()}
+                onClick={() => {
+                  if (!newPresetName.trim()) return;
+                  onUpdateExpertTableConfig(
+                    saveCustomExpertColumnPreset(
+                      normalizedConfigForOrder,
+                      newPresetName
+                    )
+                  );
+                  setNewPresetName('');
+                }}
+                className="nexus-pill-btn inline-flex min-h-[34px] items-center gap-1 border px-3.5 py-1 font-bold disabled:opacity-45"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <BookmarkPlus className="h-3.5 w-3.5" />
+                <span>حفظ كقالب</span>
+              </button>
           </div>
         </div>
 
@@ -709,7 +702,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
                 });
                 setNewColLabel('');
               }}
-              className="min-h-[38px] rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap"
+              className="nexus-pill-btn min-h-[38px] px-4 py-1.5 font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -754,7 +747,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
                 }
                 setNewCategoryName('');
               }}
-              className="min-h-[38px] rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap"
+              className="nexus-pill-btn min-h-[38px] px-4 py-1.5 font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -791,7 +784,7 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
                 onClick={() =>
                   onBulkUpdateCategory(selectedPersonIds, bulkCategoryValue)
                 }
-                className="min-h-[34px] rounded-lg px-3 py-1 font-bold"
+                className="nexus-pill-btn min-h-[34px] px-4 py-1 font-bold"
                 style={{
                   backgroundColor: 'var(--success)',
                   color: 'var(--success-fg)',

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Check, Plus, Trash2, UserPlus, UserRoundPen } from 'lucide-react';
 import type { Agency, BlockScope, Person } from '../../types/agency';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface AddPersonModalProps {
   open: boolean;
@@ -56,32 +57,17 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="إضافة مستفيد جديد"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title="إضافة مستفيد جديد (إدخال مباشر)"
+      subtitle="إضافة سريعة لسجل الوكالة المختارة"
+      icon={<UserPlus className="h-4 w-4" />}
+      ariaLabel="إضافة مستفيد جديد"
+      maxWidthClass="max-w-lg"
     >
-      <div
-        className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-bold">إضافة مستفيد جديد (إدخال مباشر)</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق نافذة الإضافة"
-            className="rounded p-1 hover:opacity-75"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+      <div className="nexus-squircle p-5 sm:p-6">
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div>
             <label htmlFor="add-person-agency" className="mb-1 block font-medium">
               الوكالة
@@ -183,14 +169,17 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border px-4 py-2 font-semibold whitespace-nowrap"
-              style={{ borderColor: 'var(--border-color)' }}
+              className="nexus-pill-btn border px-4 py-2 font-semibold whitespace-nowrap"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
             >
               إلغاء
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -202,7 +191,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };
 
@@ -272,30 +261,16 @@ export const EditPersonModal: React.FC<EditPersonModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`تعديل بيانات ${person.name}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+    <FullScreenPushPage
+      open={Boolean(person)}
+      onBack={onClose}
+      title="تعديل بيانات المستفيد"
+      subtitle={person.name}
+      icon={<UserRoundPen className="h-4 w-4" />}
+      ariaLabel={`تعديل بيانات ${person.name}`}
+      maxWidthClass="max-w-lg"
     >
-      <div
-        className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-bold">تعديل بيانات المستفيد</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق نافذة التعديل"
-            className="rounded p-1 hover:opacity-75"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <div className="nexus-squircle p-5 sm:p-6">
 
         {confirmStep ? (
           <div className="space-y-4 text-xs">
@@ -539,14 +514,17 @@ export const EditPersonModal: React.FC<EditPersonModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border px-4 py-2 font-semibold"
-                style={{ borderColor: 'var(--border-color)' }}
+                className="nexus-pill-btn border px-4 py-2 font-semibold"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
               >
                 إلغاء
               </button>
               <button
                 type="submit"
-                className="rounded-lg px-4 py-2 font-bold"
+                className="nexus-pill-btn px-5 py-2 font-bold"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -558,7 +536,7 @@ export const EditPersonModal: React.FC<EditPersonModalProps> = ({
           </form>
         )}
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };
 
@@ -576,16 +554,18 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   if (!targetLabel) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="تأكيد الحذف"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+    <FullScreenPushPage
+      open={Boolean(targetLabel)}
+      onBack={onCancel}
+      title="تأكيد الحذف (قواعد المحرر)"
+      subtitle={targetLabel}
+      icon={<Trash2 className="h-4 w-4" style={{ color: 'var(--danger)' }} />}
+      ariaLabel="تأكيد الحذف"
+      maxWidthClass="max-w-md"
     >
       <div
-        className="w-full max-w-sm rounded-xl border p-5 shadow-xl"
+        className="nexus-squircle p-6"
         style={{
-          backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--danger)',
         }}
       >
@@ -596,7 +576,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
           />
           <div className="space-y-2">
             <h3 className="text-sm font-bold" style={{ color: 'var(--danger)' }}>
-              تأكيد الحذف (قواعد المحرر)
+              تأكيد الحذف النهائي
             </h3>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               هل أنت متأكد من حذف <strong>{targetLabel}</strong>؟ لا يمكن التراجع
@@ -604,19 +584,22 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             </p>
           </div>
         </div>
-        <div className="mt-4 flex justify-end gap-2 text-xs">
+        <div className="mt-5 flex justify-end gap-2 text-xs">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border px-4 py-2 font-semibold"
-            style={{ borderColor: 'var(--border-color)' }}
+            className="nexus-pill-btn border px-4 py-2 font-semibold"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
           >
             إلغاء
           </button>
           <button
             type="button"
             onClick={onConfirmDelete}
-            className="rounded-lg px-4 py-2 font-bold"
+            className="nexus-pill-btn px-5 py-2 font-bold"
             style={{
               backgroundColor: 'var(--danger)',
               color: 'var(--danger-fg)',
@@ -626,6 +609,6 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

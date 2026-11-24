@@ -43,8 +43,11 @@ export async function getActiveBearerToken(): Promise<string | null> {
   return getStoredSession()?.token || null;
 }
 
-export async function signInWithFirebaseGoogle(): Promise<StoredSession> {
-  const { user: fbUser, idToken } = await googleSignIn();
+export async function signInWithFirebaseGoogle(options?: {
+  selectAccount?: boolean;
+  loginHint?: string;
+}): Promise<StoredSession> {
+  const { user: fbUser, idToken } = await googleSignIn(options);
 
   let resolvedUser: AuthUser = {
     uid: fbUser.uid,

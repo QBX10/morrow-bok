@@ -14,8 +14,9 @@ import {
   Scissors,
   Search,
   Trash2,
-  X,
 } from 'lucide-react';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import type {
   AuthUser,
   MonthlyArchiveRecord,
@@ -609,14 +610,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             />
 
             {/* Formal Archive Table */}
-            <div
-              className="overflow-x-auto rounded-xl border"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <table className="agency-table w-full text-right text-xs sm:text-sm">
+            <div className="nexus-squircle overflow-x-auto p-2">
+              <table className="agency-table nexus-slab-table w-full text-right text-xs sm:text-sm">
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
                     <th className="border-l px-2.5 py-2.5 text-center">
@@ -977,7 +972,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                         <td className="border-l px-3 py-2 font-semibold">
                           {exp.category === 'worker_wages'
                             ? 'أجور العمال'
-                            : 'صرفيات عامة'}
+                            : exp.category === 'packaging'
+                              ? 'مستلزمات التعبئة'
+                              : exp.category === 'hospitality'
+                                ? 'ضيافة وطعام'
+                                : exp.category === 'custom'
+                                  ? exp.customCategoryLabel?.trim() || 'مصروفات خاصة'
+                                  : 'صرفيات عامة'}
                         </td>
                         <td className="border-l px-3 py-2">{exp.description}</td>
                         <td className="px-3 py-2 text-center font-bold tabular-nums">
@@ -1012,25 +1013,9 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Header */}
-      <div
-        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
+      <div className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
         <div className="flex items-start gap-3.5 min-w-0">
-          <span
-            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
-              color: 'var(--accent)',
-            }}
-            aria-hidden="true"
-          >
-            <Database className="h-5 w-5" />
-          </span>
+          <NexusDuotoneIcon icon={Database} size="lg" className="hidden sm:inline-flex" />
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold sm:text-xl">
               البيانات — الأرشفة الشهرية والسجلات التاريخية
@@ -1050,7 +1035,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             type="button"
             disabled={syncingCloud}
             onClick={() => handleCloudSync()}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+            className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
@@ -1075,7 +1060,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               setArchiveCloseDraft(true);
               setArchiveModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+            className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--bg-nav-active)',
               borderColor: 'var(--accent)',
@@ -1094,7 +1079,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               setNextQuotaDate(nextSuggestion.fullDate);
               setRolloverOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+            className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
@@ -1236,11 +1221,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           {filteredArchives.map((arch) => (
             <article
               key={arch.id}
-              className="flex flex-col justify-between gap-4 rounded-xl border p-5 transition-colors"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
+              className="nexus-squircle nexus-squircle-interactive flex flex-col justify-between gap-4 p-5"
             >
               <div className="space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
@@ -1322,7 +1303,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenArchiveCard(arch)}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1380,35 +1361,16 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
         </section>
       )}
 
-      {/* Modal 1: Archive Current Period */}
-      {archiveModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="حفظ وأرشفة الشهر والحصة الحالية"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setArchiveModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-2xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">حفظ وأرشفة الفترة الحالية</h3>
-              <button
-                type="button"
-                onClick={() => setArchiveModalOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Full-Screen Push Page 1: Archive Current Period */}
+      <FullScreenPushPage
+        open={archiveModalOpen}
+        onClose={() => setArchiveModalOpen(false)}
+        title="حفظ وأرشفة الفترة الحالية"
+        subtitle="إنشاء نسخة أرشيفية مؤمنة ومستقلة للحصة والشهر الحالي"
+        icon={<Archive className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
             <form onSubmit={handleCreateManualArchive} className="space-y-3 text-xs">
               <div>
                 <label className="mb-1 block font-semibold">
@@ -1438,14 +1400,14 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setArchiveModalOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1456,39 +1418,19 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
 
-      {/* Modal 2: Rollover to Next Month / Quota */}
-      {rolloverOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="بدء شهر وحصة جديدة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setRolloverOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-2xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">بدء شهر / حصة جديدة</h3>
-              <button
-                type="button"
-                onClick={() => setRolloverOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Full-Screen Push Page 2: Rollover to Next Month / Quota */}
+      <FullScreenPushPage
+        open={rolloverOpen}
+        onClose={() => setRolloverOpen(false)}
+        title="بدء شهر / حصة جديدة"
+        subtitle="الانتقال إلى دورة التوزيع التالية مع حفظ السجلات الحالية في الأرشيف"
+        icon={<CalendarPlus className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
             <form onSubmit={handleConfirmRollover} className="space-y-3 text-xs">
               <p style={{ color: 'var(--text-muted)' }}>
                 سيتم الانتقال للشهر التالي مع تأمين جميع سجلات شهر{' '}
@@ -1566,14 +1508,14 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setRolloverOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1584,9 +1526,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
     </main>
   );
 };

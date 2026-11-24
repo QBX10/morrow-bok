@@ -24,6 +24,7 @@ import {
 } from '../../lib/authClient';
 import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface AuthModalProps {
   open: boolean;
@@ -200,45 +201,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="تسجيل الدخول المتعدد"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      hideBack={lockedGate}
+      title={
+        currentUser
+          ? 'إدارة الحساب وتسجيل الدخول المتعدد'
+          : 'تسجيل الدخول إلى نظام الوكالات'
+      }
+      subtitle="حسابات Google أو اسم المستخدم أو رقم الهاتف"
+      icon={<ShieldCheck className="h-4 w-4" />}
+      ariaLabel="تسجيل الدخول المتعدد"
+      maxWidthClass="max-w-lg"
     >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-xl border shadow-xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-      >
-        <div
-          className="flex items-center justify-between px-5 py-3.5 text-white"
-          style={{ backgroundColor: 'var(--bg-header)' }}
-        >
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5" />
-            <h2 className="text-sm font-bold">
-              {currentUser
-                ? 'إدارة الحساب وتسجيل الدخول المتعدد'
-                : 'تسجيل الدخول إلى نظام الوكالات'}
-            </h2>
-          </div>
-          {!lockedGate && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="إغلاق نافذة تسجيل الدخول"
-              className="rounded p-1 hover:bg-white/10"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-4 p-5">
+      <div className="nexus-squircle overflow-hidden">
+        <div className="space-y-4 p-5 sm:p-6">
           {currentUser && (
             <div
               className="space-y-2.5 rounded-lg border p-3 text-xs"
@@ -836,6 +814,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

@@ -15,7 +15,6 @@ import {
   Sparkles,
   Undo2,
   Upload,
-  X,
 } from 'lucide-react';
 import type {
   InferredDocumentMetadata,
@@ -26,6 +25,7 @@ import type { AiTaskRoutingMap } from '../../types/assistant';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
 import { RowZoomViewerModal } from './ContextualRowSnippetModal';
 import { type CopilotOperation } from './LiveDraftCopilot';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import {
   SmartExtractionLab,
   type SmartLabFilterMode,
@@ -531,136 +531,15 @@ const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(15, 23, 42, 0.72)' }}
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-center justify-between border-b px-4 py-3"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2 text-sm font-bold">
-              <Crop className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-              قص منطقة أخرى وإضافتها لمسودة السحب
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              ارسم مستطيلاً بالسحب فوق المعلومة أو السطر الناقص ليقوم المحرك بسحبه وإضافته للمسودة فوراً.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border p-1.5"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-4 space-y-3" style={{ backgroundColor: 'var(--bg-main)' }}>
-          {!activeImgUrl ? (
-            <label
-              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center text-xs"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <Upload className="h-6 w-6" style={{ color: 'var(--accent)' }} />
-              <span className="font-semibold">
-                المصدر الحالي لا يحتوي على صورة مسطحة — ارفع لقطة أو صورة للجزء المراد قصه
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    if (typeof reader.result === 'string') {
-                      setUploadedDataUrl(reader.result);
-                    }
-                  };
-                  reader.readAsDataURL(f);
-                }}
-              />
-            </label>
-          ) : (
-            <div
-              ref={containerRef}
-              onPointerDown={(e) => {
-                const pt = getRelPct(e.clientX, e.clientY);
-                setDragStart(pt);
-                setRect({ xmin: pt.x, ymin: pt.y, xmax: pt.x, ymax: pt.y });
-              }}
-              onPointerMove={(e) => {
-                if (!dragStart) return;
-                const pt = getRelPct(e.clientX, e.clientY);
-                setRect({
-                  xmin: Math.min(dragStart.x, pt.x),
-                  ymin: Math.min(dragStart.y, pt.y),
-                  xmax: Math.max(dragStart.x, pt.x),
-                  ymax: Math.max(dragStart.y, pt.y),
-                });
-              }}
-              onPointerUp={() => setDragStart(null)}
-              className="relative mx-auto w-fit cursor-crosshair select-none overflow-hidden rounded-xl border bg-white"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <img
-                src={activeImgUrl}
-                alt="تحديد منطقة للقص والاستخراج"
-                className="block max-h-[58vh] w-auto select-none pointer-events-none"
-                draggable={false}
-              />
-              {rect && rect.xmax > rect.xmin && rect.ymax > rect.ymin && (
-                <div
-                  className="pointer-events-none absolute border-2"
-                  style={{
-                    left: `${rect.xmin / 10}%`,
-                    top: `${rect.ymin / 10}%`,
-                    width: `${(rect.xmax - rect.xmin) / 10}%`,
-                    height: `${(rect.ymax - rect.ymin) / 10}%`,
-                    borderColor: 'var(--accent)',
-                    backgroundColor: 'rgba(13, 148, 136, 0.18)',
-                  }}
-                />
-              )}
-            </div>
-          )}
-
-          {err && (
-            <div
-              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"
-              style={{
-                backgroundColor: 'var(--danger-bg)',
-                borderColor: 'var(--danger)',
-                color: 'var(--danger)',
-              }}
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{err}</span>
-            </div>
-          )}
-        </div>
-
-        <div
-          className="flex items-center justify-between border-t px-4 py-3"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
+    <FullScreenPushPage
+      open
+      onBack={onClose}
+      title="قص منطقة أخرى وإضافتها لمسودة السحب"
+      subtitle="ارسم مستطيلاً بالسحب فوق المعلومة أو السطر الناقص ليقوم المحرك بسحبه وإضافته للمسودة فوراً"
+      icon={<Crop className="h-4 w-4" />}
+      maxWidthClass="max-w-4xl"
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {rect && rect.xmax - rect.xmin >= 20
               ? 'تم تحديد المنطقة بنجاح — جاهزة للاستخراج الفوري'
@@ -670,7 +549,7 @@ const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border px-3 py-1.5 text-xs"
+              className="nexus-pill-btn border px-3.5 py-1.5 text-xs font-bold"
               style={{ borderColor: 'var(--border-color)' }}
             >
               إلغاء
@@ -679,8 +558,11 @@ const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
               type="button"
               disabled={!activeImgUrl || submitting}
               onClick={() => void handleExtractSelection()}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: 'var(--accent)' }}
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-extrabold disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -691,7 +573,96 @@ const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
             </button>
           </div>
         </div>
+      }
+    >
+      <div className="nexus-squircle p-4 sm:p-5 space-y-3">
+        {!activeImgUrl ? (
+          <label
+            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center text-xs"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <Upload className="h-6 w-6" style={{ color: 'var(--accent)' }} />
+            <span className="font-semibold">
+              المصدر الحالي لا يحتوي على صورة مسطحة — ارفع لقطة أو صورة للجزء المراد قصه
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                  if (typeof reader.result === 'string') {
+                    setUploadedDataUrl(reader.result);
+                  }
+                };
+                reader.readAsDataURL(f);
+              }}
+            />
+          </label>
+        ) : (
+          <div
+            ref={containerRef}
+            onPointerDown={(e) => {
+              const pt = getRelPct(e.clientX, e.clientY);
+              setDragStart(pt);
+              setRect({ xmin: pt.x, ymin: pt.y, xmax: pt.x, ymax: pt.y });
+            }}
+            onPointerMove={(e) => {
+              if (!dragStart) return;
+              const pt = getRelPct(e.clientX, e.clientY);
+              setRect({
+                xmin: Math.min(dragStart.x, pt.x),
+                ymin: Math.min(dragStart.y, pt.y),
+                xmax: Math.max(dragStart.x, pt.x),
+                ymax: Math.max(dragStart.y, pt.y),
+              });
+            }}
+            onPointerUp={() => setDragStart(null)}
+            className="relative mx-auto w-fit cursor-crosshair select-none overflow-hidden rounded-2xl border bg-white"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <img
+              src={activeImgUrl}
+              alt="تحديد منطقة للقص والاستخراج"
+              className="block max-h-[65vh] w-auto select-none pointer-events-none"
+              draggable={false}
+            />
+            {rect && rect.xmax > rect.xmin && rect.ymax > rect.ymin && (
+              <div
+                className="pointer-events-none absolute border-2"
+                style={{
+                  left: `${rect.xmin / 10}%`,
+                  top: `${rect.ymin / 10}%`,
+                  width: `${(rect.xmax - rect.xmin) / 10}%`,
+                  height: `${(rect.ymax - rect.ymin) / 10}%`,
+                  borderColor: 'var(--accent)',
+                  backgroundColor: 'rgba(13, 148, 136, 0.18)',
+                }}
+              />
+            )}
+          </div>
+        )}
+
+        {err && (
+          <div
+            className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs"
+            style={{
+              backgroundColor: 'var(--danger-bg)',
+              borderColor: 'var(--danger)',
+              color: 'var(--danger)',
+            }}
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{err}</span>
+          </div>
+        )}
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

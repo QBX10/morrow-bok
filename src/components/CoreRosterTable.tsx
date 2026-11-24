@@ -63,6 +63,10 @@ interface CoreRosterTableProps {
   showExtractColumns?: boolean;
   showEditActions?: boolean;
   editableInline?: boolean;
+  locked?: boolean;
+  onLockedInteraction?: () => void;
+  attachedHeader?: React.ReactNode;
+  allowRowFocusOnClick?: boolean;
   emptyMessage?: string;
   onToggleSelectRow: (selectionId: string) => void;
   onToggleSelectAll: (checked: boolean) => void;
@@ -112,6 +116,10 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   showExtractColumns = false,
   showEditActions = false,
   editableInline = false,
+  locked = false,
+  onLockedInteraction,
+  attachedHeader,
+  allowRowFocusOnClick = false,
   emptyMessage = 'لا توجد سجلات مطابقة في هذا الجدول.',
   onToggleSelectRow,
   onToggleSelectAll,
@@ -121,6 +129,10 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   onInlinePatchRow,
   onOverrideRowRoute,
 }) => {
+  const effectiveInlineEdit = editableInline && !locked;
+  const effectiveShowEditActions = showEditActions && !locked;
+  const canTapRowToFocus =
+    Boolean(onFocusRow) && (themePrefs.activeRowFocusMode || allowRowFocusOnClick);
   const numClass = themePrefs.tabularNumerals ? 'font-data tabular-nums' : '';
   const numericTintStyle = themePrefs.smartNumericSplit
     ? { backgroundColor: 'var(--bg-numeric)' }
@@ -219,36 +231,47 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   };
 
   const totalColSpan =
-    1 + orderedColumns.length + (showEditActions ? 1 : 0);
+    1 + orderedColumns.length + (effectiveShowEditActions ? 1 : 0);
 
   if (resolvedTableTheme === 'card-based') {
     return (
       <div className="space-y-3">
-        <div
-          className="tabrix-card flex items-center justify-between border px-4 py-2.5 text-xs"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          <label className="flex cursor-pointer items-center gap-2 font-bold">
-            <input
-              type="checkbox"
-              aria-label="تحديد جميع الأسماء الظاهرة"
-              checked={allVisibleSelected}
-              onChange={(e) => onToggleSelectAll(e.target.checked)}
-            />
-            <span>تحديد الكل ({rows.length})</span>
-          </label>
-          <span style={{ color: 'var(--text-muted)' }}>وضع العرض البطاقي المرن</span>
+        <div className="nexus-squircle overflow-hidden">
+          {attachedHeader}
+          <div className="flex items-center justify-between px-4 py-2.5 text-xs">
+            <label
+              onClick={() => {
+                if (locked) onLockedInteraction?.();
+              }}
+              className={`flex items-center gap-2 font-bold ${
+                locked ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'
+              }`}
+            >
+              <input
+                type="checkbox"
+                disabled={locked}
+                aria-label="تحديد جميع الأسماء الظاهرة"
+                checked={allVisibleSelected}
+                onChange={(e) => {
+                  if (locked) {
+                    onLockedInteraction?.();
+                    return;
+                  }
+                  onToggleSelectAll(e.target.checked);
+                }}
+              />
+              <span>تحديد الكل ({rows.length})</span>
+            </label>
+            <span style={{ color: 'var(--text-muted)' }}>
+              {locked ? 'الجدول مقفل للقراءة الآمنة' : 'وضع العرض البطاقي المرن'}
+            </span>
+          </div>
         </div>
 
         {rows.length === 0 ? (
           <div
-            className="tabrix-card border py-10 text-center text-xs"
+            className="nexus-squircle py-10 text-center text-xs"
             style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
               color: 'var(--text-muted)',
             }}
           >
@@ -281,7 +304,8 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                 condRules.highlightBlockedRows && isBlocked;
               const isRowSelected = selectedSet.has(row.selectionId);
               const isFocused =
-                themePrefs.activeRowFocusMode && focusedRowKey === row.rowKey;
+                (themePrefs.activeRowFocusMode || allowRowFocusOnClick) &&
+                focusedRowKey === row.rowKey;
 
               const statusColor =
                 eff.summary.scope === 'none'
@@ -295,13 +319,19 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                   key={row.rowKey}
                   data-row-key={row.rowKey}
                   onClick={() => {
-                    if (themePrefs.activeRowFocusMode && onFocusRow) {
+                    if (locked) {
+                      onLockedInteraction?.();
+                      return;
+                    }
+                    if (canTapRowToFocus && onFocusRow) {
                       onFocusRow(
                         focusedRowKey === row.rowKey ? null : row.rowKey
                       );
                     }
                   }}
-                  className="tabrix-card flex flex-col justify-between gap-3 border p-4 text-xs"
+                  className={`nexus-squircle nexus-squircle-interactive flex flex-col justify-between gap-3 p-4 text-xs ${
+                    canTapRowToFocus && !locked ? 'cursor-pointer' : ''
+                  }`}
                   style={{
                     backgroundColor: isRowSelected || isFocused
                       ? 'var(--bg-nav-active)'
@@ -323,10 +353,20 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     <div className="flex items-start gap-2 min-w-0 flex-1">
                       <input
                         type="checkbox"
+                        disabled={locked}
                         aria-label={`تحديد ${row.name}`}
                         checked={isRowSelected}
-                        onChange={() => onToggleSelectRow(row.selectionId)}
-                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => {
+                          if (locked) {
+                            onLockedInteraction?.();
+                            return;
+                          }
+                          onToggleSelectRow(row.selectionId);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (locked) onLockedInteraction?.();
+                        }}
                         className="mt-1 shrink-0"
                       />
                       <div className="min-w-0 flex-1 space-y-1">
@@ -347,7 +387,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           )}
                         </div>
 
-                        {editableInline && onInlinePatchRow ? (
+                        {effectiveInlineEdit && onInlinePatchRow ? (
                           <input
                             type="text"
                             value={row.name}
@@ -404,7 +444,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                         الأفراد
                       </div>
-                      {editableInline && onInlinePatchRow && !showExtractColumns ? (
+                      {effectiveInlineEdit && onInlinePatchRow && !showExtractColumns ? (
                         <input
                           type="number"
                           min={0}
@@ -444,12 +484,12 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     </div>
                   </div>
 
-                  {(row.notes || (editableInline && onInlinePatchRow) || showEditActions) && (
+                  {(row.notes || (effectiveInlineEdit && onInlinePatchRow) || effectiveShowEditActions) && (
                     <div
                       className="flex items-center justify-between gap-2 pt-1"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {editableInline && onInlinePatchRow ? (
+                      {effectiveInlineEdit && onInlinePatchRow ? (
                         <input
                           type="text"
                           value={row.notes}
@@ -475,15 +515,18 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                         </span>
                       )}
 
-                      {showEditActions && (
-                        <div className="flex shrink-0 items-center gap-1">
+                      {effectiveShowEditActions && (
+                        <div className="flex shrink-0 items-center gap-1.5">
                           {onEditRowModal && (
                             <button
                               type="button"
                               onClick={() => onEditRowModal(row)}
                               aria-label={`تعديل ${row.name}`}
-                              className="rounded border p-1.5 hover:opacity-80"
-                              style={{ borderColor: 'var(--border-color)' }}
+                              className="nexus-pill-btn border p-1.5 hover:opacity-85"
+                              style={{
+                                backgroundColor: 'var(--bg-main)',
+                                borderColor: 'var(--border-color)',
+                              }}
                             >
                               <Edit3 className="h-3.5 w-3.5" />
                             </button>
@@ -493,8 +536,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                               type="button"
                               onClick={() => onDeleteRowModal(row)}
                               aria-label={`حذف ${row.name}`}
-                              className="rounded border p-1.5 hover:opacity-80"
+                              className="nexus-pill-btn border p-1.5 hover:opacity-85"
                               style={{
+                                backgroundColor: 'var(--bg-main)',
                                 borderColor: 'var(--danger)',
                                 color: 'var(--danger)',
                               }}
@@ -516,87 +560,27 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   }
 
   return (
-    <div
-      className={`tabrix-card overflow-auto border ${
-        themePrefs.stickyHeaderAndName ? 'max-h-[70vh]' : ''
-      }`}
-      style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderColor: 'var(--border-color)',
-      }}
-    >
-      <table
-        className={`agency-table theme-${resolvedTableTheme} ${
-          themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
-        } ${focusActive ? 'has-focused-row' : ''} text-right text-xs sm:text-sm`}
+    <div className="nexus-squircle overflow-hidden">
+      {attachedHeader}
+      <div
+        className={`overflow-auto px-1.5 sm:px-2 pb-2 ${
+          themePrefs.stickyHeaderAndName ? 'max-h-[72vh]' : ''
+        }`}
       >
-        <thead>
-          <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
-            <th
-              className={`border-l px-2.5 text-center ${
-                themePrefs.stickyHeaderAndName ? 'sticky top-0 z-20' : ''
-              }`}
-              style={{
-                borderColor: 'var(--grid-color)',
-                backgroundColor: 'var(--bg-table-header)',
-              }}
-            >
-              <input
-                type="checkbox"
-                aria-label="تحديد جميع الأسماء الظاهرة"
-                checked={allVisibleSelected}
-                onChange={(e) => onToggleSelectAll(e.target.checked)}
-              />
-            </th>
-
-            {orderedColumns.map((colId) => {
-              const effectivePinnedColId =
-                expertTableConfig?.pinnedColumnId === undefined
-                  ? 'name'
-                  : expertTableConfig.pinnedColumnId;
-              const isPinned =
-                Boolean(effectivePinnedColId) && colId === effectivePinnedColId;
-              const isCentered = [
-                'serial',
-                'letter',
-                'individuals',
-                'extract_decrease',
-                'extract_add_delete',
-                'quantity',
-                'price',
-                'status',
-                'extract_route',
-              ].includes(colId);
-
-              return (
-                <th
-                  key={colId}
-                  data-col-id={colId}
-                  data-pinned={isPinned ? 'true' : undefined}
-                  className={`border-l px-3 font-bold whitespace-nowrap ${
-                    isCentered ? 'text-center' : ''
-                  } ${
-                    themePrefs.stickyHeaderAndName
-                      ? isPinned
-                        ? 'sticky right-0 top-0 z-30 shadow-[-2px_0_4px_rgba(0,0,0,0.06)]'
-                        : 'sticky top-0 z-20'
-                      : isPinned
-                      ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
-                      : ''
-                  }`}
-                  style={{
-                    borderColor: 'var(--grid-color)',
-                    backgroundColor: 'var(--bg-table-header)',
-                  }}
-                >
-                  {getHeaderLabel(colId)}
-                </th>
-              );
-            })}
-
-            {showEditActions && (
+        <table
+          className={`agency-table ${
+            resolvedTableTheme === 'paper-ledger' ? '' : 'nexus-slab-table'
+          } theme-${resolvedTableTheme} ${
+            themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
+          } ${focusActive ? 'has-focused-row' : ''} text-right text-xs sm:text-sm`}
+        >
+          <thead>
+            <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
               <th
-                className={`border-r px-3 text-center font-bold whitespace-nowrap ${
+                onClick={() => {
+                  if (locked) onLockedInteraction?.();
+                }}
+                className={`border-l px-2.5 text-center ${
                   themePrefs.stickyHeaderAndName ? 'sticky top-0 z-20' : ''
                 }`}
                 style={{
@@ -604,11 +588,81 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                   backgroundColor: 'var(--bg-table-header)',
                 }}
               >
-                إجراءات المحرر
+                <input
+                  type="checkbox"
+                  disabled={locked}
+                  aria-label="تحديد جميع الأسماء الظاهرة"
+                  checked={allVisibleSelected}
+                  onChange={(e) => {
+                    if (locked) {
+                      onLockedInteraction?.();
+                      return;
+                    }
+                    onToggleSelectAll(e.target.checked);
+                  }}
+                />
               </th>
-            )}
-          </tr>
-        </thead>
+
+              {orderedColumns.map((colId) => {
+                const effectivePinnedColId =
+                  expertTableConfig?.pinnedColumnId === undefined
+                    ? 'name'
+                    : expertTableConfig.pinnedColumnId;
+                const isPinned =
+                  Boolean(effectivePinnedColId) && colId === effectivePinnedColId;
+                const isCentered = [
+                  'serial',
+                  'letter',
+                  'individuals',
+                  'extract_decrease',
+                  'extract_add_delete',
+                  'quantity',
+                  'price',
+                  'status',
+                  'extract_route',
+                ].includes(colId);
+
+                return (
+                  <th
+                    key={colId}
+                    data-col-id={colId}
+                    data-pinned={isPinned ? 'true' : undefined}
+                    className={`border-l px-3 font-bold whitespace-nowrap ${
+                      isCentered ? 'text-center' : ''
+                    } ${
+                      themePrefs.stickyHeaderAndName
+                        ? isPinned
+                          ? 'sticky right-0 top-0 z-30 shadow-[-2px_0_4px_rgba(0,0,0,0.06)]'
+                          : 'sticky top-0 z-20'
+                        : isPinned
+                        ? 'sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]'
+                        : ''
+                    }`}
+                    style={{
+                      borderColor: 'var(--grid-color)',
+                      backgroundColor: 'var(--bg-table-header)',
+                    }}
+                  >
+                    {getHeaderLabel(colId)}
+                  </th>
+                );
+              })}
+
+              {effectiveShowEditActions && (
+                <th
+                  className={`border-r px-3 text-center font-bold whitespace-nowrap ${
+                    themePrefs.stickyHeaderAndName ? 'sticky top-0 z-20' : ''
+                  }`}
+                  style={{
+                    borderColor: 'var(--grid-color)',
+                    backgroundColor: 'var(--bg-table-header)',
+                  }}
+                >
+                  إجراءات المحرر
+                </th>
+              )}
+            </tr>
+          </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
@@ -645,7 +699,8 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                 !isBlocked &&
                 (eff.eligibleIndividuals === 0 || row.individuals === 0);
               const isFocused =
-                themePrefs.activeRowFocusMode && focusedRowKey === row.rowKey;
+                (themePrefs.activeRowFocusMode || allowRowFocusOnClick) &&
+                focusedRowKey === row.rowKey;
               const prevRow = index > 0 ? rows[index - 1] : null;
               const isAgencyGroupBoundary =
                 themePrefs.softGroupDividers &&
@@ -697,7 +752,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                   key={row.rowKey}
                   data-row-key={row.rowKey}
                   onClick={() => {
-                    if (!themePrefs.activeRowFocusMode || !onFocusRow) return;
+                    if (locked) {
+                      onLockedInteraction?.();
+                      return;
+                    }
+                    if (!canTapRowToFocus || !onFocusRow) return;
                     onFocusRow(
                       focusedRowKey === row.rowKey ? null : row.rowKey
                     );
@@ -706,7 +765,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     highlightBlocked ? 'row-blocked' : ''
                   } ${isZeroInd ? 'row-warning-cond' : ''} ${
                     isFocused ? 'row-focused' : ''
-                  } ${themePrefs.activeRowFocusMode ? 'cursor-pointer' : ''}`}
+                  } ${canTapRowToFocus && !locked ? 'cursor-pointer' : ''}`}
                   style={{
                     backgroundColor: isRowSelected
                       ? 'var(--bg-nav-active)'
@@ -723,13 +782,23 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       borderColor: 'var(--grid-color)',
                       borderTop: groupTopBorder,
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (locked) onLockedInteraction?.();
+                    }}
                   >
                     <input
                       type="checkbox"
+                      disabled={locked}
                       aria-label={`تحديد ${row.name}`}
                       checked={isRowSelected}
-                      onChange={() => onToggleSelectRow(row.selectionId)}
+                      onChange={() => {
+                        if (locked) {
+                          onLockedInteraction?.();
+                          return;
+                        }
+                        onToggleSelectRow(row.selectionId);
+                      }}
                     />
                   </td>
 
@@ -808,15 +877,27 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!editableInline) {
-                              onToggleSelectRow(row.selectionId);
-                              if (themePrefs.activeRowFocusMode && onFocusRow) {
-                                onFocusRow(row.rowKey);
+                            if (locked) {
+                              onLockedInteraction?.();
+                              return;
+                            }
+                            if (!effectiveInlineEdit) {
+                              if (allowRowFocusOnClick && onFocusRow) {
+                                onFocusRow(
+                                  focusedRowKey === row.rowKey
+                                    ? null
+                                    : row.rowKey
+                                );
+                              } else {
+                                onToggleSelectRow(row.selectionId);
+                                if (themePrefs.activeRowFocusMode && onFocusRow) {
+                                  onFocusRow(row.rowKey);
+                                }
                               }
                             }
                           }}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             <div className="inline-flex items-center gap-1.5">
                               <input
                                 type="text"
@@ -906,9 +987,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             borderTop: groupTopBorder,
                             backgroundColor: stickyCellBg,
                           }}
-                          onClick={(e) => editableInline && e.stopPropagation()}
+                          onClick={(e) => effectiveInlineEdit && e.stopPropagation()}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             <select
                               aria-label={`فئة ${row.name}`}
                               value={row.customCategory || ''}
@@ -959,9 +1040,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             ...(stickyCellBg ? { backgroundColor: stickyCellBg } : {}),
                             borderTop: groupTopBorder,
                           }}
-                          onClick={(e) => editableInline && e.stopPropagation()}
+                          onClick={(e) => effectiveInlineEdit && e.stopPropagation()}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             showExtractColumns ? (
                               <div className="inline-flex items-center gap-1">
                                 <input
@@ -1041,7 +1122,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             <input
                               type="number"
                               min={0}
@@ -1080,7 +1161,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             <div className="inline-flex items-center gap-1">
                               <input
                                 type="number"
@@ -1261,9 +1342,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             borderTop: groupTopBorder,
                             backgroundColor: stickyCellBg,
                           }}
-                          onClick={(e) => editableInline && e.stopPropagation()}
+                          onClick={(e) => effectiveInlineEdit && e.stopPropagation()}
                         >
-                          {editableInline && onInlinePatchRow ? (
+                          {effectiveInlineEdit && onInlinePatchRow ? (
                             <input
                               type="text"
                               value={row.notes}
@@ -1301,9 +1382,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                           borderTop: groupTopBorder,
                           backgroundColor: stickyCellBg,
                         }}
-                        onClick={(e) => editableInline && e.stopPropagation()}
+                        onClick={(e) => effectiveInlineEdit && e.stopPropagation()}
                       >
-                        {editableInline && onInlinePatchRow ? (
+                        {effectiveInlineEdit && onInlinePatchRow ? (
                           <input
                             type={customDef?.type === 'number' ? 'number' : 'text'}
                             value={customVal}
@@ -1326,7 +1407,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     );
                   })}
 
-                  {showEditActions && (
+                  {effectiveShowEditActions && (
                     <td
                       className="border-r px-3 text-center"
                       style={{
@@ -1341,8 +1422,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             type="button"
                             onClick={() => onEditRowModal(row)}
                             aria-label={`تعديل ${row.name}`}
-                            className="rounded border p-1.5 hover:opacity-80"
-                            style={{ borderColor: 'var(--border-color)' }}
+                            className="nexus-pill-btn border p-1.5 hover:opacity-85"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: 'var(--border-color)',
+                            }}
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
@@ -1352,8 +1436,9 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             type="button"
                             onClick={() => onDeleteRowModal(row)}
                             aria-label={`حذف ${row.name}`}
-                            className="rounded border p-1.5 hover:opacity-80"
+                            className="nexus-pill-btn border p-1.5 hover:opacity-85"
                             style={{
+                              backgroundColor: 'var(--bg-main)',
                               borderColor: 'var(--danger)',
                               color: 'var(--danger)',
                             }}
@@ -1370,6 +1455,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };

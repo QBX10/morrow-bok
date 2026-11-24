@@ -30,8 +30,8 @@ export const Switcher: React.FC<SwitcherProps> = ({
     <BottomSheet
       open={open}
       onClose={onClose}
-      title="مبدّل العوالم السريع — Morrow"
-      subtitle="تنقّل بين العوالم المعزولة بنقرة، أو أخفِ العوالم قليلة الاستخدام دون حذفها"
+      title="مبدّل الأقسام السريع — Morrow"
+      subtitle="تنقّل بين أقسام النظام بنقرة، أو أخفِ الأقسام قليلة الاستخدام دون حذفها"
       icon={<Globe2 className="h-5 w-5" />}
       maxWidthClass="max-w-4xl"
     >
@@ -73,7 +73,7 @@ export const Switcher: React.FC<SwitcherProps> = ({
                       className="block text-[10px] truncate"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      {isHidden ? 'مخفي من الواجهة الرئيسية' : `${world.children.length} مجرات`}
+                      {isHidden ? 'مخفي من الواجهة الرئيسية' : `${world.children.length} أقسام فرعية`}
                     </span>
                   </div>
                 </button>
@@ -82,8 +82,8 @@ export const Switcher: React.FC<SwitcherProps> = ({
                   <button
                     type="button"
                     onClick={() => onToggleHiddenWorld(world.worldId)}
-                    title={isHidden ? 'إظهار هذا العالم في المركز' : 'إخفاء من المركز (يبقى حياً في البحث)'}
-                    aria-label={isHidden ? 'إظهار العالم' : 'إخفاء العالم'}
+                    title={isHidden ? 'إظهار هذا القسم في المركز' : 'إخفاء من المركز (يبقى حياً في البحث)'}
+                    aria-label={isHidden ? 'إظهار القسم' : 'إخفاء القسم'}
                     className="cosmos-touch-target inline-flex items-center justify-center rounded-xl border px-2 text-xs hover:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-surface)',

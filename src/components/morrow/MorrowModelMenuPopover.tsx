@@ -7,7 +7,6 @@ import {
   SlidersHorizontal,
   Wifi,
   WifiOff,
-  X,
 } from 'lucide-react';
 import type { Agency } from '../../types/agency';
 import type {
@@ -17,6 +16,8 @@ import type {
   AssistantResponseStyle,
 } from '../../types/assistant';
 import type { ApprovedCloudModelId, ModelHealthRecord } from '../../lib/aiConfig';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
 
 export interface BrainOptionItem {
   id: AssistantBrainMode;
@@ -84,285 +85,43 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
   onOpenCanvas,
   onOpenModelsStudio,
 }) => {
-  React.useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[var(--z-sheet)] flex items-start justify-center sm:justify-start pt-[60px] px-3 sm:pr-16 sm:pl-6"
-      role="dialog"
-      aria-modal="true"
-      aria-label="قائمة نماذج وإعدادات Morrow"
-    >
-      <div
-        onClick={onClose}
-        className="fixed inset-0"
-        style={{
-          backgroundColor: 'rgba(15, 23, 42, 0.28)',
-          backdropFilter: 'blur(2px)',
-        }}
-      />
-
-      <div
-        data-testid="morrow-brand-panel"
-        className="relative z-10 w-full max-w-lg rounded-2xl border shadow-xl overflow-hidden"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-      >
-        {/* Top Bar */}
-        <div
-          className="flex items-center justify-between gap-3 border-b px-4 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-base font-black tracking-tight">Morrow</span>
-              <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                · اختيار النموذج والقسم
-              </span>
-            </div>
-            <div
-              className="mt-0.5 flex items-center gap-1.5 text-[11px]"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <span
-                className="inline-flex items-center gap-1 font-semibold"
-                style={{
-                  color: connectivity === 'online' ? 'var(--success)' : 'var(--warning)',
-                }}
-              >
-                {connectivity === 'online' ? (
-                  <Wifi className="h-3 w-3" />
-                ) : (
-                  <WifiOff className="h-3 w-3" />
-                )}
-                <span>
-                  {connectivity === 'online'
-                    ? 'متصل سحابياً'
-                    : connectivity === 'quota_exhausted'
-                      ? 'حصة مؤقتة · محلي'
-                      : 'الوضع المحلي جاهز'}
-                </span>
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>التحويل التلقائي والمرجع المحلي مفعّلان</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق قائمة Morrow"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-colors hover:border-[var(--accent)]"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Scrollable Content */}
-        <div className="max-h-[78vh] overflow-y-auto p-3.5 space-y-3">
-          {/* Model Selection List (Gemini Switcher Style) */}
-          <div className="space-y-1">
-            <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-              النموذج النشط للمحادثة
-            </div>
-            <div
-              className="divide-y rounded-xl border overflow-hidden"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              {brainOptions.map((opt) => {
-                const selected = brainMode === opt.id;
-                const snap = opt.modelId
-                  ? modelHealthSnapshots.find((h) => h.modelId === opt.modelId)
-                  : undefined;
-                const cooling = snap?.status === 'cooldown';
-
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      onChangeBrainMode(opt.id);
-                      onClose();
-                    }}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-right transition-colors hover:bg-[var(--bg-surface)]"
-                    style={{
-                      backgroundColor: selected ? 'var(--bg-nav-active)' : 'transparent',
-                    }}
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <span
-                        className="mt-0.5 shrink-0"
-                        style={{ color: selected ? 'var(--accent)' : 'var(--text-muted)' }}
-                      >
-                        {opt.icon}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-extrabold">
-                          <span style={{ color: selected ? 'var(--accent)' : 'var(--text-primary)' }}>
-                            {opt.label}
-                          </span>
-                          {snap && (
-                            <span
-                              className="text-[10px] font-semibold tabular-nums"
-                              style={{ color: cooling ? 'var(--warning)' : 'var(--success)' }}
-                            >
-                              · {cooling ? 'تبريد' : 'جاهز'}
-                              {snap.avgLatencyMs
-                                ? ` ${(snap.avgLatencyMs / 1000).toFixed(1)}s`
-                                : ''}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                          {opt.desc}
-                        </div>
-                      </div>
-                    </div>
-
-                    {selected && (
-                      <Check className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Collaboration Mode */}
-          {onChangeCollaborationMode && (
-            <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="flex items-center gap-1.5 text-[11px] font-bold"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <GitMerge className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>نمط تعاون النماذج والتدقيق</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {collaborationOptions.map((col) => {
-                  const active = collaborationMode === col.id;
-                  return (
-                    <button
-                      key={col.id}
-                      type="button"
-                      onClick={() => onChangeCollaborationMode(col.id)}
-                      title={col.desc}
-                      className="rounded-xl border px-2.5 py-1.5 text-center text-[11px] font-bold transition-colors whitespace-nowrap"
-                      style={{
-                        backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                        borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                        color: active ? 'var(--accent)' : 'var(--text-primary)',
-                      }}
-                    >
-                      {col.shortLabel}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Reasoning & Response Lens */}
-          {onChangeResponseStyle && (
-            <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="flex items-center gap-1.5 text-[11px] font-bold"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>أسلوب التفكير وصياغة الرد</span>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {RESPONSE_STYLE_OPTIONS.map((opt) => {
-                  const active = responseStyle === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => onChangeResponseStyle(opt.id)}
-                      className="rounded-xl border px-3 py-1.5 text-right transition-colors hover:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                        borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                      }}
-                    >
-                      <div
-                        className="text-[11px] font-extrabold"
-                        style={{ color: active ? 'var(--accent)' : 'var(--text-primary)' }}
-                      >
-                        {opt.label}
-                      </div>
-                      <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
-                        {opt.desc}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Active Agency Context */}
-          {agencies.length > 0 && onSelectActiveAgency && (
-            <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="flex items-center gap-1.5 text-[11px] font-bold"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <FolderKanban className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                <span>سياق الوكالة النشطة</span>
-              </div>
-              <select
-                aria-label="اختيار الوكالة النشطة من قائمة Morrow"
-                value={activeAgencyId ?? agencies[0].id}
-                onChange={(e) => onSelectActiveAgency(Number(e.target.value))}
-                className="w-full rounded-xl border px-3 py-2 text-xs font-bold outline-none focus:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                {agencies.map((ag) => (
-                  <option key={ag.id} value={ag.id}>
-                    {ag.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-
-        {/* Footer Quick Links to Full Morrow Models & Canvas */}
-        <div
-          className="flex flex-wrap items-center gap-2 border-t px-4 py-3"
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title="Morrow · اختيار النموذج والقسم"
+      subtitle="التحويل التلقائي والمرجع المحلي مفعّلان"
+      icon={
+        <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+          <SlidersHorizontal className="h-4 w-4" />
+        </NexusDuotoneIcon>
+      }
+      maxWidthClass="max-w-2xl"
+      zIndexClass="z-[var(--z-sheet)]"
+      ariaLabel="قائمة نماذج وإعدادات Morrow"
+      headerActions={
+        <span
+          className="inline-flex items-center gap-1.5 text-xs font-bold whitespace-nowrap"
           style={{
-            backgroundColor: 'var(--bg-main)',
-            borderColor: 'var(--border-color)',
+            color: connectivity === 'online' ? 'var(--success)' : 'var(--warning)',
           }}
         >
+          {connectivity === 'online' ? (
+            <Wifi className="h-3.5 w-3.5" />
+          ) : (
+            <WifiOff className="h-3.5 w-3.5" />
+          )}
+          <span>
+            {connectivity === 'online'
+              ? 'متصل سحابياً'
+              : connectivity === 'quota_exhausted'
+                ? 'حصة مؤقتة · محلي'
+                : 'الوضع المحلي جاهز'}
+          </span>
+        </span>
+      }
+      footer={
+        <div className="flex flex-wrap items-center gap-2">
           {onOpenCanvas && (
             <button
               type="button"
@@ -370,13 +129,14 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
                 onClose();
                 onOpenCanvas();
               }}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+              className="nexus-pill-btn inline-flex h-10 flex-1 items-center justify-center gap-1.5 border px-4 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
               }}
             >
-              <LayoutPanelLeft className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <LayoutPanelLeft className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>اللوحة التفاعلية</span>
             </button>
           )}
@@ -388,10 +148,10 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
                 onClose();
                 onOpenModelsStudio();
               }}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-95"
+              className="nexus-pill-btn inline-flex h-10 flex-1 items-center justify-center gap-1.5 px-4 text-xs font-extrabold whitespace-nowrap"
               style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
+                backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                color: '#FFFFFF',
               }}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -399,7 +159,207 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
             </button>
           )}
         </div>
+      }
+    >
+      <div data-testid="morrow-brand-panel" className="space-y-4">
+        {/* Model Selection List */}
+        <section className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+          <div className="text-xs font-extrabold" style={{ color: 'var(--text-muted)' }}>
+            النموذج النشط للمحادثة
+          </div>
+          <div
+            className="divide-y rounded-2xl border overflow-hidden"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            {brainOptions.map((opt) => {
+              const selected = brainMode === opt.id;
+              const snap = opt.modelId
+                ? modelHealthSnapshots.find((h) => h.modelId === opt.modelId)
+                : undefined;
+              const cooling = snap?.status === 'cooldown';
+
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onChangeBrainMode(opt.id);
+                    onClose();
+                  }}
+                  className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-right transition-colors hover:bg-[var(--bg-surface)]"
+                  style={{
+                    backgroundColor: selected ? 'var(--bg-nav-active)' : 'transparent',
+                  }}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span
+                      className="mt-0.5 shrink-0"
+                      style={{
+                        color: selected ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {opt.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs font-extrabold">
+                        <span
+                          style={{
+                            color: selected
+                              ? 'var(--accent-ai, #5B4FE9)'
+                              : 'var(--text-primary)',
+                          }}
+                        >
+                          {opt.label}
+                        </span>
+                        {snap && (
+                          <span
+                            className="text-[10px] font-semibold tabular-nums"
+                            style={{ color: cooling ? 'var(--warning)' : 'var(--success)' }}
+                          >
+                            · {cooling ? 'تبريد' : 'جاهز'}
+                            {snap.avgLatencyMs
+                              ? ` ${(snap.avgLatencyMs / 1000).toFixed(1)}s`
+                              : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                        {opt.desc}
+                      </div>
+                    </div>
+                  </div>
+
+                  {selected && (
+                    <Check
+                      className="h-4 w-4 shrink-0"
+                      style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Collaboration Mode */}
+        {onChangeCollaborationMode && (
+          <section className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+            <div
+              className="flex items-center gap-1.5 text-xs font-extrabold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <GitMerge className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+              <span>نمط تعاون النماذج والتدقيق</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {collaborationOptions.map((col) => {
+                const active = collaborationMode === col.id;
+                return (
+                  <button
+                    key={col.id}
+                    type="button"
+                    onClick={() => onChangeCollaborationMode(col.id)}
+                    title={col.desc}
+                    className="nexus-pill-btn border px-3 py-2 text-center text-[11px] font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      borderColor: active
+                        ? 'var(--accent-ai, #5B4FE9)'
+                        : 'var(--border-color)',
+                      color: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {col.shortLabel}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Reasoning & Response Lens */}
+        {onChangeResponseStyle && (
+          <section className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+            <div
+              className="flex items-center gap-1.5 text-xs font-extrabold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <SlidersHorizontal
+                className="h-3.5 w-3.5"
+                style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+              />
+              <span>أسلوب التفكير وصياغة الرد</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {RESPONSE_STYLE_OPTIONS.map((opt) => {
+                const active = responseStyle === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => onChangeResponseStyle(opt.id)}
+                    className="rounded-2xl border px-3.5 py-2.5 text-right transition-colors hover:border-[var(--accent-ai)]"
+                    style={{
+                      backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      borderColor: active
+                        ? 'var(--accent-ai, #5B4FE9)'
+                        : 'var(--border-color)',
+                    }}
+                  >
+                    <div
+                      className="text-xs font-extrabold"
+                      style={{
+                        color: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
+                      }}
+                    >
+                      {opt.label}
+                    </div>
+                    <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                      {opt.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Active Agency Context */}
+        {agencies.length > 0 && onSelectActiveAgency && (
+          <section className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+            <div
+              className="flex items-center gap-1.5 text-xs font-extrabold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <FolderKanban
+                className="h-3.5 w-3.5"
+                style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+              />
+              <span>سياق الوكالة النشطة</span>
+            </div>
+            <select
+              aria-label="اختيار الوكالة النشطة من قائمة Morrow"
+              value={activeAgencyId ?? agencies[0].id}
+              onChange={(e) => onSelectActiveAgency(Number(e.target.value))}
+              className="w-full rounded-2xl border px-3.5 py-2.5 text-xs font-bold outline-none focus:border-[var(--accent-ai)]"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {agencies.map((ag) => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.name}
+                </option>
+              ))}
+            </select>
+          </section>
+        )}
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

@@ -545,7 +545,7 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
       <SettingRow
         id="acc_one_handed"
         title="وضع اليد الواحدة (الجوال)"
-        description="ينزل المحتوى التفاعلي في العوالم إلى نطاق وصول الإبهام"
+        description="ينزل المحتوى التفاعلي في الأقسام إلى نطاق وصول الإبهام"
         icon="sliders"
         isModified={accessibility.oneHandedMode}
         onResetSingle={() => onUpdateAccessibility({ oneHandedMode: false })}
@@ -865,7 +865,7 @@ export const LegacyArchivePanel: React.FC<LegacyArchivePanelProps> = ({
           className="rounded-[20px] border p-4 space-y-2.5"
           style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
         >
-          <h4 className="text-xs font-extrabold">عوالم مخفية من المركز الرئيسي ({hiddenWorlds.length})</h4>
+          <h4 className="text-xs font-extrabold">أقسام مخفية من الواجهة الرئيسية ({hiddenWorlds.length})</h4>
           <div className="flex flex-wrap gap-2">
             {hiddenWorlds.map((w) => (
               <button

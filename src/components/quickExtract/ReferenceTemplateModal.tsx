@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Check, ImagePlus, MousePointerSquareDashed, Trash2, X } from 'lucide-react';
+import { Check, ImagePlus, MousePointerSquareDashed, Trash2 } from 'lucide-react';
 import type {
   NormalizedBox,
   QuickExtractFocusField,
   QuickExtractReferenceTemplate,
   QuickExtractTemplateRegion,
 } from '../../types/agency';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface ReferenceTemplateModalProps {
   open: boolean;
@@ -145,45 +146,19 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="إعداد الصورة المرجعية والنموذج الأولي"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-5"
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title="الصورة المرجعية / النموذج الأولي لتخطيط الدفتر"
+      subtitle="ارفع صورة صفحة نموذجية وحدد أعمدتها لرفع دقة الذكاء الاصطناعي"
+      ariaLabel="إعداد الصورة المرجعية والنموذج الأولي"
+      icon={<MousePointerSquareDashed className="h-4 w-4" />}
+      maxWidthClass="max-w-3xl"
     >
-      <div
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div
-          className="flex items-center justify-between border-b px-5 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex items-center gap-2">
-            <MousePointerSquareDashed
-              className="h-4 w-4"
-              style={{ color: 'var(--accent)' }}
-            />
-            <h2 className="text-sm font-bold sm:text-base">
-              الصورة المرجعية / النموذج الأولي لتخطيط الدفتر
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق نافذة النموذج المرجعي"
-            className="rounded-lg p-1.5 hover:opacity-80"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+      <div className="nexus-squircle p-5 sm:p-6">
         <form
           onSubmit={handleSave}
-          className="flex-1 space-y-4 overflow-y-auto p-5 text-xs"
+          className="space-y-4 text-xs"
         >
           <p style={{ color: 'var(--text-muted)' }}>
             ارفع صورة صفحة نموذجية من دفترك أو جدولك، ثم اختر نوع الحقل واسحب
@@ -225,7 +200,7 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3.5 py-2 font-bold"
+              className="nexus-pill-btn inline-flex cursor-pointer items-center gap-1.5 border px-4 py-2 font-bold"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent)',
@@ -256,7 +231,7 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
                       key={opt.field}
                       type="button"
                       onClick={() => setActiveField(opt.field)}
-                      className="rounded-lg border px-2.5 py-1.5 text-[11px] font-bold"
+                      className="nexus-pill-btn border px-3 py-1.5 text-[11px] font-bold"
                       style={{
                         backgroundColor: isActive
                           ? opt.color
@@ -387,7 +362,7 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border px-4 py-2 font-semibold"
+              className="nexus-pill-btn border px-4 py-2 font-semibold"
               style={{ borderColor: 'var(--border-color)' }}
             >
               إلغاء
@@ -395,7 +370,7 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
             <button
               type="submit"
               disabled={!imageDataUrl || !name.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold disabled:opacity-40"
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold disabled:opacity-40"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -407,6 +382,6 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

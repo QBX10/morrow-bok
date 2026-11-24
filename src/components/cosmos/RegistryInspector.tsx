@@ -30,8 +30,8 @@ const FLAG_META: Array<{
 }> = [
   {
     key: 'orbitalMapView',
-    title: 'الخريطة المدارية التفاعلية',
-    desc: 'إتاحة عرض العوالم كخريطة مدارية بجانب الخريطة الشجرية.',
+    title: 'الخريطة التفاعلية للأقسام',
+    desc: 'إتاحة عرض الأقسام كخريطة تفاعلية بجانب القائمة الشجرية.',
   },
   {
     key: 'smartUsageSuggestions',
@@ -79,18 +79,18 @@ export const RegistryInspector: React.FC<RegistryInspectorProps> = ({
       >
         <div>
           <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            العوالم والمجرات
+            الأقسام الرئيسية والفرعية
           </p>
           <p className="text-lg font-extrabold tabular-nums">
-            {governance.worldCount} عوالم · {governance.galaxyCount} مجرة
+            {governance.worldCount} قسم · {governance.galaxyCount} فرعي
           </p>
         </div>
         <div>
           <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            إجمالي الكبسولات
+            إجمالي الأدوات
           </p>
           <p className="text-lg font-extrabold tabular-nums">
-            {governance.capsuleCount} كبسولة
+            {governance.capsuleCount} أداة
           </p>
         </div>
         <div>

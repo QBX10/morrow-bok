@@ -359,7 +359,7 @@ export const CalculatorCapsules: React.FC<CalculatorCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="تعديل الكبسولة"
+                actionLabel="تعديل المعادلة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );
@@ -635,7 +635,7 @@ export const CalculatorCapsules: React.FC<CalculatorCapsulesProps> = ({
             }}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            <span>العودة لكبسولات الحاسبة</span>
+            <span>العودة لأقسام الحاسبة</span>
           </button>
 
           <button

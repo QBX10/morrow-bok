@@ -15,6 +15,7 @@ export type AppView =
   | 'data_archives'
   | 'google_workspace'
   | 'morrow_center'
+  | 'account_security'
   | 'settings';
 
 export type FreeformHeaderAlign = 'right' | 'center' | 'left';
@@ -35,6 +36,20 @@ export interface PeriodQuotaMeta {
   quotaDate: string; // YYYY-MM-DD
 }
 
+export type AttachedHeaderFieldKey =
+  | 'title'
+  | 'agency'
+  | 'agencyNumber'
+  | 'quotaNumber'
+  | 'date';
+
+export interface CustomHeaderSubSection {
+  id: string;
+  label: string;
+  value: string;
+  visible?: boolean;
+}
+
 export interface FreeformHeaderConfig {
   topCustomTitle?: string;
   freeSubtitles?: string[];
@@ -45,6 +60,10 @@ export interface FreeformHeaderConfig {
   customColor?: string;
   borderColor?: string;
   showPeriodCard?: boolean;
+  agencyNumber?: string;
+  attachedFieldOrder?: AttachedHeaderFieldKey[];
+  visibleAttachedFields?: AttachedHeaderFieldKey[];
+  customSubSections?: CustomHeaderSubSection[];
 }
 
 export type RelationCategory =
@@ -137,7 +156,14 @@ export interface Person {
   updatedAt: string;
 }
 
-export type ExpenseCategory = 'worker_wages' | 'general';
+export type ExpenseCategory =
+  | 'worker_wages'
+  | 'packaging'
+  | 'hospitality'
+  | 'custom'
+  | 'general';
+
+export type WageBasis = 'daily' | 'per_quota' | 'per_worker' | 'fixed';
 
 export interface AgencyExpense {
   id: number;
@@ -146,6 +172,29 @@ export interface AgencyExpense {
   amountIqd: number;
   category: ExpenseCategory;
   occurredAt: string;
+  customCategoryLabel?: string;
+  workerNames?: string;
+  workerCount?: number;
+  wageBasis?: WageBasis;
+  quantity?: number;
+  unitCostIqd?: number;
+  quotaLabel?: string;
+  notes?: string;
+}
+
+export interface RecurringExpenseTemplate {
+  id: string;
+  title: string;
+  category: ExpenseCategory;
+  customCategoryLabel?: string;
+  amountIqd: number;
+  agencyId?: number;
+  workerNames?: string;
+  workerCount?: number;
+  wageBasis?: WageBasis;
+  quantity?: number;
+  unitCostIqd?: number;
+  notes?: string;
 }
 
 export type CoreColumnKey =
@@ -823,6 +872,26 @@ export interface RelationsReadyListsPrefs {
   defaultDeliveryNotePrefix: string;
 }
 
+export type HomeSectionId =
+  | 'portfolio'
+  | 'agencies'
+  | 'workspace_tools'
+  | 'radar_comparison'
+  | 'mini_widgets';
+
+export type HomeMiniWidgetId =
+  | 'quick_calculator'
+  | 'live_expenses'
+  | 'quick_lookup'
+  | 'ocr_scanner'
+  | 'tasks_reminders';
+
+export interface HomeLayoutPrefs {
+  sectionOrder: HomeSectionId[];
+  hiddenSections: HomeSectionId[];
+  activeMiniWidgets: HomeMiniWidgetId[];
+}
+
 export interface GeneralAppPrefs {
   confirmBeforeDelete: boolean;
   confirmBeforeEdit: boolean;
@@ -836,6 +905,64 @@ export interface GeneralAppPrefs {
   quickToggleIds?: string[];
   agencyAccentColors?: Record<number, string>;
   dismissedAttentionIds?: string[];
+  homeLayoutPrefs?: HomeLayoutPrefs;
+  customExpenseCategories?: string[];
+  recurringExpenseTemplates?: RecurringExpenseTemplate[];
+}
+
+export type WorkspaceNoteCategory = 'quick' | 'idea' | 'suggestion' | 'info';
+
+export interface WorkspaceNoteItem {
+  id: string;
+  title: string;
+  content: string;
+  category: WorkspaceNoteCategory;
+  pinned?: boolean;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BackupCloudProvider = 'mega' | 'pcloud' | 'none';
+
+export interface BackupCloudAccountPrefs {
+  provider: BackupCloudProvider;
+  accountEmail?: string;
+  folderName?: string;
+  autoBackupInclude?: boolean;
+  connectedAt?: string;
+  lastSyncedAt?: string;
+}
+
+export interface DriveDedicatedAccountMeta {
+  dedicatedEmail?: string;
+  folderLabel?: string;
+  lastExportedAt?: string;
+}
+
+export interface SmartSyncHistoryEntry {
+  id: string;
+  timestamp: string;
+  mode: 'manual' | 'weekly_auto' | 'cloud' | 'structured_export';
+  diffKind: 'unchanged' | 'minor_edit' | 'major_addition';
+  summary: string;
+  checksum: string;
+  compressedBytes: number;
+}
+
+export interface SmartSyncCheckpoint {
+  lastHash: string;
+  lastDataHash: string;
+  lastRecordCount: number;
+  lastAttachmentCount: number;
+  lastSavedAt: string;
+  lastStructuredExportAt?: string;
+  lastSaveMode: 'manual' | 'weekly_auto' | 'cloud';
+  integrityChecksum: string;
+  weeklyAutoEnabled: boolean;
+  lastCheckedAt?: string;
+  backupRecordId?: string;
+  history?: SmartSyncHistoryEntry[];
 }
 
 export interface SecurityPrefs {
@@ -845,6 +972,9 @@ export interface SecurityPrefs {
   allowCloudBeneficiaryNames?: boolean;
   autoLockMinutes?: 0 | 5 | 15 | 30;
   quickUnlockHintEnabled?: boolean;
+  secondaryCloud?: BackupCloudAccountPrefs;
+  driveAccountMeta?: DriveDedicatedAccountMeta;
+  smartSync?: SmartSyncCheckpoint;
 }
 
 export type RecycleBinItemKind =
@@ -998,6 +1128,7 @@ export interface AppDatabaseState {
   generalPrefs?: GeneralAppPrefs;
   securityPrefs?: SecurityPrefs;
   recycleBin?: RecycleBinEntry[];
+  workspaceNotes?: WorkspaceNoteItem[];
   ucrsSessions?: UcrsSession[];
   ucrsLearningRules?: UcrsLearningRule[];
 }

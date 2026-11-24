@@ -1,28 +1,59 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  Archive,
   ArrowRight,
+  BarChart3,
+  Bell,
+  Bookmark,
   Bot,
   Calculator,
+  Calendar,
+  Camera,
+  CheckCircle2,
   ChevronLeft,
-  Command,
+  CloudUpload,
+  Coins,
+  Columns3,
   Compass,
-  FolderKanban,
+  Cpu,
+  Edit3,
+  Eye,
+  FileJson,
+  FileSpreadsheet,
+  FlaskConical,
+  Gauge,
+  GitBranch,
+  Hand,
+  Hash,
+  HeartHandshake,
+  HeartPulse,
+  Home,
   Layers,
   ListChecks,
+  Lock,
   Maximize2,
   Minimize2,
+  Monitor,
   Moon,
   Palette,
+  PanelTop,
+  Percent,
   RotateCcw,
+  Scale,
   ScanLine,
   Search,
+  Share2,
   Shield,
+  ShieldCheck,
   Sliders,
   Sparkles,
   Sun,
+  Table2,
+  Tag,
   Type,
-  UserCircle2,
+  Unlock,
+  Wrench,
   X,
 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_COSMOS } from '../data/seedData';
@@ -30,6 +61,7 @@ import type {
   AccessibilityAndExperiencePrefs,
   AppDatabaseState,
   AppModeTier,
+  AppView,
   AuthUser,
   CalculationSettings,
   CosmosExperienceMode,
@@ -54,7 +86,6 @@ import type {
 } from '../types/assistant';
 import {
   auditAgencyPersons,
-  DEFAULT_CALCULATION_SETTINGS,
   formatIqd,
 } from '../utils/agencyLogic';
 import {
@@ -84,6 +115,11 @@ import {
   resolveTableThemeId,
   TABLE_THEMES,
 } from '../utils/themes';
+import {
+  SmartLivingSectionCard,
+  type SmartSubIconItem,
+} from './ui/SmartLivingSectionCard';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import {
   AccessibilityCosmosPanel,
   HealthAndKpiPanel,
@@ -146,6 +182,7 @@ interface SettingsViewProps {
     nodeId: string
   ) => void;
   onOpenCommandPalette?: () => void;
+  onNavigateAppView?: (view: AppView) => void;
   onBackToApp: () => void;
   state: AppDatabaseState;
   modeTier: AppModeTier;
@@ -224,12 +261,14 @@ interface SubAxisSpec {
   title: string;
   subtitle: string;
   badgeText?: string;
+  icon?: React.ReactNode;
 }
 
 interface GalaxySpec {
   id: string;
   title: string;
   subtitle: string;
+  icon?: React.ReactNode;
   subAxes: SubAxisSpec[];
 }
 
@@ -238,7 +277,16 @@ interface SectionSpec {
   category: Exclude<DomainCategory, 'all'>;
   title: string;
   subtitle: string;
+  metaText: string;
   icon: React.ReactNode;
+  subIcons: Array<{
+    id: string;
+    label: string;
+    hint: string;
+    icon: React.ReactNode;
+    galaxyId?: string | null;
+    capsuleId?: string | null;
+  }>;
   galaxies: GalaxySpec[];
 }
 
@@ -253,6 +301,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   hierarchyTree,
   badgeContext,
   onOpenCommandPalette,
+  onNavigateAppView,
   onBackToApp,
   state,
   modeTier,
@@ -321,12 +370,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [selectedGalaxyId, setSelectedGalaxyId] = useState<string | null>(null);
   const [domainFilter, setDomainFilter] = useState<DomainCategory>('all');
   const [settingsSearch, setSettingsSearch] = useState('');
+  const [settingsSearchOpen, setSettingsSearchOpen] = useState(false);
+  const settingsSearchInputRef = useRef<HTMLInputElement>(null);
+  const settingsSearchWrapRef = useRef<HTMLDivElement>(null);
 
   const currentScreenMode = screenMode ?? localScreenMode;
   const setScreenMode = onChangeScreenMode ?? setLocalScreenMode;
   const currentCapsuleId =
     activeCapsuleId !== undefined ? activeCapsuleId : localCapsuleId;
   const setCapsuleId = onChangeCapsuleId ?? setLocalCapsuleId;
+
+  // Collapse on-demand settings search when navigating views/galaxies/sub-pages
+  useEffect(() => {
+    setSettingsSearchOpen(false);
+    setSettingsSearch('');
+  }, [currentScreenMode, activeSection, selectedGalaxyId, currentCapsuleId]);
+
+  useEffect(() => {
+    if (!settingsSearchOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (
+        settingsSearchWrapRef.current &&
+        !settingsSearchWrapRef.current.contains(e.target as Node)
+      ) {
+        setSettingsSearchOpen(false);
+        setSettingsSearch('');
+      }
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSettingsSearchOpen(false);
+        setSettingsSearch('');
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [settingsSearchOpen]);
 
   const displayMode: 'fullscreen' | 'contained' =
     generalPrefs.settingsDisplayMode === 'contained'
@@ -456,7 +539,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return () => clearTimeout(timer);
   }, [spotlightNodeId, activeSection, currentCapsuleId, currentScreenMode]);
 
-  // Master 10-Section -> Galaxies -> Deep Sub-Axes Architecture
+  // Master 10-Section -> Galaxies -> Deep Sub-Axes Architecture (with 4 living visual sub-icons per card)
   const sectionSpecs: SectionSpec[] = useMemo(
     () => [
       {
@@ -464,74 +547,121 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'visual',
         title: 'المظهر والهوية البصرية',
         subtitle: 'الثيمات، الألوان المخصصة، هندسة البطاقات، ومحركات الجداول الـ8',
+        metaText: `${activeThemeObj.name} · ${activeTableObj.name}`,
         icon: <Palette className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_themes',
+            label: 'الثيمات (12)',
+            hint: 'الثيمات الكلاسيكية الـ8 والعصرية الـ4',
+            icon: <Palette className="h-4 w-4" />,
+            galaxyId: 'gal_app_themes',
+            capsuleId: 'appearance_themes_cap',
+          },
+          {
+            id: 'sub_custom',
+            label: 'ألوان حرة',
+            hint: 'محرر الألوان المخصصة والزجاجية',
+            icon: <Sparkles className="h-4 w-4" />,
+            galaxyId: 'gal_app_custom_geometry',
+            capsuleId: 'appearance_themes_custom_cap',
+          },
+          {
+            id: 'sub_tables',
+            label: 'الجداول الـ8',
+            hint: 'الدفتر الورقي المحاسبي والزجاجي والنيون',
+            icon: <Table2 className="h-4 w-4" />,
+            galaxyId: 'gal_app_tables',
+            capsuleId: 'appearance_table_engines_cap',
+          },
+          {
+            id: 'sub_profiles',
+            label: 'ملفات المظهر',
+            hint: 'حفظ واستعادة توليفات المظهر الكاملة',
+            icon: <Bookmark className="h-4 w-4" />,
+            galaxyId: 'gal_app_themes',
+            capsuleId: 'appearance_profiles_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_app_themes',
-            title: 'مجرة مكتبة الثيمات والملفات',
+            title: 'مكتبة الثيمات والملفات',
             subtitle: 'الثيمات الكلاسيكية الـ8 والعصرية الزجاجية الـ4 وملفات المظهر المحفوظة',
+            icon: <Palette className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'appearance_themes_cap',
                 title: 'جميع الثيمات (12)',
                 subtitle: 'استعراض الثيمات الكلاسيكية والعصرية',
                 badgeText: activeThemeObj.name,
+                icon: <Palette className="h-4 w-4" />,
               },
               {
                 id: 'appearance_themes_classic_cap',
                 title: 'الكلاسيكية الأصيلة (8)',
                 subtitle: 'السبج، الثلج، الشفق، الزمرد، والسراب',
+                icon: <Sun className="h-4 w-4" />,
               },
               {
                 id: 'appearance_themes_modern_cap',
                 title: 'العصرية والزجاجية (4)',
                 subtitle: 'المرمر الزجاجي والكتان وغسق الشمال',
+                icon: <Sparkles className="h-4 w-4" />,
               },
               {
                 id: 'appearance_profiles_cap',
                 title: 'ملفات المظهر المحفوظة',
                 subtitle: 'حفظ واسترجاع توليفاتك الكاملة',
                 badgeText: `${themePrefs.savedProfiles?.length ?? 2} ملف`,
+                icon: <Bookmark className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_app_custom_geometry',
-            title: 'مجرة الألوان الحرة والهندسة والزجاجية',
+            title: 'الألوان الحرة والهندسة والزجاجية',
             subtitle: 'محرر الثيم المخصص والألوان الحرة، انحناء الحواف، والظلال',
+            icon: <Layers className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'appearance_themes_custom_cap',
                 title: 'محرر الثيم والألوان الحرة',
                 subtitle: 'تخصيص الخلفية والسطح واللون المميز وحفظه',
+                icon: <Palette className="h-4 w-4" />,
               },
               {
                 id: 'appearance_geometry_cap',
                 title: 'الهندسة والزجاجية والظلال',
                 subtitle: 'انحناء الزوايا، شفافية الزجاج، وارتفاع البطاقات',
+                icon: <Layers className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_app_tables',
-            title: 'مجرة محركات وتصميم الجداول',
+            title: 'محركات وتصميم الجداول',
             subtitle: 'أنماط الجداول الـ8 وقواعد التنسيق الشرطي للأسماء والمحجوبين',
+            icon: <Table2 className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'appearance_tables_cap',
                 title: 'مركز تصميم الجداول',
                 subtitle: 'نظرة عامة ومعاينة الجداول',
                 badgeText: activeTableObj.name,
+                icon: <Table2 className="h-4 w-4" />,
               },
               {
                 id: 'appearance_table_engines_cap',
                 title: 'محركات الجداول الـ8',
                 subtitle: 'الزجاجي، الدفتر الورقي، الملكي، النيون...',
+                icon: <Sparkles className="h-4 w-4" />,
               },
               {
                 id: 'appearance_table_rules_cap',
                 title: 'التنسيق الشرطي والتمييز',
                 subtitle: 'تلوين المحجوبين والمكررين وسجلات 0 أفراد',
+                icon: <Sliders className="h-4 w-4" />,
               },
             ],
           },
@@ -542,31 +672,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'visual',
         title: 'الخطوط والقراءة والترقيم',
         subtitle: 'عائلات الخطوط العربية الـ6، المقاسات، الأرقام ١٢٣/123، والتقويم الهجري',
+        metaText: `${activeFontObj.name} · ${themePrefs.fontSizePx ?? 15}px`,
         icon: <Type className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_font_family',
+            label: 'الخطوط (6)',
+            hint: 'Cairo، Tajawal، Almarai، IBM Plex',
+            icon: <Type className="h-4 w-4" />,
+            galaxyId: 'gal_fonts_typography',
+            capsuleId: 'fonts_family_cap',
+          },
+          {
+            id: 'sub_font_scale',
+            label: 'المقاس والوزن',
+            hint: 'حجم الخط وكثافة الجداول',
+            icon: <Sliders className="h-4 w-4" />,
+            galaxyId: 'gal_fonts_typography',
+            capsuleId: 'fonts_scale_cap',
+          },
+          {
+            id: 'sub_numerals',
+            label: 'الأرقام ١٢٣',
+            hint: 'الأرقام القياسية 123 أو الهندية ١٢٣',
+            icon: <Hash className="h-4 w-4" />,
+            galaxyId: 'gal_fonts_locale',
+            capsuleId: 'cap_fonts_locale',
+          },
+          {
+            id: 'sub_calendar',
+            label: 'التقويم هجري',
+            hint: 'صيغ التواريخ الهجرية والميلادية',
+            icon: <Calendar className="h-4 w-4" />,
+            galaxyId: 'gal_fonts_locale',
+            capsuleId: 'cap_fonts_locale',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_fonts_typography',
-            title: 'مجرة الخطوط العربية والمقاسات',
+            title: 'الخطوط العربية والمقاسات',
             subtitle: 'اختيار الخط، حجم النص، وزن الحروف، وكثافة الجداول',
+            icon: <Type className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'fonts_family_cap',
                 title: 'الخطوط العربية (6)',
                 subtitle: 'Cairo، Tajawal، Almarai، IBM Plex...',
                 badgeText: activeFontObj.name,
+                icon: <Type className="h-4 w-4" />,
               },
               {
                 id: 'fonts_scale_cap',
                 title: 'المقاسات والكثافة والوضوح',
                 subtitle: 'حجم الخط، الوزن، الأرقام المتساوية، والتتبع',
                 badgeText: `${themePrefs.fontSizePx ?? 15}px`,
+                icon: <Sliders className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_fonts_locale',
-            title: 'مجرة الترقيم والتقويم العالمي',
+            title: 'الترقيم والتقويم العالمي',
             subtitle: 'الأرقام القياسية (123) أم الهندية (١٢٣)، والتقويم الهجري والميلادي',
+            icon: <Hash className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'cap_fonts_locale',
@@ -576,6 +745,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   effectiveWorkspaceCosmos.accessibility.numeralSystem === 'hindi'
                     ? '١٢٣ هندية'
                     : '123 غربية',
+                icon: <Calendar className="h-4 w-4" />,
               },
             ],
           },
@@ -586,41 +756,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'permissions',
         title: 'تجربة الواجهة والوصول',
         subtitle: 'الشريط العلوي، وضع ملء الشاشة، سلوك التراجع، واليد الواحدة',
+        metaText: `${displayMode === 'fullscreen' ? 'ملء الشاشة' : 'مدمج'} · ${topBarConfig.autoFocus ? 'شريط ذكي' : 'شريط ثابت'}`,
         icon: <Sliders className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_display',
+            label: 'ملء الشاشة',
+            hint: 'العرض الممتد أو المدمج وسعة التراجع',
+            icon: <Monitor className="h-4 w-4" />,
+            galaxyId: 'gal_general_workspace',
+            capsuleId: 'general_display_cap',
+          },
+          {
+            id: 'sub_topbar',
+            label: 'الشريط العلوي',
+            hint: 'نمط الشريط والإخفاء التلقائي',
+            icon: <PanelTop className="h-4 w-4" />,
+            galaxyId: 'gal_general_workspace',
+            capsuleId: 'general_topbar_cap',
+          },
+          {
+            id: 'sub_behavior',
+            label: 'التنبيهات',
+            hint: 'قواعد التعديل وبوابة الدخول',
+            icon: <Bell className="h-4 w-4" />,
+            galaxyId: 'gal_general_workspace',
+            capsuleId: 'general_behavior_cap',
+          },
+          {
+            id: 'sub_ergonomics',
+            label: 'اليد الواحدة',
+            hint: 'تقليل الحركة والتجاوب اللمسي',
+            icon: <Hand className="h-4 w-4" />,
+            galaxyId: 'gal_general_accessibility',
+            capsuleId: 'cap_access_ergonomics',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_general_workspace',
-            title: 'مجرة الشاشة والشريط العلوي والسلوك',
+            title: 'الشاشة والشريط العلوي والسلوك',
             subtitle: 'تخصيص وضع العرض وإخفاء الشريط العلوي والتأكيدات',
+            icon: <Monitor className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'general_display_cap',
                 title: 'العرض وسعة التراجع (Undo)',
                 subtitle: 'ملء الشاشة / المدمج وسعة سجل التراجع',
                 badgeText: displayMode === 'fullscreen' ? 'ملء الشاشة' : 'مدمج',
+                icon: <Monitor className="h-4 w-4" />,
               },
               {
                 id: 'general_topbar_cap',
                 title: 'تحكم الشريط العلوي',
                 subtitle: 'نمط الشريط والإخفاء التلقائي عند التمرير',
                 badgeText: topBarConfig.autoFocus ? 'ذكي تلقائي' : 'ثابت',
+                icon: <PanelTop className="h-4 w-4" />,
               },
               {
                 id: 'general_behavior_cap',
                 title: 'سلوك التعديل والتنبيهات وبوابة الدخول',
                 subtitle: 'تنبيهات العمليات وقفل البداية الإلزامي',
+                icon: <Bell className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_general_accessibility',
-            title: 'مجرة الراحة البصرية واليد الواحدة',
+            title: 'الراحة البصرية واليد الواحدة',
             subtitle: 'تقليل الحركة، وضع اليد الواحدة للجوال، والتجاوب اللمسي والصوتي',
+            icon: <Hand className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'cap_access_ergonomics',
                 title: 'الوصولية واليد الواحدة واللمس',
                 subtitle: 'ضبط الإزاحة للأسفل، الاهتزاز، وتقليل الحركة',
+                icon: <Hand className="h-4 w-4" />,
               },
             ],
           },
@@ -629,38 +840,72 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {
         id: 'modes',
         category: 'permissions',
-        title: 'الصلاحيات ومصفوفة التحكم والخبير',
-        subtitle: 'مصفوفة الصلاحيات المستقلة، المحرر، القراءة فقط، والفئات المخصصة',
+        title: 'إعدادات التحرير والجداول',
+        subtitle: 'قواعد التأكيد عند التعديل والحذف، الحفظ الفوري، الفئات المخصصة، وتخطيط الأعمدة',
+        metaText: `${expertTableConfig.allowDirectNoConfirmEdit ? 'حفظ فوري' : 'تأكيد ذكي'} · ${expertTableConfig.customCategories.length} فئات`,
         icon: <Layers className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_matrix',
+            label: 'الحفظ الفوري',
+            hint: 'تطبيق التعديلات مباشرة دون نوافذ تأكيد',
+            icon: <ShieldCheck className="h-4 w-4" />,
+            galaxyId: 'gal_modes_matrix',
+            capsuleId: 'modes_editor_cap',
+          },
+          {
+            id: 'sub_editor',
+            label: 'قواعد التأكيد',
+            hint: 'ضبط تأكيد التعديل والحذف لحماية البيانات',
+            icon: <Edit3 className="h-4 w-4" />,
+            galaxyId: 'gal_modes_matrix',
+            capsuleId: 'modes_editor_cap',
+          },
+          {
+            id: 'sub_categories',
+            label: 'الفئات',
+            hint: 'تصنيفات المستفيدين المخصصة',
+            icon: <Tag className="h-4 w-4" />,
+            galaxyId: 'gal_modes_expert',
+            capsuleId: 'modes_expert_cap',
+          },
+          {
+            id: 'sub_columns',
+            label: 'الأعمدة',
+            hint: 'إعادة ضبط تخطيط الأعمدة الافتراضي',
+            icon: <Columns3 className="h-4 w-4" />,
+            galaxyId: 'gal_modes_expert',
+            capsuleId: 'modes_expert_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_modes_matrix',
-            title: 'مجرة مصفوفة الصلاحيات التشغيلية',
-            subtitle: 'فتح أو قفل كل صلاحية باستقلال تام (المالية، السحب، التحرير، الأعمدة)',
+            title: 'قواعد التحرير والتأكيدات',
+            subtitle: 'تخصيص الحفظ الفوري وتأكيدات التعديل والحذف داخل السجلات',
+            icon: <ShieldCheck className="h-5 w-5" />,
             subAxes: [
               {
-                id: 'modes_tier_cap',
-                title: 'مصفوفة الصلاحيات ومستوى الوضع',
-                subtitle: 'تبديل 8 صلاحيات مستقلة + مستوى التحكم',
-              },
-              {
                 id: 'modes_editor_cap',
-                title: 'وضع المحرر وقواعد التأكيد',
-                subtitle: 'التحكم بالتعديل والحذف وتفعيل التحرير',
-                badgeText: editorEnabled ? 'المحرر نشط' : 'قراءة فقط',
+                title: 'قواعد التأكيد والحفظ الفوري',
+                subtitle: 'التحكم بنوافذ التأكيد قبل تعديل أو حذف السجلات',
+                badgeText: expertTableConfig.allowDirectNoConfirmEdit ? 'حفظ فوري' : 'تأكيد ذكي',
+                icon: <Edit3 className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_modes_expert',
-            title: 'مجرة الفئات المخصصة وتخطيط الجداول',
+            title: 'الفئات المخصصة وتخطيط الجداول',
             subtitle: 'إدارة تصنيفات المستفيدين المخصصة وإعادة ضبط أعمدة الجدول',
+            icon: <Columns3 className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'modes_expert_cap',
-                title: 'الفئات المخصصة والتحرير الفوري',
+                title: 'الفئات المخصصة وتخطيط الأعمدة',
                 subtitle: 'إضافة/حذف الفئات وضبط تخطيط الجداول',
                 badgeText: `${expertTableConfig.customCategories.length} فئات`,
+                icon: <Columns3 className="h-4 w-4" />,
               },
             ],
           },
@@ -671,41 +916,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'operations',
         title: 'الحاسبة المالية والحصص',
         subtitle: 'حصص الأفراد والأكياس، الرسوم التلقائية، التقريب، والمختبر الحي',
+        metaText: `${calculationSettings.kgPerIndividual} كغم · ${calculationSettings.feePerIndividualIqd} د.ع`,
         icon: <Calculator className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_fees',
+            label: 'الرسوم',
+            hint: 'رسم الفرد والبطاقة والأجور',
+            icon: <Coins className="h-4 w-4" />,
+            galaxyId: 'gal_calc_formulas',
+            capsuleId: 'calc_fees_cap',
+          },
+          {
+            id: 'sub_quotas',
+            label: 'الأوزان',
+            hint: 'كغم/فرد ووزن الكيس الكامل',
+            icon: <Scale className="h-4 w-4" />,
+            galaxyId: 'gal_calc_formulas',
+            capsuleId: 'calc_quotas_cap',
+          },
+          {
+            id: 'sub_rounding',
+            label: 'التقريب',
+            hint: 'التقريب والخصم وشمول المحجوبين',
+            icon: <Percent className="h-4 w-4" />,
+            galaxyId: 'gal_calc_rules_lab',
+            capsuleId: 'calc_rules_cap',
+          },
+          {
+            id: 'sub_lab',
+            label: 'المختبر الحي',
+            hint: 'اختبار فوري قبل الحفظ + القوالب',
+            icon: <FlaskConical className="h-4 w-4" />,
+            galaxyId: 'gal_calc_rules_lab',
+            capsuleId: 'calc_preview_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_calc_formulas',
-            title: 'مجرة الأوزان والرسوم القياسية',
+            title: 'الأوزان والرسوم القياسية',
             subtitle: 'وزن الفرد والكيس ورسم الفرد (250 د.ع) وأجور العمال الافتراضية',
+            icon: <Coins className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'calc_fees_cap',
                 title: 'الرسوم والأجور الافتراضية',
                 subtitle: 'رسم الفرد والبطاقة والأجور والمصاريف',
                 badgeText: `${calculationSettings.feePerIndividualIqd} د.ع`,
+                icon: <Coins className="h-4 w-4" />,
               },
               {
                 id: 'calc_quotas_cap',
                 title: 'الحصص والأوزان (كغم)',
                 subtitle: 'كغم/فرد ووزن الكيس الكامل',
                 badgeText: `${calculationSettings.kgPerIndividual} كغم`,
+                icon: <Scale className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_calc_rules_lab',
-            title: 'مجرة القواعد والمختبر الحي والقوالب',
+            title: 'القواعد والمختبر الحي والقوالب',
             subtitle: 'التقريب والخصم والمحجوبين + اختبار رقمي حي قبل الحفظ ومقارنة قبل/بعد',
+            icon: <FlaskConical className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'calc_rules_cap',
                 title: 'التقريب والخصم والمحجوبين',
                 subtitle: 'خطوة التقريب ونسبة الخصم وشمول المحجوبين',
+                icon: <Percent className="h-4 w-4" />,
               },
               {
                 id: 'calc_preview_cap',
                 title: 'المختبر الحي والقوالب الجاهزة',
                 subtitle: 'تجربة فورية وتطبيق القوالب على الوكالات',
+                icon: <FlaskConical className="h-4 w-4" />,
               },
             ],
           },
@@ -716,37 +1002,77 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'operations',
         title: 'السحب الذكي OCR',
         subtitle: 'أوضاع الكاميرا وعتبة الوضوح، الحقول المستهدفة، والقوالب المرجعية',
+        metaText: `وضوح ${quickExtractPrefs.clarityThreshold}% · ${quickExtractPrefs.referenceTemplates.length} قوالب`,
         icon: <ScanLine className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_camera',
+            label: 'الكاميرا',
+            hint: 'التصوير الفائق 4 لقطات أو السريع',
+            icon: <Camera className="h-4 w-4" />,
+            galaxyId: 'gal_qe_camera',
+            capsuleId: 'qe_scan_mode_cap',
+          },
+          {
+            id: 'sub_clarity',
+            label: 'الوضوح',
+            hint: 'عتبة الوضوح والتقاط تلقائي',
+            icon: <Eye className="h-4 w-4" />,
+            galaxyId: 'gal_qe_camera',
+            capsuleId: 'qe_scan_mode_cap',
+          },
+          {
+            id: 'sub_fields',
+            label: 'الحقول',
+            hint: 'تخصيص الأعمدة المستخرجة',
+            icon: <ScanLine className="h-4 w-4" />,
+            galaxyId: 'gal_qe_templates',
+            capsuleId: 'qe_fields_cap',
+          },
+          {
+            id: 'sub_templates',
+            label: 'القوالب',
+            hint: 'صور الدفاتر المرجعية المحفوظة',
+            icon: <Layers className="h-4 w-4" />,
+            galaxyId: 'gal_qe_templates',
+            capsuleId: 'qe_templates_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_qe_camera',
-            title: 'مجرة التصوير وعتبة الوضوح',
+            title: 'التصوير وعتبة الوضوح',
             subtitle: 'ضبط التصوير الفائق (4 لقطات) أو السريع وحد وضوح اللقطات',
+            icon: <Camera className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'qe_scan_mode_cap',
                 title: 'وضع التصوير وعتبة الوضوح',
                 subtitle: 'ضبط الحساسية ونمط الالتقاط التلقائي',
                 badgeText: `${quickExtractPrefs.clarityThreshold}%`,
+                icon: <Camera className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_qe_templates',
-            title: 'مجرة الحقول والقوالب المرجعية',
+            title: 'الحقول والقوالب المرجعية',
             subtitle: 'تخصيص الأعمدة المستخرجة وإدارة قوالب دفاتر الوكالات المحفوظة',
+            icon: <Layers className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'qe_fields_cap',
                 title: 'الحقول المستهدفة',
                 subtitle: 'الأسماء، الأفراد، النقصان، والإضافة/الحذف',
                 badgeText: `${quickExtractPrefs.focusedFields.length} حقول`,
+                icon: <ScanLine className="h-4 w-4" />,
               },
               {
                 id: 'qe_templates_cap',
                 title: 'القوالب المرجعية المحفوظة',
                 subtitle: 'تفعيل أو إزالة صور الدفاتر المرجعية',
                 badgeText: `${quickExtractPrefs.referenceTemplates.length} قالب`,
+                icon: <Layers className="h-4 w-4" />,
               },
             ],
           },
@@ -757,12 +1083,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'operations',
         title: 'الذكاء الاصطناعي وتوجيه النماذج',
         subtitle: 'معمارية النماذج التخصصية، التسلسل من الأقوى للأضعف، الاحتياطي، وMorrow الأخير',
+        metaText: assistantSettings.onlineDisabled
+          ? 'وضع أوفلاين 100%'
+          : `الحصة ${assistantQuotaInfo?.dailyUsed ?? 0}/${assistantSettings.dailyRequestLimit}`,
         icon: <Bot className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_models',
+            label: 'النماذج',
+            hint: 'ترتيب القوة والنماذج التخصصية',
+            icon: <Cpu className="h-4 w-4" />,
+            galaxyId: 'gal_ai_brain_quota',
+            capsuleId: 'sec_ai_assistant_cap',
+          },
+          {
+            id: 'sub_routing',
+            label: 'التوجيه',
+            hint: 'توجيه كل مهمة للنموذج الأنسب',
+            icon: <GitBranch className="h-4 w-4" />,
+            galaxyId: 'gal_ai_brain_quota',
+            capsuleId: 'sec_ai_assistant_cap',
+          },
+          {
+            id: 'sub_quota',
+            label: 'الحصة',
+            hint: 'حدود الاستخدام اليومي والذاكرة',
+            icon: <Gauge className="h-4 w-4" />,
+            galaxyId: 'gal_ai_brain_quota',
+            capsuleId: 'sec_ai_assistant_cap',
+          },
+          {
+            id: 'sub_morrow_fallback',
+            label: 'Morrow محلي',
+            hint: 'الوضع الأوفلاين والاحتياط التلقائي',
+            icon: <Bot className="h-4 w-4" />,
+            galaxyId: 'gal_ai_brain_quota',
+            capsuleId: 'sec_ai_assistant_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_ai_brain_quota',
             title: 'معمارية النماذج والتوجيه من الأقوى للأضعف',
             subtitle: 'تخصيص كل مهمة بالنموذج الأقوى والاحتياطي المباشر مع بقاء Morrow المحلي مرجعاً أخيراً',
+            icon: <Cpu className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'sec_ai_assistant_cap',
@@ -771,6 +1135,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 badgeText: assistantSettings.onlineDisabled
                   ? 'أوفلاين 100%'
                   : `${assistantQuotaInfo?.dailyUsed ?? 0}/${assistantSettings.dailyRequestLimit}`,
+                icon: <Cpu className="h-4 w-4" />,
               },
             ],
           },
@@ -781,30 +1146,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'operations',
         title: 'القوائم والعلاقات والتصدير',
         subtitle: 'صيغ التصدير الافتراضية، التواريخ التلقائية، وتنبيهات المتابعة',
+        metaText: `تذكير ${relationsPrefs.defaultReminderLeadDays} أيام`,
         icon: <ListChecks className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_export_fmt',
+            label: 'Excel / PDF',
+            hint: 'صيغ التصدير المفضلة للقوائم',
+            icon: <FileSpreadsheet className="h-4 w-4" />,
+            galaxyId: 'gal_rel_export',
+            capsuleId: 'rel_export_cap',
+          },
+          {
+            id: 'sub_share',
+            label: 'مشاركة',
+            hint: 'تصدير الصور والنصوص الجاهزة',
+            icon: <Share2 className="h-4 w-4" />,
+            galaxyId: 'gal_rel_export',
+            capsuleId: 'rel_export_cap',
+          },
+          {
+            id: 'sub_reminders',
+            label: 'تذكيرات',
+            hint: 'أيام التنبيه المسبق والتواريخ',
+            icon: <Calendar className="h-4 w-4" />,
+            galaxyId: 'gal_rel_followups',
+            capsuleId: 'rel_reminders_cap',
+          },
+          {
+            id: 'sub_relations',
+            label: 'المتابعة',
+            hint: 'بادئة التسليم والعلاقات',
+            icon: <HeartHandshake className="h-4 w-4" />,
+            galaxyId: 'gal_rel_followups',
+            capsuleId: 'rel_reminders_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_rel_export',
-            title: 'مجرة التصدير والتحديث التلقائي',
+            title: 'التصدير والتحديث التلقائي',
             subtitle: 'تحديد صيغة الإخراج المفضلة (Excel / PDF / صورة / نص)',
+            icon: <FileSpreadsheet className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'rel_export_cap',
                 title: 'صيغ التصدير وتاريخ القوائم',
                 subtitle: 'افتراضيات التصدير وتحديث التاريخ التلقائي',
+                icon: <FileSpreadsheet className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_rel_followups',
-            title: 'مجرة تنبيهات التذكير والتوصيل',
+            title: 'تنبيهات التذكير والتوصيل',
             subtitle: 'أيام التنبيه المسبق وبادئة ملاحظات التسليم الافتراضية',
+            icon: <HeartHandshake className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'rel_reminders_cap',
                 title: 'التذكيرات وبادئة التوصيل',
                 subtitle: 'تفعيل الإشعارات وأيام التنبيه المسبق',
                 badgeText: `${relationsPrefs.defaultReminderLeadDays} أيام`,
+                icon: <HeartHandshake className="h-4 w-4" />,
               },
             ],
           },
@@ -815,42 +1219,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'security',
         title: 'الأمان والنسخ الاحتياطي وسلة الاسترجاع',
         subtitle: 'قفل الخصوصية PIN، تصدير JSON، المزامنة السحابية، واستعادة المحذوفات',
+        metaText: `${securityPrefs.privacyLocked ? 'مقفول' : 'آمن'} · ${recycleBin.length} بالمهملات`,
         icon: <Shield className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_pin',
+            label: 'قفل PIN',
+            hint: 'تعيين رمز الحماية والقفل الفوري',
+            icon: <Lock className="h-4 w-4" />,
+            galaxyId: 'gal_sec_lock_sync',
+            capsuleId: 'sec_privacy_lock_cap',
+          },
+          {
+            id: 'sub_cloud',
+            label: 'المزامنة',
+            hint: 'الربط السحابي وحفظ النسخ',
+            icon: <CloudUpload className="h-4 w-4" />,
+            galaxyId: 'gal_sec_lock_sync',
+            capsuleId: 'sec_cloud_sync_cap',
+          },
+          {
+            id: 'sub_json',
+            label: 'نسخة JSON',
+            hint: 'تصدير واستيراد البيانات الكاملة',
+            icon: <FileJson className="h-4 w-4" />,
+            galaxyId: 'gal_sec_backup_recycle',
+            capsuleId: 'sec_backup_json_cap',
+          },
+          {
+            id: 'sub_recycle',
+            label: 'الاسترجاع',
+            hint: 'استعادة المحذوفات بأمان',
+            icon: <RotateCcw className="h-4 w-4" />,
+            galaxyId: 'gal_sec_backup_recycle',
+            capsuleId: 'sec_recycle_bin_cap',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_sec_lock_sync',
-            title: 'مجرة الحماية والقفل والمزامنة السحابية',
+            title: 'الحماية والقفل والمزامنة السحابية',
             subtitle: 'حماية الشاشة برمز PIN والربط السحابي بالحساب',
+            icon: <Lock className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'sec_privacy_lock_cap',
                 title: 'قفل الخصوصية (PIN)',
                 subtitle: 'تعيين رمز الحماية والقفل الفوري للشاشة',
                 badgeText: securityPrefs.privacyLocked ? 'مقفول' : 'آمن',
+                icon: <Lock className="h-4 w-4" />,
               },
               {
                 id: 'sec_cloud_sync_cap',
                 title: 'الحساب والمزامنة السحابية',
                 subtitle: 'حفظ واسترجاع نسخة البيانات على الخادم',
                 badgeText: authUser ? 'متصل' : 'محلي',
+                icon: <CloudUpload className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_sec_backup_recycle',
-            title: 'مجرة النسخ الاحتياطي وسلة الاسترجاع الآمنة',
+            title: 'النسخ الاحتياطي وسلة الاسترجاع الآمنة',
             subtitle: 'تصدير/استيراد JSON وخصوصية الأسماء واسترجاع السجلات المحذوفة',
+            icon: <FileJson className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'sec_backup_json_cap',
                 title: 'النسخ الاحتياطي (JSON) والخصوصية',
                 subtitle: 'تنزيل واستيراد الملفات وإرسال الأسماء للسحابة',
+                icon: <FileJson className="h-4 w-4" />,
               },
               {
                 id: 'sec_recycle_bin_cap',
                 title: 'سلة الاسترجاع الآمنة',
                 subtitle: 'استعادة الأسماء والقوائم والمصاريف المحذوفة',
                 badgeText: `${recycleBin.length} عنصر`,
+                icon: <RotateCcw className="h-4 w-4" />,
               },
             ],
           },
@@ -861,17 +1306,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         category: 'security',
         title: 'المؤشرات وصحة البيانات والحوكمة',
         subtitle: 'لوحة الأداء KPI، إصلاح التضاربات، فاحص الحوكمة، وسجل المفاتيح',
+        metaText:
+          auditIssues.length > 0 ? `${auditIssues.length} ملاحظة تدقيق` : 'صحة السجلات 100%',
         icon: <Activity className="h-5 w-5" />,
+        subIcons: [
+          {
+            id: 'sub_kpi',
+            label: 'المؤشرات',
+            hint: 'توزيع الأفراد والإيرادات حياً',
+            icon: <BarChart3 className="h-4 w-4" />,
+            galaxyId: 'gal_gov_health',
+            capsuleId: 'cap_kpi_dashboard',
+          },
+          {
+            id: 'sub_health',
+            label: 'صحة البيانات',
+            hint: 'فحص التكرارات وإصلاحها فوراً',
+            icon: <HeartPulse className="h-4 w-4" />,
+            galaxyId: 'gal_gov_health',
+            capsuleId: 'cap_health_center',
+          },
+          {
+            id: 'sub_inspector',
+            label: 'الحوكمة',
+            hint: 'فاحص السجل و Feature Flags',
+            icon: <Compass className="h-4 w-4" />,
+            galaxyId: 'gal_gov_registry',
+            capsuleId: 'cap_registry_inspector',
+          },
+          {
+            id: 'sub_legacy',
+            label: 'الأرشيف',
+            hint: 'أرشيف المفاتيح ولقطات الترحيل',
+            icon: <Archive className="h-4 w-4" />,
+            galaxyId: 'gal_gov_registry',
+            capsuleId: 'cap_legacy_index',
+          },
+        ],
         galaxies: [
           {
             id: 'gal_gov_health',
-            title: 'مجرة المؤشرات التنفيذية وصحة السجلات',
+            title: 'المؤشرات التنفيذية وصحة السجلات',
             subtitle: 'تشخيص وتصحيح المكررين والشواذ وتحليل الأداء الحقيقي',
+            icon: <HeartPulse className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'cap_kpi_dashboard',
                 title: 'لوحة المؤشرات التنفيذية (KPI)',
                 subtitle: 'توزيع الأفراد والإيرادات والمصاريف حياً',
+                icon: <BarChart3 className="h-4 w-4" />,
               },
               {
                 id: 'cap_health_center',
@@ -879,23 +1362,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 subtitle: 'فحص التكرارات وإصلاحها بنقرة واحدة',
                 badgeText:
                   auditIssues.length > 0 ? `${auditIssues.length} ملاحظة` : 'سليم 100%',
+                icon: <HeartPulse className="h-4 w-4" />,
               },
             ],
           },
           {
             id: 'gal_gov_registry',
-            title: 'مجرة حوكمة النظام وأرشيف المفاتيح',
+            title: 'حوكمة النظام وأرشيف المفاتيح',
             subtitle: 'فاحص السجل و Feature Flags واستعادة لقطات ما قبل الترحيل',
+            icon: <Compass className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'cap_registry_inspector',
                 title: 'فاحص السجل و Feature Flags',
-                subtitle: 'التحقق من سلامة العوالم والميزات الجديدة',
+                subtitle: 'التحقق من سلامة الأقسام والميزات الجديدة',
+                icon: <Compass className="h-4 w-4" />,
               },
               {
                 id: 'cap_legacy_index',
                 title: 'الأرشيف الشامل للمفاتيح (0 حذف)',
                 subtitle: 'فهرس الإعدادات الكلاسيكية ولقطات الترحيل',
+                icon: <Archive className="h-4 w-4" />,
               },
             ],
           },
@@ -911,7 +1398,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       effectiveWorkspaceCosmos.accessibility.numeralSystem,
       displayMode,
       topBarConfig.autoFocus,
-      editorEnabled,
+      expertTableConfig.allowDirectNoConfirmEdit,
       expertTableConfig.customCategories.length,
       calculationSettings.feePerIndividualIqd,
       calculationSettings.kgPerIndividual,
@@ -1014,7 +1501,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             id: key,
             title: sec.title,
             subtitle: sec.subtitle,
-            trailLabel: `قسم رئيسي (${sec.galaxies.length} مجرات)`,
+            trailLabel: `قسم رئيسي (${sec.galaxies.length} أقسام فرعية)`,
             onOpen: () => openSection(sec.id, null, null),
           });
         }
@@ -1028,7 +1515,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               id: key,
               title: gal.title,
               subtitle: gal.subtitle,
-              trailLabel: `${sec.title} ◂ مجرة`,
+              trailLabel: `${sec.title} ◂ قسم فرعي`,
               onOpen: () => openSection(sec.id, gal.id, gal.subAxes[0]?.id || null),
             });
           }
@@ -1108,8 +1595,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleOpenGalaxy = (galaxy: GalaxySpec) => {
     setSelectedGalaxyId(galaxy.id);
-    setCapsuleId(galaxy.subAxes[0]?.id || null);
+    if (galaxy.subAxes.length <= 1) {
+      setCapsuleId(galaxy.subAxes[0]?.id || null);
+    } else {
+      setCapsuleId(null);
+    }
   };
+
+  const resolvedSubAxisSpec = useMemo(() => {
+    if (!activeGalaxySpec || !currentCapsuleId) return null;
+    return (
+      activeGalaxySpec.subAxes.find((sa) => sa.id === currentCapsuleId) || null
+    );
+  }, [activeGalaxySpec, currentCapsuleId]);
+
+  const handleStepBack = () => {
+    if (currentScreenMode === 'hub') {
+      onBackToApp();
+      return;
+    }
+    if (currentCapsuleId && activeGalaxySpec && activeGalaxySpec.subAxes.length > 1) {
+      setCapsuleId(null);
+      setSelectedGalaxyId(activeGalaxySpec.id);
+      return;
+    }
+    if (activeGalaxySpec) {
+      setSelectedGalaxyId(null);
+      setCapsuleId(null);
+      return;
+    }
+    setScreenMode('hub');
+    setSelectedGalaxyId(null);
+    setCapsuleId(null);
+  };
+
+  const cycleQuickTableTheme = () => {
+    const idx = TABLE_THEMES.findIndex((t) => t.id === activeTableObj.id);
+    const next = TABLE_THEMES[(idx + 1) % TABLE_THEMES.length] || TABLE_THEMES[0];
+    onUpdateThemePrefs({ tableTheme: next.id, activeProfileId: null });
+    notifySuccess(`تم تبديل محرك الجدول إلى: ${next.name}`);
+  };
+
+  const stepFontSize = (delta: number) => {
+    const cur = themePrefs.fontSizePx ?? 15;
+    const next = Math.max(12, Math.min(22, cur + delta));
+    onUpdateThemePrefs({ fontSizePx: next });
+    notifySuccess(`حجم الخط: ${next}px`);
+  };
+
+  const topBarContextKey = `${currentScreenMode}:${effectiveSectionId}:${activeGalaxySpec?.id || 'none'}:${currentCapsuleId || 'none'}`;
 
   const containerMaxWidth =
     displayMode === 'contained' ? 'max-w-6xl mx-auto' : 'max-w-[1440px] mx-auto';
@@ -1129,7 +1663,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <Suspense
           fallback={
             <div className="rounded-2xl border p-8 text-center text-xs font-bold" style={{ borderColor: 'var(--border-color)' }}>
-              جاري فتح المحور...
+              جاري فتح الصفحة...
             </div>
           }
         >
@@ -1418,36 +1952,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         color: 'var(--text-primary)',
       }}
     >
-      {/* 1. Single Unified Executive Settings Header */}
+      {/* 1. Slim State-Driven & Context-Smart Settings Top Bar */}
       <header
         data-testid="settings-floating-topbar"
-        className="no-print sticky top-0 z-30 border-b backdrop-blur-md"
+        className="no-print nexus-glass-lite sticky top-0 z-30 border-b"
         style={{
-          backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
           borderColor: 'var(--border-color)',
         }}
       >
         <div
-          className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6 ${containerMaxWidth}`}
+          className={`flex h-12 flex-nowrap items-center justify-between gap-2 px-3 sm:px-5 ${containerMaxWidth}`}
         >
-          {/* Start: Back + Hierarchical Breadcrumb */}
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <button
-              type="button"
-              onClick={onBackToApp}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-extrabold whitespace-nowrap transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <ArrowRight className="h-4 w-4" />
-              <span>العودة للتطبيق</span>
-            </button>
+          {/* Start: State-Driven Back Navigation & Single-Line Hierarchical Title */}
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+            {currentScreenMode === 'hub' ? (
+              <button
+                type="button"
+                onClick={onBackToApp}
+                className="nexus-pill-btn inline-flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs font-extrabold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                <span>العودة للتطبيق</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleStepBack}
+                  className="nexus-pill-btn inline-flex h-8 shrink-0 items-center gap-1 border px-3 text-xs font-extrabold whitespace-nowrap"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+                  <span>رجوع</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onBackToApp}
+                  title="العودة للتطبيق"
+                  aria-label="العودة للتطبيق"
+                  className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <Home className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
 
             <nav
               aria-label="مسار الإعدادات"
-              className="flex flex-wrap items-center gap-1 text-xs"
+              key={`nav-${topBarContextKey}`}
+              className={`topbar-context-enter flex min-w-0 items-center gap-1 text-xs ${
+                settingsSearchOpen ? 'hidden sm:flex' : 'flex'
+              }`}
             >
               <button
                 type="button"
@@ -1456,21 +2024,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setSelectedGalaxyId(null);
                   setCapsuleId(null);
                 }}
-                className="rounded-lg px-2 py-1 font-extrabold transition-colors hover:bg-[var(--bg-main)]"
+                className={`rounded-lg px-1.5 py-1 font-extrabold whitespace-nowrap transition-colors hover:bg-[var(--bg-main)] ${
+                  currentScreenMode === 'detail' ? 'hidden md:inline-flex' : 'inline-flex'
+                }`}
                 style={{
                   color:
                     currentScreenMode === 'hub'
-                      ? 'var(--accent)'
+                      ? 'var(--text-primary)'
                       : 'var(--text-muted)',
                 }}
               >
-                مركز الإعدادات
+                الإعدادات
               </button>
+
+              {currentScreenMode === 'hub' && !settingsSearchOpen && (
+                <span
+                  className="hidden lg:inline truncate max-w-[160px] text-[11px] font-semibold"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  · {activeThemeObj.name}
+                </span>
+              )}
 
               {currentScreenMode === 'detail' && (
                 <>
                   <ChevronLeft
-                    className="h-3.5 w-3.5 shrink-0"
+                    className="hidden md:inline h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--text-muted)' }}
                   />
                   <button
@@ -1479,12 +2058,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       setSelectedGalaxyId(null);
                       setCapsuleId(null);
                     }}
-                    className="rounded-lg px-2 py-1 font-bold transition-colors hover:bg-[var(--bg-main)]"
+                    className={`truncate rounded-lg px-1.5 py-1 font-bold transition-colors hover:bg-[var(--bg-main)] ${
+                      activeGalaxySpec
+                        ? 'hidden sm:inline max-w-[120px]'
+                        : 'max-w-[170px] sm:max-w-[240px]'
+                    }`}
                     style={{
                       color: activeGalaxySpec
                         ? 'var(--text-muted)'
                         : 'var(--accent)',
                     }}
+                    title={currentSectionSpec.title}
                   >
                     {currentSectionSpec.title}
                   </button>
@@ -1494,62 +2078,98 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {currentScreenMode === 'detail' && activeGalaxySpec && (
                 <>
                   <ChevronLeft
-                    className="h-3.5 w-3.5 shrink-0"
+                    className="hidden sm:inline h-3.5 w-3.5 shrink-0"
+                    style={{ color: 'var(--text-muted)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeGalaxySpec.subAxes.length > 1) {
+                        setSelectedGalaxyId(activeGalaxySpec.id);
+                        setCapsuleId(null);
+                      }
+                    }}
+                    className={`truncate rounded-lg px-1.5 py-1 font-bold transition-colors hover:bg-[var(--bg-main)] ${
+                      resolvedSubAxisSpec
+                        ? 'hidden lg:inline max-w-[140px]'
+                        : 'max-w-[170px] sm:max-w-[240px]'
+                    }`}
+                    style={{
+                      color: resolvedSubAxisSpec
+                        ? 'var(--text-muted)'
+                        : 'var(--accent)',
+                    }}
+                    title={activeGalaxySpec.title}
+                  >
+                    {activeGalaxySpec.title}
+                  </button>
+                </>
+              )}
+
+              {currentScreenMode === 'detail' && resolvedSubAxisSpec && (
+                <>
+                  <ChevronLeft
+                    className="hidden lg:inline h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--text-muted)' }}
                   />
                   <span
-                    className="rounded-lg px-2 py-1 font-extrabold"
-                    style={{
-                      backgroundColor: 'var(--bg-nav-active)',
-                      color: 'var(--accent)',
-                    }}
+                    className="truncate max-w-[160px] sm:max-w-[230px] rounded-lg px-1.5 py-1 font-extrabold"
+                    style={{ color: 'var(--accent)' }}
+                    title={resolvedSubAxisSpec.title}
                   >
-                    {activeGalaxySpec.title}
+                    {resolvedSubAxisSpec.title}
                   </span>
                 </>
               )}
             </nav>
           </div>
 
-          {/* Center: Universal Deep Settings Search */}
-          <div className="relative flex-1 min-w-[220px] max-w-md order-3 md:order-2">
-            <div
-              className="flex h-9 items-center gap-2 rounded-xl border px-3 transition-colors focus-within:border-[var(--accent)]"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: settingsSearch ? 'var(--accent)' : 'var(--border-color)',
-              }}
-            >
-              <Search
-                className="h-3.5 w-3.5 shrink-0"
-                style={{ color: 'var(--text-muted)' }}
-              />
-              <input
-                type="search"
-                value={settingsSearch}
-                onChange={(e) => setSettingsSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && deepSearchHits.length > 0) {
-                    deepSearchHits[0].onOpen();
-                  }
+          {/* Center: Expandable On-Demand Settings Search */}
+          <div
+            ref={settingsSearchWrapRef}
+            className={`relative ${settingsSearchOpen ? 'flex-1 max-w-md min-w-[150px]' : 'hidden'}`}
+          >
+            {settingsSearchOpen && (
+              <div
+                className="topbar-search-expand flex h-8 items-center gap-2 rounded-xl border px-2.5 transition-colors focus-within:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--accent)',
                 }}
-                placeholder="بحث عميق في الأقسام والمجرات والإعدادات..."
-                aria-label="بحث في الإعدادات"
-                className="w-full bg-transparent text-xs outline-none"
-              />
-              {settingsSearch && (
+              >
+                <Search
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: 'var(--accent)' }}
+                />
+                <input
+                  ref={settingsSearchInputRef}
+                  type="search"
+                  value={settingsSearch}
+                  onChange={(e) => setSettingsSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && deepSearchHits.length > 0) {
+                      deepSearchHits[0].onOpen();
+                    }
+                  }}
+                  placeholder="بحث في الإعدادات والأدوات..."
+                  aria-label="بحث في الإعدادات"
+                  className="w-full bg-transparent text-xs outline-none"
+                />
                 <button
                   type="button"
-                  onClick={() => setSettingsSearch('')}
-                  aria-label="مسح البحث"
+                  onClick={() => {
+                    setSettingsSearch('');
+                    setSettingsSearchOpen(false);
+                  }}
+                  aria-label="إغلاق البحث"
                   className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
                 >
                   <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
-            {settingsSearch.trim() && (
+            {settingsSearchOpen && settingsSearch.trim() && (
               <div
                 className="tabrix-popover-enter absolute inset-x-0 top-full z-50 mt-2 max-h-[360px] overflow-y-auto rounded-2xl border p-2 shadow-xl space-y-1"
                 style={{
@@ -1569,7 +2189,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <button
                       key={hit.id}
                       type="button"
-                      onClick={hit.onOpen}
+                      onClick={() => {
+                        setSettingsSearchOpen(false);
+                        hit.onOpen();
+                      }}
                       className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-right transition-colors hover:bg-[var(--bg-nav-active)]"
                     >
                       <div className="min-w-0">
@@ -1596,54 +2219,238 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           </div>
 
-          {/* End: View Density, Theme Light/Dark, Command Palette, Auth (Settings-Only!) */}
-          <div className="flex items-center gap-1.5 order-2 md:order-3">
-            {onOpenCommandPalette && (
+          {/* End: Max 2-3 Context-Smart Controls + Expandable Search Trigger */}
+          <div
+            key={topBarContextKey}
+            className="topbar-context-enter flex shrink-0 items-center gap-1.5"
+          >
+            {!settingsSearchOpen && (
               <button
                 type="button"
-                onClick={onOpenCommandPalette}
-                title="لوحة الأوامر السريعة (Ctrl+K)"
-                aria-label="لوحة الأوامر"
-                className="inline-flex h-9 items-center gap-1 rounded-xl border px-2.5 text-xs font-bold transition-colors hover:border-[var(--accent)]"
+                onClick={() => {
+                  setSettingsSearchOpen(true);
+                  setTimeout(() => settingsSearchInputRef.current?.focus(), 20);
+                }}
+                aria-label="بحث في الإعدادات"
+                title="بحث في الإعدادات"
+                className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
                 style={{
-                  backgroundColor: 'var(--bg-main)',
+                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
+                  color: 'var(--text-primary)',
                 }}
               >
-                <Command className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">K</span>
+                <Search className="h-3.5 w-3.5" />
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                const nextMode =
-                  displayMode === 'fullscreen' ? 'contained' : 'fullscreen';
-                onUpdateGeneralPrefs({ settingsDisplayMode: nextMode });
-                notifySuccess(
-                  nextMode === 'fullscreen'
-                    ? 'تم تفعيل العرض الممتد (ملء الشاشة).'
-                    : 'تم تفعيل العرض المدمج المركزي.'
-                );
-              }}
-              aria-label="تبديل حجم صفحة الإعدادات"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              {displayMode === 'fullscreen' ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
+            {/* Dynamic Screen-Specific Action (1 compact control per context) */}
+            {currentScreenMode === 'detail' && effectiveSectionId === 'appearance' && (
+              <button
+                type="button"
+                onClick={cycleQuickTableTheme}
+                title="تبديل تصميم الجدول مباشرة"
+                className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Table2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="max-w-[115px] truncate">{activeTableObj.name}</span>
+              </button>
+            )}
+
+            {currentScreenMode === 'detail' && effectiveSectionId === 'fonts' && (
+              <div
+                className="hidden sm:inline-flex h-8 items-center gap-0.5 rounded-xl border px-1 text-xs font-bold tabular-nums"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => stepFontSize(-1)}
+                  aria-label="تصغير الخط"
+                  className="rounded-lg px-1.5 py-0.5 hover:bg-[var(--bg-surface)]"
+                >
+                  A-
+                </button>
+                <span className="px-1 text-[11px]" style={{ color: 'var(--accent)' }}>
+                  {themePrefs.fontSizePx ?? 15}px
+                </span>
+                <button
+                  type="button"
+                  onClick={() => stepFontSize(1)}
+                  aria-label="تكبير الخط"
+                  className="rounded-lg px-1.5 py-0.5 hover:bg-[var(--bg-surface)]"
+                >
+                  A+
+                </button>
+              </div>
+            )}
+
+            {currentScreenMode === 'detail' && effectiveSectionId === 'modes' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGalaxyId('gal_modes_expert');
+                  setCapsuleId('modes_expert_cap');
+                }}
+                className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Columns3 className="h-3.5 w-3.5" />
+                <span>الفئات والأعمدة</span>
+              </button>
+            )}
+
+            {currentScreenMode === 'detail' &&
+              effectiveSectionId === 'calculator' &&
+              onNavigateAppView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateAppView('finance')}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <Coins className="h-3.5 w-3.5" />
+                  <span>فتح المالية</span>
+                </button>
               )}
-              <span className="hidden sm:inline">
-                {displayMode === 'fullscreen' ? 'ممتد' : 'مدمج'}
-              </span>
-            </button>
+
+            {currentScreenMode === 'detail' &&
+              effectiveSectionId === 'quick_extract_settings' &&
+              onNavigateAppView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateAppView('quick_extract')}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <ScanLine className="h-3.5 w-3.5" />
+                  <span>السحب الذكي</span>
+                </button>
+              )}
+
+            {currentScreenMode === 'detail' &&
+              effectiveSectionId === 'ai_assistant' &&
+              onNavigateAppView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateAppView('morrow_center')}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <Bot className="h-3.5 w-3.5" />
+                  <span>فتح Morrow</span>
+                </button>
+              )}
+
+            {currentScreenMode === 'detail' &&
+              effectiveSectionId === 'relations_lists' &&
+              onNavigateAppView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateAppView('ready_lists')}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span>القوائم</span>
+                </button>
+              )}
+
+            {currentScreenMode === 'detail' && effectiveSectionId === 'security_data' && (
+              <button
+                type="button"
+                onClick={() => onUpdateSecurityPrefs({ privacyLocked: true })}
+                className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Lock className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>قفل فوري</span>
+              </button>
+            )}
+
+            {currentScreenMode === 'detail' &&
+              effectiveSectionId === 'system_map' &&
+              onRunAutoFix && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = onRunAutoFix();
+                    notifySuccess(
+                      res.fixedCount > 0
+                        ? `تم إصلاح ${res.fixedCount} ملاحظة بنجاح.`
+                        : 'جميع السجلات سليمة ولا تحتاج إصلاحاً.'
+                    );
+                  }}
+                  className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <Wrench className="h-3.5 w-3.5" />
+                  <span>فحص وإصلاح</span>
+                </button>
+              )}
+
+            {(currentScreenMode === 'hub' || effectiveSectionId === 'general') && (
+              <button
+                type="button"
+                onClick={() => {
+                  const nextMode =
+                    displayMode === 'fullscreen' ? 'contained' : 'fullscreen';
+                  onUpdateGeneralPrefs({ settingsDisplayMode: nextMode });
+                  notifySuccess(
+                    nextMode === 'fullscreen'
+                      ? 'تم تفعيل العرض الممتد (ملء الشاشة).'
+                      : 'تم تفعيل العرض المدمج المركزي.'
+                  );
+                }}
+                title={displayMode === 'fullscreen' ? 'عرض مدمج' : 'عرض ممتد'}
+                aria-label="تبديل حجم صفحة الإعدادات"
+                className="hidden sm:inline-flex h-8 items-center gap-1 rounded-xl border px-2 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                {displayMode === 'fullscreen' ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
 
             <button
               type="button"
@@ -1653,36 +2460,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   !darkTheme ? 'تم تفعيل الوضع الليلي.' : 'تم تفعيل الوضع النهاري.'
                 );
               }}
+              title={darkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'}
               aria-label={darkTheme ? 'الوضع النهاري' : 'الوضع الليلي'}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
               style={{
-                backgroundColor: 'var(--bg-main)',
+                backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
               {darkTheme ? (
-                <Sun className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <Sun className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
               ) : (
-                <Moon className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                <Moon className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
               )}
-              <span className="hidden sm:inline">
-                {darkTheme ? 'نهاري' : 'ليلي'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenAuth}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <UserCircle2 className="h-4 w-4" />
-              <span className="hidden lg:inline max-w-[90px] truncate" dir="auto">
-                {authUser ? authUser.displayName : 'الحساب'}
-              </span>
             </button>
           </div>
         </div>
@@ -1717,44 +2507,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* ─── LEVEL 1: SETTINGS HUB (الأقسام الرئيسية والمجرات) ──────────────── */}
+      {/* ─── LEVEL 1: SETTINGS HUB (الأقسام الرئيسية ببطاقات حية ذكية) ──────── */}
       {currentScreenMode === 'hub' && (
         <main
           data-testid="settings-sections-hub"
-          className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+          className={`tabrix-view-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Executive Settings Identity Strip */}
-          <section
-            className="rounded-2xl border p-5 sm:p-6"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              boxShadow: 'var(--card-shadow)',
-            }}
-          >
+          <section className="nexus-squircle p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Compass className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+              <div className="flex items-start gap-3.5">
+                <NexusDuotoneIcon sizeClass="h-11 w-11">
+                  <Compass className="h-5 w-5" />
+                </NexusDuotoneIcon>
+                <div className="space-y-1">
                   <h1 className="text-xl font-black sm:text-2xl">
                     مركز الإعدادات المتقدم
                   </h1>
+                  <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                    اختر أي قسم أو أيقونة أداة للدخول إلى صفحتها المستقلة بالكامل مع بقاء مسار العودة متصلاً.
+                  </p>
                 </div>
-                <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-                  بنية هرمية احترافية: اختر القسم الرئيسي ◂ ثم المجرة ◂ ثم المحور والإعدادات العميقة.
-                </p>
               </div>
 
-              {/* Live Environment Status Summary */}
-              <div className="flex flex-wrap items-center gap-3 text-xs tabular-nums">
-                <div
-                  className="rounded-xl border px-3 py-2"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {/* Clean Live Environment Summary */}
+              <div className="flex flex-wrap items-center gap-4 text-xs tabular-nums">
+                <div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                     الثيم والخط
                   </div>
                   <div className="font-extrabold">
@@ -1762,13 +2541,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
                 <div
-                  className="rounded-xl border px-3 py-2"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  className="h-7 w-px hidden sm:block"
+                  style={{ backgroundColor: 'var(--border-color)' }}
+                  aria-hidden="true"
+                />
+                <div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                     معادلة الحاسبة
                   </div>
                   <div className="font-extrabold" style={{ color: 'var(--accent)' }}>
@@ -1780,12 +2558,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Domain Filter Tabs */}
-            <div className="mt-5 flex flex-wrap items-center gap-1.5 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
+            <div
+              className="mt-5 flex flex-wrap items-center gap-1.5 border-t pt-4"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
               {(
                 [
                   ['all', `جميع الأقسام (${sectionSpecs.length})`],
                   ['visual', 'المظهر والخطوط'],
-                  ['permissions', 'الواجهة والصلاحيات'],
+                  ['permissions', 'الواجهة والتحرير'],
                   ['operations', 'الحاسبة والسحب والذكاء'],
                   ['security', 'الأمان والصحة والحوكمة'],
                 ] as Array<[DomainCategory, string]>
@@ -1794,7 +2575,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   key={cat}
                   type="button"
                   onClick={() => setDomainFilter(cat)}
-                  className="min-h-[36px] rounded-xl border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap transition-colors"
+                  className="nexus-pill-btn min-h-[36px] border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
                   style={{
                     backgroundColor:
                       domainFilter === cat ? 'var(--bg-nav-active)' : 'var(--bg-main)',
@@ -1809,132 +2590,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </section>
 
-          {/* Sections Cards Grid */}
+          {/* Smart Living Section Cards Grid */}
           <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
             {filteredSections.map((sec) => {
-              const totalSubAxes = sec.galaxies.reduce(
-                (acc, g) => acc + g.subAxes.length,
-                0
-              );
+              const cardSubIcons: SmartSubIconItem[] = sec.subIcons.map((sub) => ({
+                id: sub.id,
+                label: sub.label,
+                hint: sub.hint,
+                icon: sub.icon,
+                onClick: () =>
+                  openSection(sec.id, sub.galaxyId ?? null, sub.capsuleId ?? null),
+              }));
+
               return (
-                <article
+                <SmartLivingSectionCard
                   key={sec.id}
-                  className="flex flex-col justify-between rounded-2xl border p-5 transition-colors hover:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                    boxShadow: 'var(--card-shadow)',
-                  }}
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <span
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-                          style={{
-                            backgroundColor: 'var(--bg-nav-active)',
-                            borderColor:
-                              'color-mix(in srgb, var(--accent) 28%, var(--border-color))',
-                            color: 'var(--accent)',
-                          }}
-                        >
-                          {sec.icon}
-                        </span>
-                        <div className="min-w-0">
-                          <h2 className="text-base font-extrabold">{sec.title}</h2>
-                          <p
-                            className="mt-1 text-xs leading-relaxed"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {sec.subtitle}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Preview of Galaxies Inside This Section */}
-                    <div className="space-y-1.5 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                      <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        <span className="font-bold">المجرات الداخلية ({sec.galaxies.length})</span>
-                        <span className="tabular-nums font-semibold">
-                          {totalSubAxes} محور عميق
-                        </span>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        {sec.galaxies.map((gal) => (
-                          <button
-                            key={gal.id}
-                            type="button"
-                            onClick={() =>
-                              openSection(sec.id, gal.id, gal.subAxes[0]?.id || null)
-                            }
-                            className="flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-right text-xs transition-colors hover:border-[var(--accent)]"
-                            style={{
-                              backgroundColor: 'var(--bg-main)',
-                              borderColor: 'var(--border-color)',
-                            }}
-                          >
-                            <span className="truncate font-bold">{gal.title}</span>
-                            <span
-                              className="shrink-0 text-[10px] font-bold tabular-nums"
-                              style={{ color: 'var(--accent)' }}
-                            >
-                              {gal.subAxes.length} محاور
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => openSection(sec.id, null, null)}
-                    className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold whitespace-nowrap transition-colors hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    <FolderKanban className="h-4 w-4" />
-                    <span>استعراض مجرات القسم</span>
-                  </button>
-                </article>
+                  testId={`settings-section-card-${sec.id}`}
+                  title={sec.title}
+                  subtitle={sec.subtitle}
+                  icon={sec.icon}
+                  subIcons={cardSubIcons}
+                  actionLabel="فتح القسم"
+                  onOpen={() => openSection(sec.id, null, null)}
+                />
               );
             })}
           </section>
         </main>
       )}
 
-      {/* ─── LEVEL 2: GALAXIES INSIDE SECTION ───────────────────────────────── */}
+      {/* ─── LEVEL 2: ISOLATED SECTION PAGE (الأقسام الفرعية فقط) ─────────────── */}
       {currentScreenMode === 'detail' && !activeGalaxySpec && (
         <main
+          key={`sec-${effectiveSectionId}`}
           data-testid={`settings-detail-${effectiveSectionId}`}
-          className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+          className={`capsule-level-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Section Banner */}
-          <section
-            className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 sm:p-6"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              boxShadow: 'var(--card-shadow)',
-            }}
-          >
+          <section className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
             <div className="flex items-start gap-3.5">
-              <span
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border"
-                style={{
-                  backgroundColor: 'var(--bg-nav-active)',
-                  borderColor:
-                    'color-mix(in srgb, var(--accent) 30%, var(--border-color))',
-                  color: 'var(--accent)',
-                }}
-              >
+              <NexusDuotoneIcon sizeClass="h-12 w-12">
                 {currentSectionSpec.icon}
-              </span>
+              </NexusDuotoneIcon>
               <div>
                 <h1 className="text-xl font-black">{currentSectionSpec.title}</h1>
                 <p
@@ -1949,7 +2646,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <button
               type="button"
               onClick={() => setScreenMode('hub')}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+              className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -1960,192 +2657,210 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           </section>
 
-          {/* Galaxies Grid */}
+          {/* Sub-sections Grid */}
           <section className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            {currentSectionSpec.galaxies.map((gal) => (
-              <article
-                key={gal.id}
-                className="flex flex-col justify-between rounded-2xl border p-5 space-y-4 transition-colors hover:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  boxShadow: 'var(--card-shadow)',
-                }}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h2 className="text-base font-extrabold">{gal.title}</h2>
-                      <p
-                        className="mt-1 text-xs leading-relaxed"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        {gal.subtitle}
-                      </p>
-                    </div>
-                    <span
-                      className="shrink-0 rounded-lg border px-2.5 py-0.5 text-[11px] font-bold tabular-nums"
-                      style={{
-                        backgroundColor: 'var(--bg-nav-active)',
-                        borderColor:
-                          'color-mix(in srgb, var(--accent) 28%, var(--border-color))',
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      {gal.subAxes.length} محاور
-                    </span>
-                  </div>
+            {currentSectionSpec.galaxies.map((gal) => {
+              const galSubIcons: SmartSubIconItem[] = gal.subAxes.map((sa) => ({
+                id: sa.id,
+                label: sa.title,
+                hint: sa.subtitle,
+                icon: sa.icon || <Sparkles className="h-4 w-4" />,
+                onClick: () => {
+                  setSelectedGalaxyId(gal.id);
+                  setCapsuleId(sa.id);
+                },
+              }));
 
-                  {/* Direct Sub-Axes inside this Galaxy */}
-                  <div className="space-y-2 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                    {gal.subAxes.map((sa) => (
-                      <button
-                        key={sa.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedGalaxyId(gal.id);
-                          setCapsuleId(sa.id);
-                        }}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-right text-xs transition-colors hover:border-[var(--accent)]"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
-                        <div className="min-w-0">
-                          <div className="font-extrabold">{sa.title}</div>
-                          <div
-                            className="mt-0.5 truncate text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {sa.subtitle}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {sa.badgeText && (
-                            <span
-                              className="text-[11px] font-bold tabular-nums"
-                              style={{ color: 'var(--accent)' }}
-                            >
-                              {sa.badgeText}
-                            </span>
-                          )}
-                          <ChevronLeft
-                            className="h-3.5 w-3.5"
-                            style={{ color: 'var(--text-muted)' }}
-                          />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenGalaxy(gal)}
-                  className="inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold whitespace-nowrap transition-opacity hover:opacity-90"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  <span>الدخول إلى المجرة</span>
-                </button>
-              </article>
-            ))}
+              return (
+                <SmartLivingSectionCard
+                  key={gal.id}
+                  testId={`settings-galaxy-card-${gal.id}`}
+                  title={gal.title}
+                  subtitle={gal.subtitle}
+                  icon={gal.icon || currentSectionSpec.icon}
+                  subIcons={galSubIcons}
+                  actionLabel={
+                    gal.subAxes.length === 1
+                      ? `فتح ${gal.subAxes[0].title}`
+                      : 'فتح القسم الفرعي'
+                  }
+                  onOpen={() => handleOpenGalaxy(gal)}
+                />
+              );
+            })}
           </section>
         </main>
       )}
 
-      {/* ─── LEVEL 3: DEEP SUB-AXES & CAPSULES INSIDE A GALAXY ──────────────── */}
-      {currentScreenMode === 'detail' && activeGalaxySpec && (
-        <main
-          data-testid={`settings-detail-${effectiveSectionId}`}
-          className={`w-full flex-1 space-y-5 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
-        >
-          {/* Galaxy Sub-Axes Switcher Bar */}
-          <section
-            className="rounded-2xl border p-4 space-y-3"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              boxShadow: 'var(--card-shadow)',
-            }}
+      {/* ─── LEVEL 3: ISOLATED SUB-SECTION PAGE ───────────────────────────────── */}
+      {currentScreenMode === 'detail' &&
+        activeGalaxySpec &&
+        !resolvedSubAxisSpec &&
+        activeGalaxySpec.subAxes.length > 1 && (
+          <main
+            key={`gal-${activeGalaxySpec.id}`}
+            data-testid={`settings-detail-${effectiveSectionId}`}
+            className={`capsule-level-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h1 className="text-base font-black sm:text-lg">
-                  {activeGalaxySpec.title}
-                </h1>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {activeGalaxySpec.subtitle}
-                </p>
+            <section className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+              <div className="flex items-start gap-3.5">
+                <NexusDuotoneIcon sizeClass="h-12 w-12">
+                  {activeGalaxySpec.icon || currentSectionSpec.icon}
+                </NexusDuotoneIcon>
+                <div>
+                  <div className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>
+                    {currentSectionSpec.title} · {activeGalaxySpec.subAxes.length} أدوات
+                  </div>
+                  <h1 className="text-xl font-black">{activeGalaxySpec.title}</h1>
+                  <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {activeGalaxySpec.subtitle}
+                  </p>
+                </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => {
                   setSelectedGalaxyId(null);
                   setCapsuleId(null);
                 }}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>العودة لمجرات {currentSectionSpec.title}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+                <span>العودة إلى {currentSectionSpec.title}</span>
               </button>
-            </div>
+            </section>
 
-            {activeGalaxySpec.subAxes.length > 1 && (
-              <div
-                className="flex flex-wrap gap-1.5 border-t pt-3"
-                style={{ borderColor: 'var(--border-color)' }}
-              >
-                {activeGalaxySpec.subAxes.map((sa) => {
-                  const isActive =
-                    (currentCapsuleId || activeGalaxySpec.subAxes[0]?.id) === sa.id;
-                  return (
+            <section className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              {activeGalaxySpec.subAxes.map((sa) => (
+                <SmartLivingSectionCard
+                  key={sa.id}
+                  testId={`settings-subaxis-card-${sa.id}`}
+                  title={sa.title}
+                  subtitle={sa.subtitle}
+                  icon={sa.icon || activeGalaxySpec.icon || currentSectionSpec.icon}
+                  subIcons={[]}
+                  actionLabel={`فتح ${sa.title}`}
+                  onOpen={() => {
+                    setSelectedGalaxyId(activeGalaxySpec.id);
+                    setCapsuleId(sa.id);
+                  }}
+                />
+              ))}
+            </section>
+          </main>
+        )}
+
+      {/* ─── LEVEL 4: ISOLATED TOOL PAGE ─────────────────────────────────────── */}
+      {currentScreenMode === 'detail' &&
+        activeGalaxySpec &&
+        (resolvedSubAxisSpec || activeGalaxySpec.subAxes.length <= 1) && (
+          <main
+            key={`cap-${currentCapsuleId || activeGalaxySpec.subAxes[0]?.id}`}
+            data-testid={`settings-detail-${effectiveSectionId}`}
+            className={`capsule-level-enter w-full flex-1 space-y-5 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+          >
+            {/* Connected Sub-Axis Header & Quick Sibling Switcher */}
+            <section className="nexus-squircle p-4 sm:p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>
+                    {currentSectionSpec.title} · {activeGalaxySpec.title}
+                  </div>
+                  <h1 className="text-base font-black sm:text-lg">
+                    {resolvedSubAxisSpec?.title || activeGalaxySpec.title}
+                  </h1>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {resolvedSubAxisSpec?.subtitle || activeGalaxySpec.subtitle}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeGalaxySpec.subAxes.length > 1 && (
                     <button
-                      key={sa.id}
                       type="button"
-                      onClick={() => setCapsuleId(sa.id)}
-                      className="inline-flex min-h-[38px] items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap transition-colors"
+                      onClick={() => {
+                        setSelectedGalaxyId(activeGalaxySpec.id);
+                        setCapsuleId(null);
+                      }}
+                      className="nexus-pill-btn inline-flex min-h-[38px] items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
                       style={{
-                        backgroundColor: isActive
-                          ? 'var(--accent)'
-                          : 'var(--bg-main)',
-                        borderColor: isActive
-                          ? 'var(--accent)'
-                          : 'var(--border-color)',
-                        color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
                       }}
                     >
-                      <span>{sa.title}</span>
-                      {sa.badgeText && (
-                        <span
-                          className="text-[10px] opacity-85 tabular-nums"
-                        >
-                          ({sa.badgeText})
-                        </span>
-                      )}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                      <span>أدوات القسم</span>
                     </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                  )}
 
-          {/* Active Deep Capsule */}
-          <div>
-            {renderCapsuleWorkspace(
-              currentCapsuleId || activeGalaxySpec.subAxes[0]?.id || ''
-            )}
-          </div>
-        </main>
-      )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGalaxyId(null);
+                      setCapsuleId(null);
+                    }}
+                    className="nexus-pill-btn inline-flex min-h-[38px] items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>أقسام {currentSectionSpec.title}</span>
+                  </button>
+                </div>
+              </div>
+
+              {activeGalaxySpec.subAxes.length > 1 && (
+                <div
+                  className="flex flex-wrap gap-1.5 border-t pt-3"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  {activeGalaxySpec.subAxes.map((sa) => {
+                    const isActive =
+                      (currentCapsuleId || activeGalaxySpec.subAxes[0]?.id) === sa.id;
+                    return (
+                      <button
+                        key={sa.id}
+                        type="button"
+                        onClick={() => setCapsuleId(sa.id)}
+                        className="nexus-pill-btn inline-flex min-h-[36px] items-center gap-2 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                        style={{
+                          backgroundColor: isActive
+                            ? 'var(--accent)'
+                            : 'var(--bg-main)',
+                          borderColor: isActive
+                            ? 'var(--accent)'
+                            : 'var(--border-color)',
+                          color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
+                        }}
+                      >
+                        <span>{sa.title}</span>
+                        {sa.badgeText && (
+                          <span className="text-[10px] opacity-85 tabular-nums">
+                            · {sa.badgeText}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Isolated Deep Capsule Workspace */}
+            <div>
+              {renderCapsuleWorkspace(
+                currentCapsuleId || activeGalaxySpec.subAxes[0]?.id || ''
+              )}
+            </div>
+          </main>
+        )}
     </div>
   );
 };

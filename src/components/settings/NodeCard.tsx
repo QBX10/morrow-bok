@@ -19,7 +19,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   node,
   badge,
   preview,
-  actionLabel = 'فتح الكبسولة',
+  actionLabel = 'فتح الأداة',
   active = false,
   onOpen,
 }) => {
@@ -30,80 +30,68 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       type="button"
       data-capsule-node-id={node.id}
       onClick={() => onOpen(node)}
-      className="capsule-glass-card group flex min-h-[200px] w-full flex-col justify-between border p-5 sm:p-6 text-right transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.99] hover:border-[var(--accent)]"
+      className="smart-living-card group flex min-h-[196px] w-full flex-col justify-between border p-5 sm:p-6 text-right active:scale-[0.99]"
       style={{
         borderColor: active
           ? 'var(--accent)'
           : 'color-mix(in srgb, var(--border-color) 85%, transparent)',
-        boxShadow: active
-          ? '0 14px 32px -12px color-mix(in srgb, var(--accent) 26%, transparent)'
-          : 'var(--card-shadow)',
       }}
     >
       <div className="w-full space-y-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <SectionLogo
-              icon={node.logo || node.icon}
-              tone={node.accentTone}
-              size="md"
-            />
-            {node.protected && (
-              <span
-                title="فرع محمي بمعاينة آمنة"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <ShieldCheck
-                  className="h-3 w-3"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <span>محمي</span>
-              </span>
+            <span className="transition-transform duration-200 group-hover:scale-[1.04]">
+              <SectionLogo
+                icon={node.logo || node.icon}
+                tone={node.accentTone}
+                size="md"
+              />
+            </span>
+            {(node.protected || badge) && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold tabular-nums">
+                {badge && (
+                  <span
+                    style={{
+                      color:
+                        badge.tone === 'warning'
+                          ? 'var(--warning)'
+                          : badge.tone === 'success'
+                          ? 'var(--success)'
+                          : badge.tone === 'accent'
+                          ? 'var(--accent)'
+                          : 'var(--text-muted)',
+                    }}
+                  >
+                    {badge.text}
+                  </span>
+                )}
+                {node.protected && badge && (
+                  <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>
+                    ·
+                  </span>
+                )}
+                {node.protected && (
+                  <span
+                    title="فرع محمي بمعاينة آمنة"
+                    className="inline-flex items-center gap-1"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <ShieldCheck
+                      className="h-3.5 w-3.5"
+                      style={{ color: 'var(--accent)' }}
+                    />
+                    <span>محمي</span>
+                  </span>
+                )}
+              </div>
             )}
           </div>
-
-          {badge && (
-            <span
-              className="inline-flex shrink-0 items-center rounded-lg border px-2.5 py-1 text-[11px] font-extrabold tabular-nums whitespace-nowrap"
-              style={{
-                backgroundColor:
-                  badge.tone === 'warning'
-                    ? 'var(--warning-bg)'
-                    : badge.tone === 'success'
-                    ? 'var(--success-bg)'
-                    : badge.tone === 'accent'
-                    ? 'var(--bg-nav-active)'
-                    : 'var(--bg-main)',
-                borderColor:
-                  badge.tone === 'warning'
-                    ? 'var(--warning)'
-                    : badge.tone === 'success'
-                    ? 'var(--success)'
-                    : badge.tone === 'accent'
-                    ? 'color-mix(in srgb, var(--accent) 32%, var(--border-color))'
-                    : 'var(--border-color)',
-                color:
-                  badge.tone === 'warning'
-                    ? 'var(--warning)'
-                    : badge.tone === 'success'
-                    ? 'var(--success)'
-                    : badge.tone === 'accent'
-                    ? 'var(--accent)'
-                    : 'var(--text-muted)',
-              }}
-            >
-              {badge.text}
-            </span>
-          )}
         </div>
 
         <div>
-          <h3 className="text-base font-extrabold leading-snug">{node.title}</h3>
+          <h3 className="text-base font-extrabold leading-snug transition-colors group-hover:text-[var(--accent)]">
+            {node.title}
+          </h3>
           <p
             className="mt-1.5 text-xs leading-relaxed line-clamp-2"
             style={{ color: 'var(--text-muted)' }}
@@ -114,10 +102,10 @@ export const NodeCard: React.FC<NodeCardProps> = ({
 
         {preview && (
           <div
-            className="rounded-2xl border p-2.5 text-[11px]"
+            className="rounded-xl border px-3 py-2 text-[11px]"
             style={{
-              backgroundColor: 'color-mix(in srgb, var(--bg-main) 88%, transparent)',
-              borderColor: 'var(--border-color)',
+              backgroundColor: 'color-mix(in srgb, var(--bg-main) 82%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--border-color) 75%, transparent)',
             }}
           >
             {preview}
@@ -128,7 +116,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       <div
         className="mt-4 flex min-h-[36px] w-full items-center justify-between border-t pt-3 text-xs font-bold"
         style={{
-          borderColor: 'var(--border-color)',
+          borderColor: 'color-mix(in srgb, var(--border-color) 75%, transparent)',
           color: 'var(--accent)',
         }}
       >
@@ -139,11 +127,11 @@ export const NodeCard: React.FC<NodeCardProps> = ({
               className="text-[10px] font-semibold tabular-nums"
               style={{ color: 'var(--text-muted)' }}
             >
-              ({node.children.length} كبسولات)
+              · {node.children.length} أدوات
             </span>
           )}
         </span>
-        <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+        <ArrowLeft className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" />
       </div>
     </button>
   );

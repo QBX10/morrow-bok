@@ -238,6 +238,19 @@ export function getEffectiveAllocationForPerson(
   };
 }
 
+export function getExpenseCategoryLabel(
+  category: AgencyExpense['category'],
+  customCategoryLabel?: string
+): string {
+  if (category === 'worker_wages') return 'أجور العمال';
+  if (category === 'packaging') return 'مستلزمات التعبئة';
+  if (category === 'hospitality') return 'ضيافة وطعام';
+  if (category === 'custom') {
+    return customCategoryLabel?.trim() || 'مصروفات خاصة';
+  }
+  return 'صرفيات عامة';
+}
+
 export interface AgencyFinancialMetrics {
   registeredHouseholds: number;
   activeHouseholds: number;
@@ -249,6 +262,9 @@ export interface AgencyFinancialMetrics {
   remainderKg: number;
   revenue: number;
   workerWages: number;
+  packagingExpenses: number;
+  hospitalityExpenses: number;
+  customExpenses: number;
   generalExpenses: number;
   totalExpenses: number;
   profit: number;
@@ -303,12 +319,22 @@ export function computeAgencyMetrics(
   const remainderKg = totalKg % settings.kgPerBag;
 
   let workerWages = 0;
+  let packagingExpenses = 0;
+  let hospitalityExpenses = 0;
+  let customExpenses = 0;
   let generalExpenses = 0;
   for (const exp of expenses) {
     if (exp.category === 'worker_wages') {
       workerWages += exp.amountIqd;
     } else {
       generalExpenses += exp.amountIqd;
+      if (exp.category === 'packaging') {
+        packagingExpenses += exp.amountIqd;
+      } else if (exp.category === 'hospitality') {
+        hospitalityExpenses += exp.amountIqd;
+      } else if (exp.category === 'custom') {
+        customExpenses += exp.amountIqd;
+      }
     }
   }
 
@@ -326,6 +352,9 @@ export function computeAgencyMetrics(
     remainderKg,
     revenue,
     workerWages,
+    packagingExpenses,
+    hospitalityExpenses,
+    customExpenses,
     generalExpenses,
     totalExpenses,
     profit,

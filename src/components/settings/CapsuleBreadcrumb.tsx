@@ -20,7 +20,7 @@ export const CapsuleBreadcrumb: React.FC<CapsuleBreadcrumbProps> = ({
 
   return (
     <nav
-      aria-label="شريط مسار الكبسولات المتداخل"
+      aria-label="شريط مسار التنقل في الإعدادات"
       className="capsule-glass-card flex flex-wrap items-center justify-between gap-2.5 border px-3.5 py-2.5 text-xs"
       style={{
         borderColor: 'var(--border-color)',

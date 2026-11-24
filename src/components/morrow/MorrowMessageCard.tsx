@@ -198,13 +198,13 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
   return (
     <article className="flex flex-col items-stretch">
       <div
-        className={`rounded-2xl border transition-colors ${
+        className={`nexus-squircle transition-colors ${
           compact ? 'px-3.5 py-3 text-xs sm:text-[13px]' : 'px-4 py-3.5 sm:px-5 sm:py-4 text-xs sm:text-sm'
         }`}
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: message.isPinned
-            ? 'color-mix(in srgb, var(--accent) 55%, var(--border-color))'
+            ? 'color-mix(in srgb, var(--accent-ai, #5B4FE9) 55%, var(--border-color))'
             : 'var(--border-color)',
           color: 'var(--text-primary)',
         }}
@@ -370,10 +370,10 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
                   description: 'انتقال ذكي إلى العنصر المحدد',
                 })
               }
-              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-95"
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
+                backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                color: '#FFFFFF',
               }}
             >
               <Navigation className="h-3.5 w-3.5" />
@@ -390,7 +390,7 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
                 key={ch.id}
                 type="button"
                 onClick={() => onChoiceClick(ch)}
-                className="rounded-xl border px-3 py-1.5 text-right text-[11px] sm:text-xs font-bold transition-colors hover:border-[var(--accent)]"
+                className="nexus-pill-btn border px-3.5 py-1.5 text-right text-[11px] sm:text-xs font-bold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: ch.tone === 'warning' ? 'var(--warning)' : 'var(--border-color)',
@@ -498,7 +498,7 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onResolveDiff(message.id, true)}
-                  className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap"
+                  className="nexus-pill-btn inline-flex h-10 items-center gap-1.5 px-4 text-xs font-extrabold whitespace-nowrap"
                   style={{
                     backgroundColor: 'var(--success)',
                     color: 'var(--success-fg)',
@@ -510,7 +510,7 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onResolveDiff(message.id, false)}
-                  className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold whitespace-nowrap"
+                  className="nexus-pill-btn inline-flex h-10 items-center gap-1.5 border px-4 text-xs font-extrabold whitespace-nowrap"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--danger)',

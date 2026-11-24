@@ -253,7 +253,15 @@ export function exportFinancialReportToExcel(params: {
     const expRows = expenses.map((e, idx) => [
       idx + 1,
       e.occurredAt,
-      e.category === 'worker_wages' ? 'أجور العمال' : 'صرفيات',
+      e.category === 'worker_wages'
+        ? 'أجور العمال'
+        : e.category === 'packaging'
+          ? 'مستلزمات التعبئة'
+          : e.category === 'hospitality'
+            ? 'ضيافة وطعام'
+            : e.category === 'custom'
+              ? e.customCategoryLabel?.trim() || 'مصروفات خاصة'
+              : 'صرفيات عامة',
       e.description,
       e.amountIqd,
     ]);

@@ -217,7 +217,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
                 node={child}
                 badge={badge}
                 preview={preview}
-                actionLabel="فتح الكبسولة"
+                actionLabel="فتح الأداة"
                 onOpen={(n) => onOpenCapsule(n.id)}
               />
             );

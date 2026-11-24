@@ -28,6 +28,7 @@ import {
   generateSmartSnippetBlob,
   printSmartSnippetPdf,
 } from '../../utils/snippetExport';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface SnippetExportModalProps {
   open: boolean;
@@ -181,45 +182,84 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
       : null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="تصدير حقل / قصاصة رسمية"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-5"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div
-          className="flex items-center justify-between border-b px-5 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex items-center gap-2">
-            <Scissors className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <h2 className="text-sm font-bold sm:text-base">
-              معاينة وتصدير حقل / قصاصة ({records.length === 1 ? records[0].name : `${records.length} صفوف`})
-            </h2>
-          </div>
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title={`معاينة وتصدير حقل / قصاصة (${records.length === 1 ? records[0].name : `${records.length} صفوف`})`}
+      subtitle={tableTitle}
+      icon={<Scissors className="h-4 w-4" />}
+      ariaLabel="تصدير حقل / قصاصة رسمية"
+      maxWidthClass="max-w-4xl"
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={onClose}
-            aria-label="إغلاق نافذة تصدير القصاصة"
-            className="rounded-lg p-1.5 hover:opacity-75"
+            className="nexus-pill-btn border px-4 py-2 text-xs font-semibold"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--border-color)',
+            }}
           >
-            <X className="h-4 w-4" />
+            إغلاق
           </button>
-        </div>
 
-        {/* Cropped Official Card Preview */}
-        <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                printSmartSnippetPdf({
+                  tableTitle,
+                  tableSubtitle,
+                  periodMeta: resolvedPeriod,
+                  freeformHeader,
+                  records,
+                  settings,
+                })
+              }
+              className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span>طباعة / PDF</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleShare}
+              className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--bg-nav-active)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+              }}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span>مشاركة فورية</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleDownloadPng}
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>{busy ? 'جارٍ التجهيز...' : 'حفظ كصورة عالية الدقة (PNG)'}</span>
+            </button>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-4">
           {notice && (
             <div
               role="status"
@@ -377,76 +417,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
               {formatIqd(totals.totalIqd)}
             </div>
           </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border px-4 py-2 text-xs font-semibold"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            إغلاق
-          </button>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                printSmartSnippetPdf({
-                  tableTitle,
-                  tableSubtitle,
-                  periodMeta: resolvedPeriod,
-                  freeformHeader,
-                  records,
-                  settings,
-                })
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <Printer className="h-3.5 w-3.5" />
-              <span>طباعة / PDF</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleShare}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-              }}
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              <span>مشاركة فورية</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleDownloadPng}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>{busy ? 'جارٍ التجهيز...' : 'حفظ كصورة عالية الدقة (PNG)'}</span>
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

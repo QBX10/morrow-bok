@@ -241,3 +241,167 @@ export async function deleteTask(params: {
     { method: 'DELETE' }
   );
 }
+
+// --- Google Drive Backup API (drive.file scope) ---
+
+export interface GoogleDriveBackupFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  description?: string;
+}
+
+function escapeDriveQueryValue(val: string): string {
+  return val.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+export async function ensureDriveBackupFolder(
+  folderName = 'Morrow_Drive_Backups'
+): Promise<string> {
+  const safeName = folderName.trim() || 'Morrow_Drive_Backups';
+  const query = `name = '${escapeDriveQueryValue(safeName)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const search = new URLSearchParams({
+    q: query,
+    fields: 'files(id,name)',
+    pageSize: '1',
+  });
+  const existing = await workspaceFetch<{ files?: Array<{ id: string; name: string }> }>(
+    `https://www.googleapis.com/drive/v3/files?${search.toString()}`
+  );
+  if (existing.files && existing.files.length > 0) {
+    return existing.files[0].id;
+  }
+
+  const created = await workspaceFetch<{ id: string }>(
+    'https://www.googleapis.com/drive/v3/files?fields=id,name',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: safeName,
+        mimeType: 'application/vnd.google-apps.folder',
+        description: 'مجلد النسخ الاحتياطي المنظّم لتطبيق Morrow',
+      }),
+    }
+  );
+  return created.id;
+}
+
+export async function listDriveBackupFiles(
+  folderName = 'Morrow_Drive_Backups'
+): Promise<GoogleDriveBackupFile[]> {
+  const safeName = folderName.trim() || 'Morrow_Drive_Backups';
+  const folderQuery = `name = '${escapeDriveQueryValue(safeName)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const folderRes = await workspaceFetch<{ files?: Array<{ id: string }> }>(
+    `https://www.googleapis.com/drive/v3/files?${new URLSearchParams({
+      q: folderQuery,
+      fields: 'files(id)',
+      pageSize: '1',
+    }).toString()}`
+  );
+  const folderId = folderRes.files?.[0]?.id;
+  const filesQuery = folderId
+    ? `'${escapeDriveQueryValue(folderId)}' in parents and trashed = false`
+    : `mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
+  const res = await workspaceFetch<{ files?: GoogleDriveBackupFile[] }>(
+    `https://www.googleapis.com/drive/v3/files?${new URLSearchParams({
+      q: filesQuery,
+      orderBy: 'modifiedTime desc',
+      pageSize: '20',
+      fields: 'files(id,name,mimeType,size,modifiedTime,webViewLink,description)',
+    }).toString()}`
+  );
+  return res.files || [];
+}
+
+export async function uploadDriveBackupFile(params: {
+  blob: Blob;
+  fileName: string;
+  folderName?: string;
+  description?: string;
+  existingFileId?: string;
+}): Promise<GoogleDriveBackupFile> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new WorkspaceAuthRequiredError(
+      'يرجى تسجيل الدخول بحساب Google Drive أولاً لرفع النسخة الاحتياطية.'
+    );
+  }
+
+  const folderId = params.existingFileId
+    ? undefined
+    : await ensureDriveBackupFolder(params.folderName || 'Morrow_Drive_Backups');
+
+  const metadata: Record<string, unknown> = {
+    name: params.fileName,
+    mimeType: params.blob.type || 'application/zip',
+    ...(params.description ? { description: params.description } : {}),
+    ...(folderId ? { parents: [folderId] } : {}),
+  };
+
+  const form = new FormData();
+  form.append(
+    'metadata',
+    new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+  );
+  form.append('file', params.blob, params.fileName);
+
+  const url = params.existingFileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(
+        params.existingFileId
+      )}?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime,webViewLink,description`
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime,webViewLink,description';
+
+  const res = await fetch(url, {
+    method: params.existingFileId ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: form,
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    throw new WorkspaceAuthRequiredError(
+      'انتهت صلاحية إذن Google Drive؛ يرجى إعادة ربط حساب Google.'
+    );
+  }
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error?.message || 'تعذر رفع النسخة إلى Google Drive.');
+  }
+  return data as GoogleDriveBackupFile;
+}
+
+export async function downloadDriveBackupFile(fileId: string): Promise<Blob> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new WorkspaceAuthRequiredError(
+      'يرجى تسجيل الدخول بحساب Google Drive لتنزيل الملف.'
+    );
+  }
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  if (res.status === 401 || res.status === 403) {
+    throw new WorkspaceAuthRequiredError(
+      'انتهت صلاحية إذن Google Drive؛ يرجى إعادة ربط الحساب.'
+    );
+  }
+  if (!res.ok) {
+    throw new Error('تعذر تنزيل الملف من Google Drive.');
+  }
+  return await res.blob();
+}
+
+export async function deleteDriveBackupFile(fileId: string): Promise<void> {
+  await workspaceFetch<void>(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
+    { method: 'DELETE' }
+  );
+}

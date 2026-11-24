@@ -151,17 +151,13 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       <section
         onTouchStart={handleHeaderTouchStart}
         onTouchEnd={handleHeaderTouchEnd}
-        className="no-print tabrix-card border px-3.5 py-3 sm:px-5"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
+        className="no-print nexus-squircle px-3.5 py-3.5 sm:px-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           {/* Agency Identity + Picker Trigger */}
           <div className="flex items-center gap-2.5 min-w-0">
             <span
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-lg shadow-xs"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border text-lg shadow-xs"
               style={{
                 backgroundColor: `color-mix(in srgb, ${accentColor} 14%, var(--bg-main))`,
                 borderColor: `color-mix(in srgb, ${accentColor} 40%, var(--border-color))`,
@@ -204,7 +200,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
               onClick={() => prevAgency && onSelectAgency(prevAgency.id)}
               title={prevAgency ? `الوكالة السابقة: ${prevAgency.name}` : 'أول وكالة'}
               aria-label="الوكالة السابقة"
-              className="cosmos-touch-target inline-flex items-center justify-center rounded-xl border px-2.5 text-xs font-bold disabled:opacity-35 hover:border-[var(--accent)]"
+              className="nexus-pill-btn cosmos-touch-target inline-flex items-center justify-center border px-2.5 text-xs font-bold disabled:opacity-35"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -215,7 +211,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
             <button
               type="button"
               onClick={() => setSwitcherOpen(true)}
-              className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-3 text-xs font-bold hover:border-[var(--accent)]"
+              className="nexus-pill-btn cosmos-touch-target inline-flex items-center gap-1.5 border px-3.5 text-xs font-bold"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -232,7 +228,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
               onClick={() => nextAgency && onSelectAgency(nextAgency.id)}
               title={nextAgency ? `الوكالة التالية: ${nextAgency.name}` : 'آخر وكالة'}
               aria-label="الوكالة التالية"
-              className="cosmos-touch-target inline-flex items-center justify-center rounded-xl border px-2.5 text-xs font-bold disabled:opacity-35 hover:border-[var(--accent)]"
+              className="nexus-pill-btn cosmos-touch-target inline-flex items-center justify-center border px-2.5 text-xs font-bold disabled:opacity-35"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -266,7 +262,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
                 role="tab"
                 aria-selected={active}
                 onClick={() => setSubTab(tab.id)}
-                className="cosmos-touch-target inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-extrabold transition-colors"
+                className="nexus-pill-btn cosmos-touch-target inline-flex shrink-0 items-center gap-1.5 border px-3.5 py-1.5 text-xs font-extrabold"
                 style={{
                   backgroundColor: active
                     ? `color-mix(in srgb, ${accentColor} 14%, var(--bg-nav-active))`
@@ -281,15 +277,13 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
                 <span>{tab.label}</span>
                 {badge !== undefined && (
                   <span
-                    className="rounded-md px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                    className="text-[10px] font-black tabular-nums"
                     style={{
-                      backgroundColor:
-                        tab.id === 'audit' ? 'var(--warning-bg)' : 'var(--bg-surface)',
                       color:
                         tab.id === 'audit' ? 'var(--warning)' : 'var(--text-muted)',
                     }}
                   >
-                    {badge}
+                    · {badge}
                   </span>
                 )}
               </button>
@@ -302,13 +296,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       {subTab === 'table' && children}
 
       {subTab === 'overview' && (
-        <div
-          className="tabrix-card border p-4 sm:p-6 space-y-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
+        <div className="nexus-squircle p-4 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-black">نظرة تنفيذية — {currentAgency.name}</h3>
@@ -319,10 +307,10 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
             <button
               type="button"
               onClick={() => setSubTab('table')}
-              className="cosmos-touch-target rounded-xl px-4 py-2 text-xs font-extrabold"
+              className="nexus-pill-btn cosmos-touch-target px-5 py-2 text-xs font-extrabold"
               style={{
                 backgroundColor: accentColor,
-                color: '#ffffff',
+                color: 'var(--accent-fg)',
               }}
             >
               فتح الجدول المباشر
@@ -403,13 +391,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       )}
 
       {subTab === 'calculator' && (
-        <div
-          className="tabrix-card border p-4 sm:p-6 space-y-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
+        <div className="nexus-squircle p-4 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-black">حاسبة الوكالة الفورية — {currentAgency.name}</h3>
@@ -420,7 +402,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
             <button
               type="button"
               onClick={() => onNavigateView('settings', 'calculator')}
-              className="cosmos-touch-target rounded-xl border px-3 py-1.5 text-xs font-bold"
+              className="nexus-pill-btn cosmos-touch-target border px-4 py-1.5 text-xs font-bold"
               style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
             >
               ضبط معادلات الحاسبة
@@ -453,7 +435,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
                     key={`${preset}-${i}`}
                     type="button"
                     onClick={() => setCalcCount(String(preset))}
-                    className="rounded-lg border px-2.5 py-1 text-[11px] font-bold tabular-nums hover:border-[var(--accent)]"
+                    className="nexus-pill-btn border px-3 py-1 text-[11px] font-bold tabular-nums"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
@@ -485,13 +467,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       )}
 
       {subTab === 'audit' && (
-        <div
-          className="tabrix-card border p-4 sm:p-6 space-y-3"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
+        <div className="nexus-squircle p-4 sm:p-6 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-black">فحص ومطابقة سجلات {currentAgency.name}</h3>
@@ -502,7 +478,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
             <button
               type="button"
               onClick={() => setSubTab('table')}
-              className="cosmos-touch-target rounded-xl border px-3 py-1.5 text-xs font-bold"
+              className="nexus-pill-btn cosmos-touch-target border px-4 py-1.5 text-xs font-bold"
               style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
             >
               معالجة في الجدول
@@ -544,13 +520,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       )}
 
       {subTab === 'archives' && (
-        <div
-          className="tabrix-card border p-4 sm:p-6 space-y-3"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
+        <div className="nexus-squircle p-4 sm:p-6 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-black">أرشفة {currentAgency.name}</h3>
@@ -561,8 +531,8 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
             <button
               type="button"
               onClick={() => onNavigateView('data_archives')}
-              className="cosmos-touch-target rounded-xl px-4 py-2 text-xs font-extrabold"
-              style={{ backgroundColor: accentColor, color: '#ffffff' }}
+              className="nexus-pill-btn cosmos-touch-target px-5 py-2 text-xs font-extrabold"
+              style={{ backgroundColor: accentColor, color: 'var(--accent-fg)' }}
             >
               فتح مركز الأرشفة والمطابقة
             </button>

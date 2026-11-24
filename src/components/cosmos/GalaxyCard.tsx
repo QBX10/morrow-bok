@@ -98,7 +98,7 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
           {badge
             ? badge.text
             : node.children.length > 0
-            ? `${node.children.length} كبسولات`
+            ? `${node.children.length} أدوات`
             : 'فتح مباشر'}
         </span>
         <span

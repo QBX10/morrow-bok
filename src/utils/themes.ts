@@ -56,29 +56,29 @@ export const APP_THEMES: AppThemeDefinition[] = [
     description:
       'أسود سبجي عميق جداً مع لمسات ذهبية راقية تمنح تركيزاً ليلياً مريحاً وفخامة تنفيذية.',
     isDark: true,
-    swatches: ['#09090b', '#141418', '#eab308'],
+    swatches: ['#121212', '#1A1A24', '#F5B041'],
     vars: {
-      '--bg-main': '#09090b',
-      '--bg-surface': '#131318',
-      '--bg-header': '#050507',
-      '--bg-table-header': '#1d1c22',
-      '--bg-nav-active': 'rgba(234, 179, 8, 0.14)',
-      '--bg-zebra': 'rgba(255, 255, 255, 0.03)',
-      '--bg-numeric': 'rgba(234, 179, 8, 0.06)',
-      '--row-hover-bg': 'rgba(234, 179, 8, 0.11)',
-      '--text-primary': '#fafaf9',
-      '--text-muted': '#a1a1aa',
-      '--border-color': '#2b2930',
-      '--grid-color': '#26242b',
-      '--accent': '#eab308',
-      '--accent-fg': '#09090b',
-      '--success': '#34d399',
-      '--success-fg': '#022c22',
-      '--success-bg': 'rgba(16, 185, 129, 0.15)',
-      '--warning': '#fbbf24',
-      '--warning-bg': 'rgba(245, 158, 11, 0.16)',
-      '--danger': '#f87171',
-      '--danger-fg': '#450a0a',
+      '--bg-main': '#121212',
+      '--bg-surface': '#1A1A24',
+      '--bg-header': '#121216',
+      '--bg-table-header': '#1E1F2B',
+      '--bg-nav-active': 'rgba(245, 176, 65, 0.14)',
+      '--bg-zebra': 'rgba(255, 255, 255, 0.025)',
+      '--bg-numeric': 'rgba(245, 176, 65, 0.06)',
+      '--row-hover-bg': 'rgba(245, 176, 65, 0.11)',
+      '--text-primary': '#F0F0F5',
+      '--text-muted': '#8A8A9E',
+      '--border-color': 'rgba(255, 255, 255, 0.08)',
+      '--grid-color': 'rgba(255, 255, 255, 0.07)',
+      '--accent': '#F5B041',
+      '--accent-fg': '#121212',
+      '--success': '#10B981',
+      '--success-fg': '#04271D',
+      '--success-bg': 'rgba(16, 185, 129, 0.16)',
+      '--warning': '#F5B041',
+      '--warning-bg': 'rgba(245, 176, 65, 0.16)',
+      '--danger': '#EF4444',
+      '--danger-fg': '#FFFFFF',
       '--danger-bg': 'rgba(239, 68, 68, 0.16)',
     },
   },
@@ -329,7 +329,7 @@ export const MODERN_APP_THEMES: AppThemeDefinition[] = [
     englishName: 'Alabaster Glass',
     mood: 'زجاجية نهارية هادئة وتباين ناصع',
     description:
-      'سطح خزفي شفاف ناعم مع لمسات زرقاء هادئة يمنح الكبسولات عمقاً زجاجياً مريحاً للعين.',
+      'سطح خزفي شفاف ناعم مع لمسات زرقاء هادئة يمنح البطاقات عمقاً زجاجياً مريحاً للعين.',
     isDark: false,
     capsuleGroup: 'glass',
     swatches: ['#eef3f9', '#ffffff', '#2563eb'],
@@ -491,7 +491,7 @@ export const APP_THEME_CAPSULES: Array<{
   {
     id: 'glass',
     title: 'ثيمات زجاجية مصقولة',
-    subtitle: 'شفافية وطبقات عمق ناعمة لنظام الكبسولات',
+    subtitle: 'شفافية وطبقات عمق ناعمة لبطاقات الواجهة',
     themes: MODERN_APP_THEMES.filter((t) => t.capsuleGroup === 'glass'),
   },
 ];
@@ -680,7 +680,7 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
     fontSizePx: 15,
     rowHeightPx: 40,
     colWidthScale: 100,
-    borderRadiusPx: 12,
+    borderRadiusPx: 24,
     cardShadowLevel: 'soft',
     glassEffect: true,
     conditionalFormatting: {
@@ -698,7 +698,7 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
     fontSizePx: 16,
     rowHeightPx: 46,
     colWidthScale: 105,
-    borderRadiusPx: 10,
+    borderRadiusPx: 20,
     cardShadowLevel: 'none',
     glassEffect: false,
     conditionalFormatting: {
@@ -710,19 +710,19 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
 ];
 
 export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
-  appTheme: 'arctic-snow',
-  tableTheme: 'paper-ledger',
-  fontFamily: 'cairo',
+  appTheme: 'obsidian-gold',
+  tableTheme: 'glass',
+  fontFamily: 'ibm-plex',
   fontSize: 'md',
   fontWeight: 'normal',
   rowDensity: 'comfortable',
   fontSizePx: 15,
-  rowHeightPx: 42,
+  rowHeightPx: 44,
   colWidthScale: 100,
-  borderRadiusPx: 14,
+  borderRadiusPx: 24,
   cardShadowLevel: 'soft',
-  glassEffect: false,
-  glassOpacityPct: 86,
+  glassEffect: true,
+  glassOpacityPct: 62,
   themeColorMode: 'auto',
   customBgColor: '',
   customSurfaceColor: '',
@@ -845,6 +845,10 @@ export function applyThemePreferencesToDocument(
   root.style.setProperty('--card-radius', `${radiusPx}px`);
   root.style.setProperty('--glass-opacity', String(glassOpacity));
   root.style.setProperty('--card-shadow', shadowCss);
+  root.style.setProperty('--accent-ai', '#5B4FE9');
+  root.style.setProperty('--accent-ai-glow', 'rgba(91, 79, 233, 0.42)');
+  root.dataset.appTheme = theme.id;
+  root.dataset.tableTheme = resolveTableThemeId(prefs.tableTheme);
   root.dataset.glass = prefs.glassEffect ? '1' : '0';
   root.dataset.reduceMotion = accessibility?.reduceMotion ? '1' : '0';
   root.dataset.oneHanded = accessibility?.oneHandedMode ? '1' : '0';

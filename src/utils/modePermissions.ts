@@ -170,71 +170,45 @@ export const MODE_TIER_META: Array<{
   subtitle: string;
 }> = [
   {
-    tier: 'beginner',
-    title: '1. الوضع المبتدئ / السهل (الافتراضي)',
-    subtitle:
-      'وضع عرض وقراءة فقط كأنه ملف PDF — واجهة نظيفة تمامًا بدون أزرار معقدة أو تعديل بالخطأ.',
-  },
-  {
-    tier: 'intermediate',
-    title: '2. الوضع المتوسط',
-    subtitle:
-      'يفتح أدوات البحث والفرز والتفاصيل الإضافية، مع إمكانية عرض ملخص الحسابات المالية والطباعة.',
-  },
-  {
-    tier: 'professional',
-    title: '3. الوضع الاحترافي',
-    subtitle:
-      'يفعّل السحب السريع من ملفات PDF، إدارة المالية والمصاريف، القوائم الجاهزة، وأدوات التحرير.',
-  },
-  {
     tier: 'expert',
-    title: '4. الوضع الخبير (حرية مطلقة وتحكم فائق)',
+    title: 'التحرير القياسي الكامل',
     subtitle:
-      'أقصى مستوى من الحرية: تخصيص وإعادة ترتيب وإخفاء الأعمدة، أعمدة وفئات مخصصة، تعديل مباشر وفوري، وإدارة كاملة للوكالات.',
+      'جميع أدوات التعديل وتخصيص الجداول والمالية والسحب الذكي متاحة بشكل طبيعي مباشر.',
   },
 ];
 
 /**
- * Unified Mode Capabilities — All privileges are open by default for everyone,
- * governed individually by granular controls in Settings -> "الصلاحيات والتحكم".
+ * Unified Capabilities — Single natural state where all tools and editing
+ * are natively open, respecting user confirmation preferences.
  */
 export function getUnifiedCapabilities(
-  granular?: Partial<GranularControlPrefs>,
+  _granular?: Partial<GranularControlPrefs>,
   confirmBeforeEdit = true,
   confirmBeforeDelete = true,
-  legacyExpertAllowNoConfirm = false
+  allowDirectNoConfirm = false
 ): ModeCapabilities {
-  const g: GranularControlPrefs = {
-    ...DEFAULT_GRANULAR_CONTROLS,
-    ...(granular || {}),
-  };
-
-  const readOnly = Boolean(g.readonlyPdfMode);
-  const canEdit = !readOnly && g.enableEditRecords;
-  const bypassConfirm = g.bypassEditConfirm || legacyExpertAllowNoConfirm;
+  const bypassConfirm = Boolean(allowDirectNoConfirm);
 
   return {
     modeTier: 'expert',
-    label: readOnly ? 'قفل القراءة فقط' : 'الوضع الموحّد',
-    description: readOnly
-      ? 'الجدول في وضع القراءة الآمنة فقط — يمكنك فتح التحرير من الصلاحيات والتحكم.'
-      : 'جميع الميزات والأدوات متاحة افتراضياً مع تحكم فردي مستقل من قسم الصلاحيات.',
-    isReadOnlyPdfView: readOnly,
-    isExpertMode: !readOnly,
-    canSortAndFilter: g.enableSortAndFilter,
-    canViewFinance: g.enableFinance,
-    canManageFinance: !readOnly && g.enableFinance && g.enableManageFinance,
-    canUseQuickExtract: !readOnly && g.enableQuickExtract,
+    label: 'الوضع القياسي الموحد',
+    description:
+      'جميع أدوات التحرير والجداول والمالية والسحب الذكي مفعّلة بالكامل.',
+    isReadOnlyPdfView: false,
+    isExpertMode: true,
+    canSortAndFilter: true,
+    canViewFinance: true,
+    canManageFinance: true,
+    canUseQuickExtract: true,
     canToggleEditor: true,
-    canEditRecords: canEdit,
-    canUseReadyListBuilder: !readOnly && g.enableReadyListBuilder,
-    canManageAgencies: !readOnly && g.enableAgencyManagement,
-    canUseSmartAudit: g.enableSmartAudit,
-    canUseExcelTools: g.enableExcelTools,
-    canCustomizeColumns: g.enableColumnCustomization,
-    canManageCustomCategories: !readOnly && g.enableCustomCategories,
-    canBulkEdit: !readOnly && g.enableBulkEdit,
+    canEditRecords: true,
+    canUseReadyListBuilder: true,
+    canManageAgencies: true,
+    canUseSmartAudit: true,
+    canUseExcelTools: true,
+    canCustomizeColumns: true,
+    canManageCustomCategories: true,
+    canBulkEdit: true,
     canBypassEditConfirm: bypassConfirm,
     requireDeleteConfirm: bypassConfirm ? false : confirmBeforeDelete,
     requireEditConfirm: bypassConfirm ? false : confirmBeforeEdit,
@@ -243,49 +217,16 @@ export function getUnifiedCapabilities(
 }
 
 export function getModeCapabilities(
-  modeTier: AppModeTier,
-  editorEnabled: boolean,
+  _modeTier: AppModeTier,
+  _editorEnabled: boolean,
   expertAllowNoConfirm = false,
   confirmBeforeEdit = true,
   confirmBeforeDelete = true
 ): ModeCapabilities {
-  const isBeginner = modeTier === 'beginner';
-  const isIntermediate = modeTier === 'intermediate';
-  const isProfessional = modeTier === 'professional';
-  const isExpert = modeTier === 'expert';
-
-  const canToggleEditor = !isBeginner;
-  const canEditRecords = isExpert
-    ? true
-    : !isBeginner && (isProfessional ? editorEnabled : editorEnabled);
-
-  const meta =
-    MODE_TIER_META.find((m) => m.tier === modeTier) || MODE_TIER_META[0];
-
-  const canBypassEditConfirm = isExpert && expertAllowNoConfirm;
-
-  return {
-    modeTier,
-    label: meta.title,
-    description: meta.subtitle,
-    isReadOnlyPdfView: isBeginner,
-    isExpertMode: isExpert,
-    canSortAndFilter: !isBeginner,
-    canViewFinance: isIntermediate || isProfessional || isExpert,
-    canManageFinance: isProfessional || isExpert,
-    canUseQuickExtract: isProfessional || isExpert,
-    canToggleEditor,
-    canEditRecords,
-    canUseReadyListBuilder: isProfessional || isExpert,
-    canManageAgencies: isExpert,
-    canUseSmartAudit: isExpert,
-    canUseExcelTools: isProfessional || isExpert,
-    canCustomizeColumns: isExpert,
-    canManageCustomCategories: isExpert,
-    canBulkEdit: isExpert,
-    canBypassEditConfirm,
-    requireDeleteConfirm: isExpert && expertAllowNoConfirm ? false : confirmBeforeDelete,
-    requireEditConfirm: canBypassEditConfirm ? false : confirmBeforeEdit,
-    requireAddConfirm: false,
-  };
+  return getUnifiedCapabilities(
+    undefined,
+    confirmBeforeEdit,
+    confirmBeforeDelete,
+    expertAllowNoConfirm
+  );
 }

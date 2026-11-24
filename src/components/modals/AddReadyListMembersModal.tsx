@@ -16,6 +16,7 @@ import {
   getRelationCategoryMeta,
   RELATION_CATEGORIES,
 } from '../../utils/relationMeta';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface AddReadyListMembersModalProps {
   open: boolean;
@@ -180,44 +181,49 @@ export const AddReadyListMembersModal: React.FC<
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`إضافة أعضاء إلى ${list.name}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div
-          className="flex items-center justify-between border-b px-5 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div>
-            <h3 className="text-base font-bold">
-              إضافة أعضاء إلى: {list.name}
-            </h3>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              أضف بالبحث المباشر في الجداول أو من قسم العلاقات والمتابعة
-            </p>
+    <FullScreenPushPage
+      open={open}
+      onBack={onClose}
+      title={`إضافة أعضاء إلى: ${list.name}`}
+      subtitle="أضف بالبحث المباشر في الجداول أو من قسم العلاقات والمتابعة"
+      icon={<Plus className="h-4 w-4" />}
+      ariaLabel={`إضافة أعضاء إلى ${list.name}`}
+      maxWidthClass="max-w-4xl"
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+            المحددون للإضافة: {selectedIds.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="nexus-pill-btn border px-4 py-2 font-semibold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              إغلاق
+            </button>
+            <button
+              type="button"
+              disabled={selectedIds.length === 0}
+              onClick={handleBatchAdd}
+              className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold disabled:opacity-45"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--accent-fg)',
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>إضافة المحددين للقائمة ({selectedIds.length})</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق"
-            className="rounded p-1 hover:opacity-75"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
+      }
+    >
+      <div className="nexus-squircle overflow-hidden">
 
         {/* Source Method Tabs */}
         <div
@@ -568,40 +574,7 @@ export const AddReadyListMembersModal: React.FC<
             })
           )}
         </div>
-
-        {/* Footer Batch Bar */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-3 text-xs"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <span className="font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-            المحددون للإضافة: {selectedIds.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border px-4 py-2 font-semibold"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              إغلاق
-            </button>
-            <button
-              type="button"
-              disabled={selectedIds.length === 0}
-              onClick={handleBatchAdd}
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold disabled:opacity-45"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>إضافة المحددين للقائمة ({selectedIds.length})</span>
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

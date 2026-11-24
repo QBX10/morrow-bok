@@ -3,6 +3,7 @@ import type {
   ExpertColumnPreset,
   ExpertTableConfig,
   GeneralAppPrefs,
+  HomeLayoutPrefs,
   QuickExtractPrefs,
   RelationsReadyListsPrefs,
   SecurityPrefs,
@@ -217,6 +218,25 @@ export const DEFAULT_QUICK_TOGGLE_IDS = [
   'qt_readonly_pdf',
 ];
 
+export const DEFAULT_HOME_LAYOUT_PREFS: HomeLayoutPrefs = {
+  sectionOrder: [
+    'portfolio',
+    'agencies',
+    'workspace_tools',
+    'radar_comparison',
+    'mini_widgets',
+  ],
+  hiddenSections: [],
+  activeMiniWidgets: [],
+};
+
+export const DEFAULT_CUSTOM_EXPENSE_CATEGORIES = [
+  'نقل وتوصيل',
+  'كهرباء ومولدة',
+  'إيجار ومستودع',
+  'صيانة وقرطاسية',
+];
+
 export const DEFAULT_GENERAL_PREFS: GeneralAppPrefs = {
   confirmBeforeDelete: true,
   confirmBeforeEdit: true,
@@ -234,6 +254,13 @@ export const DEFAULT_GENERAL_PREFS: GeneralAppPrefs = {
     3: '#d97706',
   },
   dismissedAttentionIds: [],
+  homeLayoutPrefs: {
+    sectionOrder: [...DEFAULT_HOME_LAYOUT_PREFS.sectionOrder],
+    hiddenSections: [],
+    activeMiniWidgets: [],
+  },
+  customExpenseCategories: [...DEFAULT_CUSTOM_EXPENSE_CATEGORIES],
+  recurringExpenseTemplates: [],
 };
 
 export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
@@ -241,6 +268,27 @@ export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
   privacyLocked: false,
   offlineCacheEnabled: true,
   allowCloudBeneficiaryNames: false,
+  secondaryCloud: {
+    provider: 'mega',
+    accountEmail: '',
+    folderName: 'Morrow_Backups',
+    autoBackupInclude: true,
+  },
+  driveAccountMeta: {
+    dedicatedEmail: '',
+    folderLabel: 'Morrow_Drive_Backups',
+  },
+  smartSync: {
+    lastHash: '',
+    lastDataHash: '',
+    lastRecordCount: 0,
+    lastAttachmentCount: 0,
+    lastSavedAt: '',
+    lastSaveMode: 'manual',
+    integrityChecksum: '',
+    weeklyAutoEnabled: true,
+    history: [],
+  },
 };
 
 export const INITIAL_DATABASE_STATE: AppDatabaseState = {
@@ -248,7 +296,7 @@ export const INITIAL_DATABASE_STATE: AppDatabaseState = {
   workspaceCosmos: { ...DEFAULT_WORKSPACE_COSMOS },
   modeTier: 'expert',
   editorEnabled: true,
-  darkTheme: false,
+  darkTheme: true,
   requireLoginOnStart: false,
   calculationSettings: { ...DEFAULT_CALCULATION_SETTINGS },
   agencies: [
@@ -623,6 +671,28 @@ export const INITIAL_DATABASE_STATE: AppDatabaseState = {
   generalPrefs: { ...DEFAULT_GENERAL_PREFS },
   securityPrefs: { ...DEFAULT_SECURITY_PREFS },
   recycleBin: [],
+  workspaceNotes: [
+    {
+      id: 'note_seed_welcome',
+      title: 'خطة مراجعة الوجبة التموينية الشهرية',
+      content: 'التأكد من تحديث قوائم المحجوبين ومطابقة عناوين التوزيع قبل إغلاق الأرشيف الشهري.',
+      category: 'quick',
+      pinned: true,
+      tags: ['توزيع', 'أرشيف'],
+      createdAt: '2026-11-18T10:00:00.000Z',
+      updatedAt: '2026-11-18T10:00:00.000Z',
+    },
+    {
+      id: 'note_seed_idea',
+      title: 'فكرة تنظيم تصدير كشوفات القوائم الجاهزة',
+      content: 'الاحتفاظ بنسخة منظمة داخل مجلد التصدير كل نهاية أسبوع مع فصل المرفقات والأسماء.',
+      category: 'idea',
+      pinned: false,
+      tags: ['تصدير', 'تنظيم'],
+      createdAt: '2026-11-19T14:30:00.000Z',
+      updatedAt: '2026-11-19T14:30:00.000Z',
+    },
+  ],
   activePeriod: {
     fullDate: '2026-11-20',
     year: 2026,

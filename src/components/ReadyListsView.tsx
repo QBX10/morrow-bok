@@ -23,8 +23,9 @@ import {
   Trash2,
   Undo2,
   UserPlus,
-  X,
 } from 'lucide-react';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import type {
   Agency,
   BlockScope,
@@ -569,14 +570,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
         {/* Floating Glassmorphic Top Header with Back Button, Metadata, Undo/Redo, and Multi-Format Export */}
         <div className="no-print sticky top-0 z-30 w-full px-3 pt-2.5 pb-1.5 sm:px-6 sm:pt-3 pointer-events-none">
           <header
-            className="pointer-events-auto mx-auto max-w-6xl rounded-2xl border px-3.5 py-3 sm:px-5 transition-all"
-            style={{
-              backgroundColor: 'color-mix(in srgb, var(--bg-surface) 80%, transparent)',
-              borderColor: 'color-mix(in srgb, var(--border-color) 80%, transparent)',
-              boxShadow: '0 14px 32px -14px rgba(15, 23, 42, 0.14)',
-              backdropFilter: 'blur(18px) saturate(165%)',
-              WebkitBackdropFilter: 'blur(18px) saturate(165%)',
-            }}
+            className="pointer-events-auto nexus-glass-lite mx-auto max-w-6xl rounded-3xl border px-3.5 py-3 sm:px-5 transition-all"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -586,7 +580,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   setOpenedListId(null);
                   setFocusedItemId(null);
                 }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold whitespace-nowrap transition-colors hover:opacity-90"
+                className="nexus-pill-btn inline-flex shrink-0 items-center gap-1.5 border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--accent)',
@@ -1110,16 +1104,12 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
 
           {/* Full Excel Spreadsheet Table */}
           <div
-            className={`overflow-auto rounded-xl border ${
+            className={`nexus-squircle overflow-auto p-2 ${
               themePrefs.stickyHeaderAndName ? 'max-h-[68vh]' : ''
             }`}
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
           >
             <table
-              className={`agency-table theme-${themePrefs.tableTheme} ${
+              className={`agency-table theme-${themePrefs.tableTheme} nexus-slab-table ${
                 themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
               } ${focusActive ? 'has-focused-row' : ''} text-right text-xs sm:text-sm`}
             >
@@ -1520,46 +1510,28 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
           </div>
         </div>
 
-        {/* Share Text Modal */}
-        {sharePreviewText !== null && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="مشاركة نص القائمة الجاهزة"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          >
-            <div
-              className="w-full max-w-lg rounded-xl border p-5 shadow-xl"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-base font-bold">
-                  نص القائمة الجاهز للإرسال والمشاركة
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setSharePreviewText(null)}
-                  aria-label="إغلاق نافذة المشاركة"
-                  className="rounded p-1 hover:opacity-75"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        {/* Share Text Full-Screen Push Page */}
+        <FullScreenPushPage
+          open={sharePreviewText !== null}
+          onClose={() => setSharePreviewText(null)}
+          title="نص القائمة الجاهز للإرسال والمشاركة"
+          subtitle="معاينة النص المنسق جاهز للنسخ أو التنزيل كملف نصي"
+          icon={<Share2 className="h-4 w-4" />}
+          maxWidthClass="max-w-xl"
+        >
+          {sharePreviewText !== null && (
+            <div className="nexus-squircle p-5 space-y-4">
               <textarea
                 readOnly
-                rows={10}
+                rows={12}
                 value={sharePreviewText}
-                className="w-full rounded-lg border p-3 text-xs leading-relaxed"
+                className="w-full rounded-xl border p-3 text-xs leading-relaxed"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                 }}
               />
-              <div className="mt-3 flex flex-wrap justify-end gap-2 text-xs">
+              <div className="flex flex-wrap justify-end gap-2 text-xs">
                 <button
                   type="button"
                   onClick={() => {
@@ -1571,7 +1543,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                     });
                     setExportNotice('تم حفظ القائمة كملف نصي.');
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 font-semibold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   <FileText className="h-3.5 w-3.5" />
@@ -1587,7 +1559,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                       setExportNotice('يرجى تحديد النص ونسخه يدويًا.');
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1598,36 +1570,19 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </FullScreenPushPage>
 
-        {/* Edit List Header Metadata Modal (Confirmation Required) */}
-        {editingMetaOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="تعديل بيانات القائمة الجاهزة"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          >
-            <div
-              className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-base font-bold">تعديل عناوين وتاريخ القائمة</h3>
-                <button
-                  type="button"
-                  onClick={() => setEditingMetaOpen(false)}
-                  aria-label="إغلاق"
-                  className="rounded p-1 hover:opacity-75"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        {/* Edit List Header Metadata Full-Screen Push Page (Confirmation Required) */}
+        <FullScreenPushPage
+          open={editingMetaOpen}
+          onClose={() => setEditingMetaOpen(false)}
+          title="تعديل عناوين وتاريخ القائمة"
+          subtitle="تعديل العنوان الرئيسي والعناوين الفرعية والتاريخ المرجعي للقائمة"
+          icon={<Edit3 className="h-4 w-4" />}
+          maxWidthClass="max-w-lg"
+        >
+          <div className="nexus-squircle p-5">
 
               {confirmMetaStep ? (
                 <div className="space-y-4 text-xs">
@@ -1759,14 +1714,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setEditingMetaOpen(false)}
-                      className="rounded-lg border px-4 py-2 font-semibold"
+                      className="nexus-pill-btn border px-4 py-2 font-semibold"
                       style={{ borderColor: 'var(--border-color)' }}
                     >
                       إلغاء
                     </button>
                     <button
                       type="submit"
-                      className="rounded-lg px-4 py-2 font-bold"
+                      className="nexus-pill-btn px-5 py-2 font-bold"
                       style={{
                         backgroundColor: 'var(--accent)',
                         color: 'var(--accent-fg)',
@@ -1777,37 +1732,19 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   </div>
                 </form>
               )}
-            </div>
           </div>
-        )}
+        </FullScreenPushPage>
 
-        {/* Add Item Direct Modal (Direct without confirmation per Editor rules) */}
-        {addItemOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="إضافة فرد للقائمة الجاهزة"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          >
-            <div
-              className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-base font-bold">إضافة اسم للقائمة (إدخال مباشر)</h3>
-                <button
-                  type="button"
-                  onClick={() => setAddItemOpen(false)}
-                  aria-label="إغلاق"
-                  className="rounded p-1 hover:opacity-75"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        {/* Add Item Direct Full-Screen Push Page (Direct without confirmation per Editor rules) */}
+        <FullScreenPushPage
+          open={addItemOpen}
+          onClose={() => setAddItemOpen(false)}
+          title="إضافة اسم للقائمة (إدخال مباشر)"
+          subtitle="إضافة عضو جديد مباشرة ضمن القائمة الجاهزة المفتوحة"
+          icon={<UserPlus className="h-4 w-4" />}
+          maxWidthClass="max-w-lg"
+        >
+          <div className="nexus-squircle p-5">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1888,14 +1825,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setAddItemOpen(false)}
-                    className="rounded-lg border px-4 py-2 font-semibold"
+                    className="nexus-pill-btn border px-4 py-2 font-semibold"
                     style={{ borderColor: 'var(--border-color)' }}
                   >
                     إلغاء
                   </button>
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
+                    className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -1906,37 +1843,20 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   </button>
                 </div>
               </form>
-            </div>
           </div>
-        )}
+        </FullScreenPushPage>
 
-        {/* Edit Ready List Item Modal (Confirmation Required per Editor Rules) */}
-        {editingItem && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="تعديل عضو القائمة الجاهزة"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          >
-            <div
-              className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-base font-bold">تعديل عضو القائمة الجاهزة</h3>
-                <button
-                  type="button"
-                  onClick={() => setEditingItem(null)}
-                  aria-label="إغلاق"
-                  className="rounded p-1 hover:opacity-75"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        {/* Edit Ready List Item Full-Screen Push Page (Confirmation Required per Editor Rules) */}
+        <FullScreenPushPage
+          open={Boolean(editingItem)}
+          onClose={() => setEditingItem(null)}
+          title="تعديل عضو القائمة الجاهزة"
+          subtitle="تحديث بيانات المستفيد أو حالة الحجب داخل هذه القائمة"
+          icon={<Edit3 className="h-4 w-4" />}
+          maxWidthClass="max-w-lg"
+        >
+          {editingItem && (
+            <div className="nexus-squircle p-5">
               {confirmEditStep ? (
                 <div className="space-y-4 text-xs">
                   <div
@@ -2114,14 +2034,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setEditingItem(null)}
-                      className="rounded-lg border px-4 py-2 font-semibold"
+                      className="nexus-pill-btn border px-4 py-2 font-semibold"
                       style={{ borderColor: 'var(--border-color)' }}
                     >
                       إلغاء
                     </button>
                     <button
                       type="submit"
-                      className="rounded-lg px-4 py-2 font-bold"
+                      className="nexus-pill-btn px-5 py-2 font-bold"
                       style={{
                         backgroundColor: 'var(--accent)',
                         color: 'var(--accent-fg)',
@@ -2133,8 +2053,8 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 </form>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </FullScreenPushPage>
 
         <AddReadyListMembersModal
           open={dualPickerOpen}
@@ -2158,25 +2078,9 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   // ============================================================================
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
-      <div
-        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
+      <div className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
         <div className="flex items-start gap-3.5 min-w-0">
-          <span
-            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
-              color: 'var(--accent)',
-            }}
-            aria-hidden="true"
-          >
-            <ListChecks className="h-5 w-5" />
-          </span>
+          <NexusDuotoneIcon icon={ListChecks} size="lg" className="hidden sm:inline-flex" />
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold sm:text-xl">القوائم الجاهزة</h1>
             <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -2198,7 +2102,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
               setNewPopulateFromAgency(true);
               setCreateModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0 transition-opacity hover:opacity-90"
+            className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
@@ -2214,12 +2118,8 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
       <section aria-label="القوائم الجاهزة المتاحة" className="space-y-3">
         {readyLists.length === 0 ? (
           <div
-            className="rounded-xl border p-8 text-center text-sm"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-muted)',
-            }}
+            className="nexus-squircle p-8 text-center text-sm"
+            style={{ color: 'var(--text-muted)' }}
           >
             لا توجد قوائم جاهزة بعد. أنشئ قائمة جديدة للبدء.
           </div>
@@ -2245,11 +2145,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             return (
               <div
                 key={list.id}
-                className="group flex flex-col gap-3 rounded-xl border p-4 shadow-sm transition-colors sm:flex-row sm:items-center sm:justify-between"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
+                className="nexus-squircle nexus-squircle-interactive group flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <button
                   type="button"
@@ -2317,7 +2213,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => handleOpenList(list.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap"
+                    className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -2331,7 +2227,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                       type="button"
                       onClick={() => onRequestDeleteList(list)}
                       aria-label={`حذف القائمة ${list.name}`}
-                      className="rounded-lg border p-2 hover:opacity-80"
+                      className="nexus-pill-btn border p-2"
                       style={{
                         borderColor: 'var(--danger)',
                         color: 'var(--danger)',
@@ -2348,33 +2244,16 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
         )}
       </section>
 
-      {/* Create New Ready List Modal */}
-      {createModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="إنشاء قائمة جاهزة جديدة"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold">إنشاء قائمة جاهزة جديدة</h3>
-              <button
-                type="button"
-                onClick={() => setCreateModalOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Create New Ready List Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title="إنشاء قائمة جاهزة جديدة"
+        subtitle="إعداد قائمة توزيع مخصصة لعمال التوصيل أو خط معين"
+        icon={<ListChecks className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
 
             <form
               onSubmit={(e) => {
@@ -2512,14 +2391,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setCreateModalOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -2530,9 +2409,8 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
     </main>
   );
 };

@@ -2,15 +2,35 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Archive,
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
   BarChart3,
+  Bell,
+  Bot,
   Building2,
+  Calculator,
+  Calendar,
+  Camera,
   CheckCircle2,
+  Eye,
+  EyeOff,
+  FileSpreadsheet,
+  GripVertical,
+  HardHat,
+  ListChecks,
   Lock,
   Package,
+  Palette,
   Pencil,
   Plus,
+  RotateCcw,
+  ScanLine,
   Search,
+  Share2,
+  Shield,
+  SlidersHorizontal,
   Sparkles,
   Table2,
   Unlock,
@@ -22,28 +42,54 @@ import {
 import type {
   Agency,
   AgencyExpense,
+  AppView,
   CalculationSettings,
+  ExpenseCategory,
+  GeneralAppPrefs,
+  HomeLayoutPrefs,
+  HomeMiniWidgetId,
+  HomeSectionId,
   MonthlyArchiveRecord,
   PeriodQuotaMeta,
   Person,
+  RelationEntry,
+  SettingsSectionId,
 } from '../types/agency';
 import {
   auditAgencyPersons,
+  calculateAllocation,
   computeAgencyMetrics,
   formatIqd,
+  formatQuota,
   normalizeArabic,
 } from '../utils/agencyLogic';
+import { DEFAULT_HOME_LAYOUT_PREFS } from '../data/seedData';
 import type { ModeCapabilities } from '../utils/modePermissions';
 import { compressImageFileToDataUrl } from '../lib/imageUpload';
+import { SmartDashboardCard } from './ui/SmartDashboardCard';
+import { BottomSheet } from './cosmos/BottomSheet';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 
 interface AgenciesHubViewProps {
   agencies: Agency[];
   persons: Person[];
   expenses: AgencyExpense[];
+  relations?: RelationEntry[];
   activePeriod?: PeriodQuotaMeta;
   monthlyArchives?: MonthlyArchiveRecord[];
   calculationSettings: CalculationSettings;
   capabilities: ModeCapabilities;
+  generalPrefs?: GeneralAppPrefs;
+  onUpdateGeneralPrefs?: (patch: Partial<GeneralAppPrefs>) => void;
+  onAddExpense?: (input: {
+    agencyId: number;
+    description: string;
+    amountIqd: number;
+    category: ExpenseCategory;
+    occurredAt?: string;
+    quotaLabel?: string;
+  }) => void;
   onOpenMasterRoster: () => void;
   onOpenAgencyRoster: (agencyId: number) => void;
   onAddAgency: (name: string, icon: string) => void;
@@ -51,6 +97,7 @@ interface AgenciesHubViewProps {
     agencyId: number,
     patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
   ) => void;
+  onNavigateView?: (view: AppView, settingsSection?: SettingsSectionId) => void;
 }
 
 const AGENCY_ICON_PRESETS = ['🌾', '🏪', '📦', '🏛️', '🚚', '⚖️', '🧾', '🏢'];
@@ -59,24 +106,118 @@ type AgencyFilterTab = 'all' | 'active' | 'needs_audit' | 'locked';
 type AgencySortKey = 'default' | 'individuals' | 'profit' | 'households';
 type ComparisonMetric = 'individuals' | 'bags' | 'profit' | 'households';
 
+const HOME_SECTION_META: Record<
+  HomeSectionId,
+  { title: string; subtitle: string }
+> = {
+  portfolio: {
+    title: 'محفظة الوكالات الموحدة',
+    subtitle: 'المؤشرات التنفيذية الإجمالية لكل الوكالات',
+  },
+  agencies: {
+    title: 'بطاقات الوكالات الفردية',
+    subtitle: 'الوصول المباشر إلى جداول وحصص كل وكالة',
+  },
+  workspace_tools: {
+    title: 'الأقسام والأدوات التشغيلية',
+    subtitle: 'السجل الشامل، المصروفات والأجور، السحب الذكي، والقوائم',
+  },
+  radar_comparison: {
+    title: 'رادار الذكاء ومقارنة الأداء',
+    subtitle: 'تنبيهات التدقيق الذكي والمقارنة البيانية بين الوكالات',
+  },
+  mini_widgets: {
+    title: 'الأقسام المصغرة الجاهزة',
+    subtitle: 'حاسبة فورية، متتبع المصروفات، بحث المستفيدين، والمهام',
+  },
+};
+
+const MINI_WIDGET_CATALOG: Array<{
+  id: HomeMiniWidgetId;
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+}> = [
+  {
+    id: 'quick_calculator',
+    title: 'حاسبة الحصص السريعة',
+    subtitle: 'احسب الكيلوغرامات والأكياس والمبلغ لأي عدد أفراد فوراً',
+    icon: <Calculator className="h-4 w-4" />,
+  },
+  {
+    id: 'live_expenses',
+    title: 'متتبع المصروفات والأجور الفوري',
+    subtitle: 'ملخص الأجور والتعبئة والضيافة مع تسجيل مصروف سريع',
+    icon: <Wallet className="h-4 w-4" />,
+  },
+  {
+    id: 'quick_lookup',
+    title: 'بحث سريع عن مستفيد',
+    subtitle: 'ابحث بالاسم أو الرقم الوطني عبر جميع الوكالات وانتقل فوراً',
+    icon: <Search className="h-4 w-4" />,
+  },
+  {
+    id: 'ocr_scanner',
+    title: 'بطاقة السحب الذكي OCR',
+    subtitle: 'تشغيل مباشر لمسح PDF والصور والكاميرا',
+    icon: <ScanLine className="h-4 w-4" />,
+  },
+  {
+    id: 'tasks_reminders',
+    title: 'مهام وتذكيرات اليوم',
+    subtitle: 'تنبيهات التوصيل والعلاقات وملاحظات التدقيق النشطة',
+    icon: <Bell className="h-4 w-4" />,
+  },
+];
+
+function sanitizeSectionOrder(raw?: HomeSectionId[]): HomeSectionId[] {
+  const allIds = DEFAULT_HOME_LAYOUT_PREFS.sectionOrder;
+  const base = Array.isArray(raw) ? raw.filter((id) => allIds.includes(id)) : [];
+  const merged = [...base];
+  for (const id of allIds) {
+    if (!merged.includes(id)) merged.push(id);
+  }
+  return merged;
+}
+
 export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   agencies,
   persons,
   expenses,
+  relations = [],
   activePeriod,
   monthlyArchives = [],
   calculationSettings,
   capabilities,
+  generalPrefs,
+  onUpdateGeneralPrefs,
+  onAddExpense,
   onOpenMasterRoster,
   onOpenAgencyRoster,
   onAddAgency,
   onUpdateAgencyDetails,
+  onNavigateView,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<AgencyFilterTab>('all');
   const [sortBy, setSortBy] = useState<AgencySortKey>('default');
   const [comparisonMetric, setComparisonMetric] =
     useState<ComparisonMetric>('individuals');
+
+  // Workspace Studio / Home Customizer State
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [localLayoutPrefs, setLocalLayoutPrefs] = useState<HomeLayoutPrefs>(
+    DEFAULT_HOME_LAYOUT_PREFS
+  );
+  const [dragSectionId, setDragSectionId] = useState<HomeSectionId | null>(null);
+
+  // Mini-Widgets Local Interactive State
+  const [miniCalcIndividuals, setMiniCalcIndividuals] = useState('5');
+  const [miniLookupQuery, setMiniLookupQuery] = useState('');
+  const [quickExpTitle, setQuickExpTitle] = useState('');
+  const [quickExpAmount, setQuickExpAmount] = useState('');
+  const [quickExpCategory, setQuickExpCategory] =
+    useState<ExpenseCategory>('worker_wages');
 
   // Add Agency Drawer State
   const [addOpen, setAddOpen] = useState(false);
@@ -88,6 +229,80 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('🌾');
   const logoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const layoutPrefs: HomeLayoutPrefs = useMemo(() => {
+    const src = generalPrefs?.homeLayoutPrefs || localLayoutPrefs;
+    return {
+      sectionOrder: sanitizeSectionOrder(src.sectionOrder),
+      hiddenSections: Array.isArray(src.hiddenSections) ? src.hiddenSections : [],
+      activeMiniWidgets: Array.isArray(src.activeMiniWidgets)
+        ? src.activeMiniWidgets
+        : [],
+    };
+  }, [generalPrefs?.homeLayoutPrefs, localLayoutPrefs]);
+
+  const commitLayoutPrefs = (next: HomeLayoutPrefs) => {
+    setLocalLayoutPrefs(next);
+    if (onUpdateGeneralPrefs) {
+      onUpdateGeneralPrefs({ homeLayoutPrefs: next });
+    }
+  };
+
+  const moveSectionOrder = (sectionId: HomeSectionId, direction: 'up' | 'down') => {
+    const order = [...layoutPrefs.sectionOrder];
+    const idx = order.indexOf(sectionId);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= order.length) return;
+    [order[idx], order[swapIdx]] = [order[swapIdx], order[idx]];
+    commitLayoutPrefs({ ...layoutPrefs, sectionOrder: order });
+  };
+
+  const reorderSectionDrag = (fromId: HomeSectionId, toId: HomeSectionId) => {
+    if (fromId === toId) return;
+    const order = [...layoutPrefs.sectionOrder];
+    const fromIdx = order.indexOf(fromId);
+    const toIdx = order.indexOf(toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = order.splice(fromIdx, 1);
+    order.splice(toIdx, 0, moved);
+    commitLayoutPrefs({ ...layoutPrefs, sectionOrder: order });
+  };
+
+  const toggleSectionVisibility = (sectionId: HomeSectionId) => {
+    const hidden = new Set(layoutPrefs.hiddenSections);
+    if (hidden.has(sectionId)) {
+      hidden.delete(sectionId);
+    } else {
+      hidden.add(sectionId);
+    }
+    commitLayoutPrefs({ ...layoutPrefs, hiddenSections: Array.from(hidden) });
+  };
+
+  const toggleMiniWidget = (widgetId: HomeMiniWidgetId) => {
+    const active = new Set(layoutPrefs.activeMiniWidgets);
+    if (active.has(widgetId)) {
+      active.delete(widgetId);
+    } else {
+      active.add(widgetId);
+    }
+    const nextHidden = new Set(layoutPrefs.hiddenSections);
+    if (active.size > 0) {
+      nextHidden.delete('mini_widgets');
+    }
+    commitLayoutPrefs({
+      ...layoutPrefs,
+      activeMiniWidgets: Array.from(active),
+      hiddenSections: Array.from(nextHidden),
+    });
+  };
+
+  const resetHomeLayout = () => {
+    commitLayoutPrefs({
+      sectionOrder: [...DEFAULT_HOME_LAYOUT_PREFS.sectionOrder],
+      hiddenSections: [],
+      activeMiniWidgets: [],
+    });
+  };
 
   const masterMetrics = useMemo(
     () => computeAgencyMetrics(persons, expenses, calculationSettings),
@@ -108,7 +323,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     return { fullyBlockedCount, partialBlockedCount };
   }, [persons]);
 
-  // Per-agency full analytics & smart audit scan
   const agencyRows = useMemo(() => {
     return agencies.map((ag) => {
       const agPersons = persons.filter((p) => p.agencyId === ag.id);
@@ -151,9 +365,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         hasIssues: audits.length > 0 || missingIdCount > 0 || metrics.profit < 0,
       };
     });
-  }, [agencies, persons, expenses, calculationSettings, masterMetrics.activeIndividuals]);
+  }, [
+    agencies,
+    persons,
+    expenses,
+    calculationSettings,
+    masterMetrics.activeIndividuals,
+  ]);
 
-  // Smart Agency Radar Signals (100% live from real records)
   const smartAgencySignals = useMemo(() => {
     const signals: Array<{
       id: string;
@@ -217,7 +436,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     return signals.slice(0, 5);
   }, [agencyRows]);
 
-  // Period-over-period delta if previous monthly archive exists
   const previousArchiveDelta = useMemo(() => {
     const latest = monthlyArchives[0];
     if (!latest?.summary) return null;
@@ -229,7 +447,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     };
   }, [monthlyArchives, masterMetrics.activeIndividuals]);
 
-  // Filtered & sorted agency cards
   const filteredAgencies = useMemo(() => {
     const q = normalizeArabic(searchQuery);
     const list = agencyRows.filter((row) => {
@@ -256,7 +473,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     return list;
   }, [agencyRows, searchQuery, filterTab, sortBy]);
 
-  // Comparison bar chart values
   const comparisonBars = useMemo(() => {
     const mapped = agencyRows.map((row) => {
       const value =
@@ -290,6 +506,32 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         widthPct: Math.max(6, Math.round((item.value / maxVal) * 100)),
       }));
   }, [agencyRows, comparisonMetric]);
+
+  const miniCalcPreview = useMemo(() => {
+    const n = Math.max(0, Math.min(99999, Number(miniCalcIndividuals) || 0));
+    return {
+      n,
+      alloc: calculateAllocation(n, calculationSettings),
+      quota: formatQuota(n, undefined, calculationSettings),
+    };
+  }, [miniCalcIndividuals, calculationSettings]);
+
+  const miniLookupMatches = useMemo(() => {
+    const q = normalizeArabic(miniLookupQuery);
+    if (!q) return [];
+    const agencyNameMap = new Map(agencies.map((a) => [a.id, a.name]));
+    return persons
+      .filter(
+        (p) =>
+          normalizeArabic(p.name).includes(q) ||
+          (p.nationalId && p.nationalId.includes(miniLookupQuery.trim()))
+      )
+      .slice(0, 5)
+      .map((p) => ({
+        person: p,
+        agencyName: agencyNameMap.get(p.agencyId) || 'وكالة',
+      }));
+  }, [miniLookupQuery, persons, agencies]);
 
   const handleCreateAgency = (e: React.FormEvent) => {
     e.preventDefault();
@@ -347,48 +589,1330 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
     );
   };
 
-  return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-24 sm:px-6 lg:pb-10">
-      {/* 1. Executive Agencies Command Header */}
-      <section className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-              الوكالات والتوزيع
-            </h1>
-            {activePeriod && (
-              <span
-                className="rounded-lg border px-2.5 py-0.5 text-[11px] font-bold"
-                style={{
-                  backgroundColor: 'var(--bg-nav-active)',
-                  borderColor:
-                    'color-mix(in srgb, var(--accent) 30%, var(--border-color))',
-                  color: 'var(--accent)',
-                }}
-              >
-                {activePeriod.quotaName} · {activePeriod.monthName}{' '}
-                {activePeriod.year}
+  const renderPortfolioSection = () => (
+    <section
+      key="portfolio"
+      aria-label="الملخص العام للوكالات"
+      className="nexus-squircle p-5 sm:p-6"
+    >
+      <div
+        className="mb-4 flex flex-wrap items-center justify-between gap-2 pb-3 border-b"
+        style={{ borderColor: 'var(--border-color)' }}
+      >
+        <div className="flex items-center gap-2.5">
+          <NexusDuotoneIcon sizeClass="h-9 w-9">
+            <Building2 className="h-4 w-4" />
+          </NexusDuotoneIcon>
+          <h2 className="text-sm sm:text-base font-black">
+            محفظة الوكالات الموحدة ({agencies.length} وكالة)
+          </h2>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenMasterRoster}
+          className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-xs font-extrabold"
+          style={{
+            backgroundColor: 'var(--bg-nav-active)',
+            borderColor: 'color-mix(in srgb, var(--accent) 36%, var(--border-color))',
+            color: 'var(--accent)',
+          }}
+        >
+          <span>استعراض كافة السجلات</span>
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="nexus-squircle nexus-squircle-interactive p-4">
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <span className="font-semibold">العائلات النشطة</span>
+            <Users className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          </div>
+          <div className="mt-2 text-2xl font-black tabular-nums">
+            {masterMetrics.activeHouseholds.toLocaleString('en-US')}
+          </div>
+          <div
+            className="mt-1 text-[11px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            من أصل {masterMetrics.registeredHouseholds.toLocaleString('en-US')} سجل مسجل
+          </div>
+        </div>
+
+        <div className="nexus-squircle nexus-squircle-interactive p-4">
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <span className="font-semibold">الأفراد المشمولون</span>
+            <Activity className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          </div>
+          <div
+            className="mt-2 text-2xl font-black tabular-nums"
+            style={{ color: 'var(--accent)' }}
+          >
+            {masterMetrics.activeIndividuals.toLocaleString('en-US')}
+          </div>
+          <div
+            className="mt-1 text-[11px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {masterBlockBreakdown.fullyBlockedCount} محجوب كلياً ·{' '}
+            {masterBlockBreakdown.partialBlockedCount} جزئياً
+          </div>
+        </div>
+
+        <div className="nexus-squircle nexus-squircle-interactive p-4">
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <span className="font-semibold">حصة الطحين التقديرية</span>
+            <Package className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          </div>
+          <div className="mt-2 text-2xl font-black tabular-nums">
+            {masterMetrics.fullBags.toLocaleString('en-US')}{' '}
+            <span className="text-xs font-bold">كيس</span>
+            {masterMetrics.remainderKg > 0 && (
+              <span className="text-sm font-extrabold mr-1.5">
+                + {masterMetrics.remainderKg} كغم
               </span>
             )}
           </div>
-          <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-            مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
-            {previousArchiveDelta && (
-              <span className="mr-2 font-bold tabular-nums" style={{ color: 'var(--accent)' }}>
-                ({previousArchiveDelta.diff >= 0 ? '+' : ''}
-                {previousArchiveDelta.diff} فرد مقارنة بأرشيف {previousArchiveDelta.archiveLabel})
-              </span>
-            )}
-          </p>
+          <div
+            className="mt-1 text-[11px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            الوزن الصافي: {masterMetrics.totalKg.toLocaleString('en-US')} كغم
+          </div>
+        </div>
+
+        <div className="nexus-squircle nexus-squircle-interactive p-4">
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <span className="font-semibold">صافي الربح التقديري</span>
+            <Wallet className="h-4 w-4" style={{ color: 'var(--success)' }} />
+          </div>
+          <div
+            className="mt-2 text-2xl font-black tabular-nums"
+            style={{
+              color:
+                masterMetrics.profit >= 0 ? 'var(--success)' : 'var(--danger)',
+            }}
+          >
+            {formatIqd(masterMetrics.profit)}
+          </div>
+          <div
+            className="mt-1 text-[11px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            الإيراد {formatIqd(masterMetrics.revenue)} · المصاريف{' '}
+            {formatIqd(masterMetrics.totalExpenses)}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderAgenciesSection = () => (
+    <section key="agencies" className="space-y-4">
+      <div className="nexus-squircle flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
+          <div
+            className="flex items-center gap-2 rounded-full border px-3.5 h-10 flex-1 max-w-xs"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <Search
+              className="h-3.5 w-3.5 shrink-0"
+              style={{ color: 'var(--text-muted)' }}
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ابحث باسم الوكالة..."
+              className="w-full bg-transparent text-xs outline-none"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ['all', `الكل (${agencyRows.length})`],
+                [
+                  'active',
+                  `نشطة (${agencyRows.filter((r) => !r.agency.isLocked).length})`,
+                ],
+                [
+                  'needs_audit',
+                  `تحتاج انتباه (${agencyRows.filter((r) => r.hasIssues).length})`,
+                ],
+                [
+                  'locked',
+                  `مقفلة (${agencyRows.filter((r) => r.agency.isLocked).length})`,
+                ],
+              ] as Array<[AgencyFilterTab, string]>
+            ).map(([tabId, label]) => (
+              <button
+                key={tabId}
+                type="button"
+                onClick={() => setFilterTab(tabId)}
+                className="nexus-pill-btn min-h-[36px] border px-3.5 py-1 text-xs font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor:
+                    filterTab === tabId ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor:
+                    filterTab === tabId ? 'var(--accent)' : 'var(--border-color)',
+                  color: filterTab === tabId ? 'var(--accent)' : 'var(--text-muted)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as AgencySortKey)}
+            aria-label="ترتيب الوكالات"
+            className="min-h-[38px] rounded-full border px-3.5 py-1.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <option value="default">الترتيب الافتراضي</option>
+            <option value="individuals">الأكثر أفراداً</option>
+            <option value="profit">الأعلى صافي ربح</option>
+            <option value="households">الأكثر عوائل</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Hidden image uploader for agency avatar */}
+      <input
+        ref={logoFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (editingAgencyId !== null) {
+            void handleLogoUpload(editingAgencyId, e);
+          }
+        }}
+      />
+
+      {filteredAgencies.length === 0 ? (
+        <div
+          className="nexus-squircle p-10 text-center text-xs"
+          style={{
+            color: 'var(--text-muted)',
+          }}
+        >
+          لا توجد وكالات مطابقة لخيار البحث أو التصفية الحالي.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {filteredAgencies.map((row) => {
+            const { agency, metrics, audits, missingIdCount, sharePct } = row;
+            const isEditing = editingAgencyId === agency.id;
+            const issuesTotal = audits.length + missingIdCount;
+
+            return (
+              <article
+                key={agency.id}
+                className="nexus-squircle nexus-squircle-interactive flex flex-col justify-between p-5 sm:p-6"
+                style={{
+                  borderColor: isEditing ? 'var(--accent)' : 'var(--border-color)',
+                }}
+              >
+                {isEditing ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold">
+                        تعديل بيانات الوكالة
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingAgencyId(null)}
+                        className="rounded-lg p-1 hover:bg-[var(--bg-main)]"
+                        aria-label="إغلاق التعديل"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold">
+                        اسم الوكالة
+                      </label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="min-h-[40px] w-full rounded-xl border px-3 text-xs font-bold"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold">
+                        <span>الشعار أو الرمز</span>
+                        <button
+                          type="button"
+                          onClick={() => logoFileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1 font-bold"
+                          style={{ color: 'var(--accent)' }}
+                        >
+                          <Upload className="h-3 w-3" />
+                          <span>رفع صورة</span>
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {AGENCY_ICON_PRESETS.map((ic) => (
+                          <button
+                            key={ic}
+                            type="button"
+                            onClick={() => setEditIcon(ic)}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border text-base"
+                            style={{
+                              backgroundColor:
+                                editIcon === ic
+                                  ? 'var(--bg-nav-active)'
+                                  : 'var(--bg-main)',
+                              borderColor:
+                                editIcon === ic
+                                  ? 'var(--accent)'
+                                  : 'var(--border-color)',
+                            }}
+                          >
+                            {ic}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editName.trim()) {
+                            onUpdateAgencyDetails(agency.id, {
+                              name: editName.trim(),
+                              icon: editIcon,
+                            });
+                          }
+                          setEditingAgencyId(null);
+                        }}
+                        className="nexus-pill-btn flex-1 min-h-[40px] text-xs font-extrabold"
+                        style={{
+                          backgroundColor: 'var(--accent)',
+                          color: 'var(--accent-fg)',
+                        }}
+                      >
+                        حفظ التغييرات
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingAgencyId(null)}
+                        className="nexus-pill-btn min-h-[40px] border px-4 text-xs font-bold"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Card Header */}
+                    <div
+                      className="flex items-start justify-between gap-2 pb-4 border-b"
+                      style={{ borderColor: 'var(--border-color)' }}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        {renderAgencyAvatar(agency.icon, 'lg')}
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-extrabold">
+                            {agency.name}
+                          </h3>
+                          <div className="mt-0.5 flex items-center gap-2 text-[11px]">
+                            <span
+                              className="inline-flex items-center gap-1 font-bold"
+                              style={{
+                                color: agency.isLocked
+                                  ? 'var(--warning)'
+                                  : 'var(--success)',
+                              }}
+                            >
+                              {agency.isLocked ? (
+                                <Lock className="h-3 w-3" />
+                              ) : (
+                                <Unlock className="h-3 w-3" />
+                              )}
+                              <span>{agency.isLocked ? 'مقفلة' : 'نشطة'}</span>
+                            </span>
+                            <span style={{ color: 'var(--border-color)' }}>•</span>
+                            <span
+                              className="tabular-nums font-semibold"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {sharePct}% من الإجمالي
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {capabilities.canManageAgencies && (
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onUpdateAgencyDetails(agency.id, {
+                                isLocked: !agency.isLocked,
+                              })
+                            }
+                            title={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
+                            aria-label={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
+                            className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: 'var(--border-color)',
+                              color: agency.isLocked
+                                ? 'var(--warning)'
+                                : 'var(--text-muted)',
+                            }}
+                          >
+                            {agency.isLocked ? (
+                              <Lock className="h-3.5 w-3.5" />
+                            ) : (
+                              <Unlock className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAgencyId(agency.id);
+                              setEditName(agency.name);
+                              setEditIcon(agency.icon);
+                            }}
+                            title="تعديل الوكالة"
+                            aria-label="تعديل الوكالة"
+                            className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: 'var(--border-color)',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Metrics 2x2 */}
+                    <div className="grid grid-cols-2 gap-2.5 py-4">
+                      <div
+                        className="rounded-xl border p-2.5"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <div
+                          className="text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          العائلات النشطة
+                        </div>
+                        <div className="mt-0.5 text-base font-black tabular-nums">
+                          {metrics.activeHouseholds.toLocaleString('en-US')}
+                        </div>
+                      </div>
+
+                      <div
+                        className="rounded-xl border p-2.5"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <div
+                          className="text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          الأفراد
+                        </div>
+                        <div
+                          className="mt-0.5 text-base font-black tabular-nums"
+                          style={{ color: 'var(--accent)' }}
+                        >
+                          {metrics.activeIndividuals.toLocaleString('en-US')}
+                        </div>
+                      </div>
+
+                      <div
+                        className="rounded-xl border p-2.5"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <div
+                          className="text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          الأكياس المطلوبة
+                        </div>
+                        <div className="mt-0.5 text-sm font-black tabular-nums">
+                          {metrics.fullBags.toLocaleString('en-US')} كيس
+                          {metrics.remainderKg > 0 && ` + ${metrics.remainderKg}ك`}
+                        </div>
+                      </div>
+
+                      <div
+                        className="rounded-xl border p-2.5"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <div
+                          className="text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          صافي الربح
+                        </div>
+                        <div
+                          className="mt-0.5 text-sm font-black tabular-nums"
+                          style={{
+                            color:
+                              metrics.profit >= 0
+                                ? 'var(--success)'
+                                : 'var(--danger)',
+                          }}
+                        >
+                          {formatIqd(metrics.profit)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Share & Audit Footer with Glowing Amber Gold Progress Bar */}
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span
+                            className="font-semibold"
+                            style={{
+                              color:
+                                issuesTotal > 0 ? 'var(--warning)' : 'var(--success)',
+                            }}
+                          >
+                            {issuesTotal > 0
+                              ? `${issuesTotal} ملاحظة تحتاج مراجعة`
+                              : 'سجل مطابق ومنظم'}
+                          </span>
+                          <span
+                            className="font-bold tabular-nums"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {metrics.registeredHouseholds} سجل · {sharePct}%
+                          </span>
+                        </div>
+                        <div className="nexus-progress-track h-2 w-full">
+                          <div
+                            className="nexus-progress-glow h-full"
+                            style={{
+                              width: `${Math.max(4, sharePct)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgencyRoster(agency.id)}
+                        className="nexus-pill-btn inline-flex min-h-[42px] w-full items-center justify-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        <Table2 className="h-4 w-4" />
+                        <span>عرض جدول الوكالة</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderWorkspaceToolsSection = () => {
+    if (!onNavigateView) return null;
+    return (
+      <section
+        key="workspace_tools"
+        className="space-y-3"
+        aria-label="بوابات مساحة العمل الذكية"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-extrabold">
+            الأقسام التشغيلية وبوابات مساحة العمل
+          </h2>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            مرتبة حسب الأولوية اليومية — انتقال فوري إلى كل شاشة مستقلة
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <SmartDashboardCard
+            testId="dashboard-card-master-roster"
+            title="السجل الشامل للوكالات"
+            subtitle="جدول موحد لجميع المستفيدين مع تدقيق ذكي وتصدير احترافي."
+            metaText={`${masterMetrics.registeredHouseholds.toLocaleString('en-US')} سجل · ${agencies.length} وكالة`}
+            icon={<Table2 className="h-5 w-5" />}
+            actionLabel="فتح السجل الشامل"
+            onOpen={onOpenMasterRoster}
+            subIcons={[
+              {
+                id: 'portal-master',
+                label: 'السجل',
+                hint: 'فتح الجدول الشامل لجميع الوكالات',
+                icon: <Table2 className="h-4 w-4" />,
+                onClick: onOpenMasterRoster,
+              },
+              {
+                id: 'portal-audit',
+                label: 'التدقيق',
+                hint: 'مراجعة التكرار والأرقام الناقصة داخل الجدول',
+                icon: <Activity className="h-4 w-4" />,
+                onClick: onOpenMasterRoster,
+              },
+              {
+                id: 'portal-cols',
+                label: 'الأعمدة',
+                hint: 'تخصيص الأعمدة والترتيب المتقدم',
+                icon: <FileSpreadsheet className="h-4 w-4" />,
+                onClick: () => onNavigateView('settings', 'modes'),
+              },
+              {
+                id: 'portal-archives',
+                label: 'الأرشيف',
+                hint: 'استعراض الأرشيفات الشهرية المحفوظة',
+                icon: <Archive className="h-4 w-4" />,
+                onClick: () => onNavigateView('data_archives'),
+              },
+            ]}
+          />
+
+          {capabilities.canViewFinance && (
+            <SmartDashboardCard
+              testId="dashboard-card-finance"
+              title="المصروفات وأجور العمال"
+              subtitle="أجور العمال، التعبئة (علاليك وكواني)، الضيافة، والمصروفات الخاصة."
+              metaText={`صافي الربح: ${formatIqd(masterMetrics.profit)}`}
+              icon={<HardHat className="h-5 w-5" />}
+              accentTone={masterMetrics.profit >= 0 ? 'emerald' : 'crimson'}
+              actionLabel="فتح المالية والأجور"
+              onOpen={() => onNavigateView('finance')}
+              subIcons={[
+                {
+                  id: 'portal-wages',
+                  label: 'الأجور',
+                  hint: 'تسجيل وإدارة أجور العمال اليومية ولكل حصة',
+                  icon: <HardHat className="h-4 w-4" />,
+                  onClick: () => onNavigateView('finance'),
+                },
+                {
+                  id: 'portal-fin',
+                  label: 'الأرباح',
+                  hint: 'تحليل الإيرادات والمصروفات وصافي الربح',
+                  icon: <Wallet className="h-4 w-4" />,
+                  onClick: () => onNavigateView('finance'),
+                },
+                {
+                  id: 'portal-calc',
+                  label: 'الحاسبة',
+                  hint: 'إعدادات أوزان الأفراد ورسم 250 د.ع',
+                  icon: <Calculator className="h-4 w-4" />,
+                  onClick: () => onNavigateView('settings', 'calculator'),
+                },
+                {
+                  id: 'portal-gcal',
+                  label: 'التقويم',
+                  hint: 'مواعيد التوزيع ومهام Google Workspace',
+                  icon: <Calendar className="h-4 w-4" />,
+                  onClick: () => onNavigateView('google_workspace'),
+                },
+              ]}
+            />
+          )}
+
+          {capabilities.canUseQuickExtract && (
+            <SmartDashboardCard
+              testId="dashboard-card-quick-extract"
+              title="السحب الذكي OCR"
+              subtitle="تفريغ الكشوفات من PDF والصور والكاميرا بدقة Zero-Trust."
+              metaText="PDF · صور · كاميرا · UCRS"
+              icon={<ScanLine className="h-5 w-5" />}
+              actionLabel="فتح السحب الذكي"
+              onOpen={() => onNavigateView('quick_extract')}
+              subIcons={[
+                {
+                  id: 'portal-ocr',
+                  label: 'PDF',
+                  hint: 'سحب الجداول من ملفات PDF والمستندات',
+                  icon: <ScanLine className="h-4 w-4" />,
+                  onClick: () => onNavigateView('quick_extract'),
+                },
+                {
+                  id: 'portal-cam',
+                  label: 'الكاميرا',
+                  hint: 'التقاط دفاتر التوزيع مباشرة وتحليلها',
+                  icon: <Camera className="h-4 w-4" />,
+                  onClick: () => onNavigateView('quick_extract'),
+                },
+                {
+                  id: 'portal-ocr-set',
+                  label: 'المطابقة',
+                  hint: 'قواعد التدقيق والعتبة الآمنة للسحب الذكي',
+                  icon: <Sparkles className="h-4 w-4" />,
+                  onClick: () => onNavigateView('settings', 'quick_extract_settings'),
+                },
+                {
+                  id: 'portal-morrow',
+                  label: 'Morrow',
+                  hint: 'تشغيل مركز قيادة الذكاء الاصطناعي Morrow',
+                  icon: <Bot className="h-4 w-4" />,
+                  onClick: () => onNavigateView('morrow_center'),
+                },
+              ]}
+            />
+          )}
+
+          <SmartDashboardCard
+            testId="dashboard-card-lists-settings"
+            title="القوائم والعلاقات والإعدادات"
+            subtitle="القوائم الجاهزة، متابعة التوصيل، الأرشفة الشهرية، والسبج والذهب."
+            metaText={`${monthlyArchives.length} أرشيف · ${relations.length} متابعة`}
+            icon={<ListChecks className="h-5 w-5" />}
+            actionLabel="فتح القوائم الجاهزة"
+            onOpen={() => onNavigateView('ready_lists')}
+            subIcons={[
+              {
+                id: 'portal-lists',
+                label: 'القوائم',
+                hint: 'إدارة القوائم الجاهزة للتوصيل والتصدير',
+                icon: <ListChecks className="h-4 w-4" />,
+                onClick: () => onNavigateView('ready_lists'),
+              },
+              {
+                id: 'portal-rel',
+                label: 'العلاقات',
+                hint: 'متابعة التوصيل والديون والتذكيرات',
+                icon: <Share2 className="h-4 w-4" />,
+                onClick: () => onNavigateView('relationships'),
+              },
+              {
+                id: 'portal-theme',
+                label: 'المظهر',
+                hint: 'السبج والذهب، الثيمات الـ 12 والخطوط',
+                icon: <Palette className="h-4 w-4" />,
+                onClick: () => onNavigateView('settings', 'appearance'),
+              },
+              {
+                id: 'portal-sec',
+                label: 'الأمان',
+                hint: 'قفل الخصوصية، النسخ الاحتياطي، والصلاحيات',
+                icon: <Shield className="h-4 w-4" />,
+                onClick: () => onNavigateView('settings', 'security_data'),
+              },
+            ]}
+          />
+        </div>
+      </section>
+    );
+  };
+
+  const renderRadarComparisonSection = () => (
+    <section
+      key="radar_comparison"
+      className="grid grid-cols-1 gap-6 lg:grid-cols-12"
+    >
+      {/* Left: Agency Smart Audit & Alerts Radar */}
+      <div className="nexus-squircle lg:col-span-5 p-5 flex flex-col justify-between space-y-4">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <NexusDuotoneIcon sizeClass="h-8 w-8">
+                <Sparkles className="h-4 w-4" />
+              </NexusDuotoneIcon>
+              <h2 className="text-sm font-extrabold">رادار ذكاء الوكالات</h2>
+            </div>
+            <span
+              className="text-[11px] font-bold tabular-nums"
+              style={{
+                color:
+                  smartAgencySignals.length > 0 ? 'var(--warning)' : 'var(--success)',
+              }}
+            >
+              {smartAgencySignals.length > 0
+                ? `${smartAgencySignals.length} تنبيه ذكي`
+                : 'سليم 100%'}
+            </span>
+          </div>
+
+          {smartAgencySignals.length === 0 ? (
+            <div
+              className="flex items-center gap-3 rounded-2xl border p-4 text-xs"
+              style={{
+                backgroundColor: 'var(--success-bg)',
+                borderColor:
+                  'color-mix(in srgb, var(--success) 35%, var(--border-color))',
+                color: 'var(--success)',
+              }}
+            >
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+              <div>
+                <div className="font-extrabold">كافة سجلات الوكالات متوازنة وسليمة</div>
+                <div className="mt-0.5 opacity-90">
+                  لا توجد أسماء مكررة أو أرقام وطنية مفقودة أو عجز مالي في الوكالات.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {smartAgencySignals.map((sig) => {
+                const accent =
+                  sig.severity === 'danger'
+                    ? 'var(--danger)'
+                    : sig.severity === 'warning'
+                    ? 'var(--warning)'
+                    : 'var(--accent)';
+                return (
+                  <button
+                    key={sig.id}
+                    type="button"
+                    onClick={() => onOpenAgencyRoster(sig.agencyId)}
+                    className="nexus-squircle-interactive flex w-full items-start justify-between gap-3 rounded-2xl border p-3 text-right"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <AlertTriangle
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                        style={{ color: accent }}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-extrabold">
+                          {sig.title}
+                        </div>
+                        <div
+                          className="mt-0.5 text-[11px]"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {sig.detail}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className="shrink-0 text-[11px] font-bold whitespace-nowrap"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      فحص
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div
+          className="flex items-center justify-between border-t pt-3 text-[11px]"
+          style={{
+            borderColor: 'var(--border-color)',
+            color: 'var(--text-muted)',
+          }}
+        >
+          <span>يتم فحص التطابق والأرصدة تلقائياً من السجلات الحية</span>
+          <span className="font-bold tabular-nums">
+            {calculationSettings.kgPerIndividual} كغم ·{' '}
+            {calculationSettings.feePerIndividualIqd} د.ع
+          </span>
+        </div>
+      </div>
+
+      {/* Right: Interactive Portfolio Comparison Chart */}
+      <div className="nexus-squircle lg:col-span-7 p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <NexusDuotoneIcon sizeClass="h-8 w-8">
+              <BarChart3 className="h-4 w-4" />
+            </NexusDuotoneIcon>
+            <h2 className="text-sm font-extrabold">مقارنة أداء الوكالات</h2>
+          </div>
+
+          <div
+            className="inline-flex rounded-full border p-1 text-[11px] font-bold"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            {(
+              [
+                ['individuals', 'الأفراد'],
+                ['bags', 'الأكياس'],
+                ['profit', 'صافي الربح'],
+                ['households', 'العوائل'],
+              ] as Array<[ComparisonMetric, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setComparisonMetric(key)}
+                className="nexus-pill-btn px-3 py-1 whitespace-nowrap"
+                style={{
+                  backgroundColor:
+                    comparisonMetric === key ? 'var(--bg-surface)' : 'transparent',
+                  color:
+                    comparisonMetric === key ? 'var(--accent)' : 'var(--text-muted)',
+                  boxShadow:
+                    comparisonMetric === key ? 'var(--card-shadow)' : 'none',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {comparisonBars.map((bar) => (
+            <button
+              key={bar.agency.id}
+              type="button"
+              onClick={() => onOpenAgencyRoster(bar.agency.id)}
+              className="group block w-full text-right"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                <span className="flex items-center gap-1.5 font-bold group-hover:text-[var(--accent)] transition-colors">
+                  <span>{bar.agency.icon}</span>
+                  <span>{bar.agency.name}</span>
+                </span>
+                <span className="font-extrabold tabular-nums">{bar.formatted}</span>
+              </div>
+              <div className="nexus-progress-track h-2.5 w-full">
+                <div
+                  className="nexus-progress-glow h-full"
+                  style={{
+                    width: `${bar.widthPct}%`,
+                  }}
+                />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderMiniWidgetsSection = () => {
+    if (layoutPrefs.activeMiniWidgets.length === 0) return null;
+    return (
+      <section
+        key="mini_widgets"
+        aria-label="الأقسام المصغرة الجاهزة"
+        className="space-y-3"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+            <h2 className="text-sm font-extrabold">
+              الأقسام المصغرة التفاعلية ({layoutPrefs.activeMiniWidgets.length})
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCustomizerOpen(true)}
+            className="text-xs font-bold hover:underline"
+            style={{ color: 'var(--accent)' }}
+          >
+            إدارة الأقسام المصغرة
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {layoutPrefs.activeMiniWidgets.includes('quick_calculator') && (
+            <div className="nexus-squircle p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold">
+                  <Calculator className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <span>حاسبة الحصص السريعة</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleMiniWidget('quick_calculator')}
+                  aria-label="إغلاق حاسبة الحصص السريعة"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={miniCalcIndividuals}
+                  onChange={(e) => setMiniCalcIndividuals(e.target.value)}
+                  className="h-9 w-24 rounded-xl border px-3 text-sm font-black tabular-nums"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                />
+                <div className="flex-1 text-xs">
+                  <div className="font-black tabular-nums" style={{ color: 'var(--accent)' }}>
+                    {miniCalcPreview.quota}
+                  </div>
+                  <div className="tabular-nums font-bold" style={{ color: 'var(--success)' }}>
+                    {miniCalcPreview.alloc
+                      ? formatIqd(miniCalcPreview.alloc.priceIqd)
+                      : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {layoutPrefs.activeMiniWidgets.includes('live_expenses') && (
+            <div className="nexus-squircle p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold">
+                  <Wallet className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <span>متتبع المصروفات والأجور الفوري</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleMiniWidget('live_expenses')}
+                  aria-label="إغلاق متتبع المصروفات"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] tabular-nums">
+                <div
+                  className="rounded-xl border p-2"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div style={{ color: 'var(--text-muted)' }}>أجور العمال</div>
+                  <div className="font-black" style={{ color: 'var(--warning)' }}>
+                    {formatIqd(masterMetrics.workerWages)}
+                  </div>
+                </div>
+                <div
+                  className="rounded-xl border p-2"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div style={{ color: 'var(--text-muted)' }}>إجمالي الصرفيات</div>
+                  <div className="font-black" style={{ color: 'var(--danger)' }}>
+                    {formatIqd(masterMetrics.generalExpenses)}
+                  </div>
+                </div>
+              </div>
+
+              {onAddExpense && capabilities.canManageFinance && agencies[0] && (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={quickExpCategory}
+                    onChange={(e) =>
+                      setQuickExpCategory(e.target.value as ExpenseCategory)
+                    }
+                    className="h-8 rounded-lg border px-1.5 text-[11px] font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <option value="worker_wages">أجور</option>
+                    <option value="packaging">تعبئة</option>
+                    <option value="hospitality">ضيافة</option>
+                    <option value="custom">خاص</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={quickExpTitle}
+                    onChange={(e) => setQuickExpTitle(e.target.value)}
+                    placeholder="البيان..."
+                    className="h-8 min-w-0 flex-1 rounded-lg border px-2 text-[11px]"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={quickExpAmount}
+                    onChange={(e) => setQuickExpAmount(e.target.value)}
+                    placeholder="المبلغ"
+                    className="h-8 w-20 rounded-lg border px-2 text-[11px] tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const amt = Number(quickExpAmount);
+                      if (!quickExpTitle.trim() || !Number.isFinite(amt) || amt <= 0)
+                        return;
+                      onAddExpense({
+                        agencyId: agencies[0].id,
+                        description: quickExpTitle.trim(),
+                        amountIqd: amt,
+                        category: quickExpCategory,
+                      });
+                      setQuickExpTitle('');
+                      setQuickExpAmount('');
+                    }}
+                    className="nexus-pill-btn min-h-[34px] h-8 px-3.5 text-[11px] font-extrabold"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                    }}
+                  >
+                    حفظ
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {layoutPrefs.activeMiniWidgets.includes('quick_lookup') && (
+            <div className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold">
+                  <Search className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <span>بحث سريع عن مستفيد</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleMiniWidget('quick_lookup')}
+                  aria-label="إغلاق البحث السريع"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <input
+                type="search"
+                value={miniLookupQuery}
+                onChange={(e) => setMiniLookupQuery(e.target.value)}
+                placeholder="اكتب اسم المستفيد أو الرقم الوطني..."
+                className="h-9 w-full rounded-xl border px-3 text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+              {miniLookupMatches.length > 0 && (
+                <div className="space-y-1 max-h-28 overflow-y-auto">
+                  {miniLookupMatches.map(({ person, agencyName }) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => onOpenAgencyRoster(person.agencyId)}
+                      className="flex w-full items-center justify-between rounded-lg border px-2.5 py-1.5 text-[11px] hover:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <span className="font-bold truncate">{person.name}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {agencyName} · {person.individuals ?? 0} فرد
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {layoutPrefs.activeMiniWidgets.includes('ocr_scanner') && (
+            <div className="nexus-squircle p-4 sm:p-5 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold">
+                  <ScanLine className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <span>بطاقة السحب الذكي OCR</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleMiniWidget('ocr_scanner')}
+                  aria-label="إغلاق بطاقة السحب الذكي"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                ارفع ملفات PDF أو صور الدفاتر لاستخراج المستفيدين ومطابقتهم تلقائياً.
+              </p>
+              {onNavigateView && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateView('quick_extract')}
+                  className="nexus-pill-btn min-h-[38px] text-xs font-extrabold"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  تشغيل السحب الذكي الآن
+                </button>
+              )}
+            </div>
+          )}
+
+          {layoutPrefs.activeMiniWidgets.includes('tasks_reminders') && (
+            <div className="nexus-squircle p-4 sm:p-5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold">
+                  <Calendar className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                  <span>مهام وتذكيرات اليوم ({relations.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleMiniWidget('tasks_reminders')}
+                  aria-label="إغلاق مهام اليوم"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {relations.length === 0 ? (
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  لا توجد تذكيرات مجدولة حالياً.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                  {relations.slice(0, 3).map((rel) => (
+                    <button
+                      key={rel.id}
+                      type="button"
+                      onClick={() => onNavigateView?.('relationships')}
+                      className="flex w-full items-center justify-between rounded-lg border px-2.5 py-1.5 text-[11px] text-right hover:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <span className="font-bold truncate">{rel.personName}</span>
+                      <span
+                        className="truncate max-w-[140px]"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {rel.note}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  const sectionRenderers: Record<HomeSectionId, () => React.ReactNode> = {
+    portfolio: renderPortfolioSection,
+    agencies: renderAgenciesSection,
+    workspace_tools: renderWorkspaceToolsSection,
+    radar_comparison: renderRadarComparisonSection,
+    mini_widgets: renderMiniWidgetsSection,
+  };
+
+  return (
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-24 sm:px-6 lg:pb-10">
+      {/* 1. Executive Agencies Command Header */}
+      <section className="nexus-squircle p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <NexusDuotoneIcon sizeClass="h-11 w-11">
+            <Building2 className="h-5 w-5" />
+          </NexusDuotoneIcon>
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-black tracking-tight sm:text-2xl">
+                الوكالات والتوزيع
+              </h1>
+              {activePeriod && (
+                <span
+                  className="text-xs font-extrabold"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  · {activePeriod.quotaName} · {activePeriod.monthName}{' '}
+                  {activePeriod.year}
+                </span>
+              )}
+            </div>
+            <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+              مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
+              {previousArchiveDelta && (
+                <span
+                  className="mr-2 font-bold tabular-nums"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  ({previousArchiveDelta.diff >= 0 ? '+' : ''}
+                  {previousArchiveDelta.diff} فرد مقارنة بأرشيف{' '}
+                  {previousArchiveDelta.archiveLabel})
+                </span>
+              )}
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={onOpenMasterRoster}
-            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+            className="nexus-pill-btn inline-flex min-h-[42px] items-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap"
             style={{
-              backgroundColor: 'var(--bg-surface)',
+              backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
               color: 'var(--text-primary)',
             }}
@@ -397,40 +1921,48 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             <span>السجل الشامل للوكالات</span>
           </button>
 
-          {capabilities.canManageAgencies && (
-            <button
-              type="button"
-              onClick={() => setAddOpen((prev) => !prev)}
-              className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold whitespace-nowrap transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              {addOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              <span>{addOpen ? 'إلغاء' : 'إضافة وكالة'}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            data-testid="home-customizer-btn"
+            onClick={() => setCustomizerOpen(true)}
+            className="nexus-pill-btn inline-flex min-h-[42px] items-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor:
+                'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
+              color: 'var(--accent)',
+            }}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            <span>تخصيص الواجهة</span>
+            {(layoutPrefs.activeMiniWidgets.length > 0 ||
+              layoutPrefs.hiddenSections.length > 0) && (
+              <span
+                className="font-black tabular-nums"
+                style={{ color: 'var(--accent)' }}
+              >
+                · {layoutPrefs.activeMiniWidgets.length +
+                  layoutPrefs.hiddenSections.length}
+              </span>
+            )}
+          </button>
         </div>
       </section>
 
-      {/* Optional Add New Agency Drawer */}
-      {addOpen && capabilities.canManageAgencies && (
-        <form
-          onSubmit={handleCreateAgency}
-          className="tabrix-view-enter rounded-2xl border p-5 space-y-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--accent)',
-            boxShadow: 'var(--card-shadow)',
-          }}
+      {/* Create New Agency — Full-Screen Push Page */}
+      {capabilities.canManageAgencies && (
+        <FullScreenPushPage
+          open={addOpen}
+          onBack={() => setAddOpen(false)}
+          title="إنشاء وكالة توزيع جديدة"
+          subtitle="أضف وكالة جديدة وحدد رمزها التعريفي لفتح جدولها فوراً"
+          icon={<Building2 className="h-4 w-4" />}
+          maxWidthClass="max-w-2xl"
         >
-          <div className="flex items-center gap-2 text-sm font-extrabold">
-            <Building2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <span>إنشاء وكالة توزيع جديدة</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+          <form
+            onSubmit={handleCreateAgency}
+            className="nexus-squircle p-5 sm:p-6 space-y-5"
+          >
             <div>
               <label
                 htmlFor="new-agency-name"
@@ -445,7 +1977,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 value={newAgencyName}
                 onChange={(e) => setNewAgencyName(e.target.value)}
                 placeholder="مثال: وكالة السلام التموينية..."
-                className="min-h-[44px] w-full rounded-xl border px-3.5 text-sm font-semibold"
+                className="min-h-[44px] w-full rounded-2xl border px-3.5 text-sm font-semibold"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -454,14 +1986,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             </div>
 
             <div>
-              <span className="mb-1.5 block text-xs font-bold">الرمز التعريفي</span>
-              <div className="flex flex-wrap gap-1.5">
+              <span className="mb-2 block text-xs font-bold">الرمز التعريفي</span>
+              <div className="flex flex-wrap gap-2">
                 {AGENCY_ICON_PRESETS.map((ic) => (
                   <button
                     key={ic}
                     type="button"
                     onClick={() => setNewAgencyIcon(ic)}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border text-lg transition-colors"
+                    className="nexus-pill-btn flex h-11 w-11 items-center justify-center border text-lg"
                     style={{
                       backgroundColor:
                         newAgencyIcon === ic ? 'var(--bg-nav-active)' : 'var(--bg-main)',
@@ -475,787 +2007,253 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="min-h-[44px] rounded-xl px-5 py-2 text-xs font-extrabold whitespace-nowrap"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              اعتماد وفتح الوكالة
-            </button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAddOpen(false)}
+                className="nexus-pill-btn border px-4 py-2 text-xs font-bold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                className="nexus-pill-btn min-h-[44px] px-6 py-2 text-xs font-extrabold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                اعتماد وفتح الوكالة
+              </button>
+            </div>
+          </form>
+        </FullScreenPushPage>
       )}
 
-      {/* 2. Portfolio Master Strip (السجل الشامل — KPI Executive Bar) */}
-      <section
-        aria-label="الملخص العام للوكالات"
-        className="rounded-2xl border p-5 sm:p-6"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-          boxShadow: 'var(--card-shadow)',
-        }}
+      {/* Dynamic Ordered & Toggleable Home Sections */}
+      {layoutPrefs.sectionOrder
+        .filter((id) => !layoutPrefs.hiddenSections.includes(id))
+        .map((id) => sectionRenderers[id]?.())}
+
+      {/* Workspace Studio — Home Layout & Mini-Widgets Customizer Sheet */}
+      <BottomSheet
+        open={customizerOpen}
+        onClose={() => setCustomizerOpen(false)}
+        title="استوديو تخصيص الواجهة الرئيسية"
+        subtitle="إضافة وكالة جديدة، إعادة ترتيب الأقسام بالسحب أو الأسهم، وتفعيل الأقسام المصغرة"
+        icon={<SlidersHorizontal className="h-5 w-5" />}
       >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 pb-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <h2 className="text-sm font-extrabold">
-              محفظة الوكالات الموحدة ({agencies.length} وكالة)
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenMasterRoster}
-            className="inline-flex items-center gap-1 text-xs font-bold transition-opacity hover:opacity-80"
-            style={{ color: 'var(--accent)' }}
-          >
-            <span>استعراض كافة السجلات</span>
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span className="font-semibold">العائلات النشطة</span>
-              <Users className="h-3.5 w-3.5" />
-            </div>
-            <div className="mt-1.5 text-2xl font-black tabular-nums">
-              {masterMetrics.activeHouseholds.toLocaleString('en-US')}
-            </div>
-            <div className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-              من أصل {masterMetrics.registeredHouseholds.toLocaleString('en-US')} سجل مسجل
-            </div>
-          </div>
-
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span className="font-semibold">الأفراد المشمولون</span>
-              <Activity className="h-3.5 w-3.5" />
-            </div>
+        <div className="space-y-6">
+          {/* Quick Action: Add New Agency */}
+          {capabilities.canManageAgencies && (
             <div
-              className="mt-1.5 text-2xl font-black tabular-nums"
-              style={{ color: 'var(--accent)' }}
-            >
-              {masterMetrics.activeIndividuals.toLocaleString('en-US')}
-            </div>
-            <div className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-              {masterBlockBreakdown.fullyBlockedCount} محجوب كلياً · {masterBlockBreakdown.partialBlockedCount} جزئياً
-            </div>
-          </div>
-
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span className="font-semibold">حصة الطحين التقديرية</span>
-              <Package className="h-3.5 w-3.5" />
-            </div>
-            <div className="mt-1.5 text-2xl font-black tabular-nums">
-              {masterMetrics.fullBags.toLocaleString('en-US')}{' '}
-              <span className="text-xs font-bold">كيس</span>
-              {masterMetrics.remainderKg > 0 && (
-                <span className="text-sm font-extrabold mr-1.5">
-                  + {masterMetrics.remainderKg} كغم
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-              الوزن الصافي: {masterMetrics.totalKg.toLocaleString('en-US')} كغم
-            </div>
-          </div>
-
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span className="font-semibold">صافي الربح التقديري</span>
-              <Wallet className="h-3.5 w-3.5" />
-            </div>
-            <div
-              className="mt-1.5 text-2xl font-black tabular-nums"
-              style={{
-                color:
-                  masterMetrics.profit >= 0 ? 'var(--success)' : 'var(--danger)',
-              }}
-            >
-              {formatIqd(masterMetrics.profit)}
-            </div>
-            <div className="mt-1 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-              الإيراد {formatIqd(masterMetrics.revenue)} · المصاريف{' '}
-              {formatIqd(masterMetrics.totalExpenses)}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 3. Smart Agency Intelligence + Visual Comparison */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Left: Agency Smart Audit & Alerts Radar */}
-        <div
-          className="lg:col-span-5 rounded-2xl border p-5 flex flex-col justify-between space-y-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-            boxShadow: 'var(--card-shadow)',
-          }}
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                <h2 className="text-sm font-extrabold">رادار ذكاء الوكالات</h2>
-              </div>
-              <span
-                className="text-[11px] font-bold tabular-nums"
-                style={{
-                  color:
-                    smartAgencySignals.length > 0 ? 'var(--warning)' : 'var(--success)',
-                }}
-              >
-                {smartAgencySignals.length > 0
-                  ? `${smartAgencySignals.length} تنبيه ذكي`
-                  : 'سليم 100%'}
-              </span>
-            </div>
-
-            {smartAgencySignals.length === 0 ? (
-              <div
-                className="flex items-center gap-3 rounded-xl border p-4 text-xs"
-                style={{
-                  backgroundColor: 'var(--success-bg)',
-                  borderColor: 'color-mix(in srgb, var(--success) 35%, var(--border-color))',
-                  color: 'var(--success)',
-                }}
-              >
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
-                <div>
-                  <div className="font-extrabold">كافة سجلات الوكالات متوازنة وسليمة</div>
-                  <div className="mt-0.5 opacity-90">
-                    لا توجد أسماء مكررة أو أرقام وطنية مفقودة أو عجز مالي في الوكالات.
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {smartAgencySignals.map((sig) => {
-                  const accent =
-                    sig.severity === 'danger'
-                      ? 'var(--danger)'
-                      : sig.severity === 'warning'
-                      ? 'var(--warning)'
-                      : 'var(--accent)';
-                  return (
-                    <button
-                      key={sig.id}
-                      type="button"
-                      onClick={() => onOpenAgencyRoster(sig.agencyId)}
-                      className="flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-right transition-colors hover:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <AlertTriangle
-                          className="mt-0.5 h-4 w-4 shrink-0"
-                          style={{ color: accent }}
-                        />
-                        <div className="min-w-0">
-                          <div className="truncate text-xs font-extrabold">
-                            {sig.title}
-                          </div>
-                          <div
-                            className="mt-0.5 text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {sig.detail}
-                          </div>
-                        </div>
-                      </div>
-                      <span
-                        className="shrink-0 text-[11px] font-bold whitespace-nowrap"
-                        style={{ color: 'var(--accent)' }}
-                      >
-                        فحص
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div
-            className="flex items-center justify-between border-t pt-3 text-[11px]"
-            style={{
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <span>يتم فحص التطابق والأرصدة تلقائياً من السجلات الحية</span>
-            <span className="font-bold tabular-nums">
-              {calculationSettings.kgPerIndividual} كغم · {calculationSettings.feePerIndividualIqd} د.ع
-            </span>
-          </div>
-        </div>
-
-        {/* Right: Interactive Portfolio Comparison Chart */}
-        <div
-          className="lg:col-span-7 rounded-2xl border p-5 space-y-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-            boxShadow: 'var(--card-shadow)',
-          }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-              <h2 className="text-sm font-extrabold">مقارنة أداء الوكالات</h2>
-            </div>
-
-            <div
-              className="inline-flex rounded-xl border p-1 text-[11px] font-bold"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5"
               style={{
                 backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
+                borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
               }}
             >
-              {(
-                [
-                  ['individuals', 'الأفراد'],
-                  ['bags', 'الأكياس'],
-                  ['profit', 'صافي الربح'],
-                  ['households', 'العوائل'],
-                ] as Array<[ComparisonMetric, string]>
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setComparisonMetric(key)}
-                  className="rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors"
-                  style={{
-                    backgroundColor:
-                      comparisonMetric === key ? 'var(--bg-surface)' : 'transparent',
-                    color:
-                      comparisonMetric === key ? 'var(--accent)' : 'var(--text-muted)',
-                    boxShadow:
-                      comparisonMetric === key ? 'var(--card-shadow)' : 'none',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {comparisonBars.map((bar) => (
+              <div>
+                <div className="text-xs font-black">إدارة الوكالات</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  إنشاء وكالة توزيع جديدة وفتح جدولها مباشرة
+                </div>
+              </div>
               <button
-                key={bar.agency.id}
                 type="button"
-                onClick={() => onOpenAgencyRoster(bar.agency.id)}
-                className="group block w-full text-right"
+                onClick={() => {
+                  setAddOpen(true);
+                  setCustomizerOpen(false);
+                }}
+                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 px-4 text-xs font-extrabold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
               >
-                <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                  <span className="flex items-center gap-1.5 font-bold group-hover:text-[var(--accent)] transition-colors">
-                    <span>{bar.agency.icon}</span>
-                    <span>{bar.agency.name}</span>
-                  </span>
-                  <span className="font-extrabold tabular-nums">
-                    {bar.formatted}
-                  </span>
-                </div>
-                <div
-                  className="h-2.5 w-full overflow-hidden rounded-full"
-                  style={{ backgroundColor: 'var(--bg-main)' }}
-                >
-                  <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${bar.widthPct}%`,
-                      backgroundColor: 'var(--accent)',
-                    }}
-                  />
-                </div>
+                <Plus className="h-4 w-4" />
+                <span>إضافة وكالة جديدة</span>
               </button>
-            ))}
-          </div>
-        </div>
-      </section>
+            </div>
+          )}
 
-      {/* 4. Filter/Search Strip + Unified Luxury Agency Cards Grid */}
-      <section className="space-y-4">
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
-            <div
-              className="flex items-center gap-2 rounded-xl border px-3 h-10 flex-1 max-w-xs"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <Search className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ابحث باسم الوكالة..."
-                className="w-full bg-transparent text-xs outline-none"
-              />
+          {/* Section Order & Show/Hide Controls */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black">
+                ترتيب وإظهار أقسام الرئيسية (اسحب أو استخدم الأسهم)
+              </h3>
+              <button
+                type="button"
+                onClick={resetHomeLayout}
+                className="inline-flex items-center gap-1 text-[11px] font-bold hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>استعادة الترتيب الافتراضي</span>
+              </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1">
-              {(
-                [
-                  ['all', `الكل (${agencyRows.length})`],
-                  ['active', `نشطة (${agencyRows.filter((r) => !r.agency.isLocked).length})`],
-                  [
-                    'needs_audit',
-                    `تحتاج انتباه (${agencyRows.filter((r) => r.hasIssues).length})`,
-                  ],
-                  ['locked', `مقفلة (${agencyRows.filter((r) => r.agency.isLocked).length})`],
-                ] as Array<[AgencyFilterTab, string]>
-              ).map(([tabId, label]) => (
-                <button
-                  key={tabId}
-                  type="button"
-                  onClick={() => setFilterTab(tabId)}
-                  className="min-h-[36px] rounded-xl border px-3 py-1 text-xs font-bold whitespace-nowrap transition-colors"
-                  style={{
-                    backgroundColor:
-                      filterTab === tabId ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                    borderColor:
-                      filterTab === tabId ? 'var(--accent)' : 'var(--border-color)',
-                    color: filterTab === tabId ? 'var(--accent)' : 'var(--text-muted)',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as AgencySortKey)}
-            aria-label="ترتيب الوكالات"
-            className="min-h-[38px] rounded-xl border px-3 py-1.5 text-xs font-bold"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <option value="default">الترتيب الافتراضي</option>
-            <option value="individuals">الأكثر أفراداً</option>
-            <option value="profit">الأعلى صافي ربح</option>
-            <option value="households">الأكثر عوائل</option>
-          </select>
-        </div>
-
-        {/* Hidden image uploader for agency avatar */}
-        <input
-          ref={logoFileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            if (editingAgencyId !== null) {
-              void handleLogoUpload(editingAgencyId, e);
-            }
-          }}
-        />
-
-        {filteredAgencies.length === 0 ? (
-          <div
-            className="rounded-2xl border p-10 text-center text-xs"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-muted)',
-            }}
-          >
-            لا توجد وكالات مطابقة لخيار البحث أو التصفية الحالي.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {filteredAgencies.map((row) => {
-              const { agency, metrics, audits, missingIdCount, sharePct } = row;
-              const isEditing = editingAgencyId === agency.id;
-              const issuesTotal = audits.length + missingIdCount;
-
-              return (
-                <article
-                  key={agency.id}
-                  className="flex flex-col justify-between rounded-2xl border p-5 transition-colors hover:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: isEditing ? 'var(--accent)' : 'var(--border-color)',
-                    boxShadow: 'var(--card-shadow)',
-                  }}
-                >
-                  {isEditing ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold">
-                          تعديل بيانات الوكالة
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setEditingAgencyId(null)}
-                          className="rounded-lg p-1 hover:bg-[var(--bg-main)]"
-                          aria-label="إغلاق التعديل"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-[11px] font-bold">
-                          اسم الوكالة
-                        </label>
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className="min-h-[40px] w-full rounded-xl border px-3 text-xs font-bold"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold">
-                          <span>الشعار أو الرمز</span>
-                          <button
-                            type="button"
-                            onClick={() => logoFileInputRef.current?.click()}
-                            className="inline-flex items-center gap-1 font-bold"
-                            style={{ color: 'var(--accent)' }}
-                          >
-                            <Upload className="h-3 w-3" />
-                            <span>رفع صورة</span>
-                          </button>
+            <div className="space-y-2">
+              {layoutPrefs.sectionOrder.map((secId, idx) => {
+                const isHidden = layoutPrefs.hiddenSections.includes(secId);
+                const meta = HOME_SECTION_META[secId];
+                return (
+                  <div
+                    key={secId}
+                    draggable
+                    onDragStart={() => setDragSectionId(secId)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragSectionId) {
+                        reorderSectionDrag(dragSectionId, secId);
+                        setDragSectionId(null);
+                      }
+                    }}
+                    className="flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors"
+                    style={{
+                      backgroundColor: isHidden
+                        ? 'var(--bg-main)'
+                        : 'var(--bg-surface)',
+                      borderColor:
+                        dragSectionId === secId
+                          ? 'var(--accent)'
+                          : 'var(--border-color)',
+                      opacity: isHidden ? 0.65 : 1,
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <GripVertical
+                        className="h-4 w-4 shrink-0 cursor-grab"
+                        style={{ color: 'var(--text-muted)' }}
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-extrabold truncate">
+                          {meta.title}
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {AGENCY_ICON_PRESETS.map((ic) => (
-                            <button
-                              key={ic}
-                              type="button"
-                              onClick={() => setEditIcon(ic)}
-                              className="flex h-9 w-9 items-center justify-center rounded-lg border text-base"
-                              style={{
-                                backgroundColor:
-                                  editIcon === ic
-                                    ? 'var(--bg-nav-active)'
-                                    : 'var(--bg-main)',
-                                borderColor:
-                                  editIcon === ic
-                                    ? 'var(--accent)'
-                                    : 'var(--border-color)',
-                              }}
-                            >
-                              {ic}
-                            </button>
-                          ))}
+                        <div
+                          className="text-[11px] truncate"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {meta.subtitle}
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (editName.trim()) {
-                              onUpdateAgencyDetails(agency.id, {
-                                name: editName.trim(),
-                                icon: editIcon,
-                              });
-                            }
-                            setEditingAgencyId(null);
-                          }}
-                          className="flex-1 min-h-[40px] rounded-xl text-xs font-extrabold"
-                          style={{
-                            backgroundColor: 'var(--accent)',
-                            color: 'var(--accent-fg)',
-                          }}
-                        >
-                          حفظ التغييرات
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingAgencyId(null)}
-                          className="min-h-[40px] rounded-xl border px-4 text-xs font-bold"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          إلغاء
-                        </button>
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      {/* Card Header */}
-                      <div className="flex items-start justify-between gap-2 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                        <div className="flex min-w-0 items-center gap-3">
-                          {renderAgencyAvatar(agency.icon, 'lg')}
-                          <div className="min-w-0">
-                            <h3 className="truncate text-base font-extrabold">
-                              {agency.name}
-                            </h3>
-                            <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-                              <span
-                                className="inline-flex items-center gap-1 font-bold"
-                                style={{
-                                  color: agency.isLocked
-                                    ? 'var(--warning)'
-                                    : 'var(--success)',
-                                }}
-                              >
-                                {agency.isLocked ? (
-                                  <Lock className="h-3 w-3" />
-                                ) : (
-                                  <Unlock className="h-3 w-3" />
-                                )}
-                                <span>{agency.isLocked ? 'مقفلة' : 'نشطة'}</span>
-                              </span>
-                              <span style={{ color: 'var(--border-color)' }}>•</span>
-                              <span
-                                className="tabular-nums font-semibold"
-                                style={{ color: 'var(--text-muted)' }}
-                              >
-                                {sharePct}% من الإجمالي
-                              </span>
-                            </div>
-                          </div>
-                        </div>
 
-                        {capabilities.canManageAgencies && (
-                          <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateAgencyDetails(agency.id, {
-                                  isLocked: !agency.isLocked,
-                                })
-                              }
-                              title={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
-                              aria-label={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:border-[var(--accent)]"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                                color: agency.isLocked
-                                  ? 'var(--warning)'
-                                  : 'var(--text-muted)',
-                              }}
-                            >
-                              {agency.isLocked ? (
-                                <Lock className="h-3.5 w-3.5" />
-                              ) : (
-                                <Unlock className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingAgencyId(agency.id);
-                                setEditName(agency.name);
-                                setEditIcon(agency.icon);
-                              }}
-                              title="تعديل الوكالة"
-                              aria-label="تعديل الوكالة"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:border-[var(--accent)]"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                                color: 'var(--text-muted)',
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveSectionOrder(secId, 'up')}
+                        aria-label={`تحريك ${meta.title} للأعلى`}
+                        className="rounded-lg border p-1.5 disabled:opacity-30"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === layoutPrefs.sectionOrder.length - 1}
+                        onClick={() => moveSectionOrder(secId, 'down')}
+                        aria-label={`تحريك ${meta.title} للأسفل`}
+                        className="rounded-lg border p-1.5 disabled:opacity-30"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionVisibility(secId)}
+                        className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold"
+                        style={{
+                          backgroundColor: isHidden
+                            ? 'var(--bg-main)'
+                            : 'var(--bg-nav-active)',
+                          borderColor: isHidden
+                            ? 'var(--border-color)'
+                            : 'var(--accent)',
+                          color: isHidden ? 'var(--text-muted)' : 'var(--accent)',
+                        }}
+                      >
+                        {isHidden ? (
+                          <>
+                            <EyeOff className="h-3 w-3" />
+                            <span>مخفي</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-3 w-3" />
+                            <span>ظاهر</span>
+                          </>
                         )}
-                      </div>
-
-                      {/* Card Metrics 2x2 */}
-                      <div className="grid grid-cols-2 gap-2.5 py-4">
-                        <div
-                          className="rounded-xl border p-2.5"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <div
-                            className="text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            العائلات النشطة
-                          </div>
-                          <div className="mt-0.5 text-base font-black tabular-nums">
-                            {metrics.activeHouseholds.toLocaleString('en-US')}
-                          </div>
-                        </div>
-
-                        <div
-                          className="rounded-xl border p-2.5"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <div
-                            className="text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            الأفراد
-                          </div>
-                          <div
-                            className="mt-0.5 text-base font-black tabular-nums"
-                            style={{ color: 'var(--accent)' }}
-                          >
-                            {metrics.activeIndividuals.toLocaleString('en-US')}
-                          </div>
-                        </div>
-
-                        <div
-                          className="rounded-xl border p-2.5"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <div
-                            className="text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            الأكياس المطلوبة
-                          </div>
-                          <div className="mt-0.5 text-sm font-black tabular-nums">
-                            {metrics.fullBags.toLocaleString('en-US')} كيس
-                            {metrics.remainderKg > 0 && ` + ${metrics.remainderKg}ك`}
-                          </div>
-                        </div>
-
-                        <div
-                          className="rounded-xl border p-2.5"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        >
-                          <div
-                            className="text-[11px]"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            صافي الربح
-                          </div>
-                          <div
-                            className="mt-0.5 text-sm font-black tabular-nums"
-                            style={{
-                              color:
-                                metrics.profit >= 0
-                                  ? 'var(--success)'
-                                  : 'var(--danger)',
-                            }}
-                          >
-                            {formatIqd(metrics.profit)}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Share & Audit Footer */}
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span
-                              className="font-semibold"
-                              style={{
-                                color:
-                                  issuesTotal > 0 ? 'var(--warning)' : 'var(--success)',
-                              }}
-                            >
-                              {issuesTotal > 0
-                                ? `${issuesTotal} ملاحظة تحتاج مراجعة`
-                                : 'سجل مطابق ومنظم'}
-                            </span>
-                            <span
-                              className="font-bold tabular-nums"
-                              style={{ color: 'var(--text-muted)' }}
-                            >
-                              {metrics.registeredHouseholds} سجل
-                            </span>
-                          </div>
-                          <div
-                            className="h-1.5 w-full overflow-hidden rounded-full"
-                            style={{ backgroundColor: 'var(--bg-main)' }}
-                          >
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${Math.max(4, sharePct)}%`,
-                                backgroundColor: 'var(--accent)',
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => onOpenAgencyRoster(agency.id)}
-                          className="inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold whitespace-nowrap transition-colors hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                            color: 'var(--text-primary)',
-                          }}
-                        >
-                          <Table2 className="h-4 w-4" />
-                          <span>عرض جدول الوكالة</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </article>
-              );
-            })}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
-      </section>
+
+          {/* Ready-Made Mini Widgets Selector */}
+          <div className="space-y-2.5">
+            <h3 className="text-xs font-black">
+              أقسام مصغرة جاهزة للإضافة في الرئيسية
+            </h3>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {MINI_WIDGET_CATALOG.map((w) => {
+                const active = layoutPrefs.activeMiniWidgets.includes(w.id);
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => toggleMiniWidget(w.id)}
+                    className="living-control flex items-start gap-2.5 rounded-xl border p-3 text-right"
+                    style={{
+                      backgroundColor: active
+                        ? 'var(--bg-nav-active)'
+                        : 'var(--bg-main)',
+                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                    }}
+                  >
+                    <span
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                        color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {w.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold truncate">
+                          {w.title}
+                        </span>
+                        <span
+                          className="text-[10px] font-black"
+                          style={{
+                            color: active ? 'var(--accent)' : 'var(--text-muted)',
+                          }}
+                        >
+                          {active ? 'مفعّل ✓' : '+ إضافة'}
+                        </span>
+                      </div>
+                      <div
+                        className="mt-0.5 text-[11px]"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {w.subtitle}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </BottomSheet>
     </main>
   );
 };

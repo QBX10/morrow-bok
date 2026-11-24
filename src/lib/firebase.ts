@@ -31,6 +31,7 @@ googleAuthProvider.addScope('https://www.googleapis.com/auth/calendar.events');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/tasks');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/tasks.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.file');
 
 let isSigningIn = false;
 // Strictly in-memory OAuth access token (never stored in localStorage/sessionStorage)
@@ -122,14 +123,28 @@ export function initWorkspaceAuth(
   });
 }
 
-export async function googleSignIn(): Promise<{
+export async function googleSignIn(options?: {
+  selectAccount?: boolean;
+  loginHint?: string;
+}): Promise<{
   user: User;
   accessToken: string;
   idToken: string;
 }> {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, googleAuthProvider);
+    const provider = googleAuthProvider;
+    const customParams: Record<string, string> = {};
+    if (options?.selectAccount) {
+      customParams.prompt = 'select_account';
+    }
+    if (options?.loginHint?.trim()) {
+      customParams.login_hint = options.loginHint.trim();
+    }
+    if (Object.keys(customParams).length > 0) {
+      provider.setCustomParameters(customParams);
+    }
+    const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('تعذر الحصول على رمز الوصول من Google Auth.');

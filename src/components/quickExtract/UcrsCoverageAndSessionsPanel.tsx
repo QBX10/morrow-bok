@@ -15,7 +15,6 @@ import {
   Plus,
   Trash2,
   Volume2,
-  X,
 } from 'lucide-react';
 import type {
   NormalizedBox,
@@ -24,6 +23,7 @@ import type {
   UcrsSession,
 } from '../../types/agency';
 import { buildDiagnosticsForSession } from '../../utils/ucrsEngine';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface UcrsCoverageAndSessionsPanelProps {
   activeSession: UcrsSession | null;
@@ -928,97 +928,22 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
         </div>
       </section>
 
-      {/* Interactive Manual Crop Modal for Unreadable Regions */}
-      {cropModalOpen && sourceImageUrl && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="قص الجزء غير المقروء لإعادة التحليل"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
-        >
-          <div
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border shadow-2xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div
-              className="flex items-center justify-between border-b px-4 py-3"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex items-center gap-2 text-sm font-bold">
-                <Crop className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                <span>اسحب لتحديد الجزء غير المقروء أو الباهت</span>
-              </div>
-              <button
-                type="button"
-                aria-label="إغلاق نافذة القص"
-                onClick={() => setCropModalOpen(false)}
-                className="rounded-lg p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 space-y-3 overflow-y-auto p-4 text-xs">
-              <p style={{ color: 'var(--text-muted)' }}>
-                حدد المنطقة المطلوب التركيز عليها بالمؤشر ثم اضغط «تحليل ودمج هذا الجزء» لقراءته ودمجه مع الجلسة دون تكرار البقية.
-              </p>
-
-              <div
-                ref={cropContainerRef}
-                onPointerDown={(e) => {
-                  const pt = getCropPoint(e.clientX, e.clientY);
-                  if (!pt) return;
-                  setDragStart(pt);
-                  setDragCurr(pt);
-                }}
-                onPointerMove={(e) => {
-                  if (!dragStart) return;
-                  const pt = getCropPoint(e.clientX, e.clientY);
-                  if (pt) setDragCurr(pt);
-                }}
-                onPointerUp={() => {
-                  // Keep dragCurr set so user can inspect and click confirm
-                }}
-                className="relative mx-auto max-h-[55vh] w-fit cursor-crosshair select-none overflow-hidden rounded-lg border"
-                style={{
-                  borderColor: 'var(--accent)',
-                  touchAction: 'none',
-                }}
-              >
-                <img
-                  src={sourceImageUrl}
-                  alt="صورة المصدر للقص اليدوي"
-                  draggable={false}
-                  className="block max-h-[54vh] w-auto object-contain"
-                />
-                {cropBox && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${cropBox.xmin / 10}%`,
-                      top: `${cropBox.ymin / 10}%`,
-                      width: `${(cropBox.xmax - cropBox.xmin) / 10}%`,
-                      height: `${(cropBox.ymax - cropBox.ymin) / 10}%`,
-                      border: '2px dashed var(--accent)',
-                      backgroundColor: 'rgba(37, 99, 235, 0.2)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-
-            <div
-              className="flex justify-end gap-2 border-t px-4 py-3 text-xs"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
+      {/* Interactive Manual Crop Full-Screen Push Page for Unreadable Regions */}
+      {sourceImageUrl && (
+        <FullScreenPushPage
+          open={cropModalOpen}
+          onBack={() => setCropModalOpen(false)}
+          title="اسحب لتحديد الجزء غير المقروء أو الباهت"
+          subtitle="حدد المنطقة المطلوب التركيز عليها ثم اضغط تحليل ودمج هذا الجزء"
+          ariaLabel="قص الجزء غير المقروء لإعادة التحليل"
+          icon={<Crop className="h-4 w-4" />}
+          maxWidthClass="max-w-3xl"
+          footer={
+            <div className="flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setCropModalOpen(false)}
-                className="rounded-lg border px-4 py-2 font-semibold"
+                className="nexus-pill-btn border px-4 py-2 font-semibold"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 إلغاء
@@ -1031,7 +956,7 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
                   cropBox.ymax - cropBox.ymin < 15
                 }
                 onClick={handleConfirmCrop}
-                className="rounded-lg px-4 py-2 font-bold disabled:opacity-40"
+                className="nexus-pill-btn px-5 py-2 font-bold disabled:opacity-40"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -1040,8 +965,58 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
                 تحليل ودمج هذا الجزء
               </button>
             </div>
+          }
+        >
+          <div className="nexus-squircle space-y-3 p-4 sm:p-5 text-xs">
+            <p style={{ color: 'var(--text-muted)' }}>
+              حدد المنطقة المطلوب التركيز عليها بالمؤشر ثم اضغط «تحليل ودمج هذا الجزء» لقراءته ودمجه مع الجلسة دون تكرار البقية.
+            </p>
+
+            <div
+              ref={cropContainerRef}
+              onPointerDown={(e) => {
+                const pt = getCropPoint(e.clientX, e.clientY);
+                if (!pt) return;
+                setDragStart(pt);
+                setDragCurr(pt);
+              }}
+              onPointerMove={(e) => {
+                if (!dragStart) return;
+                const pt = getCropPoint(e.clientX, e.clientY);
+                if (pt) setDragCurr(pt);
+              }}
+              onPointerUp={() => {
+                // Keep dragCurr set so user can inspect and click confirm
+              }}
+              className="relative mx-auto max-h-[64vh] w-fit cursor-crosshair select-none overflow-hidden rounded-2xl border"
+              style={{
+                borderColor: 'var(--accent)',
+                touchAction: 'none',
+              }}
+            >
+              <img
+                src={sourceImageUrl}
+                alt="صورة المصدر للقص اليدوي"
+                draggable={false}
+                className="block max-h-[63vh] w-auto object-contain"
+              />
+              {cropBox && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${cropBox.xmin / 10}%`,
+                    top: `${cropBox.ymin / 10}%`,
+                    width: `${(cropBox.xmax - cropBox.xmin) / 10}%`,
+                    height: `${(cropBox.ymax - cropBox.ymin) / 10}%`,
+                    border: '2px dashed var(--accent)',
+                    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </FullScreenPushPage>
       )}
     </div>
   );

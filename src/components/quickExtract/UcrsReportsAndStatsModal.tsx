@@ -8,8 +8,8 @@ import {
   HelpCircle,
   Printer,
   Volume2,
-  X,
 } from 'lucide-react';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import type { Agency, Person, UcrsSession } from '../../types/agency';
 import {
   buildDiagnosticsForSession,
@@ -64,7 +64,7 @@ export const UcrsReportsAndStatsModal: React.FC<
     return compareSessionWithRoster(session, pool);
   }, [session, persons, compareTargetAgencyId]);
 
-  if (!open || !session || !stats) return null;
+  if (!session || !stats) return null;
 
   const handleExportExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -124,87 +124,65 @@ export const UcrsReportsAndStatsModal: React.FC<
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="التقارير والتحليل الإحصائي والمقارنة"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-5"
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-            <h2 className="text-sm font-bold sm:text-base">
-              التقارير، التشخيص، الإحصاء والمقارنة — {session.title}
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() =>
-                onSpeakText(
-                  `التقرير الإحصائي للجلسة: إجمالي ${stats.totalRows} صف، ${stats.uniqueNamesCount} اسم فريد، متوسط الأفراد ${stats.avgIndividuals}، إجمالي الإضافات ${stats.totalAdditions} والنزول ${stats.totalDecreases}. نسبة التغطية ${session.coverage.overallPercent} بالمئة.`
-                )
-              }
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <Volume2 className="h-3.5 w-3.5" />
-              <span>قراءة التقرير</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold"
-              style={{
-                borderColor: 'var(--success)',
-                color: 'var(--success)',
-              }}
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              <span>Excel</span>
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintPdf}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <Printer className="h-3.5 w-3.5" />
-              <span>طباعة / PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportJson}
-              className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>JSON</span>
-            </button>
-            <button
-              type="button"
-              aria-label="إغلاق نافذة التقارير"
-              onClick={onClose}
-              className="rounded-lg p-1.5 hover:opacity-75"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+    <FullScreenPushPage
+      open={open}
+      onClose={onClose}
+      title={`التقارير، التشخيص، الإحصاء والمقارنة — ${session.title}`}
+      subtitle="تقارير التغطية والتشخيص والمقارنة مع سجلات التطبيق"
+      icon={<BarChart3 className="h-4 w-4" />}
+      maxWidthClass="max-w-5xl"
+      headerActions={
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              onSpeakText(
+                `التقرير الإحصائي للجلسة: إجمالي ${stats.totalRows} صف، ${stats.uniqueNamesCount} اسم فريد، متوسط الأفراد ${stats.avgIndividuals}، إجمالي الإضافات ${stats.totalAdditions} والنزول ${stats.totalDecreases}. نسبة التغطية ${session.coverage.overallPercent} بالمئة.`
+              )
+            }
+            className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-xs font-semibold"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <Volume2 className="h-3.5 w-3.5" />
+            <span>قراءة</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-xs font-bold"
+            style={{
+              borderColor: 'var(--success)',
+              color: 'var(--success)',
+            }}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            <span>Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintPdf}
+            className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-xs font-bold"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportJson}
+            className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-xs font-bold"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>JSON</span>
+          </button>
         </div>
-
+      }
+    >
+      <div className="nexus-squircle overflow-hidden">
         {/* Report Section Tabs */}
         <div
-          className="flex flex-wrap gap-1 border-b px-5 py-2 text-xs"
+          className="flex flex-wrap gap-1 border-b px-5 py-2.5 text-xs"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -552,6 +530,6 @@ export const UcrsReportsAndStatsModal: React.FC<
           )}
         </div>
       </div>
-    </div>
+    </FullScreenPushPage>
   );
 };

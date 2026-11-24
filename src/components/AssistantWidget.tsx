@@ -12,11 +12,8 @@ import {
   ExternalLink,
   FileSpreadsheet,
   GitMerge,
-  Maximize2,
-  MessageSquare,
   Mic,
   MicOff,
-  Minimize2,
   MoreHorizontal,
   Navigation,
   Plus,
@@ -62,6 +59,8 @@ import {
 import { BottomSheet } from './cosmos/BottomSheet';
 import { MorrowMessageCard } from './morrow/MorrowMessageCard';
 import { PermissionGuardModal } from './permissions/PermissionGuardModal';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 
 interface AssistantWidgetProps {
   isOpen: boolean;
@@ -228,7 +227,7 @@ const COMMAND_LIBRARY: Array<{
   {
     id: 'lib_guide_calc',
     title: 'وين إعدادات الحاسبة؟',
-    subtitle: 'إرشاد مرئي spotlight إلى كبسولة الحاسبة',
+    subtitle: 'إرشاد مرئي spotlight إلى قسم الحاسبة',
     prompt: 'وريني الحاسبة',
     category: 'إرشاد',
   },
@@ -286,10 +285,9 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   onClearMessages,
   onRetryLastPrompt,
   modelHealthSnapshots = [],
-  hideLauncher = false,
+  hideLauncher: _hideLauncher = false,
 }) => {
   const [inputValue, setInputValue] = useState('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
   const [brainSheetOpen, setBrainSheetOpen] = useState(false);
   const [librarySheetOpen, setLibrarySheetOpen] = useState(false);
@@ -299,17 +297,6 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   const [micPermissionGuide, setMicPermissionGuide] = useState<MediaPermissionGuide | null>(null);
   const [checkingMicPermission, setCheckingMicPermission] = useState(false);
   const [savedPromptSet, setSavedPromptSet] = useState<Set<string>>(() => new Set());
-
-  // Draggable Floating Launcher position offset (x, y from bottom-left anchor)
-  const [fabOffset, setFabOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragInfoRef = useRef<{
-    active: boolean;
-    moved: boolean;
-    startX: number;
-    startY: number;
-    origX: number;
-    origY: number;
-  }>({ active: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
 
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
@@ -494,298 +481,283 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         </aside>
       )}
 
-      {/* Draggable Floating Launcher Pill (Primary tap -> Dedicated Full-Screen Studio; quick icon -> compact drawer) */}
-      {!isOpen && !hideLauncher && (
-        <div
-          className="no-print fixed bottom-4 left-4 z-[var(--z-floating-assistant)] flex items-center gap-1"
-          style={{
-            transform: `translate3d(${fabOffset.x}px, ${fabOffset.y}px, 0)`,
-          }}
-        >
-          <button
-            type="button"
-            onPointerDown={(e) => {
-              dragInfoRef.current = {
-                active: true,
-                moved: false,
-                startX: e.clientX,
-                startY: e.clientY,
-                origX: fabOffset.x,
-                origY: fabOffset.y,
-              };
-            }}
-            onPointerMove={(e) => {
-              if (!dragInfoRef.current.active) return;
-              const dx = e.clientX - dragInfoRef.current.startX;
-              const dy = e.clientY - dragInfoRef.current.startY;
-              if (Math.hypot(dx, dy) > 6) {
-                dragInfoRef.current.moved = true;
-                const maxX = Math.max(0, window.innerWidth - 180);
-                const maxY = Math.max(0, window.innerHeight - 140);
-                setFabOffset({
-                  x: Math.max(0, Math.min(maxX, dragInfoRef.current.origX + dx)),
-                  y: Math.max(-maxY, Math.min(40, dragInfoRef.current.origY + dy)),
-                });
-              }
-            }}
-            onPointerUp={() => {
-              const wasDrag = dragInfoRef.current.moved;
-              dragInfoRef.current.active = false;
-              if (!wasDrag) {
-                if (onOpenCommandCenter) {
-                  onOpenCommandCenter('chat');
-                } else {
-                  onToggleOpen(true);
-                }
-              }
-            }}
-            aria-label="دخول إلى المساعد الشخصي Morrow بملء الشاشة"
-            title={proactiveTip || 'اسحب للتحريك أو اضغط للدخول إلى صفحة المساعد بملء الشاشة'}
-            className="assistant-glow-btn inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-extrabold whitespace-nowrap shadow-xl cursor-grab active:cursor-grabbing touch-none transition-shadow hover:shadow-2xl"
-            style={{
-              backgroundColor: 'var(--accent)',
-              borderColor: 'var(--accent)',
-              color: 'var(--accent-fg)',
-            }}
-          >
-            <Bot className="h-4 w-4 shrink-0" />
-            <span>Morrow</span>
-            {(pendingDraftsCount > 0 || queuedTasks.length > 0) && (
-              <span className="font-mono text-[11px] font-black tabular-nums opacity-90">
-                · {pendingDraftsCount + queuedTasks.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onToggleOpen(true)}
-            aria-label="محادثة سريعة فوق الصفحة"
-            title="فتح نافذة محادثة سريعة دون مغادرة الصفحة"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border shadow-lg transition-colors hover:border-[var(--accent)]"
-            style={{
-              backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--accent)',
-              backdropFilter: 'blur(12px)',
-            }}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Non-Blocking Drawer or Fullscreen Studio Panel */}
-      {isOpen && (
-        <aside
-          aria-label="لوحة المساعد الذكي — Morrow"
-          className={`no-print fixed z-[var(--z-sheet)] flex flex-col overflow-hidden border shadow-2xl transition-all duration-200 ${
-            isFullscreen
-              ? 'inset-2 sm:inset-4 rounded-[26px]'
-              : 'top-14 bottom-4 left-3 md:left-4 w-[min(450px,calc(100vw-1.5rem))] rounded-[24px]'
-          }`}
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 96%, transparent)',
-            borderColor: 'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
-            color: 'var(--text-primary)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            boxShadow: '0 22px 54px rgba(0, 0, 0, 0.30)',
-          }}
-        >
-          {/* Slim Header */}
-          <div
-            className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                <Bot className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {onOpenCommandCenter ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onToggleOpen(false);
-                        onOpenCommandCenter('chat');
-                      }}
-                      title="فتح واجهة Morrow الكاملة"
-                      className="text-xs sm:text-sm font-black tracking-tight whitespace-nowrap hover:underline"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      Morrow
-                    </button>
-                  ) : (
-                    <h2 className="text-xs sm:text-sm font-extrabold whitespace-nowrap">Morrow</h2>
-                  )}
-                  <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
-                  <span
-                    title={statusMeta.title}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap"
-                    style={{ color: statusMeta.color }}
-                  >
-                    {connectivity === 'online' ? (
-                      <Wifi className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <WifiOff className="h-3 w-3 shrink-0" />
-                    )}
-                    <span>{statusMeta.label}</span>
-                  </span>
-                </div>
-                <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {activeBrain.shortLabel}
-                  {focusedPersonName ? ` · ${focusedPersonName}` : ''}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1 shrink-0">
-              {hasUndoableAction && onUndoLastAction && (
-                <button
-                  type="button"
-                  onClick={() => onUndoLastAction()}
-                  aria-label="تراجع عن آخر عملية للمساعد"
-                  title="تراجع"
-                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-2 text-[11px] font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--warning)',
-                    color: 'var(--warning)',
-                  }}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">تراجع</span>
-                </button>
+      {/* Full-Screen Push Panel — Morrow Assistant */}
+      <FullScreenPushPage
+        open={isOpen}
+        onBack={() => onToggleOpen(false)}
+        title="Morrow"
+        subtitle={`${activeBrain.shortLabel}${focusedPersonName ? ` · ${focusedPersonName}` : ''} · ${statusMeta.label}`}
+        icon={
+          <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+            <Bot className="h-4 w-4" />
+          </NexusDuotoneIcon>
+        }
+        maxWidthClass="max-w-3xl"
+        zIndexClass="z-[var(--z-sheet)]"
+        ariaLabel="لوحة المساعد الذكي — Morrow"
+        headerActions={
+          <div className="flex items-center gap-1.5">
+            <span
+              title={statusMeta.title}
+              className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap ml-1"
+              style={{ color: statusMeta.color }}
+            >
+              {connectivity === 'online' ? (
+                <Wifi className="h-3 w-3 shrink-0" />
+              ) : (
+                <WifiOff className="h-3 w-3 shrink-0" />
               )}
+              <span>{statusMeta.label}</span>
+            </span>
 
-              {onOpenCommandCenter && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenCommandCenter(pendingDraftsCount > 0 ? 'approvals' : 'chat')
-                  }
-                  aria-label="فتح مركز Morrow الكامل"
-                  title="المركز الكامل"
-                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-2 text-[11px] font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor:
-                      pendingDraftsCount > 0 ? 'var(--accent)' : 'var(--border-color)',
-                    color: pendingDraftsCount > 0 ? 'var(--accent)' : 'var(--text-primary)',
-                  }}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {pendingDraftsCount > 0 && (
-                    <span className="tabular-nums">{pendingDraftsCount}</span>
-                  )}
-                </button>
-              )}
-
-              {onClearMessages && messages.length > 1 && (
-                <button
-                  type="button"
-                  onClick={onClearMessages}
-                  aria-label="محادثة جديدة"
-                  title="محادثة جديدة"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border hover:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-              )}
-
+            {hasUndoableAction && onUndoLastAction && (
               <button
                 type="button"
-                onClick={() => setToolsSheetOpen(true)}
-                aria-label="أدوات وتفضيلات المساعد"
-                title="التفضيلات والإعدادات وسجل المحادثة"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
+                onClick={() => onUndoLastAction()}
+                aria-label="تراجع عن آخر عملية للمساعد"
+                title="تراجع"
+                className="nexus-pill-btn inline-flex h-9 items-center gap-1 border px-3 text-[11px] font-bold"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
+                  borderColor: 'var(--warning)',
+                  color: 'var(--warning)',
                 }}
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">تراجع</span>
               </button>
+            )}
 
+            {onOpenCommandCenter && (
               <button
                 type="button"
-                onClick={() => setIsFullscreen((v) => !v)}
-                aria-label={isFullscreen ? 'تصغير النافذة' : 'ملء الشاشة'}
-                title={isFullscreen ? 'تصغير' : 'ملء الشاشة'}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
+                onClick={() => {
+                  onToggleOpen(false);
+                  onOpenCommandCenter(pendingDraftsCount > 0 ? 'approvals' : 'chat');
+                }}
+                aria-label="فتح مركز Morrow الكامل"
+                title="المركز الكامل"
+                className="nexus-pill-btn inline-flex h-9 items-center gap-1 border px-3 text-[11px] font-bold"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
+                  borderColor:
+                    pendingDraftsCount > 0 ? 'var(--accent-ai, #5B4FE9)' : 'var(--border-color)',
+                  color: pendingDraftsCount > 0 ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
                 }}
               >
-                {isFullscreen ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">المركز</span>
+                {pendingDraftsCount > 0 && (
+                  <span className="tabular-nums">{pendingDraftsCount}</span>
                 )}
               </button>
+            )}
 
+            {onClearMessages && messages.length > 1 && (
               <button
                 type="button"
-                onClick={() => onToggleOpen(false)}
-                aria-label="إغلاق لوحة المساعد"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border"
+                onClick={onClearMessages}
+                aria-label="محادثة جديدة"
+                title="محادثة جديدة"
+                className="nexus-pill-btn inline-flex h-9 w-9 items-center justify-center border"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-muted)',
                 }}
               >
-                <X className="h-4 w-4" />
+                <RefreshCw className="h-3.5 w-3.5" />
               </button>
-            </div>
-          </div>
+            )}
 
-          {/* Single Horizontal Quick Commands Strip + '+' Command Library */}
-          <div
-            className="flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+            <button
+              type="button"
+              onClick={() => setToolsSheetOpen(true)}
+              aria-label="أدوات وتفضيلات المساعد"
+              title="التفضيلات والإعدادات وسجل المحادثة"
+              className="nexus-pill-btn inline-flex h-9 w-9 items-center justify-center border"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-muted)',
+              }}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </div>
+        }
+        footer={
+          <div className="space-y-2.5">
+            {smartSuggestions.length > 0 && (
+              <div
+                className="flex items-center gap-1.5 overflow-x-auto pb-1"
+                aria-label="اقتراحات ذكية حسب الشاشة المفتوحة"
+              >
+                {smartSuggestions.map((sug) => (
+                  <button
+                    key={sug.id}
+                    type="button"
+                    onClick={() => onSendMessage(sug.prompt, { fromFloatingWidget: true })}
+                    className="nexus-pill-btn shrink-0 border px-3 py-1 text-[10px] font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    {sug.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setBrainSheetOpen(true)}
+                className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3 py-1.5 font-bold"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Cpu className="h-3 w-3" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                <span>الدماغ: {activeBrain.shortLabel}</span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                {onQuickCameraExtract && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleOpen(false);
+                      onQuickCameraExtract();
+                    }}
+                    title="السحب الذكي بالكاميرا أو PDF"
+                    aria-label="فتح السحب الذكي"
+                    className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Camera className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                  </button>
+                )}
+                {onQuickBackupJson && (
+                  <button
+                    type="button"
+                    onClick={onQuickBackupJson}
+                    title="تنزيل نسخة احتياطية JSON"
+                    aria-label="نسخة احتياطية سريعة"
+                    className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" style={{ color: '#10B981' }} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitCurrentPrompt();
+              }}
+              className="flex items-end gap-2"
+            >
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                title="إملاء صوتي عربي (ar-IQ)"
+                aria-label="إملاء صوتي"
+                className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center border"
+                style={{
+                  backgroundColor: isRecording ? 'var(--danger)' : 'var(--bg-surface)',
+                  borderColor: isRecording ? 'var(--danger)' : 'var(--border-color)',
+                  color: isRecording ? '#fff' : 'var(--text-muted)',
+                }}
+              >
+                {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submitCurrentPrompt();
+                  }
+                }}
+                placeholder="اكتب باللهجة العراقية (مثال: خلّي رسم الفرد 250)..."
+                aria-label="اكتب أمرك للمساعد الذكي"
+                className="min-w-0 flex-1 resize-none rounded-2xl border px-3.5 py-2.5 text-xs outline-none focus:border-[var(--accent-ai)]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+
+              {isThinking && onCancelRequest ? (
+                <button
+                  type="button"
+                  onClick={onCancelRequest}
+                  aria-label="إيقاف المعالجة"
+                  className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center border"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  <Square className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || isThinking}
+                  aria-label="إرسال الطلب للمساعد"
+                  className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40"
+                  style={{
+                    backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
+            </form>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Quick Commands Pill Strip */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             <button
               type="button"
               onClick={() => {
                 setInputValue('ابحث ');
                 textareaRef.current?.focus();
               }}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Search className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <Search className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>بحث</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('صدر تقرير اكسل', { fromFloatingWidget: true })}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -797,7 +769,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             <button
               type="button"
               onClick={() => onSendMessage('المكررين', { fromFloatingWidget: true })}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -809,13 +781,13 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             <button
               type="button"
               onClick={() => onSendMessage('افحص التطبيق', { fromFloatingWidget: true })}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>افحص</span>
             </button>
             <button
@@ -823,24 +795,23 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               onClick={() => setLibrarySheetOpen(true)}
               aria-label="مكتبة الأوامر السريعة"
               title="المزيد من الأوامر الجاهزة"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-xs font-extrabold"
+              className="nexus-pill-btn inline-flex h-9 w-9 shrink-0 items-center justify-center border text-xs font-extrabold"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
+                borderColor: 'var(--accent-ai, #5B4FE9)',
+                color: 'var(--accent-ai, #5B4FE9)',
               }}
             >
               <Plus className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Thin Dismissible Alert Banner */}
           {thinAlertText && (
             <div
-              className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
+              className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
               style={{
                 backgroundColor: 'var(--warning-bg)',
-                borderColor: 'var(--border-color)',
+                borderColor: 'var(--warning)',
                 color: 'var(--text-primary)',
               }}
             >
@@ -861,31 +832,33 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 aria-label="إخفاء التنبيه"
                 className="rounded p-1 hover:opacity-75"
               >
-                <X className="h-3 w-3" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
 
-          {/* Queued Offline Ready Strip */}
           {connectivity === 'online' && queuedTasks.length > 0 && (
             <div
-              className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px]"
+              className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
+                borderColor: 'var(--accent-ai, #5B4FE9)',
               }}
             >
-              <span className="inline-flex items-center gap-1 font-bold" style={{ color: 'var(--accent)' }}>
+              <span
+                className="inline-flex items-center gap-1 font-bold"
+                style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+              >
                 <Clock className="h-3.5 w-3.5" />
                 <span>{queuedTasks.length} طلب محفوظ جاهز للتنفيذ</span>
               </span>
               <button
                 type="button"
                 onClick={() => onRunQueuedTask(queuedTasks[0])}
-                className="rounded-lg px-2.5 py-1 font-bold whitespace-nowrap"
+                className="nexus-pill-btn px-3 py-1 font-bold whitespace-nowrap"
                 style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
+                  backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                  color: '#FFFFFF',
                 }}
               >
                 نفّذ الآن
@@ -894,7 +867,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
           )}
 
           {/* Chat Messages Feed */}
-          <div className="flex-1 space-y-3 overflow-y-auto p-3.5 text-xs sm:text-[13px]">
+          <div className="space-y-3 text-xs sm:text-[13px]">
             {messages.map((msg) => (
               <MorrowMessageCard
                 key={msg.id}
@@ -923,21 +896,17 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
 
             {isThinking && (
               <div
-                className="flex items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
+                className="nexus-squircle flex items-center justify-between gap-2 px-4 py-3 text-xs font-semibold"
+                style={{ color: 'var(--text-muted)' }}
               >
                 <span>جاري اختيار النموذج الأنسب ومعالجة الطلب...</span>
                 {onCancelRequest && (
                   <button
                     type="button"
                     onClick={onCancelRequest}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold whitespace-nowrap"
+                    className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-[11px] font-bold whitespace-nowrap"
                     style={{
-                      backgroundColor: 'var(--bg-surface)',
+                      backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--danger)',
                       color: 'var(--danger)',
                     }}
@@ -950,168 +919,8 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             )}
             <div ref={scrollEndRef} />
           </div>
-
-          {/* Screen-Aware Contextual Suggestions */}
-          {smartSuggestions.length > 0 && (
-            <div
-              className="flex items-center gap-1.5 overflow-x-auto border-t px-3 py-1.5"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-              aria-label="اقتراحات ذكية حسب الشاشة المفتوحة"
-            >
-              {smartSuggestions.map((sug) => (
-                <button
-                  key={sug.id}
-                  type="button"
-                  onClick={() => onSendMessage(sug.prompt, { fromFloatingWidget: true })}
-                  className="shrink-0 rounded-xl border px-2.5 py-1 text-[10px] font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  {sug.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Auto-growing Composer Bar with Brain Picker + Voice + Camera/Backup shortcuts */}
-          <div
-            className="border-t p-2.5 space-y-2"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between gap-2 text-[10px]">
-              <button
-                type="button"
-                onClick={() => setBrainSheetOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-bold hover:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <Cpu className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-                <span>الدماغ: {activeBrain.shortLabel}</span>
-              </button>
-
-              <div className="flex items-center gap-1">
-                {onQuickCameraExtract && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onToggleOpen(false);
-                      onQuickCameraExtract();
-                    }}
-                    title="السحب الذكي بالكاميرا أو PDF"
-                    aria-label="فتح السحب الذكي"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <Camera className="h-3.5 w-3.5" style={{ color: '#0ea5e9' }} />
-                  </button>
-                )}
-                {onQuickBackupJson && (
-                  <button
-                    type="button"
-                    onClick={onQuickBackupJson}
-                    title="تنزيل نسخة احتياطية JSON"
-                    aria-label="نسخة احتياطية سريعة"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border hover:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <Download className="h-3.5 w-3.5" style={{ color: '#10b981' }} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitCurrentPrompt();
-              }}
-              className="flex items-end gap-2"
-            >
-              <button
-                type="button"
-                onClick={toggleVoiceInput}
-                title="إملاء صوتي عربي (ar-IQ)"
-                aria-label="إملاء صوتي"
-                className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl border px-2.5"
-                style={{
-                  backgroundColor: isRecording ? 'var(--danger)' : 'var(--bg-surface)',
-                  borderColor: isRecording ? 'var(--danger)' : 'var(--border-color)',
-                  color: isRecording ? '#fff' : 'var(--text-muted)',
-                }}
-              >
-                {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              </button>
-
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submitCurrentPrompt();
-                  }
-                }}
-                placeholder="اكتب باللهجة العراقية (مثال: خلّي رسم الفرد 250)..."
-                aria-label="اكتب أمرك للمساعد الذكي"
-                className="min-w-0 flex-1 resize-none rounded-xl border px-3 py-2.5 text-xs outline-none focus:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
-              />
-
-              {isThinking && onCancelRequest ? (
-                <button
-                  type="button"
-                  onClick={onCancelRequest}
-                  aria-label="إيقاف المعالجة"
-                  className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl border px-3"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--danger)',
-                    color: 'var(--danger)',
-                  }}
-                >
-                  <Square className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={!inputValue.trim() || isThinking}
-                  aria-label="إرسال الطلب للمساعد"
-                  className="cosmos-touch-target inline-flex shrink-0 items-center justify-center rounded-xl px-3 disabled:opacity-40"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              )}
-            </form>
-          </div>
-        </aside>
-      )}
+        </div>
+      </FullScreenPushPage>
 
       {/* Brain Picker BottomSheet */}
       <BottomSheet

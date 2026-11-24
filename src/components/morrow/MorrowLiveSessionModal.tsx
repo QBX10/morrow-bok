@@ -9,7 +9,6 @@ import {
   Radio,
   Send,
   Volume2,
-  X,
 } from 'lucide-react';
 import type { AssistantToolCall } from '../../types/assistant';
 import type { MaskedCloudContext } from '../../utils/assistantPrivacy';
@@ -20,6 +19,9 @@ import {
   type MediaPermissionGuide,
 } from '../../utils/mediaPermissions';
 import { PermissionGuardModal } from '../permissions/PermissionGuardModal';
+import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
+import { MorrowSubPageHeader } from './MorrowSubPageHeader';
 
 interface MorrowLiveSessionModalProps {
   open: boolean;
@@ -27,6 +29,7 @@ interface MorrowLiveSessionModalProps {
   onSessionTranscriptSaved?: (summaryText: string) => void;
   liveContext?: MaskedCloudContext;
   onLiveToolAction?: (toolCall: AssistantToolCall) => string | void;
+  layout?: 'modal' | 'page';
 }
 
 type LiveStatus = 'connecting' | 'live' | 'error' | 'closed';
@@ -73,6 +76,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
   onSessionTranscriptSaved,
   liveContext,
   onLiveToolAction,
+  layout = 'modal',
 }) => {
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -454,61 +458,47 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
   const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
   const secs = String(elapsedSec % 60).padStart(2, '0');
 
-  return (
+  const liveStageBody = (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="المحادثة المباشرة لايف مع Morrow"
-      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-3 sm:p-6"
-      style={{
-        backgroundColor: 'rgba(6, 10, 20, 0.72)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-      }}
+      className={
+        layout === 'page'
+          ? 'mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 min-h-0'
+          : 'flex w-full flex-1 flex-col min-h-0'
+      }
+      style={{ color: 'var(--text-primary)' }}
     >
-      <div
-        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'color-mix(in srgb, var(--accent) 42%, var(--border-color))',
-          color: 'var(--text-primary)',
-          maxHeight: '90dvh',
-        }}
-      >
+      {layout === 'page' && (
+        <MorrowSubPageHeader
+          title="المحادثة المباشرة لايف"
+          subtitle="بث صوتي ومرئي مباشر ثنائي الاتجاه مع Morrow"
+          onBack={handleEndSession}
+          backLabel="إنهاء والعودة للمحادثة"
+          rightSlot={
+            <span
+              className="font-mono text-xs font-bold tabular-nums"
+              style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+            >
+              gemini-3.8-live · {mins}:{secs}
+            </span>
+          }
+        />
+      )}
+
+      <div className="nexus-squircle flex flex-1 flex-col overflow-hidden min-h-0">
         {/* Top Bar */}
         <div
           className="flex items-center justify-between border-b px-5 py-3.5"
           style={{ borderColor: 'var(--border-color)' }}
         >
           <div className="flex items-center gap-2.5">
-            <span
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{
-                backgroundColor: status === 'live' ? 'var(--accent)' : 'var(--bg-main)',
-                color: status === 'live' ? 'var(--accent-fg)' : 'var(--text-muted)',
-              }}
-            >
-              <Radio className="h-4.5 w-4.5" />
-            </span>
+            <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+              <Radio className="h-4 w-4" />
+            </NexusDuotoneIcon>
             <div>
-              <div className="flex flex-wrap items-center gap-2 text-sm font-extrabold">
-                <span>المحادثة المباشرة لايف</span>
-                <span
-                  dir="ltr"
-                  className="rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  gemini-3.8-live
-                </span>
-                <span className="font-mono text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                  {mins}:{secs}
-                </span>
-              </div>
-              <div className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+              <div
+                className="text-xs font-bold tabular-nums"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 {status === 'connecting'
                   ? 'جاري فتح القناة الصوتية المباشرة وربط بيانات التطبيق...'
                   : status === 'live'
@@ -521,7 +511,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
                       ? 'تعذر الاتصال المباشر'
                       : 'انتهت الجلسة'}
                 {(boundToWorkspace || liveContext?.liveWorkspace) && liveContext?.liveWorkspace && (
-                  <span>
+                  <span style={{ color: 'var(--text-muted)' }}>
                     {' '}· {liveContext.liveWorkspace.agenciesBreakdown.length} وكالات ·{' '}
                     {liveContext.liveWorkspace.totalActiveIndividuals.toLocaleString('ar-IQ')} فرد نشط ·{' '}
                     {liveContext.liveWorkspace.totalFullBags.toLocaleString('ar-IQ')} كيس
@@ -530,19 +520,6 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
               </div>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleEndSession}
-            aria-label="إغلاق نافذة المحادثة المباشرة"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border hover:opacity-80"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         {/* Center Interactive Voice / Optional Video Stage */}
@@ -564,23 +541,26 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             </div>
           )}
 
-          {/* Voice Pulse Ring */}
-          <div className="flex flex-col items-center justify-center py-3">
+          {/* Glowing 3D Electric Indigo Orb Voice Stage */}
+          <div className="flex flex-col items-center justify-center py-4">
             <div
-              className="relative flex h-28 w-28 items-center justify-center rounded-full border-2 transition-transform duration-150"
-              style={{
-                backgroundColor: 'color-mix(in srgb, var(--accent) 12%, var(--bg-main))',
-                borderColor: status === 'live' ? 'var(--accent)' : 'var(--border-color)',
-                transform: `scale(${1 + (isModelSpeaking ? 0.08 : micLevel * 0.14)})`,
-                boxShadow:
-                  status === 'live'
-                    ? '0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent)'
-                    : 'none',
-              }}
+              className={`relative flex h-28 w-28 items-center justify-center transition-transform duration-150 ${
+                status === 'live' ? 'nexus-orb-3d' : 'rounded-full border-2'
+              }`}
+              style={
+                status === 'live'
+                  ? {
+                      transform: `scale(${1 + (isModelSpeaking ? 0.08 : micLevel * 0.14)})`,
+                    }
+                  : {
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }
+              }
             >
               <Volume2
                 className="h-10 w-10"
-                style={{ color: status === 'live' ? 'var(--accent)' : 'var(--text-muted)' }}
+                style={{ color: status === 'live' ? '#FFFFFF' : 'var(--text-muted)' }}
               />
             </div>
           </div>
@@ -680,7 +660,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             <button
               type="button"
               onClick={() => setMuted((m) => !m)}
-              className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold"
+              className="nexus-pill-btn inline-flex h-11 items-center gap-2 border px-4 text-xs font-extrabold"
               style={{
                 backgroundColor: muted ? 'var(--warning-bg)' : 'var(--bg-surface)',
                 borderColor: muted ? 'var(--warning)' : 'var(--border-color)',
@@ -694,11 +674,11 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             <button
               type="button"
               onClick={toggleCamera}
-              className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold"
+              className="nexus-pill-btn inline-flex h-11 items-center gap-2 border px-4 text-xs font-extrabold"
               style={{
                 backgroundColor: cameraOn ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
-                borderColor: cameraOn ? 'var(--accent)' : 'var(--border-color)',
-                color: cameraOn ? 'var(--accent)' : 'var(--text-primary)',
+                borderColor: cameraOn ? 'var(--accent-ai, #5B4FE9)' : 'var(--border-color)',
+                color: cameraOn ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
               }}
             >
               {cameraOn ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
@@ -708,7 +688,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             <button
               type="button"
               onClick={handleEndSession}
-              className="cosmos-touch-target inline-flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-extrabold"
+              className="nexus-pill-btn inline-flex h-11 items-center gap-2 px-5 text-xs font-extrabold"
               style={{
                 backgroundColor: 'var(--danger)',
                 color: '#ffffff',
@@ -721,6 +701,72 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
         </div>
       </div>
 
+      {layout === 'page' && permissionGuide && (
+        <div
+          className="mt-4 rounded-2xl border p-4 text-xs space-y-2"
+          style={{
+            backgroundColor: 'var(--warning-bg)',
+            borderColor: 'var(--warning)',
+          }}
+        >
+          <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
+            {permissionGuide.title}
+          </div>
+          <p>{permissionGuide.reason}</p>
+          <ul className="list-disc pr-5 space-y-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+            {permissionGuide.steps.map((s, idx) => (
+              <li key={idx}>{s}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setPermissionGuide(null)}
+            className="rounded-xl border px-3 py-1.5 text-[11px] font-bold"
+            style={{ backgroundColor: 'rgba(19, 20, 26, 0.9)', borderColor: 'var(--border-color)' }}
+          >
+            إغلاق التنبيه
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (layout === 'page') {
+    return (
+      <main aria-label="المحادثة المباشرة لايف مع Morrow" data-testid="morrow-live-page" className="flex flex-1 flex-col min-h-0">
+        {liveStageBody}
+      </main>
+    );
+  }
+
+  return (
+    <>
+      <FullScreenPushPage
+        open={open}
+        onBack={handleEndSession}
+        backLabel="إنهاء ورجوع"
+        title="المحادثة المباشرة لايف"
+        subtitle="بث صوتي ومرئي مباشر ثنائي الاتجاه مع Morrow"
+        icon={
+          <NexusDuotoneIcon tone="ai" sizeClass="h-9 w-9">
+            <Radio className="h-4 w-4" />
+          </NexusDuotoneIcon>
+        }
+        headerActions={
+          <span
+            dir="ltr"
+            className="font-mono text-xs font-bold tabular-nums"
+            style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+          >
+            gemini-3.8-live · {mins}:{secs}
+          </span>
+        }
+        maxWidthClass="max-w-3xl"
+        ariaLabel="المحادثة المباشرة لايف مع Morrow"
+      >
+        {liveStageBody}
+      </FullScreenPushPage>
+
       <PermissionGuardModal
         open={Boolean(permissionGuide)}
         guide={permissionGuide}
@@ -729,6 +775,6 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
           setPermissionGuide(null);
         }}
       />
-    </div>
+    </>
   );
 };

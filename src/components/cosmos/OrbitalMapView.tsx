@@ -33,7 +33,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
         <div className="flex items-center gap-2">
           <Orbit className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           <span className="text-xs sm:text-sm font-extrabold">
-            خريطة العوالم التفاعلية ({visibleWorlds.length} عالم)
+            خريطة الأقسام التفاعلية ({visibleWorlds.length} قسم)
           </span>
         </div>
 
@@ -97,7 +97,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
             </div>
             <h4 className="mt-2 text-sm font-extrabold">المركز الرئيسي — Morrow</h4>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              انقر أي عالم للدخول المعزول فوراً
+              انقر أي قسم للدخول المباشر فوراً
             </p>
           </div>
 
@@ -125,7 +125,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
                     className="mt-0.5 text-[10px] tabular-nums"
                     style={{ color: 'var(--text-muted)' }}
                   >
-                    {world.children.length} مجرات
+                    {world.children.length} أقسام فرعية
                   </span>
                 </button>
               );
@@ -185,7 +185,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
-                    aria-label="توسيع المجرات"
+                    aria-label="توسيع الأقسام الفرعية"
                   >
                     {isOpen ? (
                       <ChevronDown className="h-4 w-4" />

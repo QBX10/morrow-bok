@@ -21,6 +21,7 @@ import { AssistantWidget } from './components/AssistantWidget';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
 import { ToastHost } from './components/ToastHost';
+import { AccountSecurityHubView } from './components/AccountSecurityHubView';
 import { Switcher } from './components/cosmos/Switcher';
 import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
 import { useAgencyStore } from './hooks/useAgencyStore';
@@ -56,7 +57,7 @@ import {
   type HierarchyBadgeContext,
   type HierarchyTarget,
 } from './utils/hierarchyRegistry';
-import { getModeCapabilities } from './utils/modePermissions';
+import { getUnifiedCapabilities } from './utils/modePermissions';
 import {
   ALL_APP_THEMES,
   ARABIC_FONTS,
@@ -67,6 +68,13 @@ import {
 } from './utils/themes';
 import { playTactileFeedback } from './utils/tactileFeedback';
 import { computeTopBarScrollHidden } from './utils/scrollAutoHide';
+import {
+  buildNextCheckpoint,
+  compressAndVerifyWorkspacePayload,
+  computeWorkspaceDiff,
+  isWeeklyAutoBackupDue,
+  stageLocalRecoveryBackup,
+} from './utils/smartSyncEngine';
 
 type AppNavSnapshot = {
   view: AppView;
@@ -97,6 +105,7 @@ export default function App() {
     generalPrefs,
     securityPrefs,
     recycleBin,
+    workspaceNotes,
     canUndo,
     canRedo,
     undo,
@@ -131,6 +140,10 @@ export default function App() {
     setRelationsPrefs,
     setGeneralPrefs,
     setSecurityPrefs,
+    updateSmartSyncCheckpoint,
+    addWorkspaceNote,
+    updateWorkspaceNote,
+    deleteWorkspaceNote,
     restoreRecycleBinItem,
     purgeRecycleBinItem,
     clearRecycleBin,
@@ -188,7 +201,14 @@ export default function App() {
     null
   );
   const [spotlightNodeId, setSpotlightNodeId] = useState<string | null>(null);
+  const [tableViewingMode, setTableViewingMode] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    if (activeView !== 'agency_roster' && activeView !== 'master_roster') {
+      setTableViewingMode(false);
+    }
+  }, [activeView]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('tabrix_sidebar_collapsed') === '1';
@@ -247,19 +267,17 @@ export default function App() {
 
   const capabilities = useMemo(
     () =>
-      getModeCapabilities(
-        state.modeTier,
-        state.editorEnabled,
-        expertTableConfig.allowDirectNoConfirmEdit,
+      getUnifiedCapabilities(
+        generalPrefs.granularControls,
         generalPrefs.confirmBeforeEdit,
-        generalPrefs.confirmBeforeDelete
+        generalPrefs.confirmBeforeDelete,
+        expertTableConfig.allowDirectNoConfirmEdit
       ),
     [
-      state.modeTier,
-      state.editorEnabled,
-      expertTableConfig.allowDirectNoConfirmEdit,
+      generalPrefs.granularControls,
       generalPrefs.confirmBeforeEdit,
       generalPrefs.confirmBeforeDelete,
+      expertTableConfig.allowDirectNoConfirmEdit,
     ]
   );
 
@@ -399,6 +417,7 @@ export default function App() {
     if (activeView === 'morrow_center') return 'مركز Morrow';
     if (activeView === 'data_archives') return 'البيانات والأرشفة الشهرية';
     if (activeView === 'google_workspace') return 'التقويم والمهام (Google)';
+    if (activeView === 'account_security') return 'الحساب والبيانات والأمان';
     return 'إعدادات التطبيق';
   }, [activeView, currentAgency]);
 
@@ -566,8 +585,54 @@ export default function App() {
     [focusedPersonId, state.persons]
   );
 
-  const { toasts, dismissToast } = useToastQueue();
+  const { toasts, pushToast, dismissToast } = useToastQueue();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Silent Smart Weekly Auto-Backup Evaluator
+  const weeklyAutoRanRef = useRef(false);
+  useEffect(() => {
+    if (weeklyAutoRanRef.current) return;
+    weeklyAutoRanRef.current = true;
+    const cp = securityPrefs.smartSync;
+    if (!isWeeklyAutoBackupDue(cp)) return;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const diff = computeWorkspaceDiff(state, cp);
+        if (diff.status === 'unchanged') {
+          if (cp?.lastSavedAt) {
+            updateSmartSyncCheckpoint({
+              ...cp,
+              lastCheckedAt: new Date().toISOString(),
+            });
+            pushToast({
+              title: 'الفحص الأسبوعي الذكي',
+              description:
+                'بياناتك محفوظة ومحدّثة بالكامل، ولا يوجد أي تغيير جديد يتطلب الحفظ.',
+              tone: 'success',
+            });
+          }
+          return;
+        }
+        const compressed = await compressAndVerifyWorkspacePayload(state);
+        if (!compressed.verified) return;
+        stageLocalRecoveryBackup(compressed);
+        const nextCp = buildNextCheckpoint({
+          prevCheckpoint: cp,
+          diff,
+          mode: 'weekly_auto',
+          checksum: compressed.integrityChecksum,
+          compressedBytes: compressed.compressedBytes,
+        });
+        updateSmartSyncCheckpoint(nextCp);
+      } catch {
+        // Silent recovery: preserve state cleanly without alarming alerts
+      }
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSelectCosmosNode = (node: CosmosNode) => {
     playTactileFeedback('tap', {
@@ -863,11 +928,18 @@ export default function App() {
     if (previousView === 'relationships') return 'العودة إلى العلاقات';
     if (previousView === 'finance') return 'العودة إلى المالية';
     if (previousView === 'data_archives') return 'العودة إلى الأرشفة';
+    if (previousView === 'account_security') return 'العودة إلى الحساب والأمان';
     return 'العودة إلى المركز';
   }, [previousView, currentAgency]);
 
+  const isRosterViewingModeActive =
+    tableViewingMode &&
+    (activeView === 'agency_roster' || activeView === 'master_roster');
+
   const isDedicatedFullScreenView =
-    activeView === 'settings' || activeView === 'morrow_center';
+    activeView === 'settings' ||
+    activeView === 'morrow_center' ||
+    isRosterViewingModeActive;
 
   return (
     <div className="flex min-h-screen flex-col [overflow-x:clip]">
@@ -879,7 +951,11 @@ export default function App() {
           canRedo={canRedo}
           effectiveMode={effectiveTopBarMode}
           isAutoHidden={isAutoHidden}
+          activeView={activeView}
           activeViewLabel={activeViewLabel}
+          activePeriodLabel={activePeriod?.quotaName}
+          darkTheme={state.darkTheme}
+          activeThemeName={activeThemeLabel}
           showViewTitle={state.topBarConfig.showViewTitle}
           showUndoRedo={state.topBarConfig.showUndoRedo}
           showAuthButton={state.topBarConfig.showAuthButton}
@@ -892,6 +968,13 @@ export default function App() {
           pendingDraftsCount={assistant.pendingDraftsCount}
           onNavigateHome={() => handleNavigate('hub')}
           onNavigateView={handleNavigate}
+          onOpenSettings={(sec) => handleNavigate('settings', sec)}
+          onToggleDarkTheme={setDarkTheme}
+          onQuickAddPerson={() => {
+            setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
+            setAddPersonOpen(true);
+          }}
+          onOpenColumnCustomizer={() => setColumnCustomizerOpen(true)}
           onOpenMorrowStudio={() => openMorrowStudio('chat')}
           onNavigateHierarchyTarget={handleNavigateHierarchyTarget}
           onSelectPersonFromSearch={(person) => {
@@ -929,6 +1012,7 @@ export default function App() {
             selectedAgencyId={selectedAgencyId}
             agencies={state.agencies}
             persons={state.persons}
+            authUser={authUser}
             activePeriod={activePeriod}
             relationsCount={state.relations.length}
             readyListsCount={state.readyLists.length}
@@ -958,10 +1042,14 @@ export default function App() {
               agencies={state.agencies}
               persons={state.persons}
               expenses={state.expenses}
+              relations={state.relations}
               activePeriod={activePeriod}
               monthlyArchives={monthlyArchives}
               calculationSettings={state.calculationSettings}
               capabilities={capabilities}
+              generalPrefs={generalPrefs}
+              onUpdateGeneralPrefs={setGeneralPrefs}
+              onAddExpense={addExpense}
               onOpenMasterRoster={() => setActiveView('master_roster')}
               onOpenAgencyRoster={(id) => {
                 setSelectedAgencyId(id);
@@ -969,6 +1057,7 @@ export default function App() {
               }}
               onAddAgency={addAgencyDirect}
               onUpdateAgencyDetails={updateAgencyDetails}
+              onNavigateView={handleNavigate}
             />
           )}
 
@@ -1020,6 +1109,8 @@ export default function App() {
           onOpenSettings={() => handleNavigate('settings', 'modes')}
           externalTableCommand={externalTableCommand}
           onFocusedPersonChange={setFocusedPersonId}
+          viewingMode={tableViewingMode}
+          onViewingModeChange={setTableViewingMode}
         />
       )}
 
@@ -1071,6 +1162,8 @@ export default function App() {
           onOpenSettings={() => handleNavigate('settings', 'modes')}
           externalTableCommand={externalTableCommand}
           onFocusedPersonChange={setFocusedPersonId}
+          viewingMode={tableViewingMode}
+          onViewingModeChange={setTableViewingMode}
         />
       )}
 
@@ -1137,6 +1230,9 @@ export default function App() {
           expenses={state.expenses}
           calculationSettings={state.calculationSettings}
           capabilities={capabilities}
+          activePeriod={activePeriod}
+          generalPrefs={generalPrefs}
+          onUpdateGeneralPrefs={setGeneralPrefs}
           onAddExpense={addExpense}
           onRequestDeleteExpense={(expense) =>
             handleRequestDelete({ kind: 'expense', item: expense })
@@ -1202,6 +1298,37 @@ export default function App() {
           activePeriod={activePeriod}
           relations={state.relations}
           onAuthenticatedUser={(user) => setAuthUser(user)}
+        />
+      )}
+
+      {activeView === 'account_security' && (
+        <AccountSecurityHubView
+          state={state}
+          authUser={authUser}
+          requireLoginOnStart={state.requireLoginOnStart}
+          securityPrefs={securityPrefs}
+          recycleBin={recycleBin}
+          workspaceNotes={workspaceNotes}
+          onAuthenticated={(user) => setAuthUser(user)}
+          onLoggedOut={() => setAuthUser(null)}
+          onToggleRequireLogin={setRequireLoginOnStart}
+          onUpdateSecurityPrefs={setSecurityPrefs}
+          onUpdateSmartSyncCheckpoint={updateSmartSyncCheckpoint}
+          onAddNote={addWorkspaceNote}
+          onUpdateNote={updateWorkspaceNote}
+          onDeleteNote={deleteWorkspaceNote}
+          onRestoreRecycleBinItem={restoreRecycleBinItem}
+          onPurgeRecycleBinItem={purgeRecycleBinItem}
+          onClearRecycleBin={clearRecycleBin}
+          onImportWorkspaceJson={importWorkspaceJson}
+          onSyncServer={syncWorkspaceToServer}
+          onRestoreServer={restoreWorkspaceFromServer}
+          onNotifySuccess={(msg) =>
+            pushToast({ title: msg, tone: 'success' })
+          }
+          onNotifyError={(msg) =>
+            pushToast({ title: msg, tone: 'error' })
+          }
         />
       )}
 
@@ -1322,6 +1449,7 @@ export default function App() {
           onBackToApp={() =>
             setActiveView(previousView === 'settings' ? 'hub' : previousView)
           }
+          onNavigateAppView={(view) => handleNavigate(view)}
           state={state}
           modeTier={state.modeTier}
           editorEnabled={state.editorEnabled}
@@ -1451,15 +1579,13 @@ export default function App() {
         >
           <form
             onSubmit={handleUnlockPrivacy}
-            className="w-full max-w-sm rounded-2xl border p-6 text-center shadow-2xl space-y-4"
+            className="nexus-squircle w-full max-w-sm p-6 text-center space-y-4"
             style={{
-              backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--accent)',
-              color: 'var(--text-primary)',
             }}
           >
             <div
-              className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border"
+              className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent)',
@@ -1489,7 +1615,7 @@ export default function App() {
                     setUnlockPinError('');
                   }}
                   placeholder="رمز القفل..."
-                  className="w-full rounded-lg border px-3 py-2 text-center text-sm tracking-widest tabular-nums"
+                  className="w-full rounded-xl border px-3 py-2.5 text-center text-sm tracking-widest tabular-nums"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -1508,7 +1634,7 @@ export default function App() {
 
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold"
+              className="nexus-pill-btn inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -1559,7 +1685,9 @@ export default function App() {
           onChangeCollaborationMode={(mode) =>
             assistant.updateAssistantSettings({ collaborationMode: mode })
           }
-          hideLauncher={activeView === 'morrow_center'}
+          hideLauncher={
+            activeView === 'morrow_center' || isRosterViewingModeActive
+          }
           onQuickCameraExtract={() => {
             if (capabilities.canUseQuickExtract) {
               assistant.setIsOpen(false);
@@ -1638,7 +1766,7 @@ export default function App() {
             setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
             setAddPersonOpen(true);
           }}
-          onOpenAssistant={() => assistant.setIsOpen(true)}
+          onOpenAssistant={() => openMorrowStudio('chat')}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           isAssistantThinking={assistant.isThinking}
           pendingDraftsCount={assistant.pendingDraftsCount}

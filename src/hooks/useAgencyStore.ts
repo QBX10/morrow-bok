@@ -52,12 +52,15 @@ import type {
   RelationsReadyListsPrefs,
   SectionTableHeaderMeta,
   SecurityPrefs,
+  SmartSyncCheckpoint,
   ThemePreferences,
   TopBarConfig,
   UcrsLearningRule,
   UcrsSession,
   WorldChangeLogEntry,
   WorkspaceCosmosState,
+  WorkspaceNoteCategory,
+  WorkspaceNoteItem,
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic';
 import { applyDiagnosticAutoFixes } from '../utils/assistantDiagnostics';
@@ -220,6 +223,33 @@ function loadInitialState(): AppDatabaseState {
         ...DEFAULT_GENERAL_PREFS.agencyAccentColors,
         ...(parsed.generalPrefs?.agencyAccentColors || {}),
       },
+      homeLayoutPrefs: {
+        sectionOrder:
+          Array.isArray(parsed.generalPrefs?.homeLayoutPrefs?.sectionOrder) &&
+          parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder.length > 0
+            ? parsed.generalPrefs!.homeLayoutPrefs!.sectionOrder
+            : [...DEFAULT_GENERAL_PREFS.homeLayoutPrefs!.sectionOrder],
+        hiddenSections: Array.isArray(
+          parsed.generalPrefs?.homeLayoutPrefs?.hiddenSections
+        )
+          ? parsed.generalPrefs!.homeLayoutPrefs!.hiddenSections
+          : [],
+        activeMiniWidgets: Array.isArray(
+          parsed.generalPrefs?.homeLayoutPrefs?.activeMiniWidgets
+        )
+          ? parsed.generalPrefs!.homeLayoutPrefs!.activeMiniWidgets
+          : [],
+      },
+      customExpenseCategories:
+        Array.isArray(parsed.generalPrefs?.customExpenseCategories) &&
+        parsed.generalPrefs!.customExpenseCategories!.length > 0
+          ? parsed.generalPrefs!.customExpenseCategories!
+          : DEFAULT_GENERAL_PREFS.customExpenseCategories,
+      recurringExpenseTemplates: Array.isArray(
+        parsed.generalPrefs?.recurringExpenseTemplates
+      )
+        ? parsed.generalPrefs!.recurringExpenseTemplates!
+        : [],
     };
 
     return {
@@ -263,7 +293,9 @@ function loadInitialState(): AppDatabaseState {
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         ...(parsed.themePrefs || {}),
-        appTheme: resolveAppThemeId(parsed.themePrefs?.appTheme),
+        appTheme: parsed.themePrefs?.appTheme
+          ? resolveAppThemeId(parsed.themePrefs.appTheme)
+          : DEFAULT_THEME_PREFERENCES.appTheme,
         tableTheme: resolveTableThemeId(parsed.themePrefs?.tableTheme),
         fontFamily: resolveArabicFontId(parsed.themePrefs?.fontFamily),
         savedProfiles:
@@ -295,8 +327,23 @@ function loadInitialState(): AppDatabaseState {
       securityPrefs: {
         ...DEFAULT_SECURITY_PREFS,
         ...(parsed.securityPrefs || {}),
+        secondaryCloud: {
+          ...DEFAULT_SECURITY_PREFS.secondaryCloud!,
+          ...(parsed.securityPrefs?.secondaryCloud || {}),
+        },
+        driveAccountMeta: {
+          ...DEFAULT_SECURITY_PREFS.driveAccountMeta!,
+          ...(parsed.securityPrefs?.driveAccountMeta || {}),
+        },
+        smartSync: {
+          ...DEFAULT_SECURITY_PREFS.smartSync!,
+          ...(parsed.securityPrefs?.smartSync || {}),
+        },
       },
       recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
+      workspaceNotes: Array.isArray(parsed.workspaceNotes)
+        ? parsed.workspaceNotes
+        : INITIAL_DATABASE_STATE.workspaceNotes || [],
       activePeriod: resolvePeriodMeta(
         parsed.activePeriod,
         INITIAL_DATABASE_STATE.activePeriod?.fullDate
@@ -1039,13 +1086,104 @@ export function useAgencyStore() {
   }, []);
 
   const setSecurityPrefs = useCallback((patch: Partial<SecurityPrefs>) => {
+    setState((prev) => {
+      const cur = prev.securityPrefs || DEFAULT_SECURITY_PREFS;
+      return {
+        ...prev,
+        securityPrefs: {
+          ...DEFAULT_SECURITY_PREFS,
+          ...cur,
+          ...patch,
+          secondaryCloud: patch.secondaryCloud
+            ? {
+                ...DEFAULT_SECURITY_PREFS.secondaryCloud!,
+                ...(cur.secondaryCloud || {}),
+                ...patch.secondaryCloud,
+              }
+            : cur.secondaryCloud || DEFAULT_SECURITY_PREFS.secondaryCloud,
+          driveAccountMeta: patch.driveAccountMeta
+            ? {
+                ...DEFAULT_SECURITY_PREFS.driveAccountMeta!,
+                ...(cur.driveAccountMeta || {}),
+                ...patch.driveAccountMeta,
+              }
+            : cur.driveAccountMeta || DEFAULT_SECURITY_PREFS.driveAccountMeta,
+          smartSync: patch.smartSync
+            ? {
+                ...DEFAULT_SECURITY_PREFS.smartSync!,
+                ...(cur.smartSync || {}),
+                ...patch.smartSync,
+              }
+            : cur.smartSync || DEFAULT_SECURITY_PREFS.smartSync,
+        },
+      };
+    });
+  }, []);
+
+  const updateSmartSyncCheckpoint = useCallback(
+    (checkpoint: SmartSyncCheckpoint) => {
+      setState((prev) => ({
+        ...prev,
+        securityPrefs: {
+          ...DEFAULT_SECURITY_PREFS,
+          ...(prev.securityPrefs || {}),
+          smartSync: checkpoint,
+        },
+      }));
+    },
+    []
+  );
+
+  const addWorkspaceNote = useCallback(
+    (input: {
+      title: string;
+      content: string;
+      category: WorkspaceNoteCategory;
+      pinned?: boolean;
+      tags?: string[];
+    }) => {
+      const nowIso = new Date().toISOString();
+      const note: WorkspaceNoteItem = {
+        id: `wnote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+        title: input.title.trim() || 'ملاحظة جديدة',
+        content: input.content.trim(),
+        category: input.category,
+        pinned: Boolean(input.pinned),
+        tags: input.tags || [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      setState((prev) => ({
+        ...prev,
+        workspaceNotes: [note, ...(prev.workspaceNotes || [])],
+      }));
+      return note;
+    },
+    []
+  );
+
+  const updateWorkspaceNote = useCallback(
+    (
+      noteId: string,
+      patch: Partial<
+        Pick<WorkspaceNoteItem, 'title' | 'content' | 'category' | 'pinned' | 'tags'>
+      >
+    ) => {
+      const nowIso = new Date().toISOString();
+      setState((prev) => ({
+        ...prev,
+        workspaceNotes: (prev.workspaceNotes || []).map((n) =>
+          n.id === noteId ? { ...n, ...patch, updatedAt: nowIso } : n
+        ),
+      }));
+    },
+    []
+  );
+
+  const deleteWorkspaceNote = useCallback((noteId: string) => {
     setState((prev) => ({
       ...prev,
-      securityPrefs: {
-        ...DEFAULT_SECURITY_PREFS,
-        ...(prev.securityPrefs || {}),
-        ...patch,
-      },
+      workspaceNotes: (prev.workspaceNotes || []).filter((n) => n.id !== noteId),
     }));
   }, []);
 
@@ -1674,7 +1812,7 @@ export function useAgencyStore() {
     [commitDataMutation]
   );
 
-  // Finance Expenses (Worker Wages vs General Expenses)
+  // Finance Expenses (Worker Wages, Packaging, Hospitality, Custom, General)
   const addExpense = useCallback(
     (input: {
       agencyId: number;
@@ -1682,6 +1820,14 @@ export function useAgencyStore() {
       amountIqd: number;
       category: ExpenseCategory;
       occurredAt?: string;
+      customCategoryLabel?: string;
+      workerNames?: string;
+      workerCount?: number;
+      wageBasis?: AgencyExpense['wageBasis'];
+      quantity?: number;
+      unitCostIqd?: number;
+      quotaLabel?: string;
+      notes?: string;
     }) => {
       const dateStr = input.occurredAt || new Date().toISOString().slice(0, 10);
       commitDataMutation((prev) => {
@@ -1694,6 +1840,26 @@ export function useAgencyStore() {
           amountIqd: Math.max(0, Math.round(input.amountIqd)),
           category: input.category,
           occurredAt: dateStr,
+          ...(input.customCategoryLabel?.trim()
+            ? { customCategoryLabel: input.customCategoryLabel.trim() }
+            : {}),
+          ...(input.workerNames?.trim()
+            ? { workerNames: input.workerNames.trim() }
+            : {}),
+          ...(input.workerCount && input.workerCount > 0
+            ? { workerCount: input.workerCount }
+            : {}),
+          ...(input.wageBasis ? { wageBasis: input.wageBasis } : {}),
+          ...(input.quantity && input.quantity > 0
+            ? { quantity: input.quantity }
+            : {}),
+          ...(input.unitCostIqd && input.unitCostIqd > 0
+            ? { unitCostIqd: input.unitCostIqd }
+            : {}),
+          ...(input.quotaLabel?.trim()
+            ? { quotaLabel: input.quotaLabel.trim() }
+            : {}),
+          ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
         };
         return {
           ...prev,
@@ -2599,8 +2765,21 @@ export function useAgencyStore() {
     securityPrefs: {
       ...DEFAULT_SECURITY_PREFS,
       ...(state.securityPrefs || {}),
+      secondaryCloud: {
+        ...DEFAULT_SECURITY_PREFS.secondaryCloud!,
+        ...(state.securityPrefs?.secondaryCloud || {}),
+      },
+      driveAccountMeta: {
+        ...DEFAULT_SECURITY_PREFS.driveAccountMeta!,
+        ...(state.securityPrefs?.driveAccountMeta || {}),
+      },
+      smartSync: {
+        ...DEFAULT_SECURITY_PREFS.smartSync!,
+        ...(state.securityPrefs?.smartSync || {}),
+      },
     },
     recycleBin: state.recycleBin || [],
+    workspaceNotes: state.workspaceNotes || [],
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     undo,
@@ -2637,6 +2816,10 @@ export function useAgencyStore() {
     setRelationsPrefs,
     setGeneralPrefs,
     setSecurityPrefs,
+    updateSmartSyncCheckpoint,
+    addWorkspaceNote,
+    updateWorkspaceNote,
+    deleteWorkspaceNote,
     restoreRecycleBinItem,
     purgeRecycleBinItem,
     clearRecycleBin,

@@ -13,12 +13,15 @@ import {
   ListChecks,
   ScanLine,
   Settings,
+  ShieldCheck,
   Table2,
+  UserCircle2,
   X,
 } from 'lucide-react';
 import type {
   Agency,
   AppView,
+  AuthUser,
   CalculationSettings,
   PeriodQuotaMeta,
   Person,
@@ -27,12 +30,14 @@ import type {
 import type { MorrowCenterTab } from '../types/assistant';
 import { computeAgencyMetrics } from '../utils/agencyLogic';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 interface AppSidebarProps {
   activeView: AppView;
   selectedAgencyId: number;
   agencies: Agency[];
   persons: Person[];
+  authUser?: AuthUser | null;
   activePeriod?: PeriodQuotaMeta;
   relationsCount: number;
   readyListsCount: number;
@@ -54,6 +59,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   selectedAgencyId,
   agencies,
   persons,
+  authUser = null,
   activePeriod,
   relationsCount,
   readyListsCount,
@@ -94,7 +100,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     const compact = !isMobileDrawer && collapsed;
 
     const itemClass = (active: boolean) =>
-      `group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-bold transition-colors ${
+      `group flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-xs font-bold transition-all active:scale-[0.98] ${
         compact ? 'justify-center px-0' : ''
       } ${active ? 'shadow-xs' : 'hover:bg-[var(--bg-main)]'}`;
 
@@ -472,11 +478,70 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           </div>
         </div>
 
-        {/* Bottom Pinned: Single Clean Settings Gateway */}
+        {/* Bottom Pinned: Unified Account, Data & Security + Settings */}
         <div
-          className="border-t p-3"
+          className="border-t p-3 space-y-2"
           style={{ borderColor: 'var(--border-color)' }}
         >
+          <button
+            type="button"
+            onClick={() => navAndClose('account_security')}
+            className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-xs font-extrabold transition-all hover:border-[var(--accent)] ${
+              compact ? 'justify-center px-0' : 'justify-between'
+            }`}
+            style={{
+              backgroundColor:
+                activeView === 'account_security'
+                  ? 'var(--bg-nav-active)'
+                  : 'var(--bg-main)',
+              borderColor:
+                activeView === 'account_security'
+                  ? 'var(--accent)'
+                  : 'var(--border-color)',
+              color:
+                activeView === 'account_security'
+                  ? 'var(--accent)'
+                  : 'var(--text-primary)',
+            }}
+            title="الحساب والبيانات والأمان"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              {authUser?.avatarUrl ? (
+                <img
+                  src={authUser.avatarUrl}
+                  alt={authUser.displayName}
+                  referrerPolicy="no-referrer"
+                  className="h-6 w-6 shrink-0 rounded-lg border object-cover"
+                  style={{ borderColor: 'var(--accent)' }}
+                />
+              ) : authUser ? (
+                <ShieldCheck className="h-4 w-4 shrink-0" style={{ color: 'var(--success)' }} />
+              ) : (
+                <UserCircle2 className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
+              )}
+              {!compact && (
+                <span className="min-w-0 text-right">
+                  <span className="block truncate whitespace-nowrap leading-tight">
+                    الحساب والأمان والبيانات
+                  </span>
+                  <span
+                    className="block truncate text-[10px] font-semibold"
+                    style={{ color: 'var(--text-muted)' }}
+                    dir="auto"
+                  >
+                    {authUser ? authUser.displayName : 'دخول · نسخ · تصدير'}
+                  </span>
+                </span>
+              )}
+            </span>
+            {!compact && (
+              <ChevronLeft
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ color: 'var(--text-muted)' }}
+              />
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => navAndClose('settings')}
@@ -526,24 +591,18 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </div>
       </aside>
 
-      {/* Mobile Slide-Over Drawer */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
-            onClick={onCloseMobile}
-          />
-          <aside
-            className="relative z-10 h-full w-72 max-w-[85vw] overflow-y-auto border-l shadow-2xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            {renderSidebarBody(true)}
-          </aside>
+      {/* Full-Screen Push Navigation Menu on Mobile */}
+      <FullScreenPushPage
+        open={mobileOpen}
+        onBack={onCloseMobile}
+        title="قائمة التطبيق — Morrow"
+        subtitle={activePeriod?.quotaName || 'إدارة الوكالات والسجلات'}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle overflow-hidden">
+          {renderSidebarBody(true)}
         </div>
-      )}
+      </FullScreenPushPage>
     </>
   );
 };

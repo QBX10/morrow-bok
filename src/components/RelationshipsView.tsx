@@ -8,8 +8,9 @@ import {
   Search,
   Trash2,
   Truck,
-  X,
 } from 'lucide-react';
+import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import type {
   Agency,
   CalculationSettings,
@@ -242,24 +243,10 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
       {/* Editable Page & Table Title + Date */}
       <div
         data-assistant-target="relationships-header"
-        className="tabrix-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
+        className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5"
       >
         <div className="flex items-start gap-3.5 min-w-0 flex-1">
-          <span
-            className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: 'var(--bg-nav-active)',
-              borderColor: 'color-mix(in srgb, var(--accent) 26%, var(--border-color))',
-              color: 'var(--accent)',
-            }}
-            aria-hidden="true"
-          >
-            <HeartHandshake className="h-5 w-5" />
-          </span>
+          <NexusDuotoneIcon icon={HeartHandshake} size="lg" className="hidden sm:inline-flex" />
           <div className="min-w-0 flex-1">
             <TableHeaderEditor
               meta={headerMeta}
@@ -272,7 +259,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
         <button
           type="button"
           onClick={() => openNewRelationModal()}
-          className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0 transition-opacity hover:opacity-90"
+          className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap shrink-0"
           style={{
             backgroundColor: 'var(--accent)',
             color: 'var(--accent-fg)',
@@ -285,7 +272,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
 
       {upcomingReminders.length > 0 && (
         <div
-          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold"
           style={{
             backgroundColor: 'var(--warning-bg)',
             borderColor: 'var(--warning)',
@@ -305,7 +292,8 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveCategory('reminder')}
-            className="underline"
+            className="nexus-pill-btn border px-3 py-1 text-[11px]"
+            style={{ borderColor: 'var(--warning)' }}
           >
             عرض التذكيرات
           </button>
@@ -317,7 +305,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
         <button
           type="button"
           onClick={() => setActiveCategory('all')}
-          className="rounded-lg border px-3 py-2 font-bold transition-colors"
+          className="nexus-pill-btn border px-3.5 py-2 font-bold"
           style={{
             backgroundColor:
               activeCategory === 'all' ? 'var(--accent)' : 'var(--bg-surface)',
@@ -341,7 +329,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
               key={cat.id}
               type="button"
               onClick={() => setActiveCategory(cat.id)}
-              className="rounded-lg border px-3 py-2 font-bold transition-colors"
+              className="nexus-pill-btn border px-3.5 py-2 font-bold"
               style={{
                 backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
                 borderColor: active ? 'var(--accent)' : 'var(--border-color)',
@@ -402,14 +390,8 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
       </div>
 
       {/* Relationships Table */}
-      <div
-        className="overflow-x-auto rounded-xl border"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
-        <table className="agency-table text-right text-xs sm:text-sm">
+      <div className="nexus-squircle overflow-x-auto p-2">
+        <table className="agency-table nexus-slab-table text-right text-xs sm:text-sm">
           <thead>
             <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
               <th
@@ -615,36 +597,16 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
         </table>
       </div>
 
-      {/* Add / Edit Relation Modal */}
-      {formOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="إضافة أو تعديل سجل في قسم العلاقات"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
-          onClick={() => setFormOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border p-5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold">إضافة / تحديث في قسم العلاقات</h3>
-              <button
-                type="button"
-                onClick={() => setFormOpen(false)}
-                aria-label="إغلاق"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
+      {/* Add / Edit Relation Full-Screen Push Page */}
+      <FullScreenPushPage
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title="إضافة / تحديث في قسم العلاقات"
+        subtitle="ربط المستفيد بتصنيف متابعة أو موعد تذكير أو ملاحظة توصيل"
+        icon={<HeartHandshake className="h-4 w-4" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="nexus-squircle p-5">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -813,14 +775,14 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFormOpen(false)}
-                  className="rounded-lg border px-4 py-2 font-semibold"
+                  className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
+                  className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -831,9 +793,8 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </FullScreenPushPage>
     </main>
   );
 };

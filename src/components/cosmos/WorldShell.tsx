@@ -78,7 +78,7 @@ class WorldErrorBoundary extends Component<
           تعذر تحميل جزء من {this.props.worldTitle} بأمان
         </h3>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          بقية العوالم والجداول سليمة ومعزولة تماماً. ({this.state.message})
+          بقية الأقسام والجداول سليمة ومعزولة تماماً. ({this.state.message})
         </p>
         <div className="flex items-center justify-center gap-2">
           <button
@@ -309,7 +309,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 <span className="hidden sm:inline tabular-nums">{clampedHealth}%</span>
               </button>
 
-              {/* Simple / Expert Toggle */}
+              {/* View Layout Toggle */}
               <button
                 type="button"
                 onClick={() =>
@@ -327,14 +327,14 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 }}
               >
                 <Sliders className="h-3.5 w-3.5" />
-                <span>{experienceMode === 'expert' ? 'خبير' : 'بسيط'}</span>
+                <span>{experienceMode === 'expert' ? 'تفصيلي' : 'مبسط'}</span>
               </button>
 
-              {/* World Switcher */}
+              {/* Section Switcher */}
               <button
                 type="button"
                 onClick={onOpenWorldSwitcher}
-                aria-label="تبديل العالم"
+                aria-label="تبديل القسم"
                 className="cosmos-touch-target inline-flex items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-main)',
@@ -342,7 +342,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 }}
               >
                 <Globe2 className="h-4 w-4" style={{ color: world.accentColor }} />
-                <span className="hidden md:inline">العوالم</span>
+                <span className="hidden md:inline">الأقسام</span>
               </button>
 
               {/* World Tools Sheet Trigger */}
@@ -504,7 +504,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             {(
               [
                 { id: 'quick', label: 'سريع', icon: Zap },
-                { id: 'galaxies', label: 'المجرات', icon: Orbit },
+                { id: 'galaxies', label: 'الأقسام', icon: Orbit },
                 { id: 'favorites', label: 'المفضلة', icon: Star },
                 { id: 'search', label: 'بحث', icon: Search },
               ] as const
@@ -539,7 +539,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
           open={toolsOpen}
           onClose={() => setToolsOpen(false)}
           title={`أدوات ${world.title}`}
-          subtitle="إدارة معزولة لهذا العالم فقط — لا تؤثر على بقية العوالم أو الجداول المحمية"
+          subtitle="إدارة معزولة لهذا القسم فقط — لا تؤثر على بقية الأقسام أو الجداول المحمية"
           icon={<Wrench className="h-5 w-5" />}
         >
           <div className="space-y-5">
@@ -552,7 +552,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 }}
               >
                 <div>
-                  <div className="font-extrabold">حالة العالم ({clampedHealth}%)</div>
+                  <div className="font-extrabold">حالة القسم ({clampedHealth}%)</div>
                   <div style={{ color: 'var(--text-muted)' }}>{healthNote}</div>
                 </div>
                 {onFixWorldIssues && (
@@ -585,7 +585,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   }}
                 >
                   <Download className="h-4 w-4" />
-                  <span>تصدير إعدادات هذا العالم JSON</span>
+                  <span>تصدير إعدادات هذا القسم JSON</span>
                 </button>
               )}
 
@@ -603,7 +603,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   }}
                 >
                   <RotateCcw className="h-4 w-4" />
-                  <span>استعادة افتراضي هذا العالم فقط</span>
+                  <span>استعادة افتراضي هذا القسم فقط</span>
                 </button>
               )}
             </div>
@@ -611,11 +611,11 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs font-extrabold">
                 <History className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                <span>سجل تغييرات هذا العالم ({scopedLog.length})</span>
+                <span>سجل تغييرات هذا القسم ({scopedLog.length})</span>
               </div>
               {scopedLog.length === 0 ? (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  لم تُسجّل تغييرات في هذا العالم خلال الجلسة الأخيرة.
+                  لم تُسجّل تغييرات في هذا القسم خلال الجلسة الأخيرة.
                 </p>
               ) : (
                 <div className="max-h-48 overflow-y-auto space-y-1.5">

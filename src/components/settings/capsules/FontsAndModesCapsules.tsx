@@ -3,13 +3,11 @@ import {
   Calendar,
   CheckCircle2,
   Hash,
-  Lock,
   RotateCcw,
   ShieldCheck,
   Sliders,
   Tag,
   Type,
-  Unlock,
 } from 'lucide-react';
 import type {
   AccessibilityAndExperiencePrefs,
@@ -19,7 +17,6 @@ import type {
   FontSizeStep,
   FontWeightStep,
   GeneralAppPrefs,
-  GranularControlPrefs,
   RowDensityStep,
   ThemePreferences,
 } from '../../../types/agency';
@@ -28,10 +25,6 @@ import type {
   HierarchyNode,
 } from '../../../utils/hierarchyRegistry';
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
-import {
-  DEFAULT_GRANULAR_CONTROLS,
-  MODE_TIER_META,
-} from '../../../utils/modePermissions';
 import {
   ARABIC_FONTS,
   DEFAULT_THEME_PREFERENCES,
@@ -675,65 +668,14 @@ interface ModesCapsulesProps {
   onNotifySuccess: (msg: string) => void;
 }
 
-const GRANULAR_ITEMS: Array<{
-  key: keyof GranularControlPrefs;
-  title: string;
-  desc: string;
-}> = [
-  {
-    key: 'enableEditRecords',
-    title: 'التعديل المباشر داخل الجداول',
-    desc: 'تحديث الأسماء والأعداد والأختام مباشرة داخل صفوف الوكالات.',
-  },
-  {
-    key: 'enableAgencyManagement',
-    title: 'إنشاء وإدارة الوكالات',
-    desc: 'إضافة وكالات جديدة أو تعديل شعاراتها وحالات القفل الخاصة بها.',
-  },
-  {
-    key: 'enableFinance',
-    title: 'إظهار قسم الحسابات والمالية',
-    desc: 'متابعة الإيرادات والأجور والمصروفات وصافي الأرباح.',
-  },
-  {
-    key: 'enableQuickExtract',
-    title: 'محرك السحب الذكي (OCR)',
-    desc: 'استخراج قوائم PDF والصور والمطابقة التلقائية بالوكالات.',
-  },
-  {
-    key: 'enableColumnCustomization',
-    title: 'تخصيص وترتيب أعمدة الجداول',
-    desc: 'إخفاء أو إظهار الأعمدة وإضافة أعمدة مخصصة جديدة.',
-  },
-  {
-    key: 'enableBulkEdit',
-    title: 'التحديد المتعدد والإجراءات الجماعية',
-    desc: 'نقل أو حظر أو تعديل عدة سجلات دفعة واحدة.',
-  },
-  {
-    key: 'enableSmartAudit',
-    title: 'رادار التدقيق وفحص التضاربات',
-    desc: 'تنبيه تلقائي عند تكرار الأسماء أو فقدان البيانات.',
-  },
-  {
-    key: 'bypassEditConfirm',
-    title: 'تحرير سريع بدون نوافذ تأكيد',
-    desc: 'تطبيق تعديلات الصفوف مباشرة مع الاحتفاظ بالتراجع وسلة الاسترجاع.',
-  },
-];
-
 export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
   sectionNode,
   activeNode,
   activeCapsuleId,
   displayMode,
   badgeContext,
-  modeTier,
-  editorEnabled,
   expertTableConfig,
   generalPrefs,
-  onChangeModeTier,
-  onToggleEditor,
   onUpdateExpertTableConfig,
   onResetExpertTableConfig,
   onUpdateGeneralPrefs,
@@ -741,26 +683,10 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
   onNotifySuccess,
 }) => {
   const [newCategoryName, setNewCategoryName] = useState('');
-  const currentTierMeta =
-    MODE_TIER_META.find((m) => m.tier === modeTier) || MODE_TIER_META[0];
-  const granular: GranularControlPrefs = {
-    ...DEFAULT_GRANULAR_CONTROLS,
-    ...(generalPrefs?.granularControls || {}),
-  };
 
-  const toggleGranular = (key: keyof GranularControlPrefs) => {
-    const nextVal = !granular[key];
-    onUpdateGeneralPrefs?.({
-      granularControls: {
-        ...granular,
-        [key]: nextVal,
-      },
-    });
-    if (key === 'bypassEditConfirm') {
-      onUpdateExpertTableConfig({ allowDirectNoConfirmEdit: nextVal });
-    }
-    onNotifySuccess('تم تحديث مصفوفة الصلاحيات بنجاح.');
-  };
+  const confirmEdit = generalPrefs?.confirmBeforeEdit ?? true;
+  const confirmDelete = generalPrefs?.confirmBeforeDelete ?? true;
+  const instantSave = expertTableConfig.allowDirectNoConfirmEdit;
 
   // Level 3 Hub
   if (!activeCapsuleId) {
@@ -768,316 +694,171 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
       <NodeView
         node={sectionNode}
         displayMode={displayMode}
-        liveStatusText={currentTierMeta.title}
+        liveStatusText={`${expertTableConfig.customCategories.length} فئات مخصصة`}
         onResetBranch={() => {
           onResetExpertTableConfig();
           onUpdateGeneralPrefs?.({
-            granularControls: { ...DEFAULT_GRANULAR_CONTROLS },
+            confirmBeforeEdit: true,
+            confirmBeforeDelete: true,
           });
-          onNotifySuccess('تمت استعادة الصلاحيات القياسية وتخطيط الجدول.');
+          onNotifySuccess('تمت استعادة الإعدادات الافتراضية للتحرير وتخطيط الجدول.');
         }}
-        resetBranchLabel="إعادة ضبط الصلاحيات والجدول"
+        resetBranchLabel="إعادة ضبط الجدول والتفضيلات"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {sectionNode.children.map((child) => {
-            const badge = resolveHierarchyNodeBadge(child, badgeContext);
-            const preview =
-              child.id === 'modes_tier_cap' ? (
-                <div className="flex items-center justify-between font-bold">
-                  <span>الصلاحيات المفعّلة:</span>
-                  <span className="tabular-nums" style={{ color: 'var(--accent)' }}>
-                    {Object.values(granular).filter(Boolean).length} / 8
-                  </span>
-                </div>
-              ) : child.id === 'modes_editor_cap' ? (
-                <div className="flex items-center justify-between font-bold">
-                  <span>حالة المحرر:</span>
-                  <span
-                    style={{
-                      color: editorEnabled ? 'var(--success)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {editorEnabled ? 'مفعّل' : 'القراءة فقط'}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between font-bold tabular-nums">
-                  <span>الفئات المخصصة</span>
-                  <span style={{ color: 'var(--accent)' }}>
-                    {expertTableConfig.customCategories.length} فئات
-                  </span>
-                </div>
-              );
-
-            return (
-              <NodeCard
-                key={child.id}
-                node={child}
-                badge={badge}
-                preview={preview}
-                actionLabel="فتح المحور"
-                onOpen={(n) => onOpenCapsule(n.id)}
-              />
-            );
-          })}
-        </div>
-      </NodeView>
-    );
-  }
-
-  // Level 4A: Granular Permissions Matrix & Mode Tiers
-  if (activeCapsuleId === 'modes_tier_cap') {
-    return (
-      <NodeView
-        node={activeNode}
-        displayMode={displayMode}
-        liveStatusText={currentTierMeta.title}
-      >
-        <div className="space-y-5">
-          {/* Granular Matrix (Deep Control) */}
-          {onUpdateGeneralPrefs && (
-            <section
-              aria-label="مصفوفة الصلاحيات الدقيقة"
-              className="capsule-glass-card border p-5 space-y-4"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                  <h2 className="text-base font-extrabold">
-                    مصفوفة الصلاحيات التشغيلية المستقلة
-                  </h2>
-                </div>
-                <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--accent)' }}>
-                  {Object.values(granular).filter(Boolean).length} من {GRANULAR_ITEMS.length} نشط
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
-                {GRANULAR_ITEMS.map((item) => {
-                  const checked = Boolean(granular[item.key]);
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex min-h-[64px] cursor-pointer items-start gap-2.5 rounded-2xl border p-3.5 transition-colors"
-                      style={{
-                        backgroundColor: checked
-                          ? 'var(--bg-nav-active)'
-                          : 'var(--bg-main)',
-                        borderColor: checked
-                          ? 'var(--accent)'
-                          : 'var(--border-color)',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleGranular(item.key)}
-                        className="mt-1"
-                      />
-                      <div>
-                        <div className="font-extrabold">{item.title}</div>
-                        <div
-                          className="mt-0.5 leading-relaxed"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          {item.desc}
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* Mode Tier Selector */}
-          <section
-            aria-label="قسم الأوضاع"
-            className="capsule-glass-card border p-5 space-y-4"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2">
-              <Sliders className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-              <h2 className="text-base font-extrabold">
-                مستوى التحكم العام للوضع الموحد
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {MODE_TIER_META.map((item) => {
-                const selected = modeTier === item.tier;
-                return (
-                  <button
-                    key={item.tier}
-                    type="button"
-                    onClick={() => {
-                      onChangeModeTier(item.tier);
-                      onNotifySuccess(`تم التبديل إلى: ${item.title}`);
-                    }}
-                    className="flex min-h-[96px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
-                    style={{
-                      backgroundColor: selected
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                      borderColor: selected
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    }}
-                  >
-                    <div className="flex w-full items-center justify-between gap-2">
-                      <span
-                        className="text-sm font-extrabold"
-                        style={{
-                          color: selected
-                            ? 'var(--accent)'
-                            : 'var(--text-primary)',
-                        }}
-                      >
-                        {item.title}
-                      </span>
-                      {selected && (
-                        <CheckCircle2
-                          className="h-4 w-4 shrink-0"
-                          style={{ color: 'var(--accent)' }}
-                        />
-                      )}
-                    </div>
-                    <p
-                      className="mt-1.5 text-xs leading-relaxed"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      {item.subtitle}
-                    </p>
-                  </button>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {sectionNode.children
+            .filter((child) => child.id !== 'modes_tier_cap')
+            .map((child) => {
+              const badge = resolveHierarchyNodeBadge(child, badgeContext);
+              const preview =
+                child.id === 'modes_editor_cap' ? (
+                  <div className="flex items-center justify-between font-bold">
+                    <span>نمط الحفظ:</span>
+                    <span style={{ color: 'var(--accent)' }}>
+                      {instantSave ? 'حفظ فوري مباشر' : 'تأكيد قبل التعديل والحذف'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between font-bold tabular-nums">
+                    <span>الفئات المخصصة</span>
+                    <span style={{ color: 'var(--accent)' }}>
+                      {expertTableConfig.customCategories.length} فئات
+                    </span>
+                  </div>
                 );
-              })}
-            </div>
-          </section>
+
+              return (
+                <NodeCard
+                  key={child.id}
+                  node={child}
+                  badge={badge}
+                  preview={preview}
+                  actionLabel="فتح الإعدادات"
+                  onOpen={(n) => onOpenCapsule(n.id)}
+                />
+              );
+            })}
         </div>
       </NodeView>
     );
   }
 
-  // Level 4B: Editor Mode
-  if (activeCapsuleId === 'modes_editor_cap') {
+  // Level 4A: Editing, Confirmation Rules & Instant Save Preferences
+  if (activeCapsuleId === 'modes_tier_cap' || activeCapsuleId === 'modes_editor_cap') {
     return (
       <NodeView
         node={activeNode}
         displayMode={displayMode}
-        liveStatusText={editorEnabled ? 'المحرر مفعّل' : 'القراءة فقط'}
+        liveStatusText={instantSave ? 'حفظ فوري' : 'تأكيد ذكي نشط'}
       >
         <section
-          aria-label="قسم المحرر"
+          aria-label="قواعد التأكيد والحفظ السريع"
           className="capsule-glass-card border p-5 space-y-4"
           style={{ borderColor: 'var(--border-color)' }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {editorEnabled ? (
-                <Unlock
-                  className="h-4 w-4"
-                  style={{ color: 'var(--success)' }}
-                />
-              ) : (
-                <Lock
-                  className="h-4 w-4"
-                  style={{ color: 'var(--text-muted)' }}
-                />
-              )}
-              <h2 className="text-base font-extrabold">
-                وضع «المحرر» وقواعد التأكيد والحماية
-              </h2>
+              <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+              <div>
+                <h2 className="text-base font-extrabold">
+                  قواعد التأكيد والحفظ الفوري
+                </h2>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  التعديل وتخصيص الجداول متاحان دائماً بشكل مباشر؛ حدد هنا متى ترغب بظهور نافذة تأكيد.
+                </p>
+              </div>
             </div>
-
-            <button
-              type="button"
-              disabled={modeTier === 'beginner'}
-              onClick={() => {
-                onToggleEditor(!editorEnabled);
-                onNotifySuccess(
-                  !editorEnabled ? 'تم تفعيل وضع المحرر.' : 'تم إيقاف وضع المحرر.'
-                );
-              }}
-              className="min-h-[44px] rounded-xl px-4 py-2 text-xs font-extrabold whitespace-nowrap disabled:opacity-45"
-              style={{
-                backgroundColor: editorEnabled
-                  ? 'var(--success)'
-                  : 'var(--accent)',
-                color: editorEnabled
-                  ? 'var(--success-fg)'
-                  : 'var(--accent-fg)',
-              }}
-            >
-              {modeTier === 'beginner'
-                ? 'مقفل في الوضع المبتدئ'
-                : editorEnabled
-                ? 'المحرر مفعّل (انقر للتعطيل)'
-                : 'تفعيل المحرر الآن'}
-            </button>
           </div>
 
-          {onUpdateGeneralPrefs && generalPrefs && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
-              <label
-                className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: generalPrefs.confirmBeforeEdit
-                    ? 'var(--accent)'
-                    : 'var(--border-color)',
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+            <label
+              className="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-4 transition-colors"
+              style={{
+                backgroundColor: instantSave ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                borderColor: instantSave ? 'var(--accent)' : 'var(--border-color)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={instantSave}
+                onChange={(e) => {
+                  onUpdateExpertTableConfig({
+                    allowDirectNoConfirmEdit: e.target.checked,
+                  });
+                  onNotifySuccess(
+                    e.target.checked
+                      ? 'تم تفعيل الحفظ الفوري بدون نوافذ تأكيد.'
+                      : 'تم تفعيل خطوة التأكيد عند التعديل والحذف.'
+                  );
                 }}
-              >
-                <input
-                  type="checkbox"
-                  checked={generalPrefs.confirmBeforeEdit}
-                  onChange={(e) =>
-                    onUpdateGeneralPrefs({ confirmBeforeEdit: e.target.checked })
-                  }
-                  className="mt-0.5"
-                />
-                <div>
-                  <div className="font-extrabold">تأكيد قبل تعديل السجلات</div>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    يطلب موافقة عند حفظ تغييرات البطاقة الشخصية.
-                  </div>
+                className="mt-0.5"
+              />
+              <div>
+                <div className="font-extrabold">حفظ فوري مباشر بدون نوافذ تأكيد</div>
+                <div className="mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  يطبق التعديلات في الجدول فوراً مع بقاء سجل التراجع وسلة الاسترجاع نشطة.
                 </div>
-              </label>
+              </div>
+            </label>
 
-              <label
-                className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: generalPrefs.confirmBeforeDelete
-                    ? 'var(--accent)'
-                    : 'var(--border-color)',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={generalPrefs.confirmBeforeDelete}
-                  onChange={(e) =>
-                    onUpdateGeneralPrefs({
-                      confirmBeforeDelete: e.target.checked,
-                    })
-                  }
-                  className="mt-0.5"
-                />
-                <div>
-                  <div className="font-extrabold">تأكيد قبل حذف أي سجل</div>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    نافذة حماية قبل نقل العناصر إلى سلة الاسترجاع.
+            {onUpdateGeneralPrefs && generalPrefs && (
+              <>
+                <label
+                  className="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-4 transition-colors"
+                  style={{
+                    backgroundColor: !instantSave && confirmEdit ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                    borderColor: !instantSave && confirmEdit ? 'var(--accent)' : 'var(--border-color)',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={confirmEdit}
+                    onChange={(e) => {
+                      onUpdateGeneralPrefs({ confirmBeforeEdit: e.target.checked });
+                      onNotifySuccess('تم تحديث قاعدة التأكيد قبل التعديل.');
+                    }}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-extrabold">تأكيد قبل تعديل السجلات</div>
+                    <div className="mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      يطلب تأكيداً سريعاً قبل حفظ تعديلات بطاقة المستفيد.
+                    </div>
                   </div>
-                </div>
-              </label>
-            </div>
-          )}
+                </label>
+
+                <label
+                  className="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-4 transition-colors"
+                  style={{
+                    backgroundColor: !instantSave && confirmDelete ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                    borderColor: !instantSave && confirmDelete ? 'var(--accent)' : 'var(--border-color)',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={confirmDelete}
+                    onChange={(e) => {
+                      onUpdateGeneralPrefs({ confirmBeforeDelete: e.target.checked });
+                      onNotifySuccess('تم تحديث قاعدة التأكيد قبل الحذف.');
+                    }}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-extrabold">تأكيد قبل حذف أي سجل</div>
+                    <div className="mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      رسالة حماية قبل نقل السجلات أو المصاريف إلى سلة الاسترجاع.
+                    </div>
+                  </div>
+                </label>
+              </>
+            )}
+          </div>
         </section>
       </NodeView>
     );
   }
 
-  // Level 4C: Expert Freedom & Custom Categories
+  // Level 4B: Custom Categories & Default Table Column Layout
   return (
     <NodeView
       node={activeNode}
@@ -1090,20 +871,17 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
       resetBranchLabel="إعادة ضبط تخطيط الجدول"
     >
       <section
-        aria-label="تحكم الخبير المطلق"
+        aria-label="الفئات المخصصة وتخطيط الجدول"
         className="capsule-glass-card border p-5 space-y-4"
-        style={{
-          borderColor:
-            modeTier === 'expert' ? 'var(--accent)' : 'var(--border-color)',
-        }}
+        style={{ borderColor: 'var(--border-color)' }}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold">
-              الحرية المطلقة وتخصيص الجدول والفئات
+              تخصيص الفئات وتخطيط الجدول
             </h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              إدارة الفئات التصنيفية للمستفيدين، التحرير السريع، وتخطيط الأعمدة الافتراضي.
+              إدارة الفئات التصنيفية للمستفيدين وإعادة تعيين ترتيب وأسماء الأعمدة الافتراضية.
             </p>
           </div>
 
@@ -1123,40 +901,6 @@ export const ModesCapsules: React.FC<ModesCapsulesProps> = ({
             <span>إعادة ضبط تخطيط الجدول</span>
           </button>
         </div>
-
-        <label
-          className="flex min-h-[60px] cursor-pointer items-start gap-2.5 rounded-2xl border p-4 text-xs"
-          style={{
-            backgroundColor: 'var(--bg-main)',
-            borderColor: expertTableConfig.allowDirectNoConfirmEdit
-              ? 'var(--accent)'
-              : 'var(--border-color)',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={expertTableConfig.allowDirectNoConfirmEdit}
-            onChange={(e) => {
-              onUpdateExpertTableConfig({
-                allowDirectNoConfirmEdit: e.target.checked,
-              });
-              onNotifySuccess(
-                e.target.checked
-                  ? 'تم تفعيل التحرير والحفظ الفوري بدون نوافذ تأكيد.'
-                  : 'تمت إعادة تفعيل خطوة التأكيد عند التعديل والحذف.'
-              );
-            }}
-            className="mt-0.5"
-          />
-          <div>
-            <div className="font-extrabold">
-              تحرير وحفظ فوري بدون نوافذ تأكيد
-            </div>
-            <div style={{ color: 'var(--text-muted)' }}>
-              تعديل الأسماء والأعداد والأعمدة المخصصة مباشرة مع حفظ المحذوفات في سلة الاسترجاع.
-            </div>
-          </div>
-        </label>
 
         {/* Custom Categories Manager */}
         <div
