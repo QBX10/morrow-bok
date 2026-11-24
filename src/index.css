@@ -3,22 +3,26 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-main: #09090B;
-  --bg-surface: #121216;
-  --bg-header: #0D0D11;
-  --bg-table-header: #16161C;
-  --bg-nav-active: rgba(212, 175, 55, 0.14);
-  --bg-zebra: rgba(255, 255, 255, 0.024);
-  --bg-numeric: rgba(212, 175, 55, 0.055);
-  --row-hover-bg: rgba(212, 175, 55, 0.11);
-  --text-primary: #F4F4F6;
-  --text-muted: #9898AA;
-  --border-color: rgba(212, 175, 55, 0.22);
-  --grid-color: rgba(212, 175, 55, 0.12);
-  --accent: #D4AF37;
-  --accent-fg: #09090B;
-  --accent-ai: #D4AF37;
-  --accent-ai-glow: rgba(212, 175, 55, 0.42);
+  --bg-main: #040B14;
+  --bg-surface: #0A1726;
+  --bg-header: #06101C;
+  --bg-table-header: #0E1F33;
+  --bg-nav-active: rgba(16, 185, 129, 0.16);
+  --bg-zebra: rgba(110, 231, 183, 0.025);
+  --bg-numeric: rgba(16, 185, 129, 0.075);
+  --row-hover-bg: rgba(16, 185, 129, 0.12);
+  --text-primary: #ECFDF5;
+  --text-muted: #8BB0BA;
+  --border-color: rgba(52, 211, 153, 0.24);
+  --grid-color: rgba(52, 211, 153, 0.13);
+  --accent: #10B981;
+  --accent-bright: #6EE7B7;
+  --accent-deep: #047857;
+  --accent-fg: #031510;
+  --marine-caustic-1: rgba(16, 185, 129, 0.16);
+  --marine-caustic-2: rgba(6, 182, 212, 0.11);
+  --accent-ai: #10B981;
+  --accent-ai-glow: rgba(16, 185, 129, 0.42);
   --success: #10B981;
   --success-fg: #04271D;
   --success-bg: rgba(16, 185, 129, 0.16);
@@ -65,13 +69,13 @@ body {
   font-family: var(--app-font-family);
   font-size: var(--app-font-size);
   font-weight: var(--app-font-weight);
-  background-color: #09090B;
+  background-color: var(--bg-main);
   color: var(--text-primary);
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
   scrollbar-width: thin;
-  scrollbar-color: rgba(212, 175, 55, 0.25) transparent;
+  scrollbar-color: color-mix(in srgb, var(--accent) 30%, transparent) transparent;
 }
 
 *:focus-visible {
@@ -257,18 +261,34 @@ textarea {
   animation: cosmosSheetUp 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Smart Living Cards & Sub-Icon Micro-Motion */
+/* Smart Living 3D Spatial Cards & Sub-Icon Micro-Motion */
 .smart-living-card {
+  --card-mx: 50%;
+  --card-my: 0%;
+  --card-rx: 0deg;
+  --card-ry: 0deg;
+  --card-ty: 0px;
   position: relative;
   border-radius: var(--card-radius);
-  background-color: var(--bg-surface);
+  background: linear-gradient(
+    158deg,
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 82%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) 92%, transparent) 100%
+  );
   border-color: var(--border-color);
-  box-shadow: var(--card-shadow);
+  transform-style: preserve-3d;
+  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 18%, rgba(255, 255, 255, 0.1)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.55),
+    var(--card-shadow),
+    0 18px 34px -20px rgba(2, 10, 22, 0.8);
   transition:
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1),
     background-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .smart-living-card::before {
@@ -281,7 +301,7 @@ textarea {
   background: linear-gradient(
     90deg,
     transparent,
-    var(--accent),
+    var(--accent-bright, var(--accent)),
     transparent
   );
   opacity: 0;
@@ -290,39 +310,48 @@ textarea {
     opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
     transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
+  z-index: 2;
 }
 
 .smart-living-card:hover,
 .smart-living-card:focus-within {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 46%, var(--border-color));
+  --card-ty: -4px;
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-color));
   box-shadow:
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 28%, rgba(255, 255, 255, 0.16)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.65),
     var(--card-shadow),
-    0 10px 26px -14px color-mix(in srgb, var(--accent) 32%, transparent);
+    0 22px 42px -18px rgba(2, 10, 22, 0.85),
+    0 10px 26px -14px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .smart-living-card:hover::before,
 .smart-living-card:focus-within::before {
-  opacity: 0.9;
+  opacity: 0.95;
   transform: scaleX(1);
 }
 
 .smart-living-subicon {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 10px -6px rgba(2, 10, 22, 0.6);
   transition:
     transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
     background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .smart-living-card:hover .smart-living-subicon {
-  transform: translateY(-1px);
+  transform: translateY(-1.5px);
 }
 
 .smart-living-subicon:hover {
-  transform: translateY(-2px) scale(1.03);
+  transform: translateY(-3px) scale(1.04);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color));
   background-color: var(--bg-nav-active);
+  box-shadow: 0 8px 16px -8px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .smart-living-subicon:active {
@@ -494,10 +523,29 @@ textarea {
 
 .capsule-glass-card,
 .cosmos-glass-panel {
+  --card-mx: 50%;
+  --card-my: 0%;
+  --card-rx: 0deg;
+  --card-ry: 0deg;
+  --card-ty: 0px;
   border-radius: var(--capsule-radius);
-  background-color: color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.86) * 100%), transparent);
-  backdrop-filter: blur(14px) saturate(145%);
-  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  background: linear-gradient(
+    158deg,
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.86) * 100%), transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.86) * 100%), transparent) 100%
+  );
+  backdrop-filter: blur(18px) saturate(155%);
+  -webkit-backdrop-filter: blur(18px) saturate(155%);
+  transform-style: preserve-3d;
+  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 20%, rgba(255, 255, 255, 0.12)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.55),
+    0 20px 40px -20px rgba(2, 10, 22, 0.78);
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cosmos-touch-target {
@@ -797,15 +845,15 @@ html[data-glass="1"] .glass-surface {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-/* Obsidian & Gold Canvas Atmosphere */
+/* Absolute Marine Atmospheric Ocean Depth */
 html[data-glass="1"] body,
-html[data-app-theme="obsidian-gold"] body,
+html[data-app-theme] body,
 body {
-  background-color: #09090B;
+  background-color: var(--bg-main);
   background-image:
-    radial-gradient(960px circle at 86% -8%, rgba(212, 175, 55, 0.085), transparent 60%),
-    radial-gradient(720px circle at 12% 106%, rgba(243, 229, 171, 0.045), transparent 58%),
-    linear-gradient(180deg, #09090B 0%, #101014 100%);
+    radial-gradient(980px circle at 86% -8%, var(--marine-caustic-1, rgba(16, 185, 129, 0.14)), transparent 60%),
+    radial-gradient(760px circle at 12% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.09)), transparent 58%),
+    linear-gradient(180deg, var(--bg-main) 0%, var(--bg-surface) 100%);
   background-attachment: fixed;
 }
 
@@ -850,14 +898,27 @@ body {
 }
 
 .nexus-squircle {
+  --card-mx: 50%;
+  --card-my: 0%;
+  --card-rx: 0deg;
+  --card-ry: 0deg;
+  --card-ty: 0px;
   border-radius: var(--card-radius);
-  background-color: rgba(18, 18, 22, 0.72);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  backdrop-filter: blur(20px) saturate(155%);
-  -webkit-backdrop-filter: blur(20px) saturate(155%);
+  background: linear-gradient(
+    158deg,
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.74) * 100%), transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.74) * 100%), transparent) 100%
+  );
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(20px) saturate(165%);
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
+  transform-style: preserve-3d;
+  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
   box-shadow:
-    inset 0 1px 0 rgba(243, 229, 171, 0.13),
-    0 14px 32px -18px rgba(0, 0, 0, 0.72);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 24%, rgba(255, 255, 255, 0.14)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.6),
+    0 20px 42px -18px rgba(2, 10, 22, 0.82),
+    0 2px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 14%, rgba(2, 8, 18, 0.65));
   transition:
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
     border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -865,30 +926,34 @@ body {
 }
 
 .nexus-squircle-interactive:hover {
-  transform: translateY(-2px);
-  border-color: rgba(212, 175, 55, 0.44);
+  --card-ty: -4px;
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--border-color));
   box-shadow:
-    inset 0 1px 0 rgba(243, 229, 171, 0.18),
-    0 20px 40px -18px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(212, 175, 55, 0.18);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 34%, rgba(255, 255, 255, 0.18)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.65),
+    0 28px 52px -18px rgba(2, 10, 22, 0.88),
+    0 4px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 22%, rgba(2, 8, 18, 0.72)),
+    0 0 28px -12px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .nexus-glass-lite {
-  background-color: rgba(18, 18, 22, 0.68);
-  border-color: rgba(212, 175, 55, 0.22);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background-color: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+  border-color: var(--border-color);
+  backdrop-filter: blur(22px) saturate(168%);
+  -webkit-backdrop-filter: blur(22px) saturate(168%);
   box-shadow:
-    inset 0 1px 0 rgba(243, 229, 171, 0.14),
-    0 12px 30px -14px rgba(0, 0, 0, 0.65);
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 22%, rgba(255, 255, 255, 0.14)),
+    inset 0 -1px 0 rgba(2, 10, 22, 0.45),
+    0 16px 36px -14px rgba(2, 10, 22, 0.76);
 }
 
 .nexus-pill-btn {
   border-radius: 9999px;
   box-shadow:
-    inset 1px 1px 0 rgba(243, 229, 171, 0.12),
-    inset -1px -1px 0 rgba(0, 0, 0, 0.24),
-    0 4px 12px -4px rgba(0, 0, 0, 0.42);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 22%, rgba(255, 255, 255, 0.14)),
+    inset 0 -2px 0 rgba(2, 8, 18, 0.5),
+    0 2px 0 rgba(2, 8, 18, 0.55),
+    0 8px 18px -8px rgba(2, 10, 22, 0.62);
   transition:
     transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
     border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -898,23 +963,38 @@ body {
 }
 
 .nexus-pill-btn:hover:not(:disabled) {
-  border-color: rgba(212, 175, 55, 0.52);
+  transform: translate3d(0, -1.5px, 0);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border-color));
+  box-shadow:
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 30%, rgba(255, 255, 255, 0.18)),
+    inset 0 -2px 0 rgba(2, 8, 18, 0.5),
+    0 3px 0 rgba(2, 8, 18, 0.55),
+    0 12px 22px -8px color-mix(in srgb, var(--accent) 28%, rgba(2, 10, 22, 0.65));
 }
 
 .nexus-pill-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: translate3d(0, 1.5px, 0) scale(0.975);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 1px 0 rgba(2, 8, 18, 0.5),
+    0 3px 8px -4px rgba(2, 10, 22, 0.55);
 }
 
 .nexus-progress-track {
-  background-color: rgba(255, 255, 255, 0.07);
+  background-color: rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
   overflow: hidden;
 }
 
 .nexus-progress-glow {
   border-radius: 9999px;
-  background: linear-gradient(90deg, #D4AF37 0%, #F3E5AB 100%);
-  box-shadow: 0 0 14px rgba(212, 175, 55, 0.55);
+  background: linear-gradient(
+    90deg,
+    var(--accent-deep, #047857) 0%,
+    var(--accent, #10B981) 50%,
+    var(--accent-bright, #6EE7B7) 100%
+  );
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
   transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -982,10 +1062,12 @@ body {
   background-color: var(--bg-surface);
   border-top: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition:
     background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .agency-table.nexus-slab-table tbody tr td:first-child {
@@ -1002,13 +1084,23 @@ body {
 
 .agency-table.nexus-slab-table tbody tr:hover td {
   background-color: color-mix(in srgb, var(--bg-surface) 88%, var(--accent) 12%);
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-color));
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 18%, transparent),
+    0 8px 18px -12px rgba(2, 10, 22, 0.7);
 }
 
-/* SmartDashboardCard Living Micro-Motion & Hover Sheen (Obsidian & Gold Compatible) */
+/* SmartDashboardCard 3D Spatial Model, Perspective Tilt & Oceanic Sheen */
 .smart-dashboard-card {
   --card-mx: 50%;
   --card-my: 0%;
+  --card-rx: 0deg;
+  --card-ry: 0deg;
+  --card-ty: 0px;
+  transform-style: preserve-3d;
+  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  will-change: transform;
 }
 
 .smart-dashboard-card::before {
@@ -1021,7 +1113,7 @@ body {
   background: linear-gradient(
     90deg,
     transparent,
-    var(--accent),
+    var(--accent-bright, var(--accent)),
     transparent
   );
   opacity: 0;
@@ -1036,21 +1128,23 @@ body {
 .smart-dashboard-card-sheen {
   opacity: 0;
   background: radial-gradient(
-    320px circle at var(--card-mx) var(--card-my),
-    color-mix(in srgb, var(--accent) 12%, transparent),
-    transparent 65%
+    340px circle at var(--card-mx) var(--card-my),
+    color-mix(in srgb, var(--accent-bright, var(--accent)) 18%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 42%,
+    transparent 68%
   );
   transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .smart-dashboard-card:hover,
 .smart-dashboard-card:focus-within {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-color));
+  --card-ty: -5px;
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border-color));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 18px 38px -18px rgba(0, 0, 0, 0.65),
-    0 10px 26px -16px color-mix(in srgb, var(--accent) 30%, transparent);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 30%, rgba(255, 255, 255, 0.16)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.65),
+    0 26px 50px -18px rgba(2, 10, 22, 0.84),
+    0 12px 30px -16px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 .smart-dashboard-card:hover::before,
@@ -1097,6 +1191,10 @@ body {
   transform: scale(0.96) !important;
 }
 
+html[data-reduce-motion="1"] .nexus-squircle,
+html[data-reduce-motion="1"] .smart-living-card,
+html[data-reduce-motion="1"] .capsule-glass-card,
+html[data-reduce-motion="1"] .cosmos-glass-panel,
 html[data-reduce-motion="1"] .smart-dashboard-card,
 html[data-reduce-motion="1"] .smart-dashboard-subicon,
 html[data-reduce-motion="1"] .smart-dashboard-subicon-glyph {
@@ -1105,6 +1203,10 @@ html[data-reduce-motion="1"] .smart-dashboard-subicon-glyph {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nexus-squircle,
+  .smart-living-card,
+  .capsule-glass-card,
+  .cosmos-glass-panel,
   .smart-dashboard-card,
   .smart-dashboard-subicon,
   .smart-dashboard-subicon-glyph {

@@ -15,8 +15,19 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  Tabrix3DTiltSurface,
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from './ui/TabrixMotionPrimitives';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  useTabrixDirection,
+  useTabrixOrderedDirection,
+} from '../utils/tabrixMotion';
 import type {
   AuthUser,
   MonthlyArchiveRecord,
@@ -261,24 +272,43 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
     );
   };
 
-  // ============================================================================
-  // OPENED ARCHIVE INTERACTIVE TABLE VIEW
-  // ============================================================================
-  if (openedArchive) {
-    const activeArchivedList =
-      openedArchive.readyLists.find((l) => l.id === openedArchivedListId) ||
+  const archiveViewKey = openedArchive ? `opened:${openedArchive.id}` : 'hub';
+  const archiveViewDirection = useTabrixDirection(
+    Boolean(openedArchive),
+    (_prev, next) => (next ? 1 : -1)
+  );
+  const archiveSubTabDirection = useTabrixOrderedDirection(archiveTab, {
+    persons: 0,
+    lists: 1,
+    finance: 2,
+  });
+
+  const activeArchivedList = openedArchive
+    ? openedArchive.readyLists.find((l) => l.id === openedArchivedListId) ||
       openedArchive.readyLists[0] ||
-      null;
-    const archivedPersonMap = new Map(
-      openedArchive.persons.map((p) => [p.id, p])
-    );
-    const archivedListItems = activeArchivedList
+      null
+    : null;
+  const archivedPersonMap = useMemo(
+    () =>
+      openedArchive
+        ? new Map(openedArchive.persons.map((p) => [p.id, p]))
+        : new Map(),
+    [openedArchive]
+  );
+  const archivedListItems =
+    openedArchive && activeArchivedList
       ? openedArchive.readyListItems.filter(
           (it) => it.listId === activeArchivedList.id
         )
       : [];
 
-    return (
+  return (
+    <TabrixSubViewTransition
+      viewKey={archiveViewKey}
+      direction={archiveViewDirection}
+      className="w-full"
+    >
+      {openedArchive ? (
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 pb-24 sm:p-6 sm:pb-20">
         {/* Top Action Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -404,27 +434,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
 
         {/* Summary KPI Strip */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+          <Tabrix3DTiltSurface className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               العائلات المؤرشفة
             </div>
             <div className="mt-1 text-lg font-bold tabular-nums">
               {openedArchive.summary.totalHouseholds}
             </div>
-          </div>
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+          </Tabrix3DTiltSurface>
+          <Tabrix3DTiltSurface className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               إجمالي الأفراد المستحقة
             </div>
@@ -434,14 +452,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             >
               {openedArchive.summary.totalIndividuals}
             </div>
-          </div>
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+          </Tabrix3DTiltSurface>
+          <Tabrix3DTiltSurface className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               إجمالي الكمية
             </div>
@@ -451,14 +463,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 openedArchive.calculationSettings
               )}
             </div>
-          </div>
-          <div
-            className="rounded-xl border p-3.5"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
+          </Tabrix3DTiltSurface>
+          <Tabrix3DTiltSurface className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               الإيرادات المؤرشفة
             </div>
@@ -468,7 +474,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             >
               {formatIqd(openedArchive.summary.totalRevenueIqd)}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
         </div>
 
         {/* Sub-Tabs */}
@@ -494,26 +500,34 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 label: `الملخص المالي (${openedArchive.expenses.length})`,
               },
             ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setArchiveTab(tab.id)}
-              className="rounded-lg px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors"
-              style={{
-                backgroundColor:
-                  archiveTab === tab.id ? 'var(--accent)' : 'transparent',
-                color:
-                  archiveTab === tab.id
-                    ? 'var(--accent-fg)'
-                    : 'var(--text-primary)',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ).map((tab) => {
+            const active = archiveTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setArchiveTab(tab.id)}
+                className="relative rounded-lg px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors"
+                style={{
+                  color: active ? 'var(--accent)' : 'var(--text-primary)',
+                }}
+              >
+                {active && (
+                  <TabrixPillIndicator
+                    layoutId="archive-opened-subtab-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <span className="relative z-10">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
+        <TabrixSubViewTransition
+          viewKey={`arch-tab-${archiveTab}`}
+          direction={archiveSubTabDirection}
+        >
         {archiveTab === 'persons' && (
           <div className="space-y-3">
             {/* Instant Search & Smart Filters */}
@@ -992,6 +1006,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             </div>
           </div>
         )}
+        </TabrixSubViewTransition>
 
         <SnippetExportModal
           open={quickSnippetRows.length > 0}
@@ -1004,13 +1019,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           onClose={() => setQuickSnippetRows([])}
         />
       </main>
-    );
-  }
-
-  // ============================================================================
-  // MAIN DATA & MONTHLY ARCHIVES OVERVIEW
-  // ============================================================================
-  return (
+    ) : (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Header */}
       <div className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
@@ -1219,9 +1228,10 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           className="grid grid-cols-1 gap-4 md:grid-cols-2"
         >
           {filteredArchives.map((arch) => (
-            <article
+            <Tabrix3DTiltSurface
+              as="article"
               key={arch.id}
-              className="nexus-squircle nexus-squircle-interactive flex flex-col justify-between gap-4 p-5"
+              className="flex flex-col justify-between gap-4 p-5"
             >
               <div className="space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
@@ -1356,7 +1366,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                   )}
                 </div>
               </div>
-            </article>
+            </Tabrix3DTiltSurface>
           ))}
         </section>
       )}
@@ -1529,5 +1539,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
         </div>
       </FullScreenPushPage>
     </main>
+      )}
+    </TabrixSubViewTransition>
   );
 };

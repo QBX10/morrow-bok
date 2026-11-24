@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   BarChart3,
@@ -24,6 +25,12 @@ import type {
 } from '../../types/agency';
 import { buildDiagnosticsForSession } from '../../utils/ucrsEngine';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import {
+  TABRIX_EASE,
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface UcrsCoverageAndSessionsPanelProps {
   activeSession: UcrsSession | null;
@@ -106,6 +113,8 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
   const [wrongTokenInput, setWrongTokenInput] = useState('');
   const [correctedTokenInput, setCorrectedTokenInput] = useState('');
   const cropContainerRef = useRef<HTMLDivElement | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const diagnostics = useMemo<UcrsDiagnosticEntry[]>(() => {
     if (!activeSession) return [];
@@ -306,19 +315,26 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
           </div>
 
           {/* Last Fusion Diff Banner */}
-          {activeSession.lastFusionDiff && (
-            <div
-              className="flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-xs font-semibold"
-              style={{
-                backgroundColor: 'var(--success-bg)',
-                borderColor: 'var(--success)',
-                color: 'var(--success)',
-              }}
-            >
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{activeSession.lastFusionDiff.summaryMessage}</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {activeSession.lastFusionDiff && (
+              <motion.div
+                key="last-fusion-diff"
+                variants={popoverVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: 'var(--success-bg)',
+                  borderColor: 'var(--success)',
+                  color: 'var(--success)',
+                }}
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{activeSession.lastFusionDiff.summaryMessage}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* 4-Layer Coverage Bars + Field Breakdown */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -363,10 +379,17 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
                     className="h-2 w-full overflow-hidden rounded-full"
                     style={{ backgroundColor: 'var(--bg-surface)' }}
                   >
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
+                    <motion.div
+                      className="h-full rounded-full"
+                      initial={false}
+                      animate={{
                         width: `${Math.min(100, Math.max(0, bar.value))}%`,
+                      }}
+                      transition={{
+                        duration: reducedMotion ? 0.05 : 0.42,
+                        ease: TABRIX_EASE,
+                      }}
+                      style={{
                         backgroundColor: bar.color,
                       }}
                     />
@@ -419,10 +442,17 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
                     className="h-2 w-full overflow-hidden rounded-full"
                     style={{ backgroundColor: 'var(--bg-surface)' }}
                   >
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
+                    <motion.div
+                      className="h-full rounded-full"
+                      initial={false}
+                      animate={{
                         width: `${Math.min(100, Math.max(0, f.value))}%`,
+                      }}
+                      transition={{
+                        duration: reducedMotion ? 0.05 : 0.42,
+                        ease: TABRIX_EASE,
+                      }}
+                      style={{
                         backgroundColor: 'var(--accent)',
                       }}
                     />
@@ -616,75 +646,82 @@ export const UcrsCoverageAndSessionsPanel: React.FC<
                     ))}
                   </div>
 
-                  {activeDiagnostic && (
-                    <div
-                      className="space-y-2 rounded-lg border p-3"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <div
-                        className="font-bold"
+                  <AnimatePresence mode="wait">
+                    {activeDiagnostic && (
+                      <motion.div
+                        key={activeDiagnostic.id}
+                        variants={popoverVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="space-y-2 rounded-lg border p-3"
                         style={{
-                          color:
-                            activeDiagnostic.severity === 'critical'
-                              ? 'var(--danger)'
-                              : 'var(--warning)',
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
                         }}
                       >
-                        السبب: {activeDiagnostic.whyMessage}
-                      </div>
-
-                      <div>
                         <div
-                          className="mb-1 text-[11px] font-bold"
-                          style={{ color: 'var(--text-muted)' }}
+                          className="font-bold"
+                          style={{
+                            color:
+                              activeDiagnostic.severity === 'critical'
+                                ? 'var(--danger)'
+                                : 'var(--warning)',
+                          }}
                         >
-                          سلسلة الاستدلال:
+                          السبب: {activeDiagnostic.whyMessage}
                         </div>
-                        <ul className="list-disc space-y-0.5 pr-4 text-[11px]">
-                          {activeDiagnostic.reasoningChain.map((step, i) => (
-                            <li key={i}>{step}</li>
-                          ))}
-                        </ul>
-                      </div>
 
-                      <div>
-                        <div
-                          className="mb-1 text-[11px] font-bold"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          الفرضيات المرتبة بالاحتمال:
+                        <div>
+                          <div
+                            className="mb-1 text-[11px] font-bold"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            سلسلة الاستدلال:
+                          </div>
+                          <ul className="list-disc space-y-0.5 pr-4 text-[11px]">
+                            {activeDiagnostic.reasoningChain.map((step, i) => (
+                              <li key={i}>{step}</li>
+                            ))}
+                          </ul>
                         </div>
-                        <div className="space-y-1.5">
-                          {activeDiagnostic.hypotheses.map((h, i) => (
-                            <div
-                              key={i}
-                              className="rounded-md border px-2.5 py-1.5 text-[11px]"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                              }}
-                            >
-                              <div className="flex justify-between font-bold">
-                                <span>{h.label}</span>
-                                <span
-                                  className="tabular-nums"
-                                  style={{ color: 'var(--accent)' }}
-                                >
-                                  {h.probability}%
-                                </span>
+
+                        <div>
+                          <div
+                            className="mb-1 text-[11px] font-bold"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            الفرضيات المرتبة بالاحتمال:
+                          </div>
+                          <div className="space-y-1.5">
+                            {activeDiagnostic.hypotheses.map((h, i) => (
+                              <div
+                                key={i}
+                                className="rounded-md border px-2.5 py-1.5 text-[11px]"
+                                style={{
+                                  backgroundColor: 'var(--bg-main)',
+                                  borderColor: 'var(--border-color)',
+                                }}
+                              >
+                                <div className="flex justify-between font-bold">
+                                  <span>{h.label}</span>
+                                  <span
+                                    className="tabular-nums"
+                                    style={{ color: 'var(--accent)' }}
+                                  >
+                                    {h.probability}%
+                                  </span>
+                                </div>
+                                <div style={{ color: 'var(--text-muted)' }}>
+                                  الحل المقترح: {h.suggestedFix}
+                                </div>
                               </div>
-                              <div style={{ color: 'var(--text-muted)' }}>
-                                الحل المقترح: {h.suggestedFix}
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </div>

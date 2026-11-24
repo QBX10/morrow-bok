@@ -1,5 +1,7 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { TABRIX_MODAL_VARIANTS, TABRIX_TACTILE_SPRING } from '../utils/tabrixMotion';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -52,18 +54,17 @@ export class ErrorBoundary extends React.Component<
       return (
         <div
           dir="rtl"
-          className="flex min-h-screen items-center justify-center p-6"
+          className="tabrix-3d-stage ambient-obsidian-canvas flex min-h-screen items-center justify-center p-6"
           style={{
             backgroundColor: 'var(--bg-main, #0f172a)',
             color: 'var(--text-primary, #f8fafc)',
           }}
         >
-          <div
-            className="w-full max-w-md rounded-2xl border p-6 text-center space-y-4 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface, #1e293b)',
-              borderColor: 'var(--border-color, #334155)',
-            }}
+          <motion.div
+            variants={TABRIX_MODAL_VARIANTS}
+            initial="initial"
+            animate="animate"
+            className="chamfered-glass-card w-full max-w-md p-6 text-center space-y-4"
           >
             <div
               className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border"
@@ -82,22 +83,21 @@ export class ErrorBoundary extends React.Component<
             >
               {this.state.friendlyMessage}
             </p>
-            <button
+            <motion.button
               type="button"
+              whileHover={{ y: -1.5, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => {
                 this.setState({ hasError: false, friendlyMessage: '' });
                 window.location.reload();
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--accent, #38bdf8)',
-                color: 'var(--accent-fg, #0f172a)',
-              }}
+              className="marine-3d-cta nexus-pill-btn inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold"
             >
               <RotateCcw className="h-4 w-4" />
               <span>إعادة تحميل التطبيق</span>
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
         </div>
       );
     }

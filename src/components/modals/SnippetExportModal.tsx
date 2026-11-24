@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   Download,
   Printer,
   Scissors,
   Share2,
-  X,
 } from 'lucide-react';
 import type {
   CalculationSettings,
@@ -28,6 +28,12 @@ import {
   generateSmartSnippetBlob,
   printSmartSnippetPdf,
 } from '../../utils/snippetExport';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 
 interface SnippetExportModalProps {
@@ -53,17 +59,28 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
 }) => {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [cachedRecords, setCachedRecords] = useState<SnippetRecordInput[]>(records);
+  const reducedMotion = useTabrixReducedMotion();
+
+  useEffect(() => {
+    if (records.length > 0) {
+      setCachedRecords(records);
+    }
+  }, [records]);
+
+  const activeRecords = records.length > 0 ? records : cachedRecords;
+  const isOpen = open && records.length > 0;
 
   const resolvedPeriod = useMemo(
-    () => resolvePeriodMeta(periodMeta, records[0]?.updatedAt),
-    [periodMeta, records]
+    () => resolvePeriodMeta(periodMeta, activeRecords[0]?.updatedAt),
+    [periodMeta, activeRecords]
   );
 
   const totals = useMemo(() => {
     let individuals = 0;
     let totalKg = 0;
     let totalIqd = 0;
-    for (const r of records) {
+    for (const r of activeRecords) {
       const eff = getEffectiveAllocationForPerson(r, settings);
       const elig = eff.eligibleIndividuals ?? 0;
       individuals += elig;
@@ -71,9 +88,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
       totalIqd += eff.priceIqd ?? 0;
     }
     return { individuals, totalKg, totalIqd };
-  }, [records, settings]);
-
-  if (!open || records.length === 0) return null;
+  }, [activeRecords, settings]);
 
   const topTitle = freeformHeader?.topCustomTitle?.trim();
   const freeSubtitles = (freeformHeader?.freeSubtitles || []).filter((s) =>
@@ -89,7 +104,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
         tableSubtitle,
         periodMeta: resolvedPeriod,
         freeformHeader,
-        records,
+        records: activeRecords,
         settings,
       });
       downloadBlobFile(blob, filename);
@@ -104,6 +119,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
   };
 
   const handleShare = async () => {
+    if (activeRecords.length === 0) return;
     try {
       setBusy(true);
       setNotice('');
@@ -112,12 +128,12 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
         tableSubtitle,
         periodMeta: resolvedPeriod,
         freeformHeader,
-        records,
+        records: activeRecords,
         settings,
       });
 
       const file = new File([blob], filename, { type: 'image/png' });
-      const summaryLines = records.map((rec, idx) => {
+      const summaryLines = activeRecords.map((rec, idx) => {
         const d = buildSnippetCardDetails({
           record: rec,
           fallbackTitle: tableTitle,
@@ -138,7 +154,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
         navigator.canShare({ files: [file] })
       ) {
         await navigator.share({
-          title: `قصاصة — ${records[0].name}`,
+          title: `قصاصة — ${activeRecords[0]?.name || tableTitle}`,
           text: textPayload,
           files: [file],
         });
@@ -172,9 +188,9 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
   };
 
   const singleDetails =
-    records.length === 1
+    activeRecords.length === 1
       ? buildSnippetCardDetails({
-          record: records[0],
+          record: activeRecords[0],
           fallbackTitle: tableTitle,
           periodMeta: resolvedPeriod,
           settings,
@@ -183,17 +199,20 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
 
   return (
     <FullScreenPushPage
-      open={open}
+      open={isOpen}
       onBack={onClose}
-      title={`معاينة وتصدير حقل / قصاصة (${records.length === 1 ? records[0].name : `${records.length} صفوف`})`}
+      title={`معاينة وتصدير حقل / قصاصة (${activeRecords.length === 1 ? activeRecords[0].name : `${activeRecords.length} صفوف`})`}
       subtitle={tableTitle}
       icon={<Scissors className="h-4 w-4" />}
       ariaLabel="تصدير حقل / قصاصة رسمية"
       maxWidthClass="max-w-4xl"
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <button
+          <motion.button
             type="button"
+            whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+            whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={onClose}
             className="nexus-pill-btn border px-4 py-2 text-xs font-semibold"
             style={{
@@ -202,18 +221,21 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
             }}
           >
             إغلاق
-          </button>
+          </motion.button>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <motion.button
               type="button"
+              whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() =>
                 printSmartSnippetPdf({
                   tableTitle,
                   tableSubtitle,
                   periodMeta: resolvedPeriod,
                   freeformHeader,
-                  records,
+                  records: activeRecords,
                   settings,
                 })
               }
@@ -225,11 +247,14 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
             >
               <Printer className="h-3.5 w-3.5" />
               <span>طباعة / PDF</span>
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
               disabled={busy}
+              whileHover={reducedMotion || busy ? undefined : { y: -1.5, scale: 1.02 }}
+              whileTap={reducedMotion || busy ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={handleShare}
               className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
               style={{
@@ -240,11 +265,14 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
             >
               <Share2 className="h-3.5 w-3.5" />
               <span>مشاركة فورية</span>
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
               disabled={busy}
+              whileHover={reducedMotion || busy ? undefined : { y: -1.5, scale: 1.02 }}
+              whileTap={reducedMotion || busy ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={handleDownloadPng}
               className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
               style={{
@@ -254,26 +282,33 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
             >
               <Download className="h-3.5 w-3.5" />
               <span>{busy ? 'جارٍ التجهيز...' : 'حفظ كصورة عالية الدقة (PNG)'}</span>
-            </button>
+            </motion.button>
           </div>
         </div>
       }
     >
       <div className="space-y-4">
-          {notice && (
-            <div
-              role="status"
-              className="flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--success-bg)',
-                borderColor: 'var(--success)',
-                color: 'var(--success)',
-              }}
-            >
-              <Check className="h-4 w-4 shrink-0" />
-              <span>{notice}</span>
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {notice && (
+              <motion.div
+                key="snippet-notice"
+                variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                role="status"
+                className="flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--success-bg)',
+                  borderColor: 'var(--success)',
+                  color: 'var(--success)',
+                }}
+              >
+                <Check className="h-4 w-4 shrink-0" />
+                <span>{notice}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div
             className="overflow-hidden rounded-xl border-2 bg-white text-slate-900 shadow-lg"
@@ -344,7 +379,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map((rec, idx) => {
+                  {activeRecords.map((rec, idx) => {
                     const d = buildSnippetCardDetails({
                       record: rec,
                       fallbackTitle: tableTitle,
@@ -412,7 +447,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
 
             {/* Footer Totals */}
             <div className="border-t border-slate-300 bg-slate-100 px-5 py-2.5 text-xs font-bold text-slate-800 tabular-nums">
-              قصاصة تدقيق رسمية — Morrow · السجلات: {records.length} · الأفراد:{' '}
+              قصاصة تدقيق رسمية — Morrow · السجلات: {activeRecords.length} · الأفراد:{' '}
               {totals.individuals} · {formatTotalQuota(totals.totalKg, settings)} ·{' '}
               {formatIqd(totals.totalIqd)}
             </div>

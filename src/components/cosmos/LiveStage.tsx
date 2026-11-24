@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface LiveStageProps {
   title: string;
@@ -19,6 +25,7 @@ export const LiveStage: React.FC<LiveStageProps> = ({
   children,
 }) => {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const reducedMotion = useTabrixReducedMotion();
 
   return (
     <section
@@ -83,14 +90,23 @@ export const LiveStage: React.FC<LiveStageProps> = ({
         </span>
       </button>
 
-      {!collapsed && (
-        <div
-          className="border-t px-4 py-4 sm:px-5"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          {children}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="live-stage-body"
+            variants={
+              reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+            }
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="border-t px-4 py-4 sm:px-5"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 };

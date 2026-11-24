@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useTabrix3DTilt } from '../../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './NexusDuotoneIcon';
 
 export interface SmartSubIconItem {
@@ -34,25 +35,37 @@ export const SmartLivingSectionCard: React.FC<SmartLivingSectionCardProps> = ({
   onOpen,
 }) => {
   const displaySubIcons = subIcons.slice(0, 4);
+  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLElement>({
+    maxTiltX: 4.8,
+    maxTiltY: 5.8,
+  });
 
   return (
     <article
+      ref={tiltRef}
+      {...tiltHandlers}
       data-testid={testId}
-      className="nexus-squircle nexus-squircle-interactive group flex flex-col justify-between gap-4 p-5 text-right"
+      className="nexus-squircle smart-living-card group relative flex flex-col justify-between gap-4 overflow-hidden border p-5 text-right"
       style={{
         borderColor: active ? 'var(--accent)' : 'var(--border-color)',
       }}
     >
+      {/* Dynamic Pointer-Reactive Marine Specular Sheen */}
+      <div
+        aria-hidden="true"
+        className="smart-dashboard-card-sheen pointer-events-none absolute inset-0"
+      />
+
       {/* Top Area: Clean Clickable Header + Concise Summary + Subtle Entry Arrow */}
       <button
         type="button"
         onClick={onOpen}
         aria-label={actionLabel ? `${title} — ${actionLabel}` : title}
-        className="flex w-full items-start gap-3.5 text-right focus-visible:rounded-2xl"
+        className="relative z-[1] flex w-full items-start gap-3.5 text-right focus-visible:rounded-2xl cursor-pointer"
       >
         <NexusDuotoneIcon
           sizeClass="h-11 w-11"
-          className="transition-transform duration-200 group-hover:scale-[1.05]"
+          className="transition-transform duration-300 group-hover:scale-[1.08] group-hover:-rotate-2"
         >
           {icon}
         </NexusDuotoneIcon>
@@ -80,7 +93,7 @@ export const SmartLivingSectionCard: React.FC<SmartLivingSectionCardProps> = ({
       {/* Clean Row of 4 Distinct Visual Sub-Icons */}
       {displaySubIcons.length > 0 && (
         <div
-          className="grid grid-cols-4 gap-2 border-t pt-3.5"
+          className="relative z-[1] grid grid-cols-4 gap-2 border-t pt-3.5"
           style={{
             borderColor:
               'color-mix(in srgb, var(--border-color) 80%, transparent)',
@@ -111,7 +124,7 @@ export const SmartLivingSectionCard: React.FC<SmartLivingSectionCardProps> = ({
                   : 'color-mix(in srgb, var(--border-color) 82%, transparent)',
                 color: sub.active ? 'var(--accent)' : 'var(--text-primary)',
               }}
-              className="smart-living-subicon flex min-h-[60px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-1.5 py-2 text-center active:scale-[0.98]"
+              className="smart-living-subicon flex min-h-[60px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-1.5 py-2 text-center active:scale-[0.98] cursor-pointer"
             >
               <span
                 className="flex h-5 w-5 shrink-0 items-center justify-center"

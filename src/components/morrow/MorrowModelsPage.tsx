@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   Check,
   GitMerge,
@@ -22,6 +23,10 @@ import type {
   CollaborationOptionItem,
 } from './MorrowModelMenuPopover';
 import { MorrowSubPageHeader } from './MorrowSubPageHeader';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowModelsPageProps {
   brainMode: AssistantBrainMode;
@@ -63,6 +68,7 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
   onOpenAppAiStudio,
   onBackToChat,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   return (
     <main
       aria-label="النماذج الذكية ومحرك الاحتياط التلقائي"
@@ -128,10 +134,13 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
               const cooling = snap?.status === 'cooldown';
 
               return (
-                <button
+                <motion.button
                   key={opt.id}
                   type="button"
                   onClick={() => onChangeBrainMode(opt.id)}
+                  whileHover={reducedMotion ? undefined : { y: -2, scale: 1.01 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="nexus-squircle nexus-squircle-interactive flex flex-col justify-between gap-2.5 p-4 text-right"
                   style={{
                     backgroundColor: selected
@@ -170,7 +179,7 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
                       {snap.avgLatencyMs ? ` · ${(snap.avgLatencyMs / 1000).toFixed(1)}s` : ''}
                     </div>
                   )}
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -188,10 +197,13 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
                 {collaborationOptions.map((col) => {
                   const active = collaborationMode === col.id;
                   return (
-                    <button
+                    <motion.button
                       key={col.id}
                       type="button"
                       onClick={() => onChangeCollaborationMode(col.id)}
+                      whileHover={reducedMotion ? undefined : { y: -1.5 }}
+                      whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+                      transition={TABRIX_TACTILE_SPRING}
                       className="flex w-full items-start justify-between gap-3 rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent-ai)]"
                       style={{
                         backgroundColor: active
@@ -212,7 +224,7 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
                         </div>
                       </div>
                       {active && <Check className="h-4 w-4 shrink-0" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />}
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -229,10 +241,13 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
                 {STYLE_CARDS.map((st) => {
                   const active = responseStyle === st.id;
                   return (
-                    <button
+                    <motion.button
                       key={st.id}
                       type="button"
                       onClick={() => onChangeResponseStyle(st.id)}
+                      whileHover={reducedMotion ? undefined : { y: -1.5 }}
+                      whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+                      transition={TABRIX_TACTILE_SPRING}
                       className="rounded-2xl border p-3.5 text-right transition-colors hover:border-[var(--accent)]"
                       style={{
                         backgroundColor: active
@@ -250,7 +265,7 @@ export const MorrowModelsPage: React.FC<MorrowModelsPageProps> = ({
                       <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                         {st.desc}
                       </div>
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>

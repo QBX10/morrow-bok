@@ -54,7 +54,7 @@ test('tenantStorage isolates workspace records strictly per uid with pre-save co
   assert.equal(cleanBeta.persons.length, 0);
   assert.equal(cleanBeta.expenses.length, 0);
   assert.equal(cleanBeta.darkTheme, true);
-  assert.equal(cleanBeta.themePrefs?.appTheme, 'obsidian-gold');
+  assert.equal(cleanBeta.themePrefs?.appTheme, 'abyssal-emerald');
 
   // User B saves their own distinct 1-agency workspace
   cleanBeta.agencies = [

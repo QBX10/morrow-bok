@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Info,
@@ -10,6 +11,11 @@ import {
 import { SectionLogo } from '../settings/sectionLogos';
 import type { HierarchyIconKey } from '../../utils/hierarchyRegistry';
 import type { CosmosRiskLevel } from '../../utils/cosmosRegistry';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface SettingRowProps {
   id: string;
@@ -59,6 +65,7 @@ export const SettingRow: React.FC<SettingRowProps> = ({
   const [infoOpen, setInfoOpen] = useState(false);
   const [peekOpen, setPeekOpen] = useState(false);
   const [trialRemainingSec, setTrialRemainingSec] = useState<number | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
   const pressTimerRef = useRef<number | null>(null);
   const lastTrialSignalRef = useRef<number | undefined>(trialTriggerSignal);
 
@@ -237,135 +244,162 @@ export const SettingRow: React.FC<SettingRowProps> = ({
       </div>
 
       {/* 10-second Safe Trial Bar */}
-      {trialRemainingSec !== null && (
-        <div
-          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
-          style={{
-            backgroundColor: 'var(--warning-bg)',
-            borderColor: 'var(--warning)',
-          }}
-        >
-          <div className="space-y-0.5">
-            <span className="font-bold tabular-nums block">
-              تجربة آمنة: سيعود الإعداد السابق تلقائياً خلال {trialRemainingSec} ثانية
-            </span>
-            {trialComparisonText && (
-              <span className="text-[11px] font-semibold opacity-90 block">
-                {trialComparisonText}
+      <AnimatePresence initial={false}>
+        {trialRemainingSec !== null && (
+          <motion.div
+            key="safe-trial-bar"
+            variants={
+              reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+            }
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
+            style={{
+              backgroundColor: 'var(--warning-bg)',
+              borderColor: 'var(--warning)',
+            }}
+          >
+            <div className="space-y-0.5">
+              <span className="font-bold tabular-nums block">
+                تجربة آمنة: سيعود الإعداد السابق تلقائياً خلال {trialRemainingSec} ثانية
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setTrialRemainingSec(null);
-                onConfirmSafeTrial?.();
-              }}
-              className="rounded-lg px-2.5 py-1 text-[11px] font-bold"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              تثبيت الآن
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTrialRemainingSec(null);
-                onRevertSafeTrial?.();
-              }}
-              className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              تراجع فوري
-            </button>
-          </div>
-        </div>
-      )}
+              {trialComparisonText && (
+                <span className="text-[11px] font-semibold opacity-90 block">
+                  {trialComparisonText}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTrialRemainingSec(null);
+                  onConfirmSafeTrial?.();
+                }}
+                className="rounded-lg px-2.5 py-1 text-[11px] font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                تثبيت الآن
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrialRemainingSec(null);
+                  onRevertSafeTrial?.();
+                }}
+                className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                تراجع فوري
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ⓘ Why / Impact / Conflict Popover */}
-      {infoOpen && (
-        <div
-          className="tabrix-popover-enter mt-3 rounded-xl border p-3 text-xs space-y-1.5"
-          style={{
-            backgroundColor: 'var(--bg-main)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          {why && (
-            <p className="leading-relaxed">
-              <strong style={{ color: 'var(--accent)' }}>لماذا يوجد هذا الخيار؟ </strong>
-              {why}
-            </p>
-          )}
-          {affects && affects.length > 0 && (
-            <p style={{ color: 'var(--text-muted)' }}>
-              <strong>يؤثر على: </strong>
-              {affects.join(' · ')}
-            </p>
-          )}
-          {conflictHint && (
-            <p className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--warning)' }}>
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>{conflictHint}</span>
-            </p>
-          )}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {infoOpen && (
+          <motion.div
+            key="setting-info-popover"
+            variants={
+              reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+            }
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="capsule-glass-card mt-3 rounded-xl border p-3 text-xs space-y-1.5"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            {why && (
+              <p className="leading-relaxed">
+                <strong style={{ color: 'var(--accent)' }}>لماذا يوجد هذا الخيار؟ </strong>
+                {why}
+              </p>
+            )}
+            {affects && affects.length > 0 && (
+              <p style={{ color: 'var(--text-muted)' }}>
+                <strong>يؤثر على: </strong>
+                {affects.join(' · ')}
+              </p>
+            )}
+            {conflictHint && (
+              <p className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--warning)' }}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>{conflictHint}</span>
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Long-Press Peek Micro Menu */}
-      {peekOpen && (
-        <div
-          className="tabrix-popover-enter mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
-          style={{
-            backgroundColor: 'var(--bg-nav-active)',
-            borderColor: 'var(--accent)',
-          }}
-        >
-          <span className="font-bold">معاينة سريعة ({title})</span>
-          <div className="flex items-center gap-2">
-            {onTogglePin && (
+      <AnimatePresence initial={false}>
+        {peekOpen && (
+          <motion.div
+            key="setting-peek-popover"
+            variants={
+              reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+            }
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="capsule-glass-card mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'var(--accent)',
+            }}
+          >
+            <span className="font-bold">معاينة سريعة ({title})</span>
+            <div className="flex items-center gap-2">
+              {onTogglePin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onTogglePin();
+                    setPeekOpen(false);
+                  }}
+                  className="rounded-lg border px-2.5 py-1 font-bold"
+                  style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
+                >
+                  {isPinned ? 'إلغاء التثبيت' : 'تثبيت في المفضلة'}
+                </button>
+              )}
+              {onResetSingle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResetSingle();
+                    setPeekOpen(false);
+                  }}
+                  className="rounded-lg border px-2.5 py-1 font-bold"
+                  style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
+                >
+                  استرجاع الافتراضي
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  onTogglePin();
-                  setPeekOpen(false);
-                }}
-                className="rounded-lg border px-2.5 py-1 font-bold"
-                style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
+                onClick={() => setPeekOpen(false)}
+                className="rounded-lg px-2 py-1 font-bold"
+                style={{ color: 'var(--text-muted)' }}
               >
-                {isPinned ? 'إلغاء التثبيت' : 'تثبيت في المفضلة'}
+                إغلاق
               </button>
-            )}
-            {onResetSingle && (
-              <button
-                type="button"
-                onClick={() => {
-                  onResetSingle();
-                  setPeekOpen(false);
-                }}
-                className="rounded-lg border px-2.5 py-1 font-bold"
-                style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
-              >
-                استرجاع الافتراضي
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setPeekOpen(false)}
-              className="rounded-lg px-2 py-1 font-bold"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              إغلاق
-            </button>
-          </div>
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

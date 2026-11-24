@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   ArrowUpLeft,
   Check,
@@ -28,6 +29,11 @@ import type {
 import { getEngineDisplayMeta } from '../../utils/morrowRouter';
 import { ResultCard } from '../cosmos/ResultCard';
 import { MorrowCollaborationTrace } from './MorrowCollaborationTrace';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowMessageCardProps {
   message: AssistantMessage;
@@ -170,10 +176,17 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
 }) => {
   const isUser = message.role === 'user';
   const meta = getEngineDisplayMeta(message.engineUsed, message.modelId);
+  const reducedMotion = useTabrixReducedMotion();
+  const cardVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   if (isUser) {
     return (
-      <div className="flex flex-col items-start">
+      <motion.div
+        variants={cardVariants}
+        initial="initial"
+        animate="animate"
+        className="flex flex-col items-start"
+      >
         <div
           className={`rounded-2xl border whitespace-pre-line leading-[1.7] ${
             compact
@@ -188,7 +201,7 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
         >
           {message.text}
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -196,7 +209,12 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
   const showTransforms = !compact && !isWelcomeMsg && message.text.trim().length > 60;
 
   return (
-    <article className="flex flex-col items-stretch">
+    <motion.article
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      className="flex flex-col items-stretch"
+    >
       <div
         className={`nexus-squircle transition-colors ${
           compact ? 'px-3.5 py-3 text-xs sm:text-[13px]' : 'px-4 py-3.5 sm:px-5 sm:py-4 text-xs sm:text-sm'
@@ -711,6 +729,6 @@ export const MorrowMessageCard: React.FC<MorrowMessageCardProps> = ({
           )}
         </footer>
       </div>
-    </article>
+    </motion.article>
   );
 };

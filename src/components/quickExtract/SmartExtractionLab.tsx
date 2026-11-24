@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Check,
@@ -20,6 +21,12 @@ import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
 import { ContextualRowSnippet } from './ContextualRowSnippetModal';
 import { LiveDraftCopilot, type CopilotOperation } from './LiveDraftCopilot';
 import { SmartSourceViewer } from './SmartSourceViewer';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SUBVIEW_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 export type SmartLabFilterMode =
   | 'all'
@@ -99,6 +106,9 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [viewerCollapsed, setViewerCollapsed] = useState(false);
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const labVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_SUBVIEW_VARIANTS;
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     resolvedName: string;
@@ -318,13 +328,22 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
         </div>
       )}
 
-      {isOpen && (
-        /*
-          True RTL Flex Split-Screen (`dir="rtl"`):
-          - Flex child #1 sits on the RIGHT: SmartSourceViewer (PDF/Image viewer + Zoom/Pan + Visual Row Highlight Sync)
-          - Flex child #2 sits on the LEFT (`flex-1 min-w-0`): Interactive Draft Table + Mathematical Audits + Snippets + Copilot
-        */
-        <div className="flex flex-col items-start gap-4 lg:flex-row">
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          /*
+            True RTL Flex Split-Screen (`dir="rtl"`):
+            - Flex child #1 sits on the RIGHT: SmartSourceViewer (PDF/Image viewer + Zoom/Pan + Visual Row Highlight Sync)
+            - Flex child #2 sits on the LEFT (`flex-1 min-w-0`): Interactive Draft Table + Mathematical Audits + Snippets + Copilot
+          */
+          <motion.div
+            key="smart-extraction-lab-body"
+            custom={1}
+            variants={labVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-col items-start gap-4 lg:flex-row"
+          >
           {/* RIGHT SIDE IN RTL: PDF / Image Viewer */}
           <div
             className={
@@ -539,29 +558,36 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
                                     </div>
                                   </div>
 
-                                  {openTooltipKey === `${row.id}:name` && (
-                                    <div
-                                      className="mt-1.5 rounded-md border p-2 text-[11px]"
-                                      style={{
-                                        backgroundColor: 'var(--bg-surface)',
-                                        borderColor: 'var(--warning)',
-                                        color: 'var(--text-primary)',
-                                      }}
-                                    >
-                                      <div>{zt.name.tooltipQuestion}</div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenTooltipKey(null);
-                                          startManualEdit(row);
+                                  <AnimatePresence>
+                                    {openTooltipKey === `${row.id}:name` && (
+                                      <motion.div
+                                        key="name-doubt-tooltip"
+                                        variants={popoverVariants}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        className="mt-1.5 rounded-md border p-2 text-[11px]"
+                                        style={{
+                                          backgroundColor: 'var(--bg-surface)',
+                                          borderColor: 'var(--warning)',
+                                          color: 'var(--text-primary)',
                                         }}
-                                        className="mt-1 font-semibold underline"
-                                        style={{ color: 'var(--accent)' }}
                                       >
-                                        تعديل يدوي الآن
-                                      </button>
-                                    </div>
-                                  )}
+                                        <div>{zt.name.tooltipQuestion}</div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setOpenTooltipKey(null);
+                                            startManualEdit(row);
+                                          }}
+                                          className="mt-1 font-semibold underline"
+                                          style={{ color: 'var(--accent)' }}
+                                        >
+                                          تعديل يدوي الآن
+                                        </button>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </div>
                               )}
                             </td>
@@ -640,29 +666,36 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
                                     </div>
                                   )}
 
-                                  {openTooltipKey === `${row.id}:num` && (
-                                    <div
-                                      className="mt-1.5 rounded-md border p-2 font-sans text-[11px]"
-                                      style={{
-                                        backgroundColor: 'var(--bg-surface)',
-                                        borderColor: 'var(--warning)',
-                                        color: 'var(--text-primary)',
-                                      }}
-                                    >
-                                      <div>{zt.numbers.tooltipQuestion}</div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenTooltipKey(null);
-                                          startManualEdit(row);
+                                  <AnimatePresence>
+                                    {openTooltipKey === `${row.id}:num` && (
+                                      <motion.div
+                                        key="num-doubt-tooltip"
+                                        variants={popoverVariants}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        className="mt-1.5 rounded-md border p-2 font-sans text-[11px]"
+                                        style={{
+                                          backgroundColor: 'var(--bg-surface)',
+                                          borderColor: 'var(--warning)',
+                                          color: 'var(--text-primary)',
                                         }}
-                                        className="mt-1 font-semibold underline"
-                                        style={{ color: 'var(--accent)' }}
                                       >
-                                        تعديل يدوي
-                                      </button>
-                                    </div>
-                                  )}
+                                        <div>{zt.numbers.tooltipQuestion}</div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setOpenTooltipKey(null);
+                                            startManualEdit(row);
+                                          }}
+                                          className="mt-1 font-semibold underline"
+                                          style={{ color: 'var(--accent)' }}
+                                        >
+                                          تعديل يدوي
+                                        </button>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </div>
                               )}
                             </td>
@@ -1041,8 +1074,9 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
               />
             </div>
           </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 };

@@ -100,8 +100,18 @@ import { MorrowHistoryPage } from './morrow/MorrowHistoryPage';
 import { MorrowModelsPage } from './morrow/MorrowModelsPage';
 import { MorrowAssistantsPage } from './morrow/MorrowAssistantsPage';
 import { MorrowVoiceSettingsPage } from './morrow/MorrowVoiceSettingsPage';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_EASE,
+  TABRIX_MODAL_VARIANTS,
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
 import {
   SPECIALIZED_ASSISTANTS,
   type MorrowWorkspacePage,
@@ -459,6 +469,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   canUseQuickExtract = true,
 }) => {
   // Dual Hamburger Drawers + Clickable Center Morrow Model Selector + Standalone Page State
+  const reducedMotion = useTabrixReducedMotion();
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
   const [sideDrawerOpen, setSideDrawerOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -1568,6 +1579,21 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
   const isMainConversationView = activePage === 'chat';
 
+  const morrowPageDir = useTabrixOrderedDirection(activePage, {
+    chat: 0,
+    history: 1,
+    models: 2,
+    assistants: 3,
+    canvas: 4,
+    approvals: 5,
+    memory: 6,
+    quick_notes: 7,
+    diagnostics: 8,
+    voice_settings: 9,
+    live: 10,
+    camera: 11,
+  });
+
   const hasConversationContent =
     !(
       filteredMessages.length <= 1 &&
@@ -1629,30 +1655,40 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       />
 
       {/* Drag-and-Drop Overlay for Instant PDF / Image / Audio Inspection */}
-      {isDraggingFile && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none"
-          style={{
-            backgroundColor: 'rgba(2, 3, 8, 0.72)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          <div
-            className="rounded-3xl border-2 border-dashed px-8 py-6 text-center shadow-2xl"
+      <AnimatePresence>
+        {isDraggingFile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none"
             style={{
-              backgroundColor: 'rgba(13, 15, 22, 0.95)',
-              borderColor: 'var(--accent)',
-              color: 'var(--text-primary)',
+              backgroundColor: 'rgba(2, 3, 8, 0.72)',
+              backdropFilter: 'blur(8px)',
             }}
           >
-            <Paperclip className="mx-auto mb-2 h-7 w-7" style={{ color: 'var(--accent)' }} />
-            <div className="text-sm font-black">أفلت الملف هنا لتحليله فوراً</div>
-            <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-              يدعم كشوفات PDF، الصور، الملفات الصوتية، والنصوص
-            </div>
-          </div>
-        </div>
-      )}
+            <motion.div
+              variants={TABRIX_MODAL_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="rounded-3xl border-2 border-dashed px-8 py-6 text-center shadow-2xl"
+              style={{
+                backgroundColor: 'rgba(13, 15, 22, 0.95)',
+                borderColor: 'var(--accent)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <Paperclip className="mx-auto mb-2 h-7 w-7" style={{ color: 'var(--accent)' }} />
+              <div className="text-sm font-black">أفلت الملف هنا لتحليله فوراً</div>
+              <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                يدعم كشوفات PDF، الصور، الملفات الصوتية، والنصوص
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ====================================================================
           DUAL HAMBURGER TOP NAVIGATION BAR (RTL)
@@ -1689,14 +1725,17 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
 
           {/* Center: Active Model / Assistant Selector Pill */}
           <div className="flex items-center justify-center min-w-0">
-            <button
+            <motion.button
               type="button"
               data-testid="morrow-brand-switcher"
               onClick={() => setModelMenuOpen((v) => !v)}
               aria-expanded={modelMenuOpen}
               aria-haspopup="dialog"
               aria-label="تبديل النموذج أو نمط Morrow"
-              className="topbar-context-enter nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 text-xs font-bold min-w-0"
+              whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
+              className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 text-xs font-bold min-w-0"
               style={{
                 backgroundColor: modelMenuOpen
                   ? 'var(--bg-nav-active)'
@@ -1723,7 +1762,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 }`}
                 style={{ color: 'var(--text-muted)' }}
               />
-            </button>
+            </motion.button>
           </div>
 
           {/* Left Side (RTL End): New Chat + Morrow AI & Models Hamburger Menu */}
@@ -1777,30 +1816,42 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       </header>
 
       {/* ====================================================================
-          PAGE 1 (DEFAULT): CENTERED CHAT WORKSPACE + FLOATING PILL BAR
+          ANIMATED WORKSPACE PAGES (Chat + All Standalone Sub-Views)
          ==================================================================== */}
+      <TabrixSubViewTransition
+        viewKey={`morrow-page-${activePage}`}
+        direction={morrowPageDir}
+        className="flex flex-1 flex-col min-h-0"
+      >
       {isMainConversationView && (
         <main className="mx-auto flex h-[calc(100dvh-3rem)] w-full max-w-3xl flex-col px-3 pt-3 pb-4 sm:px-6 sm:pt-4 sm:pb-6 min-h-0">
-          {summonNotice && (
-            <div
-              className="mb-3 flex items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold shrink-0"
-              style={{
-                backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'rgba(129, 140, 248, 0.42)',
-                color: 'var(--accent)',
-              }}
-            >
-              <span className="truncate">{summonNotice}</span>
-              <button
-                type="button"
-                onClick={() => setSummonNotice(null)}
-                aria-label="إغلاق الإشعار"
-                className="p-0.5 hover:opacity-75"
+          <AnimatePresence initial={false}>
+            {summonNotice && (
+              <motion.div
+                key="morrow-summon-notice"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="mb-3 flex items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold shrink-0"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'rgba(129, 140, 248, 0.42)',
+                  color: 'var(--accent)',
+                }}
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
+                <span className="truncate">{summonNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setSummonNotice(null)}
+                  aria-label="إغلاق الإشعار"
+                  className="p-0.5 hover:opacity-75"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Scrollable Conversation Area / Centered Minimal Empty State */}
           <div className="flex-1 min-h-0 overflow-y-auto pb-4 flex flex-col">
@@ -1924,9 +1975,16 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               </section>
             ) : (
               <div className="space-y-4">
+                <AnimatePresence initial={false}>
                 {filteredMessages.map((msg) => (
-                  <MorrowMessageCard
+                  <motion.div
                     key={msg.id}
+                    initial={{ opacity: 0, y: 12, scale: 0.985 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    transition={{ duration: 0.22, ease: TABRIX_EASE }}
+                  >
+                  <MorrowMessageCard
                     message={msg}
                     copied={copiedMsgId === msg.id}
                     speaking={speakingMsgId === msg.id}
@@ -1957,7 +2015,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     onUndoLastAction={onUndoLastAction}
                     onSendPrompt={(prompt) => submitChatPrompt(prompt)}
                   />
+                  </motion.div>
                 ))}
+                </AnimatePresence>
 
                 {multimodalFeed.map((item) => (
                   <div
@@ -2378,8 +2438,14 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </FullScreenPushPage>
 
             {/* Slash Command Quick Launcher (above pill when typing /) */}
+            <AnimatePresence>
             {filteredSlashCommands.length > 0 && (
-              <div
+              <motion.div
+                key="morrow-slash-launcher"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="mb-2.5 rounded-2xl border p-2 space-y-1 max-h-52 overflow-y-auto shadow-2xl"
                 style={{
                   backgroundColor: '#13141a',
@@ -2436,13 +2502,20 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     </button>
                   );
                 })}
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
 
             <div className="morrow-composer-pill rounded-[28px] border px-2.5 py-2 sm:px-3 sm:py-2.5 space-y-2">
               {/* Pending Attached Document / Photo / Audio Preview */}
+              <AnimatePresence initial={false}>
               {attachedFile && (
-                <div
+                <motion.div
+                  key="morrow-attached-file"
+                  variants={TABRIX_POPOVER_VARIANTS}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
                   className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-2 text-xs"
                   style={{
                     backgroundColor: 'rgba(5, 5, 8, 0.72)',
@@ -2523,12 +2596,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                </div>
+                </motion.div>
               )}
+              </AnimatePresence>
 
               {/* Active Voice Recording Studio Strip (Live Waveform + Destination Switcher) */}
+              <AnimatePresence initial={false}>
               {isRecordingVoiceMsg && (
-                <div
+                <motion.div
+                  key="morrow-voice-strip"
+                  variants={TABRIX_POPOVER_VARIANTS}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
                   data-testid="morrow-voice-recording-strip"
                   className="rounded-2xl border p-3 text-xs space-y-2"
                   style={{
@@ -2635,8 +2715,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       {liveInterimText}
                     </div>
                   )}
-                </div>
+                </motion.div>
               )}
+              </AnimatePresence>
 
               {/* Main Pill Row: Right (+) | Center (Input) | Left (Mic + Live Waveform) */}
               <form
@@ -3680,6 +3761,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           }}
         />
       )}
+      </TabrixSubViewTransition>
 
       {/* ====================================================================
           LEFT DRAWER: MORROW AI, HISTORY, MODELS, ASSISTANTS, TOOLS & VOICE

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Lock, Unlock } from 'lucide-react';
 import { AgenciesHubView } from './components/AgenciesHubView';
 import { AgencyRosterView } from './components/AgencyRosterView';
@@ -24,6 +25,7 @@ import { ToastHost } from './components/ToastHost';
 import { AccountSecurityHubView } from './components/AccountSecurityHubView';
 import { Switcher } from './components/cosmos/Switcher';
 import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
+import { TabrixPageTransition } from './components/ui/TabrixMotionPrimitives';
 import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
@@ -64,9 +66,17 @@ import { getUnifiedCapabilities } from './utils/modePermissions';
 import {
   ARABIC_FONTS,
   DEFAULT_APPEARANCE_PROFILES,
+  getAppThemeById,
   resolveTableThemeId,
   TABLE_THEMES,
 } from './utils/themes';
+import {
+  getTabrixViewDirection,
+  TABRIX_MODAL_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixDirection,
+  useTabrixReducedMotion,
+} from './utils/tabrixMotion';
 import { playTactileFeedback } from './utils/tactileFeedback';
 import { computeTopBarScrollHidden } from './utils/scrollAutoHide';
 import {
@@ -508,7 +518,10 @@ export default function App() {
     [state.persons]
   );
 
-  const activeThemeLabel = 'السبج والذهب';
+  const activeThemeLabel = useMemo(
+    () => getAppThemeById(themePrefs.appTheme).name,
+    [themePrefs.appTheme]
+  );
 
   const activeTableThemeLabel = useMemo(() => {
     const resolvedId = resolveTableThemeId(themePrefs.tableTheme);
@@ -979,30 +992,59 @@ export default function App() {
     activeView === 'morrow_center' ||
     isRosterViewingModeActive;
 
+  const tabrixReducedMotion = useTabrixReducedMotion();
+  const navRouteTuple = useMemo(
+    () => ({ view: activeView, agencyId: selectedAgencyId }),
+    [activeView, selectedAgencyId]
+  );
+  const navDirection = useTabrixDirection(navRouteTuple, (prev, next) =>
+    getTabrixViewDirection(prev.view, next.view, prev.agencyId, next.agencyId)
+  );
+  const activeRouteKey =
+    activeView === 'agency_roster'
+      ? `agency_roster_${selectedAgencyId}`
+      : activeView;
+
   if (!authUser) {
-    if (!onboardingDone) {
-      return (
-        <>
-          <OnboardingFlow
-            onComplete={() => {
-              try {
-                localStorage.setItem(getTenantOnboardingKey(null), '1');
-              } catch {
-                // ignore storage failures
-              }
-              setOnboardingDone(true);
-            }}
-          />
-          <ToastHost toasts={toasts} onDismiss={dismissToast} />
-        </>
-      );
-    }
     return (
       <>
-        <FlipAuthGuard
-          onAuthenticated={handleAuthenticated}
-          onReplayOnboarding={() => setOnboardingDone(false)}
-        />
+        <AnimatePresence mode="wait" initial={false}>
+          {!onboardingDone ? (
+            <motion.div
+              key="auth-onboarding"
+              initial={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: -12 }}
+              transition={{ duration: tabrixReducedMotion ? 0.06 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="min-h-screen"
+            >
+              <OnboardingFlow
+                onComplete={() => {
+                  try {
+                    localStorage.setItem(getTenantOnboardingKey(null), '1');
+                  } catch {
+                    // ignore storage failures
+                  }
+                  setOnboardingDone(true);
+                }}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="auth-flip-guard"
+              initial={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: -12 }}
+              transition={{ duration: tabrixReducedMotion ? 0.06 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="min-h-screen"
+            >
+              <FlipAuthGuard
+                onAuthenticated={handleAuthenticated}
+                onReplayOnboarding={() => setOnboardingDone(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -1104,11 +1146,10 @@ export default function App() {
           />
         )}
 
-        <div
-          key={activeView}
-          className={`flex-1 min-w-0 flex flex-col tabrix-view-enter ${
-            !isDedicatedFullScreenView ? 'pb-24' : ''
-          }`}
+        <TabrixPageTransition
+          viewKey={activeRouteKey}
+          direction={navDirection}
+          className={!isDedicatedFullScreenView ? 'pb-24' : ''}
         >
           {activeView === 'hub' && (
             <AgenciesHubView
@@ -1590,7 +1631,7 @@ export default function App() {
           onSelectCosmosNode={handleSelectCosmosNode}
         />
       )}
-        </div>
+        </TabrixPageTransition>
       </div>
 
       {/* Editor Modals */}
@@ -1644,82 +1685,95 @@ export default function App() {
       />
 
       {/* Privacy Lock Overlay */}
-      {securityPrefs.privacyLocked && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="شاشة مقفلة للخصوصية"
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
-        >
-          <form
-            onSubmit={handleUnlockPrivacy}
-            className="nexus-squircle w-full max-w-sm p-6 text-center space-y-4"
-            style={{
-              borderColor: 'var(--accent)',
-            }}
+      <AnimatePresence>
+        {securityPrefs.privacyLocked && (
+          <motion.div
+            key="privacy-lock-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="شاشة مقفلة للخصوصية"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: tabrixReducedMotion ? 0.05 : 0.2 }}
+            className="tabrix-3d-stage fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
           >
-            <div
-              className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border"
+            <motion.form
+              onSubmit={handleUnlockPrivacy}
+              variants={
+                tabrixReducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_MODAL_VARIANTS
+              }
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="nexus-squircle w-full max-w-sm p-6 text-center space-y-4"
               style={{
-                backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent)',
-                color: 'var(--accent)',
               }}
             >
-              <Lock className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold">شاشة مقفلة للخصوصية — Morrow</h2>
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                {securityPrefs.privacyPin
-                  ? 'أدخل رمز القفل لإظهار السجلات والبيانات.'
-                  : 'انقر على «فتح القفل» للعودة إلى البيانات.'}
-              </p>
-            </div>
-
-            {securityPrefs.privacyPin && (
-              <div>
-                <input
-                  type="password"
-                  dir="ltr"
-                  autoFocus
-                  value={unlockPinInput}
-                  onChange={(e) => {
-                    setUnlockPinInput(e.target.value);
-                    setUnlockPinError('');
-                  }}
-                  placeholder="رمز القفل..."
-                  className="w-full rounded-xl border px-3 py-2.5 text-center text-sm tracking-widest tabular-nums"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-                {unlockPinError && (
-                  <p
-                    className="mt-1.5 text-xs font-bold"
-                    style={{ color: 'var(--danger)' }}
-                  >
-                    {unlockPinError}
-                  </p>
-                )}
+              <div
+                className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Lock className="h-6 w-6" />
               </div>
-            )}
+              <div>
+                <h2 className="text-lg font-bold">شاشة مقفلة للخصوصية — Morrow</h2>
+                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {securityPrefs.privacyPin
+                    ? 'أدخل رمز القفل لإظهار السجلات والبيانات.'
+                    : 'انقر على «فتح القفل» للعودة إلى البيانات.'}
+                </p>
+              </div>
 
-            <button
-              type="submit"
-              className="nexus-pill-btn inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <Unlock className="h-4 w-4" />
-              <span>فتح القفل</span>
-            </button>
-          </form>
-        </div>
-      )}
+              {securityPrefs.privacyPin && (
+                <div>
+                  <input
+                    type="password"
+                    dir="ltr"
+                    autoFocus
+                    value={unlockPinInput}
+                    onChange={(e) => {
+                      setUnlockPinInput(e.target.value);
+                      setUnlockPinError('');
+                    }}
+                    placeholder="رمز القفل..."
+                    className="w-full rounded-xl border px-3 py-2.5 text-center text-sm tracking-widest tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                  {unlockPinError && (
+                    <p
+                      className="mt-1.5 text-xs font-bold"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      {unlockPinError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="nexus-pill-btn inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <Unlock className="h-4 w-4" />
+                <span>فتح القفل</span>
+              </button>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Integrated 3-Brain AI Assistant Widget */}
       {!isAuthGateLocked && !securityPrefs.privacyLocked && (
@@ -1843,6 +1897,8 @@ export default function App() {
           onOpenAssistant={() => openMorrowStudio('chat')}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           pendingDraftsCount={assistant.pendingDraftsCount}
+          isCenterActionActive={addPersonOpen || commandPaletteOpen}
+          isAssistantOpen={assistant.isOpen}
         />
       )}
 

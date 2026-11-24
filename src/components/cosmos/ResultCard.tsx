@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowUpLeft } from 'lucide-react';
+import { useTabrix3DTilt } from '../../utils/tabrixMotion';
 
 export interface ResultCardAction {
   id: string;
@@ -39,6 +40,11 @@ export const ResultCard: React.FC<ResultCardProps> = ({
   actions,
   children,
 }) => {
+  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLDivElement>({
+    maxTiltX: 4,
+    maxTiltY: 5,
+  });
+
   const toneColor =
     tone === 'success'
       ? 'var(--success)'
@@ -58,13 +64,19 @@ export const ResultCard: React.FC<ResultCardProps> = ({
 
   return (
     <div
-      className="cosmos-glass-panel border p-4 sm:p-5 space-y-3"
+      ref={tiltRef}
+      {...tiltHandlers}
+      className="cosmos-glass-panel group relative overflow-hidden border p-4 sm:p-5 space-y-3"
       style={{
         borderColor: `color-mix(in srgb, ${toneColor} 36%, var(--border-color))`,
       }}
     >
+      <div
+        aria-hidden="true"
+        className="smart-dashboard-card-sheen pointer-events-none absolute inset-0"
+      />
       {/* Top: Summary + optional Health Ring */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="relative z-[1] flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <h4 className="text-sm sm:text-base font-extrabold">{title}</h4>
           <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Archive,
   Building2,
@@ -29,6 +30,12 @@ import {
   formatTotalQuota,
 } from '../utils/agencyLogic';
 import { BottomSheet } from './cosmos/BottomSheet';
+import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
+import {
+  TABRIX_SPRING,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 
 export type AgencySubTabId = 'table' | 'overview' | 'calculator' | 'audit' | 'archives';
 
@@ -53,6 +60,14 @@ const SUB_TABS: Array<{ id: AgencySubTabId; label: string; icon: React.ReactNode
   { id: 'archives', label: 'الأرشفة', icon: <Archive className="h-3.5 w-3.5" /> },
 ];
 
+const SUB_TAB_ORDER: Record<AgencySubTabId, number> = {
+  table: 0,
+  overview: 1,
+  calculator: 2,
+  audit: 3,
+  archives: 4,
+};
+
 export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
   agencies,
   currentAgency,
@@ -65,7 +80,9 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
   onNavigateView,
   children,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [subTab, setSubTab] = useState<AgencySubTabId>('table');
+  const subTabDirection = useTabrixOrderedDirection(subTab, SUB_TAB_ORDER);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [calcCount, setCalcCount] = useState('5');
 
@@ -262,22 +279,32 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
                 role="tab"
                 aria-selected={active}
                 onClick={() => setSubTab(tab.id)}
-                className="nexus-pill-btn cosmos-touch-target inline-flex shrink-0 items-center gap-1.5 border px-3.5 py-1.5 text-xs font-extrabold"
+                className="nexus-pill-btn cosmos-touch-target relative inline-flex shrink-0 items-center gap-1.5 overflow-hidden border px-3.5 py-1.5 text-xs font-extrabold"
                 style={{
-                  backgroundColor: active
-                    ? `color-mix(in srgb, ${accentColor} 14%, var(--bg-nav-active))`
-                    : 'var(--bg-main)',
+                  backgroundColor: active ? 'transparent' : 'var(--bg-main)',
                   borderColor: active ? accentColor : 'var(--border-color)',
                   color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                 }}
               >
-                <span style={{ color: active ? accentColor : 'var(--text-muted)' }}>
+                {active && (
+                  <motion.span
+                    layoutId="agency-frame-subtab-pill"
+                    transition={reducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-full"
+                    style={{
+                      backgroundColor: `color-mix(in srgb, ${accentColor} 16%, var(--bg-nav-active))`,
+                      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.2)`,
+                    }}
+                  />
+                )}
+                <span className="relative z-10" style={{ color: active ? accentColor : 'var(--text-muted)' }}>
                   {tab.icon}
                 </span>
-                <span>{tab.label}</span>
+                <span className="relative z-10">{tab.label}</span>
                 {badge !== undefined && (
                   <span
-                    className="text-[10px] font-black tabular-nums"
+                    className="relative z-10 text-[10px] font-black tabular-nums"
                     style={{
                       color:
                         tab.id === 'audit' ? 'var(--warning)' : 'var(--text-muted)',
@@ -293,7 +320,11 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
       </section>
 
       {/* Active Sub-Tab Body */}
-      {subTab === 'table' && children}
+      <TabrixSubViewTransition
+        viewKey={`${currentAgency.id}-${subTab}`}
+        direction={subTabDirection}
+      >
+        {subTab === 'table' && children}
 
       {subTab === 'overview' && (
         <div className="nexus-squircle p-4 sm:p-6 space-y-4">
@@ -319,8 +350,8 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div
-              className="rounded-2xl border p-3.5"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              className="capsule-glass-card rounded-2xl border p-3.5"
+              style={{ borderColor: 'var(--border-color)' }}
             >
               <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
                 العائلات النشطة
@@ -330,8 +361,8 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
               </div>
             </div>
             <div
-              className="rounded-2xl border p-3.5"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              className="capsule-glass-card rounded-2xl border p-3.5"
+              style={{ borderColor: 'var(--border-color)' }}
             >
               <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
                 مجموع الأفراد
@@ -341,8 +372,8 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
               </div>
             </div>
             <div
-              className="rounded-2xl border p-3.5"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              className="capsule-glass-card rounded-2xl border p-3.5"
+              style={{ borderColor: 'var(--border-color)' }}
             >
               <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
                 الحصة الإجمالية
@@ -352,8 +383,8 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
               </div>
             </div>
             <div
-              className="rounded-2xl border p-3.5"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              className="capsule-glass-card rounded-2xl border p-3.5"
+              style={{ borderColor: 'var(--border-color)' }}
             >
               <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
                 المبالغ والمصاريف
@@ -563,6 +594,7 @@ export const AgencyWorkspaceFrame: React.FC<AgencyWorkspaceFrameProps> = ({
           )}
         </div>
       )}
+      </TabrixSubViewTransition>
 
       {/* Agency Quick Switcher BottomSheet */}
       <BottomSheet

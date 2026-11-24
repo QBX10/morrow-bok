@@ -66,10 +66,15 @@ import {
 import { DEFAULT_HOME_LAYOUT_PREFS } from '../data/seedData';
 import type { ModeCapabilities } from '../utils/modePermissions';
 import { compressImageFileToDataUrl } from '../lib/imageUpload';
+import { AnimatePresence, motion } from 'motion/react';
 import { SmartDashboardCard } from './ui/SmartDashboardCard';
 import { BottomSheet } from './cosmos/BottomSheet';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  Tabrix3DTiltSurface,
+  TabrixPillIndicator,
+} from './ui/TabrixMotionPrimitives';
 import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
 
 interface AgenciesHubViewProps {
@@ -626,7 +631,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="nexus-squircle nexus-squircle-interactive p-4">
+        <Tabrix3DTiltSurface className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -643,9 +648,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           >
             من أصل {masterMetrics.registeredHouseholds.toLocaleString('en-US')} سجل مسجل
           </div>
-        </div>
+        </Tabrix3DTiltSurface>
 
-        <div className="nexus-squircle nexus-squircle-interactive p-4">
+        <Tabrix3DTiltSurface className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -666,9 +671,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             {masterBlockBreakdown.fullyBlockedCount} محجوب كلياً ·{' '}
             {masterBlockBreakdown.partialBlockedCount} جزئياً
           </div>
-        </div>
+        </Tabrix3DTiltSurface>
 
-        <div className="nexus-squircle nexus-squircle-interactive p-4">
+        <Tabrix3DTiltSurface className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -691,9 +696,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           >
             الوزن الصافي: {masterMetrics.totalKg.toLocaleString('en-US')} كغم
           </div>
-        </div>
+        </Tabrix3DTiltSurface>
 
-        <div className="nexus-squircle nexus-squircle-interactive p-4">
+        <Tabrix3DTiltSurface className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -717,7 +722,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             الإيراد {formatIqd(masterMetrics.revenue)} · المصاريف{' '}
             {formatIqd(masterMetrics.totalExpenses)}
           </div>
-        </div>
+        </Tabrix3DTiltSurface>
       </div>
     </section>
   );
@@ -763,23 +768,30 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   `مقفلة (${agencyRows.filter((r) => r.agency.isLocked).length})`,
                 ],
               ] as Array<[AgencyFilterTab, string]>
-            ).map(([tabId, label]) => (
-              <button
-                key={tabId}
-                type="button"
-                onClick={() => setFilterTab(tabId)}
-                className="nexus-pill-btn min-h-[36px] border px-3.5 py-1 text-xs font-bold whitespace-nowrap"
-                style={{
-                  backgroundColor:
-                    filterTab === tabId ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                  borderColor:
-                    filterTab === tabId ? 'var(--accent)' : 'var(--border-color)',
-                  color: filterTab === tabId ? 'var(--accent)' : 'var(--text-muted)',
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            ).map(([tabId, label]) => {
+              const isSelected = filterTab === tabId;
+              return (
+                <button
+                  key={tabId}
+                  type="button"
+                  onClick={() => setFilterTab(tabId)}
+                  className="nexus-pill-btn relative min-h-[36px] border px-3.5 py-1 text-xs font-bold whitespace-nowrap"
+                  style={{
+                    backgroundColor: isSelected ? 'transparent' : 'var(--bg-main)',
+                    borderColor: isSelected ? 'transparent' : 'var(--border-color)',
+                    color: isSelected ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                >
+                  {isSelected && (
+                    <TabrixPillIndicator
+                      layoutId="agencies-filter-pill"
+                      className="rounded-full"
+                    />
+                  )}
+                  <span className="relative z-10">{label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -816,18 +828,18 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
       />
 
       {agencies.length === 0 ? (
-        <div className="smoked-glass-elevated rounded-[22px] p-8 sm:p-10 text-center space-y-5 relative overflow-hidden">
+        <div className="chamfered-glass-card smoked-glass-elevated p-8 sm:p-10 text-center space-y-5 relative overflow-hidden">
           <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
             <DotMatrixPattern />
           </div>
-          <div className="relative z-10 mx-auto w-20 h-20 flex items-center justify-center rounded-2xl border border-[#D4AF37]/25 bg-black/40">
+          <div className="relative z-10 mx-auto w-20 h-20 flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-black/30">
             <GeometricGoldCube size={64} />
           </div>
           <div className="relative z-10 space-y-2 max-w-md mx-auto">
-            <h3 className="font-display-ar text-lg sm:text-xl font-bold text-[#F4F4F6]">
+            <h3 className="font-display-ar text-lg sm:text-xl font-bold text-[var(--text-primary)]">
               مساحتك المعزولة جاهزة للانطلاق
             </h3>
-            <p className="text-xs sm:text-sm leading-relaxed text-[#9898AA]">
+            <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
               هذا الحساب يبدأ بسجل نظيف تماماً وخاص بك وحدك. أنشئ وكالتك الأولى الآن أو جرّب النظام ببيانات نموذجية جاهزة.
             </p>
           </div>
@@ -846,9 +858,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               <button
                 type="button"
                 onClick={onLoadStarterData}
-                className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/30 bg-white/[0.04] hover:bg-[#D4AF37]/15 px-5 py-2.5 text-xs sm:text-sm font-bold text-[#F3E5AB] transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white/[0.04] hover:bg-[var(--bg-nav-active)] px-5 py-2.5 text-xs sm:text-sm font-bold text-[var(--accent-bright)] transition-all cursor-pointer"
               >
-                <Sparkles className="h-4 w-4 text-[#D4AF37]" />
+                <Sparkles className="h-4 w-4 text-[var(--accent)]" />
                 <span>تحميل بيانات تجريبية جاهزة</span>
               </button>
             )}
@@ -871,15 +883,25 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             const issuesTotal = audits.length + missingIdCount;
 
             return (
-              <article
+              <Tabrix3DTiltSurface
+                as="article"
                 key={agency.id}
-                className="nexus-squircle nexus-squircle-interactive flex flex-col justify-between p-5 sm:p-6"
+                disabled={isEditing}
+                className="flex flex-col justify-between p-5 sm:p-6"
                 style={{
                   borderColor: isEditing ? 'var(--accent)' : 'var(--border-color)',
                 }}
               >
-                {isEditing ? (
-                  <div className="space-y-4">
+                <AnimatePresence mode="wait" initial={false}>
+                  {isEditing ? (
+                    <motion.div
+                      key="editing"
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      transition={{ duration: 0.16 }}
+                      className="space-y-4"
+                    >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold">
                         تعديل بيانات الوكالة
@@ -979,9 +1001,16 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         إلغاء
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 ) : (
-                  <>
+                  <motion.div
+                    key="view"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.14 }}
+                    className="flex flex-1 flex-col justify-between"
+                  >
                     {/* Card Header */}
                     <div
                       className="flex items-start justify-between gap-2 pb-4 border-b"
@@ -1201,9 +1230,10 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         <span>عرض جدول الوكالة</span>
                       </button>
                     </div>
-                  </>
+                  </motion.div>
                 )}
-              </article>
+                </AnimatePresence>
+              </Tabrix3DTiltSurface>
             );
           })}
         </div>
@@ -1911,19 +1941,19 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:pb-24">
-      {/* 1. Architectural Hero Header Card (Obsidian & Gold) */}
+      {/* 1. Architectural 3D Marine Hero Header Card */}
       <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-6 sm:p-8 flex flex-wrap items-center justify-between gap-6">
-        {/* Subtle DotMatrix & Geometric Gold Cube Accent */}
+        {/* Subtle DotMatrix & 3D Isometric Marine Prism */}
         <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
           <DotMatrixPattern />
         </div>
-        <div className="pointer-events-none hidden md:block absolute -left-4 -bottom-6 opacity-25">
+        <div className="pointer-events-none hidden md:block absolute -left-4 -bottom-6 opacity-30">
           <GeometricGoldCube size={140} />
         </div>
 
         <div className="relative z-10 flex items-start gap-4 min-w-0">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#D4AF37]/35 bg-[#D4AF37]/12 shadow-[0_8px_24px_rgba(212,175,55,0.16)]">
-            <Building2 className="h-6 w-6 text-[#F3E5AB]" />
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-nav-active)] shadow-[0_8px_24px_var(--marine-caustic-1)]">
+            <Building2 className="h-6 w-6 text-[var(--accent-bright)]" />
           </div>
           <div className="space-y-1.5 min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
@@ -1931,15 +1961,15 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 الوكالات والتوزيع
               </h1>
               {activePeriod && (
-                <span className="inline-flex items-center rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-3 py-0.5 font-mono-num text-[11px] font-bold text-[#F3E5AB] whitespace-nowrap">
+                <span className="inline-flex items-center rounded-full border border-[var(--border-color)] bg-[var(--bg-nav-active)] px-3 py-0.5 font-mono-num text-[11px] font-bold text-[var(--accent-bright)] whitespace-nowrap">
                   {activePeriod.quotaName} · {activePeriod.monthName} {activePeriod.year}
                 </span>
               )}
             </div>
-            <p className="text-xs sm:text-sm text-[#9898AA] leading-relaxed">
+            <p className="text-xs sm:text-sm text-[var(--text-muted)] leading-relaxed">
               مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
               {previousArchiveDelta && (
-                <span className="mr-2 font-mono-num font-bold text-[#F3E5AB]">
+                <span className="mr-2 font-mono-num font-bold text-[var(--accent-bright)]">
                   ({previousArchiveDelta.diff >= 0 ? '+' : ''}
                   {previousArchiveDelta.diff} فرد مقارنة بأرشيف{' '}
                   {previousArchiveDelta.archiveLabel})
@@ -1953,9 +1983,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           <button
             type="button"
             onClick={onOpenMasterRoster}
-            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-black/45 hover:bg-black/65 hover:border-[#D4AF37]/50 px-4 py-2 text-xs font-extrabold text-[#F4F4F6] transition-all cursor-pointer whitespace-nowrap"
+            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-[var(--border-color)] bg-black/35 hover:bg-black/55 hover:border-[var(--accent)] px-4 py-2 text-xs font-extrabold text-[var(--text-primary)] transition-all cursor-pointer whitespace-nowrap"
           >
-            <Table2 className="h-4 w-4 text-[#D4AF37]" />
+            <Table2 className="h-4 w-4 text-[var(--accent)]" />
             <span>السجل الشامل للوكالات</span>
           </button>
 

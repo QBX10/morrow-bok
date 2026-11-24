@@ -24,8 +24,16 @@ import {
   Undo2,
   UserPlus,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_PUSH_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { Tabrix3DTiltSurface } from './ui/TabrixMotionPrimitives';
 import type {
   Agency,
   BlockScope,
@@ -546,6 +554,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
     }
   };
 
+  const reducedMotion = useTabrixReducedMotion();
   const numClass = themePrefs.tabularNumerals ? 'font-data tabular-nums' : '';
   const numericTintStyle = themePrefs.smartNumericSplit
     ? { backgroundColor: 'var(--bg-numeric)' }
@@ -553,20 +562,27 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   const focusActive =
     themePrefs.activeRowFocusMode && focusedItemId !== null;
 
-  // ============================================================================
-  // STANDALONE FULL-SCREEN LIST VIEW
-  // ============================================================================
-  if (activeList) {
-    return (
-      <div
-        role="region"
-        aria-label={`عرض القائمة الجاهزة: ${activeList.name}`}
-        className="fixed inset-0 z-40 flex flex-col overflow-y-auto"
-        style={{
-          backgroundColor: 'var(--bg-main)',
-          color: 'var(--text-primary)',
-        }}
-      >
+  return (
+    <>
+      {/* ========================================================================
+          STANDALONE FULL-SCREEN LIST OVERLAY WITH 3D ENTER/EXIT TRANSITION
+         ======================================================================== */}
+      <AnimatePresence>
+        {activeList && (
+          <motion.div
+            key={`ready-list-fullscreen-${activeList.id}`}
+            variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_PUSH_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            role="region"
+            aria-label={`عرض القائمة الجاهزة: ${activeList.name}`}
+            className="fixed inset-0 z-40 flex flex-col overflow-y-auto"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              color: 'var(--text-primary)',
+            }}
+          >
         {/* Floating Glassmorphic Top Header with Back Button, Metadata, Undo/Redo, and Multi-Format Export */}
         <div className="no-print sticky top-0 z-30 w-full px-3 pt-2.5 pb-1.5 sm:px-6 sm:pt-3 pointer-events-none">
           <header
@@ -814,19 +830,26 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
         </div>
 
         <div className="mx-auto w-full max-w-6xl flex-1 space-y-4 p-4 pb-24 sm:p-6 sm:pb-20">
-          {exportNotice && (
-            <div
-              role="status"
-              className="rounded-lg border px-4 py-2 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--success-bg)',
-                borderColor: 'var(--success)',
-                color: 'var(--success)',
-              }}
-            >
-              {exportNotice}
-            </div>
-          )}
+          <AnimatePresence>
+            {exportNotice && (
+              <motion.div
+                key="ready-list-export-notice"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                role="status"
+                className="rounded-lg border px-4 py-2 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--success-bg)',
+                  borderColor: 'var(--success)',
+                  color: 'var(--success)',
+                }}
+              >
+                {exportNotice}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <PeriodHeaderBanner
             periodMeta={activeList.periodMeta || activePeriod}
@@ -1033,36 +1056,42 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
           )}
 
           {/* Smart Audit Panel */}
-          {showAuditPanel && capabilities.canUseSmartAudit && (
-            <section
-              className="rounded-xl border p-4"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--warning)',
-              }}
-            >
-              <div
-                className="mb-2 flex items-center gap-2 text-xs font-bold"
-                style={{ color: 'var(--warning)' }}
+          <AnimatePresence>
+            {showAuditPanel && capabilities.canUseSmartAudit && (
+              <motion.section
+                key="ready-list-audit-panel"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="nexus-squircle p-4"
+                style={{
+                  borderColor: 'var(--warning)',
+                }}
               >
-                <AlertTriangle className="h-4 w-4" />
-                <span>نتائج التدقيق الذكي للقائمة ({auditIssues.length} ملاحظة)</span>
-              </div>
-              {auditIssues.length === 0 ? (
-                <div className="text-xs" style={{ color: 'var(--success)' }}>
-                  بيانات القائمة سليمة تمامًا ولا توجد أخطاء أو تكرارات.
+                <div
+                  className="mb-2 flex items-center gap-2 text-xs font-bold"
+                  style={{ color: 'var(--warning)' }}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>نتائج التدقيق الذكي للقائمة ({auditIssues.length} ملاحظة)</span>
                 </div>
-              ) : (
-                <ul className="space-y-1 text-xs">
-                  {auditIssues.map((issue) => (
-                    <li key={issue.id}>
-                      <strong>{issue.personName}</strong> — {issue.message}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
+                {auditIssues.length === 0 ? (
+                  <div className="text-xs" style={{ color: 'var(--success)' }}>
+                    بيانات القائمة سليمة تمامًا ولا توجد أخطاء أو تكرارات.
+                  </div>
+                ) : (
+                  <ul className="space-y-1 text-xs">
+                    {auditIssues.map((issue) => (
+                      <li key={issue.id}>
+                        <strong>{issue.personName}</strong> — {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </motion.section>
+            )}
+          </AnimatePresence>
 
           {/* Sleek Top Selection Action Bar */}
           <SelectionActionBar
@@ -2069,15 +2098,14 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             onAddPersonsToReadyList(activeList.id, pids, overrideNotesMap)
           }
         />
-      </div>
-    );
-  }
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-  // ============================================================================
-  // CENTERED LIST CARDS HUB (When No List Is Opened Full-Screen)
-  // ============================================================================
-  return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
+      {/* ======================================================================
+          CENTERED LIST CARDS HUB
+         ====================================================================== */}
+      <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       <div className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
         <div className="flex items-start gap-3.5 min-w-0">
           <NexusDuotoneIcon icon={ListChecks} size="lg" className="hidden sm:inline-flex" />
@@ -2143,9 +2171,10 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             );
 
             return (
-              <div
+              <Tabrix3DTiltSurface
                 key={list.id}
-                className="nexus-squircle nexus-squircle-interactive group flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                as="article"
+                className="group flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <button
                   type="button"
@@ -2238,7 +2267,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                     </button>
                   )}
                 </div>
-              </div>
+              </Tabrix3DTiltSurface>
             );
           })
         )}
@@ -2411,6 +2440,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             </form>
         </div>
       </FullScreenPushPage>
-    </main>
+      </main>
+    </>
   );
 };

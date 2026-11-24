@@ -14,7 +14,9 @@ import {
   ShieldCheck,
   Table2,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { Agency, AppView, SettingsSectionId } from '../../types/agency';
+import { TABRIX_EASE } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
 
@@ -154,36 +156,46 @@ export const MorrowAppDrawer: React.FC<MorrowAppDrawerProps> = ({
               />
             </button>
 
-            {agenciesExpanded && (
-              <div className="mt-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {agencies.map((ag) => {
-                  const isActive = ag.id === activeAgencyId;
-                  return (
-                    <button
-                      key={ag.id}
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenAgencyRoster?.(ag.id);
-                      }}
-                      className="flex items-center justify-between gap-2 rounded-2xl border px-3 py-2.5 text-right text-xs font-semibold transition-colors hover:border-[var(--accent-ai)]"
-                      style={{
-                        backgroundColor: isActive ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                        borderColor: isActive
-                          ? 'var(--accent-ai, #5B4FE9)'
-                          : 'var(--border-color)',
-                        color: isActive ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
-                      }}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className="shrink-0">{ag.icon}</span>
-                        <span className="truncate">{ag.name}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <AnimatePresence initial={false}>
+              {agenciesExpanded && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: TABRIX_EASE }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {agencies.map((ag) => {
+                      const isActive = ag.id === activeAgencyId;
+                      return (
+                        <button
+                          key={ag.id}
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenAgencyRoster?.(ag.id);
+                          }}
+                          className="flex items-center justify-between gap-2 rounded-2xl border px-3 py-2.5 text-right text-xs font-semibold transition-colors hover:border-[var(--accent-ai)]"
+                          style={{
+                            backgroundColor: isActive ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                            borderColor: isActive
+                              ? 'var(--accent-ai, #5B4FE9)'
+                              : 'var(--border-color)',
+                            color: isActive ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
+                          }}
+                        >
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="shrink-0">{ag.icon}</span>
+                            <span className="truncate">{ag.name}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </section>
 

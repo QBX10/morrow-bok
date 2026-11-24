@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Check, ImagePlus, MousePointerSquareDashed, Trash2 } from 'lucide-react';
 import type {
   NormalizedBox,
@@ -7,6 +8,11 @@ import type {
   QuickExtractTemplateRegion,
 } from '../../types/agency';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface ReferenceTemplateModalProps {
   open: boolean;
@@ -43,8 +49,8 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
     null
   );
   const imgContainerRef = useRef<HTMLDivElement | null>(null);
-
-  if (!open) return null;
+  const reducedMotion = useTabrixReducedMotion();
+  const tagVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -319,29 +325,36 @@ export const ReferenceTemplateModal: React.FC<ReferenceTemplateModalProps> = ({
 
               {regions.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {regions.map((r) => (
-                    <span
-                      key={r.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <span>{r.label}</span>
-                      <button
-                        type="button"
-                        aria-label={`حذف تحديد ${r.label}`}
-                        onClick={() =>
-                          setRegions((prev) => prev.filter((x) => x.id !== r.id))
-                        }
-                        className="hover:opacity-75"
-                        style={{ color: 'var(--danger)' }}
+                  <AnimatePresence initial={false}>
+                    {regions.map((r) => (
+                      <motion.span
+                        key={r.id}
+                        layout={!reducedMotion}
+                        variants={tagVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+                        <span>{r.label}</span>
+                        <button
+                          type="button"
+                          aria-label={`حذف تحديد ${r.label}`}
+                          onClick={() =>
+                            setRegions((prev) => prev.filter((x) => x.id !== r.id))
+                          }
+                          className="hover:opacity-75"
+                          style={{ color: 'var(--danger)' }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
                 </div>
               )}
             </div>

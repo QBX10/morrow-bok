@@ -3,6 +3,7 @@ import { ChevronLeft, Lock, Sparkles, Star } from 'lucide-react';
 import { SectionLogo } from '../settings/sectionLogos';
 import type { CosmosNode } from '../../utils/cosmosRegistry';
 import type { HierarchyBadgeContext } from '../../utils/hierarchyRegistry';
+import { useTabrix3DTilt } from '../../utils/tabrixMotion';
 
 interface GalaxyCardProps {
   node: CosmosNode;
@@ -21,26 +22,37 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
 }) => {
   const badge =
     badgeContext && node.getBadge ? node.getBadge(badgeContext) : null;
+  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLElement>({
+    maxTiltX: 4.8,
+    maxTiltY: 5.8,
+  });
 
   return (
     <article
-      className="group relative flex flex-col justify-between rounded-[22px] border p-4 sm:p-5 transition-all hover:-translate-y-0.5 hover:border-[var(--accent)]"
+      ref={tiltRef}
+      {...tiltHandlers}
+      className="nexus-squircle nexus-squircle-interactive group relative flex flex-col justify-between overflow-hidden p-4 sm:p-5"
       style={{
-        backgroundColor: 'var(--bg-surface)',
         backgroundImage: node.gradient,
         borderColor: 'var(--border-color)',
       }}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div
+        aria-hidden="true"
+        className="smart-dashboard-card-sheen pointer-events-none absolute inset-0"
+      />
+      <div className="relative z-[1] flex items-start justify-between gap-3">
         <button
           type="button"
           onClick={() => onOpen(node)}
-          className="flex flex-1 items-start gap-3 text-right min-w-0"
+          className="flex flex-1 items-start gap-3 text-right min-w-0 cursor-pointer"
         >
-          <SectionLogo icon={node.icon} tone={node.accentTone} size="md" />
+          <span className="transition-transform duration-300 group-hover:scale-[1.08] group-hover:-rotate-2">
+            <SectionLogo icon={node.icon} tone={node.accentTone} size="md" />
+          </span>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <h3 className="text-sm sm:text-base font-extrabold leading-snug">
+              <h3 className="text-sm sm:text-base font-extrabold leading-snug transition-colors group-hover:text-[var(--accent)]">
                 {node.title}
               </h3>
               {node.isNew && (
@@ -76,7 +88,7 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
               onTogglePin(node.id);
             }}
             aria-label={isPinned ? 'إزالة من المفضلة' : 'تثبيت في المفضلة'}
-            className="cosmos-touch-target inline-flex items-center justify-center rounded-xl border shrink-0 hover:border-[var(--accent)]"
+            className="nexus-pill-btn cosmos-touch-target inline-flex items-center justify-center rounded-xl border shrink-0 hover:border-[var(--accent)] cursor-pointer"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -91,7 +103,7 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
       <button
         type="button"
         onClick={() => onOpen(node)}
-        className="mt-4 flex items-center justify-between border-t pt-2.5 text-xs font-bold"
+        className="relative z-[1] mt-4 flex items-center justify-between border-t pt-2.5 text-xs font-bold cursor-pointer"
         style={{ borderColor: 'var(--border-color)' }}
       >
         <span style={{ color: 'var(--text-muted)' }} className="tabular-nums">
@@ -102,7 +114,7 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
             : 'فتح مباشر'}
         </span>
         <span
-          className="inline-flex items-center gap-1 group-hover:-translate-x-0.5 transition-transform"
+          className="inline-flex items-center gap-1 group-hover:-translate-x-1 transition-transform"
           style={{ color: node.accentColor || 'var(--accent)' }}
         >
           <span>دخول</span>

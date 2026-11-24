@@ -15,6 +15,11 @@ import {
   Unlock,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_SUBVIEW_VARIANTS,
+} from '../utils/tabrixMotion';
 import type {
   Agency,
   BlockScope,
@@ -727,45 +732,54 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
                 )}
               </button>
 
-              {capabilities.canSortAndFilter && normalSearchOpen && (
-                <div className="topbar-search-expand relative flex min-w-[180px] flex-1 max-w-sm items-center">
-                  <Search
-                    className="pointer-events-none absolute right-2.5 h-3.5 w-3.5"
-                    style={{ color: 'var(--text-muted)' }}
-                  />
-                  <input
-                    ref={normalSearchInputRef}
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
+              <AnimatePresence>
+                {capabilities.canSortAndFilter && normalSearchOpen && (
+                  <motion.div
+                    key="roster-normal-search"
+                    variants={TABRIX_POPOVER_VARIANTS}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="relative flex min-w-[180px] flex-1 max-w-sm items-center"
+                  >
+                    <Search
+                      className="pointer-events-none absolute right-2.5 h-3.5 w-3.5"
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                    <input
+                      ref={normalSearchInputRef}
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setSearchQuery('');
+                          setNormalSearchOpen(false);
+                        }
+                      }}
+                      placeholder="بحث بالاسم أو البطاقة..."
+                      aria-label="بحث بالاسم أو رقم البطاقة"
+                      className="h-9 w-full rounded-xl border pr-8 pl-8 text-xs font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--accent)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="إغلاق البحث"
+                      onClick={() => {
                         setSearchQuery('');
                         setNormalSearchOpen(false);
-                      }
-                    }}
-                    placeholder="بحث بالاسم أو البطاقة..."
-                    aria-label="بحث بالاسم أو رقم البطاقة"
-                    className="h-9 w-full rounded-xl border pr-8 pl-8 text-xs font-semibold"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--accent)',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label="إغلاق البحث"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setNormalSearchOpen(false);
-                    }}
-                    className="absolute left-2 rounded p-1 hover:opacity-75"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
+                      }}
+                      className="absolute left-2 rounded p-1 hover:opacity-75"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Left (RTL End): On-Demand Search + Lock + Viewing Mode + Primary Add CTA */}
@@ -869,291 +883,333 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
         )}
 
         {/* Active Filter / Editor Mode Status Pills (Shown ONLY when active) */}
-        {(hasActiveFilters || showEditorColumn) && (
-          <div className="no-print flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {showEditorColumn && (
+        <AnimatePresence>
+          {(hasActiveFilters || showEditorColumn) && (
+            <motion.div
+              key="roster-active-filter-pills"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="no-print flex flex-wrap items-center justify-between gap-2 text-[11px]"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                {showEditorColumn && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRowEditorMode(false);
+                      setExpertInlineEdit(false);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-nav-active)',
+                      borderColor: 'var(--accent)',
+                      color: 'var(--accent)',
+                    }}
+                  >
+                    <Edit3 className="h-3 w-3" />
+                    <span>وضع التحرير نشط · إغلاق</span>
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+
+                {statusFilter !== 'all' && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    الحالة:{' '}
+                    {statusFilter === 'active'
+                      ? 'النشطون'
+                      : statusFilter === 'blocked'
+                      ? 'المحجوبون'
+                      : 'المؤرشفون'}
+                  </span>
+                )}
+
+                {categoryFilter !== 'all' && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    الفئة: {categoryFilter}
+                  </span>
+                )}
+
+                {sortBy !== 'default' && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    الفرز:{' '}
+                    {sortBy === 'name_asc' ? 'أبجديًا' : 'الأكثر أفرادًا'}
+                  </span>
+                )}
+              </div>
+
+              {hasActiveFilters && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setRowEditorMode(false);
-                    setExpertInlineEdit(false);
-                  }}
+                  onClick={resetAllFilters}
                   className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
                   style={{
-                    backgroundColor: 'var(--bg-nav-active)',
-                    borderColor: 'var(--accent)',
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
                     color: 'var(--accent)',
                   }}
                 >
-                  <Edit3 className="h-3 w-3" />
-                  <span>وضع التحرير نشط · إغلاق</span>
-                  <X className="h-3 w-3" />
+                  <RotateCcw className="h-3 w-3" />
+                  <span>إعادة ضبط الفلاتر</span>
                 </button>
               )}
-
-              {statusFilter !== 'all' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  الحالة:{' '}
-                  {statusFilter === 'active'
-                    ? 'النشطون'
-                    : statusFilter === 'blocked'
-                    ? 'المحجوبون'
-                    : 'المؤرشفون'}
-                </span>
-              )}
-
-              {categoryFilter !== 'all' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  الفئة: {categoryFilter}
-                </span>
-              )}
-
-              {sortBy !== 'default' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  الفرز:{' '}
-                  {sortBy === 'name_asc' ? 'أبجديًا' : 'الأكثر أفرادًا'}
-                </span>
-              )}
-            </div>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={resetAllFilters}
-                className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--accent)',
-                }}
-              >
-                <RotateCcw className="h-3 w-3" />
-                <span>إعادة ضبط الفلاتر</span>
-              </button>
-            )}
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Locked Reading Feedback Hint */}
-        {lockHintNotice && (
-          <div
-            role="status"
-            data-testid="locked-table-hint"
-            className="no-print row-action-reveal flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold"
-            style={{
-              backgroundColor: 'var(--warning-bg)',
-              borderColor: 'var(--warning)',
-              color: 'var(--warning)',
-            }}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 shrink-0" />
-              <span>{lockHintNotice}</span>
-            </span>
-            <button
-              type="button"
-              onClick={handleToggleLock}
-              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold"
+        <AnimatePresence>
+          {lockHintNotice && (
+            <motion.div
+              key="roster-lock-hint"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              role="status"
+              data-testid="locked-table-hint"
+              className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold"
               style={{
-                backgroundColor: 'var(--warning)',
-                color: '#ffffff',
+                backgroundColor: 'var(--warning-bg)',
+                borderColor: 'var(--warning)',
+                color: 'var(--warning)',
               }}
             >
-              <Unlock className="h-3 w-3" />
-              <span>فتح القفل الآن</span>
-            </button>
-          </div>
-        )}
+              <span className="inline-flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                <span>{lockHintNotice}</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleLock}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold"
+                style={{
+                  backgroundColor: 'var(--warning)',
+                  color: '#ffffff',
+                }}
+              >
+                <Unlock className="h-3 w-3" />
+                <span>فتح القفل الآن</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Table Column Customizer Studio */}
-        {showExpertPanel && (
-          <ColumnCustomizerPanel
-            expertTableConfig={expertTableConfig}
-            allColumns={allCustomizableColumns}
-            selectedPersonIds={selectedPersonIds}
-            onUpdateExpertTableConfig={onUpdateExpertTableConfig}
-            onAddExpertCustomColumn={onAddExpertCustomColumn}
-            onRemoveExpertCustomColumn={onRemoveExpertCustomColumn}
-            onResetExpertTableConfig={onResetExpertTableConfig}
-            onBulkUpdateCategory={onBulkUpdateCategory}
-          />
-        )}
+        <AnimatePresence>
+          {showExpertPanel && (
+            <motion.div
+              key="roster-column-customizer"
+              variants={TABRIX_SUBVIEW_VARIANTS}
+              custom={1}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <ColumnCustomizerPanel
+                expertTableConfig={expertTableConfig}
+                allColumns={allCustomizableColumns}
+                selectedPersonIds={selectedPersonIds}
+                onUpdateExpertTableConfig={onUpdateExpertTableConfig}
+                onAddExpertCustomColumn={onAddExpertCustomColumn}
+                onRemoveExpertCustomColumn={onRemoveExpertCustomColumn}
+                onResetExpertTableConfig={onResetExpertTableConfig}
+                onBulkUpdateCategory={onBulkUpdateCategory}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Expert Smart Audit Panel */}
-        {showAuditPanel && capabilities.canUseSmartAudit && (
-          <section
-            className="nexus-squircle p-4 sm:p-5"
-            style={{
-              borderColor: 'var(--warning)',
-            }}
-          >
-            <div
-              className="mb-2 flex items-center justify-between gap-2 text-xs font-bold"
-              style={{ color: 'var(--warning)' }}
+        <AnimatePresence>
+          {showAuditPanel && capabilities.canUseSmartAudit && (
+            <motion.section
+              key="roster-smart-audit"
+              variants={TABRIX_SUBVIEW_VARIANTS}
+              custom={1}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="nexus-squircle p-4 sm:p-5"
+              style={{
+                borderColor: 'var(--warning)',
+              }}
             >
-              <span className="inline-flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                <span>نتائج التدقيق الذكي ({auditIssues.length} ملاحظة)</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowAuditPanel(false)}
-                className="rounded p-1 hover:opacity-75"
-                aria-label="إغلاق التدقيق"
+              <div
+                className="mb-2 flex items-center justify-between gap-2 text-xs font-bold"
+                style={{ color: 'var(--warning)' }}
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {auditIssues.length === 0 ? (
-              <div className="text-xs" style={{ color: 'var(--success)' }}>
-                سجل الوكالة سليم تمامًا ولا توجد أخطاء أو تكرارات.
+                <span className="inline-flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>نتائج التدقيق الذكي ({auditIssues.length} ملاحظة)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAuditPanel(false)}
+                  className="rounded p-1 hover:opacity-75"
+                  aria-label="إغلاق التدقيق"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-            ) : (
-              <ul className="space-y-1 text-xs">
-                {auditIssues.map((issue) => (
-                  <li
-                    key={issue.id}
-                    className="flex items-center justify-between gap-2"
-                  >
-                    <span>
-                      <strong>{issue.personName}</strong> — {issue.message}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+              {auditIssues.length === 0 ? (
+                <div className="text-xs" style={{ color: 'var(--success)' }}>
+                  سجل الوكالة سليم تمامًا ولا توجد أخطاء أو تكرارات.
+                </div>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {auditIssues.map((issue) => (
+                    <li
+                      key={issue.id}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span>
+                        <strong>{issue.personName}</strong> — {issue.message}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         {/* Contextual Single-Row Quick Actions (Appears ONLY on tapping a row while unlocked) */}
-        {showFocusedRowQuickBar && focusedPerson && (
-          <section
-            data-testid="contextual-row-actions-bar"
-            aria-label="إجراءات السطر المحدد"
-            className="no-print row-action-reveal flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs shadow-sm"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--accent)',
-            }}
-          >
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-extrabold truncate max-w-[220px]">
-                {focusedPerson.name}
-              </span>
-              {focusedPersonEff && (
-                <span
-                  className="text-[11px] font-semibold tabular-nums"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {focusedPersonEff.eligibleIndividuals ?? 0} أفراد ·{' '}
-                  {focusedPersonEff.quotaText} · {focusedPersonEff.priceText}
+        <AnimatePresence>
+          {showFocusedRowQuickBar && focusedPerson && (
+            <motion.section
+              key={`row-quick-bar-${focusedPerson.id}`}
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              data-testid="contextual-row-actions-bar"
+              aria-label="إجراءات السطر المحدد"
+              className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs shadow-sm"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--accent)',
+              }}
+            >
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="font-extrabold truncate max-w-[220px]">
+                  {focusedPerson.name}
                 </span>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              {capabilities.canEditRecords && (
-                <>
-                  <button
-                    type="button"
-                    data-testid="row-quick-edit-btn"
-                    onClick={() => onOpenEditPerson(focusedPerson)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-bold"
-                    style={{
-                      backgroundColor: 'var(--accent)',
-                      color: 'var(--accent-fg)',
-                    }}
+                {focusedPersonEff && (
+                  <span
+                    className="text-[11px] font-semibold tabular-nums"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    <Edit3 className="h-3.5 w-3.5" />
-                    <span>تعديل</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="row-quick-delete-btn"
-                    onClick={() => onRequestDeletePerson(focusedPerson)}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--danger)',
-                      color: 'var(--danger)',
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>حذف</span>
-                  </button>
-                </>
-              )}
-
-              <button
-                type="button"
-                onClick={() => toggleSelectPerson(focusedPerson.id)}
-                className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
-                style={{
-                  backgroundColor: selectedPersonIds.includes(focusedPerson.id)
-                    ? 'var(--bg-nav-active)'
-                    : 'var(--bg-main)',
-                  borderColor: selectedPersonIds.includes(focusedPerson.id)
-                    ? 'var(--accent)'
-                    : 'var(--border-color)',
-                  color: selectedPersonIds.includes(focusedPerson.id)
-                    ? 'var(--accent)'
-                    : 'var(--text-primary)',
-                }}
-              >
-                <CheckSquare className="h-3.5 w-3.5" />
-                <span>
-                  {selectedPersonIds.includes(focusedPerson.id)
-                    ? 'إلغاء من المحددين'
-                    : 'تحديد للإجراءات'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setFocusedRowId(null);
-                  onFocusedPersonChange?.(null);
-                }}
-                aria-label="إغلاق إجراءات السطر"
-                className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {themePrefs.activeRowFocusMode ? (
-                  <>
-                    <EyeOff className="h-3.5 w-3.5" />
-                    <span>إلغاء التركيز</span>
-                  </>
-                ) : (
-                  <X className="h-3.5 w-3.5" />
+                    {focusedPersonEff.eligibleIndividuals ?? 0} أفراد ·{' '}
+                    {focusedPersonEff.quotaText} · {focusedPersonEff.priceText}
+                  </span>
                 )}
-              </button>
-            </div>
-          </section>
-        )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {capabilities.canEditRecords && (
+                  <>
+                    <button
+                      type="button"
+                      data-testid="row-quick-edit-btn"
+                      onClick={() => onOpenEditPerson(focusedPerson)}
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-bold"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      <span>تعديل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="row-quick-delete-btn"
+                      onClick={() => onRequestDeletePerson(focusedPerson)}
+                      className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--danger)',
+                        color: 'var(--danger)',
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>حذف</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => toggleSelectPerson(focusedPerson.id)}
+                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+                  style={{
+                    backgroundColor: selectedPersonIds.includes(focusedPerson.id)
+                      ? 'var(--bg-nav-active)'
+                      : 'var(--bg-main)',
+                    borderColor: selectedPersonIds.includes(focusedPerson.id)
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                    color: selectedPersonIds.includes(focusedPerson.id)
+                      ? 'var(--accent)'
+                      : 'var(--text-primary)',
+                  }}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>
+                    {selectedPersonIds.includes(focusedPerson.id)
+                      ? 'إلغاء من المحددين'
+                      : 'تحديد للإجراءات'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusedRowId(null);
+                    onFocusedPersonChange?.(null);
+                  }}
+                  aria-label="إغلاق إجراءات السطر"
+                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 font-semibold"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  {themePrefs.activeRowFocusMode ? (
+                    <>
+                      <EyeOff className="h-3.5 w-3.5" />
+                      <span>إلغاء التركيز</span>
+                    </>
+                  ) : (
+                    <X className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         {/* Multi-Selection Action Bar (Hidden when locked) */}
         {!isTableLocked && (

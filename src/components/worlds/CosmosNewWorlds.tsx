@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Activity,
   Archive,
@@ -44,14 +45,24 @@ import {
 import {
   formatCosmosDate,
   formatCosmosNumerals,
+  getAppThemeById,
+  MARINE_THEMES,
 } from '../../utils/themes';
 import { playTactileFeedback } from '../../utils/tactileFeedback';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
+import {
+  Tabrix3DTiltSurface,
+  TabrixSubViewTransition,
+} from '../ui/TabrixMotionPrimitives';
 import { LiveStage } from '../cosmos/LiveStage';
 import { RegistryInspector } from '../cosmos/RegistryInspector';
 import { ResultCard } from '../cosmos/ResultCard';
 import { SettingRow } from '../cosmos/SettingRow';
 
-/* ─── 1. Locked Obsidian & Gold Visual Identity Panel ─── */
+/* ─── 1. Absolute Marine Themes 3D Identity Panel ─── */
 interface CustomThemeStudioPanelProps {
   themePrefs: ThemePreferences;
   accessibility: AccessibilityAndExperiencePrefs;
@@ -64,28 +75,64 @@ interface CustomThemeStudioPanelProps {
 export const CustomThemeStudioPanel: React.FC<CustomThemeStudioPanelProps> = ({
   themePrefs,
   accessibility,
+  onUpdateThemePrefs,
+  onNotify,
 }) => {
+  const activeTheme = getAppThemeById(themePrefs.appTheme);
+  const reducedMotion = useTabrixReducedMotion();
   return (
     <div className="space-y-4">
       <LiveStage
-        title="الهوية البصرية المقفلة — السبج والذهب"
-        subtitle="واجهة داكنة زجاجية موحدة بلمسات ذهبية تنفيذية"
-        accentColor="#D4AF37"
+        title={`الثيمات البحرية المطلقة — ${activeTheme.name}`}
+        subtitle={activeTheme.description}
+        accentColor={activeTheme.vars['--accent']}
       >
         <div
-          className="rounded-2xl border p-4 space-y-2"
+          className="rounded-2xl border p-4 space-y-3"
           style={{
-            backgroundColor: '#09090B',
-            color: '#F4F4F6',
-            borderColor: 'rgba(212, 175, 55, 0.3)',
-            borderRadius: `${themePrefs.borderRadiusPx ?? 16}px`,
+            backgroundColor: activeTheme.vars['--bg-main'],
+            color: activeTheme.vars['--text-primary'],
+            borderColor: activeTheme.vars['--border-color'],
+            borderRadius: `${themePrefs.borderRadiusPx ?? 22}px`,
           }}
         >
-          <div className="text-sm font-extrabold text-[#F3E5AB]">
-            Morrow Obsidian & Gold Edition
+          <div className="text-sm font-extrabold" style={{ color: activeTheme.vars['--accent-bright'] }}>
+            Morrow 3D Marine Edition · {activeTheme.englishName}
           </div>
-          <div className="text-xs text-[#9898AA]">
-            رسم الفرد: {formatCosmosNumerals('250', accessibility.numeralSystem)} د.ع · شفافية زجاجية {themePrefs.glassOpacityPct ?? 86}%
+          <div className="text-xs" style={{ color: activeTheme.vars['--text-muted'] }}>
+            رسم الفرد: {formatCosmosNumerals('250', accessibility.numeralSystem)} د.ع · شفافية زجاجية {themePrefs.glassOpacityPct ?? 70}%
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+            {MARINE_THEMES.map((theme) => {
+              const selected = theme.id === activeTheme.id;
+              return (
+                <motion.button
+                  key={theme.id}
+                  type="button"
+                  whileHover={reducedMotion ? undefined : { y: -3, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+                  transition={TABRIX_TACTILE_SPRING}
+                  onClick={() => {
+                    onUpdateThemePrefs({ appTheme: theme.id });
+                    onNotify(`تم تفعيل الثيم البحري "${theme.name}".`);
+                  }}
+                  className="rounded-xl border px-2.5 py-2 text-right transition-colors cursor-pointer"
+                  style={{
+                    backgroundColor: theme.vars['--bg-surface'],
+                    borderColor: selected ? theme.vars['--accent'] : theme.vars['--border-color'],
+                    color: theme.vars['--text-primary'],
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] font-bold truncate">{theme.name}</span>
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: theme.vars['--accent'] }}
+                    />
+                  </div>
+                </motion.button>
+              );
+            })}
           </div>
         </div>
       </LiveStage>
@@ -443,7 +490,7 @@ export const HealthAndKpiPanel: React.FC<HealthAndKpiPanelProps> = ({
           },
           { label: 'صافي الإيراد التقديري', val: formatIqd(metrics.profit) },
         ].map((k) => (
-          <div
+          <Tabrix3DTiltSurface
             key={k.label}
             className="rounded-[20px] border p-4"
             style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
@@ -454,7 +501,7 @@ export const HealthAndKpiPanel: React.FC<HealthAndKpiPanelProps> = ({
             <div className="mt-1 text-base sm:text-lg font-extrabold tabular-nums">
               {k.val}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
         ))}
       </div>
 
@@ -587,7 +634,7 @@ export const LegacyArchivePanel: React.FC<LegacyArchivePanelProps> = ({
           >
             <option value="all">كل الفئات ({LEGACY_KEY_MAP.length})</option>
             <option value="settings_section">الأقسام الثمانية</option>
-            <option value="classic_theme">الهوية البصرية (السبج والذهب)</option>
+            <option value="classic_theme">الهوية البصرية البحرية (5 ثيمات)</option>
             <option value="table_theme">محركات الجداول (8)</option>
             <option value="arabic_font">الخطوط العربية (6)</option>
             <option value="calc_field">حقول الحاسبة</option>
@@ -595,36 +642,38 @@ export const LegacyArchivePanel: React.FC<LegacyArchivePanelProps> = ({
           </select>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {filtered.map((item) => (
-            <button
-              key={item.legacyKey}
-              type="button"
-              onClick={() => onNavigateToLegacyEntry(item.nodeId)}
-              className="flex items-center justify-between gap-2 rounded-xl border p-3 text-right hover:border-[var(--accent)]"
-              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-extrabold truncate">{item.label}</span>
-                  {item.protected && (
-                    <Lock className="h-3 w-3 shrink-0" style={{ color: 'var(--warning)' }} />
-                  )}
+        <TabrixSubViewTransition viewKey={filterCat}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {filtered.map((item) => (
+              <button
+                key={item.legacyKey}
+                type="button"
+                onClick={() => onNavigateToLegacyEntry(item.nodeId)}
+                className="flex items-center justify-between gap-2 rounded-xl border p-3 text-right hover:border-[var(--accent)]"
+                style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-extrabold truncate">{item.label}</span>
+                    {item.protected && (
+                      <Lock className="h-3 w-3 shrink-0" style={{ color: 'var(--warning)' }} />
+                    )}
+                  </div>
+                  <span
+                    dir="ltr"
+                    className="block text-[10px] font-data truncate"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {item.legacyKey}
+                  </span>
                 </div>
-                <span
-                  dir="ltr"
-                  className="block text-[10px] font-data truncate"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {item.legacyKey}
+                <span className="text-[11px] font-bold shrink-0" style={{ color: 'var(--accent)' }}>
+                  انتقال
                 </span>
-              </div>
-              <span className="text-[11px] font-bold shrink-0" style={{ color: 'var(--accent)' }}>
-                انتقال
-              </span>
-            </button>
-          ))}
-        </div>
+              </button>
+            ))}
+          </div>
+        </TabrixSubViewTransition>
       </div>
     </div>
   );

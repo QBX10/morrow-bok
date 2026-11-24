@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle2,
   RotateCcw,
@@ -7,6 +8,11 @@ import {
 } from 'lucide-react';
 import type { HierarchyNode } from '../../utils/hierarchyRegistry';
 import { SectionLogo } from './sectionLogos';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface NodeViewProps {
   node: HierarchyNode;
@@ -29,6 +35,7 @@ export const NodeView: React.FC<NodeViewProps> = ({
   headerActions,
   children,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [confirmingReset, setConfirmingReset] = useState(false);
 
   return (
@@ -36,7 +43,7 @@ export const NodeView: React.FC<NodeViewProps> = ({
       key={node.id}
       data-capsule-node-id={node.id}
       aria-label={node.title}
-      className={`capsule-level-enter space-y-5 ${
+      className={`space-y-5 ${
         displayMode === 'contained' ? 'mx-auto w-full max-w-6xl' : 'w-full'
       }`}
     >
@@ -131,51 +138,58 @@ export const NodeView: React.FC<NodeViewProps> = ({
       </div>
 
       {/* Inline Safe Confirmation for Branch-Only Reset (Rule 1 & Rule 5) */}
-      {onResetBranch && confirmingReset && (
-        <div
-          role="alertdialog"
-          aria-label="تأكيد استعادة افتراضيات هذا الفرع فقط"
-          className="capsule-glass-card flex flex-wrap items-center justify-between gap-3 border p-4 text-xs"
-          style={{
-            backgroundColor: 'var(--warning-bg)',
-            borderColor: 'var(--warning)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <div className="font-bold">
-            سيتم استعادة الإعدادات الافتراضية لفرع «{node.title}» فقط دون مساس بالثيمات المخصصة أو بقية الفروع. هل تريد المتابعة؟
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onResetBranch();
-                setConfirmingReset(false);
-              }}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3.5 py-1.5 font-bold whitespace-nowrap"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>نعم، استعادة هذا الفرع</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmingReset(false)}
-              className="inline-flex min-h-[40px] items-center gap-1 rounded-xl border px-3 py-1.5 font-bold whitespace-nowrap"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-              <span>إلغاء</span>
-            </button>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {onResetBranch && confirmingReset && (
+          <motion.div
+            key="node-reset-confirm"
+            role="alertdialog"
+            aria-label="تأكيد استعادة افتراضيات هذا الفرع فقط"
+            variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="capsule-glass-card flex flex-wrap items-center justify-between gap-3 border p-4 text-xs"
+            style={{
+              backgroundColor: 'var(--warning-bg)',
+              borderColor: 'var(--warning)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <div className="font-bold">
+              سيتم استعادة الإعدادات الافتراضية لفرع «{node.title}» فقط دون مساس بالثيمات المخصصة أو بقية الفروع. هل تريد المتابعة؟
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onResetBranch();
+                  setConfirmingReset(false);
+                }}
+                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3.5 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>نعم، استعادة هذا الفرع</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingReset(false)}
+                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1 rounded-xl border px-3 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>إلغاء</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Focused Capsule Content */}
       <div className="space-y-5">{children}</div>

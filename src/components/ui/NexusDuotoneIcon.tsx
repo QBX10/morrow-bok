@@ -50,20 +50,26 @@ export const NexusDuotoneIcon: React.FC<NexusDuotoneIconProps> = ({
       aria-hidden="true"
       className={`relative inline-flex ${resolvedSizeClass} shrink-0 items-center justify-center rounded-2xl border ${className}`}
       style={{
-        background: `linear-gradient(145deg, color-mix(in srgb, ${accentColor} 16%, var(--bg-surface)), color-mix(in srgb, #8A8A9E 14%, var(--bg-main)))`,
-        borderColor: `color-mix(in srgb, ${accentColor} 28%, rgba(138, 138, 158, 0.25))`,
+        background: `linear-gradient(145deg, color-mix(in srgb, ${accentColor} 26%, var(--bg-table-header, var(--bg-surface))), color-mix(in srgb, var(--bg-main) 88%, ${accentColor} 12%))`,
+        borderColor: `color-mix(in srgb, ${accentColor} 42%, var(--border-color))`,
         color: accentColor,
-        boxShadow:
-          'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 12px -4px rgba(0, 0, 0, 0.3)',
+        transformStyle: 'preserve-3d',
+        boxShadow: `inset 0 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 -2.5px 0 rgba(2, 10, 22, 0.62), 0 3px 0 rgba(2, 8, 18, 0.45), 0 10px 22px -6px color-mix(in srgb, ${accentColor} 38%, rgba(2, 10, 22, 0.72))`,
       }}
     >
       <span
-        className="pointer-events-none absolute inset-1.5 rounded-xl opacity-35"
+        className="pointer-events-none absolute inset-1.5 rounded-xl opacity-55"
         style={{
-          backgroundColor: 'rgba(138, 138, 158, 0.18)',
+          background: `radial-gradient(circle at 28% 22%, color-mix(in srgb, ${accentColor} 34%, transparent), transparent 72%)`,
         }}
       />
-      <span className="relative z-[1] flex items-center justify-center">
+      <span
+        className="pointer-events-none absolute inset-x-2.5 top-[1px] h-[1px] rounded-full opacity-70"
+        style={{
+          background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent)`,
+        }}
+      />
+      <span className="relative z-[1] flex items-center justify-center drop-shadow-[0_2px_5px_rgba(2,10,22,0.65)]">
         {IconComponent ? <IconComponent className={resolvedIconClass} /> : children}
       </span>
     </span>

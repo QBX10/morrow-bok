@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronLeft, Compass, EyeOff, Lock, Orbit } from 'lucide-react';
 import type { CosmosNode } from '../../utils/cosmosRegistry';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
+import {
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from '../ui/TabrixMotionPrimitives';
 import { SectionLogo } from '../settings/sectionLogos';
 
 interface OrbitalMapViewProps {
@@ -22,6 +33,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
     enableOrbitalMode ? 'orbital' : 'sitemap'
   );
   const [expandedWorlds, setExpandedWorlds] = useState<Record<string, boolean>>({});
+  const reducedMotion = useTabrixReducedMotion();
 
   const visibleWorlds = root.children.filter(
     (w) => !hiddenWorldIds.includes(w.worldId) || w.worldId === 'world_legacy_archive'
@@ -48,31 +60,43 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
             <button
               type="button"
               onClick={() => setMode('orbital')}
-              className="rounded-lg px-3 py-1.5 text-xs font-bold"
-              style={
-                mode === 'orbital'
-                  ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }
-                  : { color: 'var(--text-muted)' }
-              }
+              className="relative rounded-lg px-3 py-1.5 text-xs font-bold"
+              style={{
+                color: mode === 'orbital' ? 'var(--text-primary)' : 'var(--text-muted)',
+              }}
             >
-              الخريطة المدارية
+              {mode === 'orbital' && (
+                <TabrixPillIndicator
+                  layoutId="orbital-mode-pill"
+                  className="rounded-lg"
+                />
+              )}
+              <span className="relative z-10">الخريطة المدارية</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => setMode('sitemap')}
-            className="rounded-lg px-3 py-1.5 text-xs font-bold"
-            style={
-              mode === 'sitemap'
-                ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }
-                : { color: 'var(--text-muted)' }
-            }
+            className="relative rounded-lg px-3 py-1.5 text-xs font-bold"
+            style={{
+              color: mode === 'sitemap' ? 'var(--text-primary)' : 'var(--text-muted)',
+            }}
           >
-            الشجرة القابلة للطي
+            {mode === 'sitemap' && (
+              <TabrixPillIndicator
+                layoutId="orbital-mode-pill"
+                className="rounded-lg"
+              />
+            )}
+            <span className="relative z-10">الشجرة القابلة للطي</span>
           </button>
         </div>
       </div>
 
+      <TabrixSubViewTransition
+        viewKey={mode === 'orbital' && enableOrbitalMode ? 'orbital' : 'sitemap'}
+        direction={mode === 'orbital' ? -1 : 1}
+      >
       {mode === 'orbital' && enableOrbitalMode ? (
         <div
           className="relative overflow-hidden rounded-[26px] border p-5 sm:p-8"
@@ -106,11 +130,14 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
             {visibleWorlds.map((world) => {
               const isActive = activeWorldId === world.worldId;
               return (
-                <button
+                <motion.button
                   key={world.id}
                   type="button"
+                  whileHover={reducedMotion ? undefined : { y: -4, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => onSelectNode(world)}
-                  className="flex flex-col items-center rounded-2xl border p-3.5 text-center transition-all hover:-translate-y-0.5 hover:border-[var(--accent)]"
+                  className="flex flex-col items-center rounded-2xl border p-3.5 text-center transition-colors hover:border-[var(--accent)] nexus-squircle"
                   style={{
                     backgroundColor: isActive ? 'var(--bg-nav-active)' : 'var(--bg-main)',
                     borderColor: isActive ? world.accentColor : 'var(--border-color)',
@@ -127,7 +154,7 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
                   >
                     {world.children.length} أقسام فرعية
                   </span>
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -195,49 +222,61 @@ export const OrbitalMapView: React.FC<OrbitalMapViewProps> = ({
                   </button>
                 </div>
 
-                {isOpen && (
-                  <div
-                    className="border-t px-4 py-3 space-y-2"
-                    style={{
-                      borderColor: 'var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                    }}
-                  >
-                    {world.children.map((gal) => (
-                      <div key={gal.id} className="space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => onSelectNode(gal)}
-                          className="text-xs font-extrabold hover:underline"
-                          style={{ color: world.accentColor }}
-                        >
-                          🪐 {gal.title}
-                        </button>
-                        <div className="flex flex-wrap gap-1.5 ps-3">
-                          {gal.children.map((cap) => (
-                            <button
-                              key={cap.id}
-                              type="button"
-                              onClick={() => onSelectNode(cap)}
-                              className="rounded-lg border px-2.5 py-1 text-[11px] font-semibold hover:border-[var(--accent)]"
-                              style={{
-                                backgroundColor: 'var(--bg-surface)',
-                                borderColor: 'var(--border-color)',
-                              }}
-                            >
-                              {cap.title}
-                            </button>
-                          ))}
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      key={`sitemap-world-${world.id}`}
+                      variants={
+                        reducedMotion
+                          ? TABRIX_REDUCED_VARIANTS
+                          : TABRIX_POPOVER_VARIANTS
+                      }
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="border-t px-4 py-3 space-y-2"
+                      style={{
+                        borderColor: 'var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                      }}
+                    >
+                      {world.children.map((gal) => (
+                        <div key={gal.id} className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onSelectNode(gal)}
+                            className="text-xs font-extrabold hover:underline"
+                            style={{ color: world.accentColor }}
+                          >
+                            🪐 {gal.title}
+                          </button>
+                          <div className="flex flex-wrap gap-1.5 ps-3">
+                            {gal.children.map((cap) => (
+                              <button
+                                key={cap.id}
+                                type="button"
+                                onClick={() => onSelectNode(cap)}
+                                className="rounded-lg border px-2.5 py-1 text-[11px] font-semibold hover:border-[var(--accent)]"
+                                style={{
+                                  backgroundColor: 'var(--bg-surface)',
+                                  borderColor: 'var(--border-color)',
+                                }}
+                              >
+                                {cap.title}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
         </div>
       )}
+      </TabrixSubViewTransition>
     </div>
   );
 };

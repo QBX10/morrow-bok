@@ -66,8 +66,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState('');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
-  if (!open) return null;
-
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';

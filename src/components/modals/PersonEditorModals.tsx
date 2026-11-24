@@ -40,8 +40,6 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
     }
   }, [open, defaultAgencyId]);
 
-  if (!open) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -243,9 +241,8 @@ export const EditPersonModal: React.FC<EditPersonModalProps> = ({
     }
   }, [person]);
 
-  if (!person) return null;
-
   const commitEdit = () => {
+    if (!person) return;
     onSaveWithConfirm(person.id, {
       name: name.trim(),
       agencyId,
@@ -265,9 +262,9 @@ export const EditPersonModal: React.FC<EditPersonModalProps> = ({
       open={Boolean(person)}
       onBack={onClose}
       title="تعديل بيانات المستفيد"
-      subtitle={person.name}
+      subtitle={person?.name || name}
       icon={<UserRoundPen className="h-4 w-4" />}
-      ariaLabel={`تعديل بيانات ${person.name}`}
+      ariaLabel={`تعديل بيانات ${person?.name || name || 'المستفيد'}`}
       maxWidthClass="max-w-lg"
     >
       <div className="nexus-squircle p-5 sm:p-6">
@@ -551,14 +548,12 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   onCancel,
   onConfirmDelete,
 }) => {
-  if (!targetLabel) return null;
-
   return (
     <FullScreenPushPage
       open={Boolean(targetLabel)}
       onBack={onCancel}
       title="تأكيد الحذف (قواعد المحرر)"
-      subtitle={targetLabel}
+      subtitle={targetLabel || undefined}
       icon={<Trash2 className="h-4 w-4" style={{ color: 'var(--danger)' }} />}
       ariaLabel="تأكيد الحذف"
       maxWidthClass="max-w-md"

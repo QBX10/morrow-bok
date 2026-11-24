@@ -17,6 +17,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_SPRING,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 import type {
   Agency,
   BlockScope,
@@ -210,54 +216,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
     [aggregates]
   );
 
-  if (selectedRecords.length === 0) {
-    if (!lastDeletedBanner) return null;
-    return (
-      <section
-        role="status"
-        aria-label="تأكيد الحذف الآمن"
-        data-testid="bulk-delete-undo-banner"
-        className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--warning)',
-          color: 'var(--text-primary)',
-        }}
-      >
-        <span className="font-bold">
-          تم نقل {lastDeletedBanner.count} سجل إلى سلة المهملات بأمان.
-        </span>
-        <div className="flex items-center gap-2">
-          {canUndo && onUndo && (
-            <button
-              type="button"
-              onClick={() => {
-                onUndo();
-                setLastDeletedBanner(null);
-              }}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-bold"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>تراجع عن الحذف</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setLastDeletedBanner(null)}
-            aria-label="إغلاق إشعار الحذف"
-            className="rounded-lg border px-2.5 py-1.5 font-semibold"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-          >
-            إغلاق
-          </button>
-        </div>
-      </section>
-    );
-  }
+  const reducedMotion = useTabrixReducedMotion();
 
   const showNoticeMsg = (msg: string) => {
     setNotice(msg);
@@ -311,22 +270,92 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
     }
   };
 
-  const primary = selectedRecords[0];
-  const primaryEff = getEffectiveAllocationForPerson(
-    primary,
-    calculationSettings
-  );
+  const primary = selectedRecords[0] ?? null;
+  const primaryEff = primary
+    ? getEffectiveAllocationForPerson(primary, calculationSettings)
+    : null;
 
   return (
-    <section
-      aria-label="شريط إجراءات التحديد المنظم"
-      data-testid="selection-action-bar"
-      className="no-print nexus-glass-lite md:sticky md:top-2 z-[35] space-y-2 rounded-3xl border px-3.5 py-2.5"
-      style={{
-        borderColor: 'color-mix(in srgb, var(--accent) 55%, var(--border-color))',
-        color: 'var(--text-primary)',
-      }}
-    >
+    <>
+      <AnimatePresence mode="wait">
+        {selectedRecords.length === 0 ? (
+          lastDeletedBanner ? (
+            <motion.section
+              key="bulk-delete-undo-banner"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              role="status"
+              aria-label="تأكيد الحذف الآمن"
+              data-testid="bulk-delete-undo-banner"
+              className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--warning)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <span className="font-bold">
+                تم نقل {lastDeletedBanner.count} سجل إلى سلة المهملات بأمان.
+              </span>
+              <div className="flex items-center gap-2">
+                {canUndo && onUndo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUndo();
+                      setLastDeletedBanner(null);
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-bold"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                    }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>تراجع عن الحذف</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setLastDeletedBanner(null)}
+                  aria-label="إغلاق إشعار الحذف"
+                  className="rounded-lg border px-2.5 py-1.5 font-semibold"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                >
+                  إغلاق
+                </button>
+              </div>
+            </motion.section>
+          ) : null
+        ) : (
+          <motion.section
+            key="selection-action-bar"
+            initial={
+              reducedMotion
+                ? { opacity: 0 }
+                : { opacity: 0, y: -10, scale: 0.985, rotateX: 3 }
+            }
+            animate={
+              reducedMotion
+                ? { opacity: 1 }
+                : { opacity: 1, y: 0, scale: 1, rotateX: 0 }
+            }
+            exit={
+              reducedMotion
+                ? { opacity: 0 }
+                : { opacity: 0, y: -8, scale: 0.985 }
+            }
+            transition={reducedMotion ? { duration: 0.1 } : TABRIX_SPRING}
+            aria-label="شريط إجراءات التحديد المنظم"
+            data-testid="selection-action-bar"
+            className="no-print nexus-glass-lite md:sticky md:top-2 z-[35] space-y-2 rounded-3xl border px-3.5 py-2.5"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--accent) 55%, var(--border-color))',
+              color: 'var(--text-primary)',
+            }}
+          >
       {/* Compact Single Summary Strip */}
       <div
         className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-xs"
@@ -503,17 +532,23 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
 
-            {moreMenuOpen && (
-              <div
-                role="menu"
-                aria-label="إجراءات إضافية للتحديد"
-                className="tabrix-popover-enter absolute right-0 top-full z-40 mt-1.5 w-64 rounded-2xl border p-1.5 shadow-2xl space-y-1"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                }}
-              >
+            <AnimatePresence>
+              {moreMenuOpen && (
+                <motion.div
+                  key="selection-more-menu"
+                  variants={TABRIX_POPOVER_VARIANTS}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  role="menu"
+                  aria-label="إجراءات إضافية للتحديد"
+                  className="capsule-glass-card absolute right-0 top-full z-40 mt-1.5 w-64 rounded-2xl border p-1.5 shadow-2xl space-y-1"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
                 <button
                   type="button"
                   role="menuitem"
@@ -633,8 +668,9 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                     <span>تقرير جاهز للمشاركة</span>
                   </button>
                 </div>
-              </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -658,131 +694,155 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
       </div>
 
       {/* Inline Safe Bulk Delete Confirmation Bar */}
-      {confirmDeleteOpen && onBulkDeleteSelected && (
-        <div
-          role="alertdialog"
-          aria-label="تأكيد الحذف الجماعي الآمن"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 text-xs"
-          style={{
-            backgroundColor: 'var(--danger-bg, var(--bg-main))',
-            borderColor: 'var(--danger)',
-          }}
-        >
-          <span className="font-bold">
-            سيتم نقل {selectedRecords.length} سجل إلى سلة المهملات بأمان (يمكنك الاسترجاع والتراجع مباشرة).
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                const count = selectedRecords.length;
-                onBulkDeleteSelected(selectedRecords);
-                setConfirmDeleteOpen(false);
-                setLastDeletedBanner({ count });
-                onClearSelection();
-              }}
-              className="min-h-[34px] rounded-lg px-3 py-1 font-bold text-white"
-              style={{ backgroundColor: 'var(--danger)' }}
-            >
-              تأكيد النقل لسلة المهملات
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDeleteOpen(false)}
-              className="min-h-[34px] rounded-lg border px-3 py-1 font-semibold"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              إلغاء
-            </button>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {confirmDeleteOpen && onBulkDeleteSelected && (
+          <motion.div
+            key="selection-confirm-delete"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            role="alertdialog"
+            aria-label="تأكيد الحذف الجماعي الآمن"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 text-xs"
+            style={{
+              backgroundColor: 'var(--danger-bg, var(--bg-main))',
+              borderColor: 'var(--danger)',
+            }}
+          >
+            <span className="font-bold">
+              سيتم نقل {selectedRecords.length} سجل إلى سلة المهملات بأمان (يمكنك الاسترجاع والتراجع مباشرة).
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const count = selectedRecords.length;
+                  onBulkDeleteSelected(selectedRecords);
+                  setConfirmDeleteOpen(false);
+                  setLastDeletedBanner({ count });
+                  onClearSelection();
+                }}
+                className="min-h-[34px] rounded-lg px-3 py-1 font-bold text-white"
+                style={{ backgroundColor: 'var(--danger)' }}
+              >
+                تأكيد النقل لسلة المهملات
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                className="min-h-[34px] rounded-lg border px-3 py-1 font-semibold"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {notice && (
-        <div
-          role="status"
-          className="rounded-lg border px-3 py-1.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--success-bg)',
-            borderColor: 'var(--success)',
-            color: 'var(--success)',
-          }}
-        >
-          {notice}
-        </div>
-      )}
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            key="selection-notice"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            role="status"
+            className="rounded-lg border px-3 py-1.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--success-bg)',
+              borderColor: 'var(--success)',
+              color: 'var(--success)',
+            }}
+          >
+            {notice}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Expandable Quick Details Strip */}
-      {showQuickDetails && (
-        <div
-          className="grid grid-cols-1 gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4"
-          style={{
-            backgroundColor: 'var(--bg-main)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          {selectedRecords.length === 1 ? (
-            <>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>الاسم والوكالة</div>
-                <div className="font-bold">
-                  {primary.name}
-                  {primary.agencyName ? ` — ${primary.agencyName}` : ''}
+      <AnimatePresence>
+        {showQuickDetails && (
+          <motion.div
+            key="selection-quick-details"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="grid grid-cols-1 gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            {selectedRecords.length === 1 && primary && primaryEff ? (
+              <>
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>الاسم والوكالة</div>
+                  <div className="font-bold">
+                    {primary.name}
+                    {primary.agencyName ? ` — ${primary.agencyName}` : ''}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>الأفراد والحصة</div>
-                <div className="font-bold tabular-nums">
-                  {primaryEff.eligibleIndividuals ?? 0} أفراد · {primaryEff.quotaText}
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>الأفراد والحصة</div>
+                  <div className="font-bold tabular-nums">
+                    {primaryEff.eligibleIndividuals ?? 0} أفراد · {primaryEff.quotaText}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>المبلغ والحالة</div>
-                <div className="font-bold tabular-nums">
-                  {primaryEff.priceText} · {primaryEff.summary.shortLabel}
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>المبلغ والحالة</div>
+                  <div className="font-bold tabular-nums">
+                    {primaryEff.priceText} · {primaryEff.summary.shortLabel}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>ملاحظات / بطاقة</div>
-                <div className="font-semibold">
-                  {primary.notes || 'لا توجد ملاحظات'}
-                  {primary.nationalId ? ` (${primary.nationalId})` : ''}
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>ملاحظات / بطاقة</div>
+                  <div className="font-semibold">
+                    {primary.notes || 'لا توجد ملاحظات'}
+                    {primary.nationalId ? ` (${primary.nationalId})` : ''}
+                  </div>
                 </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>عدد المحددين</div>
-                <div className="font-bold tabular-nums">
-                  {selectedRecords.length} أسماء
+              </>
+            ) : (
+              <>
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>عدد المحددين</div>
+                  <div className="font-bold tabular-nums">
+                    {selectedRecords.length} أسماء
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>مجموع الأفراد المستحقة</div>
-                <div className="font-bold tabular-nums">
-                  {summaryTotals.individuals} أفراد
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>مجموع الأفراد المستحقة</div>
+                  <div className="font-bold tabular-nums">
+                    {summaryTotals.individuals} أفراد
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>مجموع المبلغ</div>
-                <div className="font-bold tabular-nums" style={{ color: 'var(--success)' }}>
-                  {summaryTotals.totalIqd.toLocaleString('en-US')} د.ع
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>مجموع المبلغ</div>
+                  <div className="font-bold tabular-nums" style={{ color: 'var(--success)' }}>
+                    {summaryTotals.totalIqd.toLocaleString('en-US')} د.ع
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--text-muted)' }}>الأسماء</div>
-                <div className="truncate font-semibold">
-                  {selectedRecords.map((r) => r.name).join('، ')}
+                <div>
+                  <div style={{ color: 'var(--text-muted)' }}>الأسماء</div>
+                  <div className="truncate font-semibold">
+                    {selectedRecords.map((r) => r.name).join('، ')}
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+          </motion.section>
+        )}
+      </AnimatePresence>
 
       {/* Full Info Full-Screen Push Page */}
       <FullScreenPushPage
@@ -1521,6 +1581,6 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
         settings={calculationSettings}
         onClose={() => setSnippetModalOpen(false)}
       />
-    </section>
+    </>
   );
 };

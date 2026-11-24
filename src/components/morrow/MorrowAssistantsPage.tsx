@@ -1,10 +1,16 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { Check, Send, Sparkles } from 'lucide-react';
 import {
   SPECIALIZED_ASSISTANTS,
   type SpecializedAssistantProfile,
 } from './morrowWorkspaceTypes';
 import { MorrowSubPageHeader } from './MorrowSubPageHeader';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
+import { Tabrix3DTiltSurface } from '../ui/TabrixMotionPrimitives';
 
 interface MorrowAssistantsPageProps {
   activeAssistantId: string;
@@ -17,6 +23,7 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
   onActivateAssistant,
   onBackToChat,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   return (
     <main
       aria-label="المساعدون المتخصصون"
@@ -33,8 +40,10 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
         {SPECIALIZED_ASSISTANTS.map((profile) => {
           const isActive = profile.id === activeAssistantId;
           return (
-            <article
+            <Tabrix3DTiltSurface
               key={profile.id}
+              maxTiltX={5}
+              maxTiltY={6}
               className="nexus-squircle flex flex-col justify-between gap-4 p-5 transition-colors"
               style={{
                 backgroundColor: isActive
@@ -104,9 +113,11 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
               </div>
 
               <div className="flex items-center justify-end border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                <button
+                <motion.button
                   type="button"
                   onClick={() => onActivateAssistant(profile)}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="nexus-pill-btn inline-flex h-10 items-center gap-1.5 px-4 text-xs font-extrabold whitespace-nowrap"
                   style={
                     isActive
@@ -123,9 +134,9 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
                 >
                   {isActive && <Check className="h-3.5 w-3.5" />}
                   <span>{isActive ? 'مُفعّل حالياً — دخول للمحادثة' : 'تفعيل هذا المساعد'}</span>
-                </button>
+                </motion.button>
               </div>
-            </article>
+            </Tabrix3DTiltSurface>
           );
         })}
       </div>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
 import {
   BarChart3,
@@ -16,6 +17,15 @@ import {
   compareSessionWithRoster,
   computeSessionStatistics,
 } from '../../utils/ucrsEngine';
+import {
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface UcrsReportsAndStatsModalProps {
   open: boolean;
@@ -35,6 +45,13 @@ export const UcrsReportsAndStatsModal: React.FC<
   const [compareTargetAgencyId, setCompareTargetAgencyId] = useState<
     number | 'all'
   >('all');
+  const reducedMotion = useTabrixReducedMotion();
+  const tabDirection = useTabrixOrderedDirection(activeTab, [
+    'overview',
+    'diagnostics',
+    'statistics',
+    'compare',
+  ]);
 
   const stats = useMemo(
     () => (session ? computeSessionStatistics(session) : null),
@@ -198,27 +215,40 @@ export const UcrsReportsAndStatsModal: React.FC<
               { id: 'statistics', label: 'التحليل الإحصائي' },
               { id: 'compare', label: 'المقارنة مع السجلات' },
             ] as const
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setActiveTab(t.id)}
-              className="rounded-lg px-3 py-1.5 font-bold whitespace-nowrap"
-              style={{
-                backgroundColor:
-                  activeTab === t.id ? 'var(--accent)' : 'transparent',
-                color:
-                  activeTab === t.id
-                    ? 'var(--accent-fg)'
-                    : 'var(--text-primary)',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+          ).map((t) => {
+            const isActive = activeTab === t.id;
+            return (
+              <motion.button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                transition={TABRIX_TACTILE_SPRING}
+                className="relative overflow-hidden rounded-lg px-3 py-1.5 font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: 'transparent',
+                  color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
+                }}
+              >
+                {isActive && (
+                  <TabrixPillIndicator
+                    layoutId="ucrs-report-tab-pill"
+                    className="rounded-lg"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  />
+                )}
+                <span className="relative z-10">{t.label}</span>
+              </motion.button>
+            );
+          })}
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-5 text-xs">
+        <div className="flex-1 overflow-y-auto p-5 text-xs">
+          <TabrixSubViewTransition
+            viewKey={activeTab}
+            direction={tabDirection}
+            className="space-y-4"
+          >
           {activeTab === 'overview' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -528,6 +558,7 @@ export const UcrsReportsAndStatsModal: React.FC<
               </div>
             </div>
           )}
+          </TabrixSubViewTransition>
         </div>
       </div>
     </FullScreenPushPage>

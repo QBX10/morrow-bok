@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   ArrowUpLeft,
   BarChart3,
@@ -25,6 +26,7 @@ import type {
   AssistantChatThread,
   MorrowCanvasMode,
 } from '../../types/assistant';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
 import {
@@ -75,6 +77,7 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
   quickNotesCount,
   onTriggerFilePicker,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const openSubPage = (page: MorrowWorkspacePage, canvasMode?: MorrowCanvasMode) => {
     onClose();
     onOpenPage(page, canvasMode);
@@ -103,8 +106,11 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
       ariaLabel="قائمة Morrow للذكاء الاصطناعي والنماذج"
       headerActions={
         onNewChat ? (
-          <button
+          <motion.button
             type="button"
+            whileHover={reducedMotion ? undefined : { scale: 1.03 }}
+            whileTap={reducedMotion ? undefined : { scale: 0.95 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={() => {
               onNewChat();
               openSubPage('chat');
@@ -117,7 +123,7 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
           >
             <SquarePen className="h-3.5 w-3.5" />
             <span>محادثة جديدة</span>
-          </button>
+          </motion.button>
         ) : undefined
       }
     >
@@ -285,9 +291,12 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
             {SPECIALIZED_ASSISTANTS.slice(0, 4).map((ag) => {
               const selected = ag.id === activeAssistantId;
               return (
-                <button
+                <motion.button
                   key={ag.id}
                   type="button"
+                  whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => {
                     onSelectAssistant?.(ag.id);
                     openSubPage('chat');
@@ -302,7 +311,7 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
                   }}
                 >
                   <div className="truncate">{ag.name}</div>
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -553,8 +562,11 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
               <Mic className="h-3.5 w-3.5 shrink-0 opacity-70" />
             </button>
 
-            <button
+            <motion.button
               type="button"
+              whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.015 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => openSubPage('live')}
               className="nexus-pill-btn flex w-full items-center justify-between gap-2 border px-4 py-3 text-right text-xs font-extrabold"
               style={{
@@ -568,7 +580,7 @@ export const MorrowLeftDrawer: React.FC<MorrowLeftDrawerProps> = ({
                 <span>بدء جلسة صوتية ومرئية لايف</span>
               </span>
               <span className="text-[10px] font-mono">Live</span>
-            </button>
+            </motion.button>
           </div>
         </section>
       </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle2,
   Edit3,
@@ -14,6 +15,12 @@ import {
   type MediaPermissionGuide,
 } from '../../utils/mediaPermissions';
 import { MorrowSubPageHeader } from './MorrowSubPageHeader';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowVoiceSettingsPageProps {
   voiceTargetMode: 'instruction' | 'quick_note' | 'draft_text';
@@ -34,6 +41,8 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
 }) => {
   const [micCheckState, setMicCheckState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle');
   const [micGuide, setMicGuide] = useState<MediaPermissionGuide | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const statusVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const handleTestMicrophone = async () => {
     setMicCheckState('checking');
@@ -104,9 +113,12 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
             </p>
           </div>
 
-          <button
+          <motion.button
             type="button"
             onClick={onStartLiveCall}
+            whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.01 }}
+            whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+            transition={TABRIX_TACTILE_SPRING}
             className="nexus-pill-btn inline-flex h-11 items-center gap-2 px-5 text-xs font-extrabold whitespace-nowrap"
             style={{
               backgroundColor: '#10B981',
@@ -115,7 +127,7 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
           >
             <Radio className="h-4 w-4" />
             <span>بدء المحادثة المباشرة الآن</span>
-          </button>
+          </motion.button>
         </section>
 
         {/* Default Voice Note Destination */}
@@ -131,10 +143,13 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
             {targetModes.map((mode) => {
               const active = voiceTargetMode === mode.id;
               return (
-                <button
+                <motion.button
                   key={mode.id}
                   type="button"
                   onClick={() => onChangeVoiceTargetMode(mode.id)}
+                  whileHover={reducedMotion ? undefined : { y: -2 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="flex flex-col gap-2 rounded-2xl border p-4 text-right transition-colors hover:border-[var(--accent-ai)]"
                   style={{
                     backgroundColor: active
@@ -153,7 +168,7 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
                   <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     {mode.desc}
                   </p>
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -203,40 +218,52 @@ export const MorrowVoiceSettingsPage: React.FC<MorrowVoiceSettingsPageProps> = (
             </div>
           </div>
 
-          {micCheckState === 'ok' && (
-            <div
-              className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold"
-              style={{
-                backgroundColor: 'var(--success-bg)',
-                borderColor: 'var(--success)',
-                color: 'var(--success)',
-              }}
-            >
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>الميكروفون جاهز ومصرّح به للعمل في الرسائل الصوتية والمحادثة المباشرة.</span>
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            {micCheckState === 'ok' && (
+              <motion.div
+                key="mic-check-ok"
+                variants={statusVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold"
+                style={{
+                  backgroundColor: 'var(--success-bg)',
+                  borderColor: 'var(--success)',
+                  color: 'var(--success)',
+                }}
+              >
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>الميكروفون جاهز ومصرّح به للعمل في الرسائل الصوتية والمحادثة المباشرة.</span>
+              </motion.div>
+            )}
 
-          {micCheckState === 'error' && micGuide && (
-            <div
-              className="rounded-2xl border p-4 space-y-2 text-xs"
-              style={{
-                backgroundColor: 'var(--warning-bg)',
-                borderColor: 'var(--warning)',
-              }}
-            >
-              <div className="flex items-center gap-2 font-extrabold" style={{ color: 'var(--warning)' }}>
-                <ShieldAlert className="h-4 w-4 shrink-0" />
-                <span>{micGuide.title}</span>
-              </div>
-              <p style={{ color: 'var(--text-primary)' }}>{micGuide.reason}</p>
-              <ul className="list-disc pr-5 space-y-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                {micGuide.steps.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+            {micCheckState === 'error' && micGuide && (
+              <motion.div
+                key="mic-check-error"
+                variants={statusVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="rounded-2xl border p-4 space-y-2 text-xs"
+                style={{
+                  backgroundColor: 'var(--warning-bg)',
+                  borderColor: 'var(--warning)',
+                }}
+              >
+                <div className="flex items-center gap-2 font-extrabold" style={{ color: 'var(--warning)' }}>
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>{micGuide.title}</span>
+                </div>
+                <p style={{ color: 'var(--text-primary)' }}>{micGuide.reason}</p>
+                <ul className="list-disc pr-5 space-y-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                  {micGuide.steps.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ul>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
       </div>
     </main>

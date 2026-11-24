@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, ChevronDown, ChevronUp, GitMerge, ShieldCheck, Sparkles, SkipForward } from 'lucide-react';
 import type { AssistantCollaborationStep } from '../../types/assistant';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowCollaborationTraceProps {
   trace: AssistantCollaborationStep[];
@@ -12,6 +18,8 @@ export const MorrowCollaborationTrace: React.FC<MorrowCollaborationTraceProps> =
   compact = false,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const reducedMotion = useTabrixReducedMotion();
+  const traceVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const summaryMeta = useMemo(() => {
     const activeSteps = trace.filter((s) => s.status !== 'skipped');
@@ -80,74 +88,81 @@ export const MorrowCollaborationTrace: React.FC<MorrowCollaborationTraceProps> =
         </div>
       </button>
 
-      {expanded && (
-        <div
-          className="divide-y border-t"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          {trace.map((step) => {
-            const isVerifier = step.role === 'verifier';
-            const isSkipped = step.status === 'skipped';
-            return (
-              <div
-                key={step.id}
-                className={`flex items-start justify-between gap-2.5 ${
-                  compact ? 'px-2.5 py-1.5' : 'px-3 py-2'
-                }`}
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  {isSkipped ? (
-                    <SkipForward
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                      style={{ color: 'var(--text-muted)' }}
-                    />
-                  ) : isVerifier ? (
-                    <Sparkles
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                      style={{ color: 'var(--accent)' }}
-                    />
-                  ) : (
-                    <CheckCircle2
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                      style={{ color: 'var(--success)' }}
-                    />
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-1.5 font-bold">
-                      <span>{step.roleLabel}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>·</span>
-                      <span
-                        className="font-semibold"
-                        style={{ color: isSkipped ? 'var(--text-muted)' : 'var(--accent)' }}
-                      >
-                        {step.modelLabel}
-                      </span>
-                    </div>
-                    {step.summary && (
-                      <div
-                        className="mt-0.5 text-[11px] leading-relaxed"
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="collab-trace-steps"
+            variants={traceVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="divide-y border-t overflow-hidden"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            {trace.map((step) => {
+              const isVerifier = step.role === 'verifier';
+              const isSkipped = step.status === 'skipped';
+              return (
+                <div
+                  key={step.id}
+                  className={`flex items-start justify-between gap-2.5 ${
+                    compact ? 'px-2.5 py-1.5' : 'px-3 py-2'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    {isSkipped ? (
+                      <SkipForward
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
                         style={{ color: 'var(--text-muted)' }}
-                      >
-                        {step.summary}
-                      </div>
+                      />
+                    ) : isVerifier ? (
+                      <Sparkles
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        style={{ color: 'var(--accent)' }}
+                      />
+                    ) : (
+                      <CheckCircle2
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        style={{ color: 'var(--success)' }}
+                      />
                     )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-1.5 font-bold">
+                        <span>{step.roleLabel}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>·</span>
+                        <span
+                          className="font-semibold"
+                          style={{ color: isSkipped ? 'var(--text-muted)' : 'var(--accent)' }}
+                        >
+                          {step.modelLabel}
+                        </span>
+                      </div>
+                      {step.summary && (
+                        <div
+                          className="mt-0.5 text-[11px] leading-relaxed"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {step.summary}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {step.latencyMs > 0 && (
-                  <span
-                    dir="ltr"
-                    className="shrink-0 font-mono text-[10px] tabular-nums"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {step.latencyMs}ms
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  {step.latencyMs > 0 && (
+                    <span
+                      dir="ltr"
+                      className="shrink-0 font-mono text-[10px] tabular-nums"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {step.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

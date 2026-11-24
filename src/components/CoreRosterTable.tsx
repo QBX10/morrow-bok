@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
+import { motion } from 'motion/react';
 import { Edit3, Trash2 } from 'lucide-react';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../utils/tabrixMotion';
 import type {
   BlockScope,
   CalculationSettings,
@@ -129,6 +131,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
   onInlinePatchRow,
   onOverrideRowRoute,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const effectiveInlineEdit = editableInline && !locked;
   const effectiveShowEditActions = showEditActions && !locked;
   const canTapRowToFocus =
@@ -518,8 +521,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                       {effectiveShowEditActions && (
                         <div className="flex shrink-0 items-center gap-1.5">
                           {onEditRowModal && (
-                            <button
+                            <motion.button
                               type="button"
+                              whileHover={reducedMotion ? undefined : { scale: 1.08 }}
+                              whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                              transition={TABRIX_TACTILE_SPRING}
                               onClick={() => onEditRowModal(row)}
                               aria-label={`تعديل ${row.name}`}
                               className="nexus-pill-btn border p-1.5 hover:opacity-85"
@@ -529,11 +535,14 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                               }}
                             >
                               <Edit3 className="h-3.5 w-3.5" />
-                            </button>
+                            </motion.button>
                           )}
                           {onDeleteRowModal && (
-                            <button
+                            <motion.button
                               type="button"
+                              whileHover={reducedMotion ? undefined : { scale: 1.08 }}
+                              whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                              transition={TABRIX_TACTILE_SPRING}
                               onClick={() => onDeleteRowModal(row)}
                               aria-label={`حذف ${row.name}`}
                               className="nexus-pill-btn border p-1.5 hover:opacity-85"
@@ -544,7 +553,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                               }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            </motion.button>
                           )}
                         </div>
                       )}
@@ -1418,8 +1427,11 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                     >
                       <div className="inline-flex items-center gap-1.5">
                         {onEditRowModal && (
-                          <button
+                          <motion.button
                             type="button"
+                            whileHover={reducedMotion ? undefined : { scale: 1.08 }}
+                            whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                            transition={TABRIX_TACTILE_SPRING}
                             onClick={() => onEditRowModal(row)}
                             aria-label={`تعديل ${row.name}`}
                             className="nexus-pill-btn border p-1.5 hover:opacity-85"
@@ -1429,11 +1441,14 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             }}
                           >
                             <Edit3 className="h-3.5 w-3.5" />
-                          </button>
+                          </motion.button>
                         )}
                         {onDeleteRowModal && (
-                          <button
+                          <motion.button
                             type="button"
+                            whileHover={reducedMotion ? undefined : { scale: 1.08 }}
+                            whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                            transition={TABRIX_TACTILE_SPRING}
                             onClick={() => onDeleteRowModal(row)}
                             aria-label={`حذف ${row.name}`}
                             className="nexus-pill-btn border p-1.5 hover:opacity-85"
@@ -1444,7 +1459,7 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             }}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </motion.button>
                         )}
                       </div>
                     </td>

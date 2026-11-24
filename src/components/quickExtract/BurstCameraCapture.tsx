@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Camera,
   CheckCircle2,
@@ -20,6 +21,12 @@ import {
   type MediaPermissionGuide,
 } from '../../utils/mediaPermissions';
 import { PermissionGuardModal } from '../permissions/PermissionGuardModal';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface BurstCameraCaptureProps {
   analyzing: boolean;
@@ -47,6 +54,8 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
   const [permissionGuide, setPermissionGuide] = useState<MediaPermissionGuide | null>(null);
   const [checkingPermission, setCheckingPermission] = useState(false);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -240,106 +249,140 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
           </div>
         </div>
 
-        {cameraActive && (
-          <div className="mt-3 space-y-3">
-            <div className="relative overflow-hidden rounded-xl border bg-black" style={{ borderColor: 'var(--accent)' }}>
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="max-h-[420px] w-full object-contain"
-              />
-              {/* Ledger alignment frame guide */}
-              <div className="pointer-events-none absolute inset-4 rounded-lg border-2 border-dashed border-white/60" />
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {scanMode === 'fast'
-                  ? 'التقط صورة واضحة وسيتم إرسالها تلقائيًا وعرض الجدول فورًا.'
-                  : 'وجّه الكاميرا عموديًا فوق جدول الدفتر، ثم اضغط ضغطة واحدة لالتقاط 4 إطارات متتالية لإزالة التغبيش والظلال.'}
+        <AnimatePresence>
+          {cameraActive && (
+            <motion.div
+              key="burst-camera-viewfinder"
+              variants={popoverVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mt-3 space-y-3"
+            >
+              <div className="relative overflow-hidden rounded-xl border bg-black" style={{ borderColor: 'var(--accent)' }}>
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="max-h-[420px] w-full object-contain"
+                />
+                {/* Ledger alignment frame guide */}
+                <div className="pointer-events-none absolute inset-4 rounded-lg border-2 border-dashed border-white/60" />
               </div>
-              <button
-                type="button"
-                disabled={capturingBurst || processingFrames}
-                onClick={captureBurstFromVideo}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
-                style={{
-                  backgroundColor: 'var(--success)',
-                  color: 'var(--success-fg)',
-                }}
-              >
-                {capturingBurst ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>
-                      جارٍ الالتقاط ({burstProgress}/{scanMode === 'fast' ? 1 : 4})...
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="h-4 w-4" />
-                    <span>
-                      {scanMode === 'fast'
-                        ? 'لقطة سريعة وتحليل مباشر'
-                        : 'التقاط سلسلة متتالية (Burst 4 إطارات)'}
-                    </span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
 
-        {processingFrames && (
-          <div className="mt-3 flex items-center gap-2 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              جارٍ تصحيح ميلان الصفحة، تنقية الخلفية الورقية، وفحص الحدة لكل إطار...
-            </span>
-          </div>
-        )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {scanMode === 'fast'
+                    ? 'التقط صورة واضحة وسيتم إرسالها تلقائيًا وعرض الجدول فورًا.'
+                    : 'وجّه الكاميرا عموديًا فوق جدول الدفتر، ثم اضغط ضغطة واحدة لالتقاط 4 إطارات متتالية لإزالة التغبيش والظلال.'}
+                </div>
+                <motion.button
+                  type="button"
+                  disabled={capturingBurst || processingFrames}
+                  onClick={captureBurstFromVideo}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--success)',
+                    color: 'var(--success-fg)',
+                  }}
+                >
+                  {capturingBurst ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>
+                        جارٍ الالتقاط ({burstProgress}/{scanMode === 'fast' ? 1 : 4})...
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4" />
+                      <span>
+                        {scanMode === 'fast'
+                          ? 'لقطة سريعة وتحليل مباشر'
+                          : 'التقاط سلسلة متتالية (Burst 4 إطارات)'}
+                      </span>
+                    </>
+                  )}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {cameraError && (
-          <div
-            role="alert"
-            className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs font-semibold"
-            style={{
-              backgroundColor: 'var(--danger-bg)',
-              borderColor: 'var(--danger)',
-              color: 'var(--danger)',
-            }}
-          >
-            <span>{cameraError}</span>
-            <button
-              type="button"
-              onClick={() =>
-                setPermissionGuide(buildPermissionRecoveryGuide('camera', cameraError))
-              }
-              className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+        <AnimatePresence>
+          {processingFrames && (
+            <motion.div
+              key="burst-processing-frames"
+              variants={popoverVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mt-3 flex items-center gap-2 text-xs font-bold"
+              style={{ color: 'var(--accent)' }}
+            >
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                جارٍ تصحيح ميلان الصفحة، تنقية الخلفية الورقية، وفحص الحدة لكل إطار...
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {cameraError && (
+            <motion.div
+              key="burst-camera-error"
+              role="alert"
+              variants={popoverVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs font-semibold"
               style={{
-                backgroundColor: 'var(--bg-surface)',
+                backgroundColor: 'var(--danger-bg)',
                 borderColor: 'var(--danger)',
                 color: 'var(--danger)',
               }}
             >
-              عرض خطوات السماح بالكاميرا
-            </button>
-          </div>
-        )}
+              <span>{cameraError}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPermissionGuide(buildPermissionRecoveryGuide('camera', cameraError))
+                }
+                className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--danger)',
+                  color: 'var(--danger)',
+                }}
+              >
+                عرض خطوات السماح بالكاميرا
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Burst Quality Gate Rejection OR Preprocessed Frame Strip */}
-      {burstSummary && (
-        <div
-          className="space-y-3 rounded-xl border p-4"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: burstSummary.rejected
-              ? 'var(--danger)'
-              : 'var(--success)',
-          }}
-        >
+      <AnimatePresence>
+        {burstSummary && (
+          <motion.div
+            key="burst-summary-card"
+            variants={popoverVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="space-y-3 rounded-xl border p-4"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: burstSummary.rejected
+                ? 'var(--danger)'
+                : 'var(--success)',
+            }}
+          >
           {burstSummary.rejected ? (
             <div role="alert" className="space-y-2" style={{ color: 'var(--danger)' }}>
               <div className="flex items-center gap-2 text-sm font-bold">
@@ -462,8 +505,9 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
               </div>
             </div>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <PermissionGuardModal
         open={Boolean(permissionGuide)}

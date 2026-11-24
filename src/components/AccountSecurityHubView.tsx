@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Archive,
   Bell,
@@ -58,6 +59,12 @@ import {
   type GoogleDriveBackupFile,
 } from '../lib/googleWorkspace';
 import { compressImageFileToDataUrl } from '../lib/imageUpload';
+import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
+import {
+  TABRIX_SPRING,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 import type {
   AppDatabaseState,
   AuthUser,
@@ -203,7 +210,14 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   onNotifyError,
   initialTab = 'overview',
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [activeTab, setActiveTab] = useState<AccountHubTab>(initialTab);
+  const tabDirection = useTabrixOrderedDirection(activeTab, {
+    overview: 0,
+    sync_export: 1,
+    notes: 2,
+    security_bin: 3,
+  });
 
   // Account login inline panel state
   const [loginMethod, setLoginMethod] = useState<'google' | 'username' | 'phone'>('google');
@@ -1083,20 +1097,30 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               aria-selected={active}
               type="button"
               onClick={() => setActiveTab(id)}
-              className="nexus-pill-btn flex min-h-[44px] items-center justify-center gap-2 border px-3 py-2 text-xs font-extrabold transition-all"
+              className="nexus-pill-btn relative flex min-h-[44px] items-center justify-center gap-2 overflow-hidden border px-3 py-2 text-xs font-extrabold transition-all"
               style={{
-                backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                backgroundColor: active ? 'transparent' : 'var(--bg-surface)',
                 borderColor: active ? 'var(--accent)' : 'var(--border-color)',
                 color: active ? 'var(--accent)' : 'var(--text-primary)',
               }}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="truncate">{label}</span>
+              {active && (
+                <motion.span
+                  layoutId="account-hub-tab-pill"
+                  transition={reducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ backgroundColor: 'var(--bg-nav-active)' }}
+                />
+              )}
+              <Icon className="relative z-10 h-4 w-4 shrink-0" />
+              <span className="relative z-10 truncate">{label}</span>
             </button>
           );
         })}
       </div>
 
+      <TabrixSubViewTransition viewKey={activeTab} direction={tabDirection}>
       {/* TAB 1: ACCOUNTS & CLOUD CONNECTIONS */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -2560,6 +2584,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
           </section>
         </div>
       )}
+      </TabrixSubViewTransition>
 
       {/* Calm Multi-Stage Loading Screen */}
       <SmartSyncProgressOverlay

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   Crop,
@@ -22,6 +23,13 @@ import {
   computeRowZeroTrustSummary,
   getFullRowCropBox,
 } from '../../utils/zeroTrustExtract';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface SmartSourceViewerProps {
   rows: QuickExtractEvaluatedRow[];
@@ -77,6 +85,8 @@ export const SmartSourceViewer: React.FC<SmartSourceViewerProps> = ({
   } | null>(null);
   const [cropRect, setCropRect] = useState<NormalizedBox | null>(null);
   const [extractingCrop, setExtractingCrop] = useState(false);
+  const reducedMotion = useTabrixReducedMotion();
+  const barVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const panStartRef = useRef<{
     clientX: number;
@@ -285,24 +295,34 @@ export const SmartSourceViewer: React.FC<SmartSourceViewerProps> = ({
                 borderColor: 'var(--border-color)',
               }}
             >
-              {pageKeys.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setActivePage(p)}
-                  className="rounded-md px-2 py-0.5 font-bold tabular-nums"
-                  style={{
-                    backgroundColor:
-                      activePage === p ? 'var(--accent)' : 'transparent',
-                    color:
-                      activePage === p
+              {pageKeys.map((p) => {
+                const isActive = activePage === p;
+                return (
+                  <motion.button
+                    key={p}
+                    type="button"
+                    onClick={() => setActivePage(p)}
+                    whileTap={reducedMotion ? undefined : { scale: 0.94 }}
+                    transition={TABRIX_TACTILE_SPRING}
+                    className="relative overflow-hidden rounded-md px-2 py-0.5 font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'transparent',
+                      color: isActive
                         ? 'var(--accent-fg)'
                         : 'var(--text-primary)',
-                  }}
-                >
-                  ص {p}
-                </button>
-              ))}
+                    }}
+                  >
+                    {isActive && (
+                      <TabrixPillIndicator
+                        layoutId="smart-viewer-page-pill"
+                        className="rounded-md"
+                        style={{ backgroundColor: 'var(--accent)' }}
+                      />
+                    )}
+                    <span className="relative z-10">ص {p}</span>
+                  </motion.button>
+                );
+              })}
             </div>
           )}
 
@@ -418,37 +438,44 @@ export const SmartSourceViewer: React.FC<SmartSourceViewerProps> = ({
       </div>
 
       {/* Inline Crop Confirmation Bar */}
-      {cropActive && activeImage && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2 text-[11px]"
-          style={{
-            backgroundColor: 'var(--bg-nav-active)',
-            borderColor: 'var(--border-color)',
-          }}
-        >
-          <span className="font-semibold">
-            اسحب بالمؤشر فوق السطر الناقص في الصورة لتحديده واستخراجه:
-          </span>
-          <button
-            type="button"
-            disabled={
-              extractingCrop ||
-              !cropRect ||
-              cropRect.xmax - cropRect.xmin < 15
-            }
-            onClick={() => void handleConfirmInlineCrop()}
-            className="inline-flex items-center gap-1 rounded-lg px-3 py-1 font-bold text-white disabled:opacity-45"
-            style={{ backgroundColor: 'var(--accent)' }}
+      <AnimatePresence>
+        {cropActive && activeImage && (
+          <motion.div
+            key="smart-viewer-crop-bar"
+            variants={barVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2 text-[11px]"
+            style={{
+              backgroundColor: 'var(--bg-nav-active)',
+              borderColor: 'var(--border-color)',
+            }}
           >
-            {extractingCrop ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Check className="h-3 w-3" />
-            )}
-            <span>سحب المربع المحدد</span>
-          </button>
-        </div>
-      )}
+            <span className="font-semibold">
+              اسحب بالمؤشر فوق السطر الناقص في الصورة لتحديده واستخراجه:
+            </span>
+            <button
+              type="button"
+              disabled={
+                extractingCrop ||
+                !cropRect ||
+                cropRect.xmax - cropRect.xmin < 15
+              }
+              onClick={() => void handleConfirmInlineCrop()}
+              className="inline-flex items-center gap-1 rounded-lg px-3 py-1 font-bold text-white disabled:opacity-45"
+              style={{ backgroundColor: 'var(--accent)' }}
+            >
+              {extractingCrop ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Check className="h-3 w-3" />
+              )}
+              <span>سحب المربع المحدد</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Viewport Stage */}
       <div

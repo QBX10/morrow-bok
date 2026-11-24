@@ -1,4 +1,5 @@
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   GitFork,
   Layers,
@@ -16,6 +17,17 @@ import type {
   QuickExtractRuleCondition,
   ReadyList,
 } from '../../types/agency';
+import {
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 const CONDITION_LABELS: Array<{ id: QuickExtractRuleCondition; label: string }> = [
   { id: 'has_addition', label: 'يحتوي على «إضافة» (إضافة > 0)' },
@@ -310,6 +322,13 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
   const defaultAgencyId = agencies[0]?.id || 1;
   const secondAgencyId = agencies[1]?.id || defaultAgencyId;
   const today = new Date().toISOString().slice(0, 10);
+  const reducedMotion = useTabrixReducedMotion();
+  const modeDirection = useTabrixOrderedDirection(routing.mode, [
+    'single',
+    'split_by_change',
+    'custom_rules',
+  ]);
+  const ruleVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const createBlankRule = (
     condition: QuickExtractRuleCondition = 'has_addition'
@@ -411,40 +430,54 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
               borderColor: 'var(--border-color)',
             }}
           >
-            <button
+            <motion.button
               type="button"
               onClick={() => onChange({ ...routing, mode: 'single' })}
-              className="rounded-md px-3 py-1 font-bold whitespace-nowrap"
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
+              className="relative overflow-hidden rounded-md px-3 py-1 font-bold whitespace-nowrap"
               style={{
-                backgroundColor:
-                  routing.mode === 'single' ? 'var(--accent)' : 'transparent',
+                backgroundColor: 'transparent',
                 color:
                   routing.mode === 'single'
                     ? 'var(--accent-fg)'
                     : 'var(--text-primary)',
               }}
             >
-              وجهة واحدة للجميع
-            </button>
-            <button
+              {routing.mode === 'single' && (
+                <TabrixPillIndicator
+                  layoutId="routing-mode-pill"
+                  className="rounded-md"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                />
+              )}
+              <span className="relative z-10">وجهة واحدة للجميع</span>
+            </motion.button>
+            <motion.button
               type="button"
               onClick={() => onChange({ ...routing, mode: 'split_by_change' })}
-              className="inline-flex items-center gap-1 rounded-md px-3 py-1 font-bold whitespace-nowrap"
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
+              className="relative inline-flex items-center gap-1 overflow-hidden rounded-md px-3 py-1 font-bold whitespace-nowrap"
               style={{
-                backgroundColor:
-                  routing.mode === 'split_by_change'
-                    ? 'var(--accent)'
-                    : 'transparent',
+                backgroundColor: 'transparent',
                 color:
                   routing.mode === 'split_by_change'
                     ? 'var(--accent-fg)'
                     : 'var(--text-primary)',
               }}
             >
-              <Layers className="h-3.5 w-3.5" />
-              <span>تقسيم وتوجيه تلقائي حسب الحالة</span>
-            </button>
-            <button
+              {routing.mode === 'split_by_change' && (
+                <TabrixPillIndicator
+                  layoutId="routing-mode-pill"
+                  className="rounded-md"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                />
+              )}
+              <Layers className="relative z-10 h-3.5 w-3.5" />
+              <span className="relative z-10">تقسيم وتوجيه تلقائي حسب الحالة</span>
+            </motion.button>
+            <motion.button
               type="button"
               onClick={() =>
                 onChange({
@@ -456,21 +489,27 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
                       : [createBlankRule('has_addition')],
                 })
               }
-              className="inline-flex items-center gap-1 rounded-md px-3 py-1 font-bold whitespace-nowrap"
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
+              className="relative inline-flex items-center gap-1 overflow-hidden rounded-md px-3 py-1 font-bold whitespace-nowrap"
               style={{
-                backgroundColor:
-                  routing.mode === 'custom_rules'
-                    ? 'var(--accent)'
-                    : 'transparent',
+                backgroundColor: 'transparent',
                 color:
                   routing.mode === 'custom_rules'
                     ? 'var(--accent-fg)'
                     : 'var(--text-primary)',
               }}
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>قواعد توزيع ديناميكية</span>
-            </button>
+              {routing.mode === 'custom_rules' && (
+                <TabrixPillIndicator
+                  layoutId="routing-mode-pill"
+                  className="rounded-md"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                />
+              )}
+              <SlidersHorizontal className="relative z-10 h-3.5 w-3.5" />
+              <span className="relative z-10">قواعد توزيع ديناميكية</span>
+            </motion.button>
           </div>
 
           <select
@@ -498,6 +537,10 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
         </div>
       </div>
 
+      <TabrixSubViewTransition
+        viewKey={routing.mode}
+        direction={modeDirection}
+      >
       {routing.mode === 'single' && (
         <DestinationSlotEditor
           label="الوجهة الموحدة لجميع الصفوف المحددة"
@@ -586,18 +629,24 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
           </div>
 
           <div className="space-y-2.5">
-            {customRules.map((rule, idx) => (
-              <div
-                key={rule.id}
-                className="space-y-2.5 rounded-xl border p-3.5 text-xs"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: rule.enabled
-                    ? 'var(--accent)'
-                    : 'var(--border-color)',
-                  opacity: rule.enabled ? 1 : 0.65,
-                }}
-              >
+            <AnimatePresence initial={false}>
+              {customRules.map((rule, idx) => (
+                <motion.div
+                  key={rule.id}
+                  layout={!reducedMotion}
+                  variants={ruleVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="space-y-2.5 rounded-xl border p-3.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: rule.enabled
+                      ? 'var(--accent)'
+                      : 'var(--border-color)',
+                    opacity: rule.enabled ? 1 : 0.65,
+                  }}
+                >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <input
@@ -749,8 +798,9 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
                     updateRule(rule.id, { destination })
                   }
                 />
-              </div>
-            ))}
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
           <DestinationSlotEditor
@@ -766,6 +816,7 @@ export const RoutingPanel: React.FC<RoutingPanelProps> = ({
           />
         </div>
       )}
+      </TabrixSubViewTransition>
 
       <div
         className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold tabular-nums"

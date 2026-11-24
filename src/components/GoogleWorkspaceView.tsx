@@ -34,8 +34,18 @@ import {
   type GoogleTaskList,
 } from '../lib/googleWorkspace';
 import type { AuthUser, PeriodQuotaMeta, RelationEntry } from '../types/agency';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  useTabrixDirection,
+  useTabrixOrderedDirection,
+} from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from './ui/TabrixMotionPrimitives';
 
 interface GoogleWorkspaceViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -332,6 +342,12 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
     .filter((r) => r.category === 'reminder')
     .slice(0, 4);
 
+  const authDir = useTabrixDirection(needsAuth, (_prev, next) => (next ? -1 : 1));
+  const workspaceTabDir = useTabrixOrderedDirection(workspaceTab, {
+    calendar: 0,
+    tasks: 1,
+  });
+
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Header */}
@@ -386,47 +402,62 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
         </div>
       </div>
 
-      {statusMessage && (
-        <div
-          role="status"
-          className="flex items-center justify-between gap-2 rounded-lg border px-4 py-2.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--success-bg)',
-            borderColor: 'var(--success)',
-            color: 'var(--success)',
-          }}
-        >
-          <span>{statusMessage}</span>
-          <button
-            type="button"
-            onClick={() => setStatusMessage('')}
-            aria-label="إخفاء الإشعار"
+      <AnimatePresence initial={false}>
+        {statusMessage && (
+          <motion.div
+            key="ws-status"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            role="status"
+            className="flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--success-bg)',
+              borderColor: 'var(--success)',
+              color: 'var(--success)',
+            }}
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+            <span>{statusMessage}</span>
+            <button
+              type="button"
+              onClick={() => setStatusMessage('')}
+              aria-label="إخفاء الإشعار"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
 
-      {error && (
-        <div
-          role="alert"
-          className="rounded-lg border px-4 py-2.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--danger-bg)',
-            borderColor: 'var(--danger)',
-            color: 'var(--danger)',
-          }}
-        >
-          {error}
-        </div>
-      )}
+        {error && (
+          <motion.div
+            key="ws-error"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            role="alert"
+            className="rounded-xl border px-4 py-2.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--danger-bg)',
+              borderColor: 'var(--danger)',
+              color: 'var(--danger)',
+            }}
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
+      <TabrixSubViewTransition
+        viewKey={needsAuth ? 'google-auth-gate' : 'google-workspace-connected'}
+        direction={authDir}
+      >
       {needsAuth ? (
         <section
           aria-label="تسجيل الدخول إلى Google Workspace"
-          className="tabrix-card mx-auto max-w-xl border p-6 text-center space-y-4"
+          className="capsule-glass-card mx-auto max-w-xl border p-6 text-center space-y-4"
           style={{
-            backgroundColor: 'var(--bg-surface)',
             borderColor: 'var(--border-color)',
           }}
         >
@@ -504,38 +535,44 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
                 role="tab"
                 aria-selected={workspaceTab === 'calendar'}
                 onClick={() => setWorkspaceTab('calendar')}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold"
+                className="relative inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold"
                 style={{
-                  backgroundColor:
-                    workspaceTab === 'calendar'
-                      ? 'var(--accent)'
-                      : 'transparent',
                   color:
                     workspaceTab === 'calendar'
-                      ? 'var(--accent-fg)'
+                      ? 'var(--accent)'
                       : 'var(--text-primary)',
                 }}
               >
-                <Calendar className="h-4 w-4" />
-                <span>تقويم Google ({events.length})</span>
+                {workspaceTab === 'calendar' && (
+                  <TabrixPillIndicator
+                    layoutId="google-workspace-tab-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <Calendar className="relative z-10 h-4 w-4" />
+                <span className="relative z-10">تقويم Google ({events.length})</span>
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={workspaceTab === 'tasks'}
                 onClick={() => setWorkspaceTab('tasks')}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold"
+                className="relative inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold"
                 style={{
-                  backgroundColor:
-                    workspaceTab === 'tasks' ? 'var(--accent)' : 'transparent',
                   color:
                     workspaceTab === 'tasks'
-                      ? 'var(--accent-fg)'
+                      ? 'var(--accent)'
                       : 'var(--text-primary)',
                 }}
               >
-                <CheckSquare className="h-4 w-4" />
-                <span>مهام Google ({tasks.length})</span>
+                {workspaceTab === 'tasks' && (
+                  <TabrixPillIndicator
+                    layoutId="google-workspace-tab-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <CheckSquare className="relative z-10 h-4 w-4" />
+                <span className="relative z-10">مهام Google ({tasks.length})</span>
               </button>
             </div>
 
@@ -549,14 +586,18 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
             )}
           </div>
 
+          <TabrixSubViewTransition
+            viewKey={`google-tab-${workspaceTab}`}
+            direction={workspaceTabDir}
+            className="mt-4"
+          >
           {/* CALENDAR TAB */}
           {workspaceTab === 'calendar' && (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
               <form
                 onSubmit={handleCreateEvent}
-                className="tabrix-card space-y-3 border p-4 text-xs lg:col-span-5"
+                className="capsule-glass-card space-y-3 border p-4 text-xs lg:col-span-5"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
@@ -679,9 +720,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               </form>
 
               <div
-                className="tabrix-card space-y-3 border p-4 lg:col-span-7"
+                className="capsule-glass-card space-y-3 border p-4 lg:col-span-7"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
@@ -867,9 +907,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               <div className="space-y-4 lg:col-span-5">
                 <form
                   onSubmit={handleCreateTask}
-                  className="tabrix-card space-y-3 border p-4 text-xs"
+                  className="capsule-glass-card space-y-3 border p-4 text-xs"
                   style={{
-                    backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
@@ -970,9 +1009,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
 
                 {reminderRelations.length > 0 && (
                   <div
-                    className="tabrix-card space-y-2 border p-4 text-xs"
+                    className="capsule-glass-card space-y-2 border p-4 text-xs"
                     style={{
-                      backgroundColor: 'var(--bg-surface)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
@@ -1008,9 +1046,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               </div>
 
               <div
-                className="tabrix-card space-y-3 border p-4 lg:col-span-7"
+                className="capsule-glass-card space-y-3 border p-4 lg:col-span-7"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
@@ -1124,8 +1161,10 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               </div>
             </div>
           )}
+          </TabrixSubViewTransition>
         </>
       )}
+      </TabrixSubViewTransition>
 
       {/* Mandatory Custom React Confirmation Full-Screen Push Page before any mutation/deletion */}
       <FullScreenPushPage

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle2,
   Palette,
   RotateCcw,
-  ShieldCheck,
   Table2,
   Trash2,
 } from 'lucide-react';
@@ -24,10 +24,19 @@ import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
 import {
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
-  OBSIDIAN_GOLD_THEME,
+  getAppThemeById,
+  MARINE_THEMES,
   resolveTableThemeId,
   TABLE_THEMES,
 } from '../../../utils/themes';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../../utils/tabrixMotion';
+import {
+  Tabrix3DTiltSurface,
+  TabrixSubViewTransition,
+} from '../../ui/TabrixMotionPrimitives';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 
@@ -73,9 +82,10 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
   onDeleteCustomTheme,
 }) => {
   const [newProfileName, setNewProfileName] = useState('');
+  const reducedMotion = useTabrixReducedMotion();
 
   const activeTableTheme = resolveTableThemeId(themePrefs.tableTheme);
-  const currentThemeObj = OBSIDIAN_GOLD_THEME;
+  const currentThemeObj = getAppThemeById(themePrefs.appTheme);
   const savedProfiles =
     themePrefs.savedProfiles && themePrefs.savedProfiles.length > 0
       ? themePrefs.savedProfiles
@@ -148,34 +158,127 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         onResetBranch={() => {
           onResetThemePrefs();
           onNotifySuccess(
-            'تمت استعادة إعدادات الجداول والزجاجية مع الحفاظ على هوية السبج والذهب.'
+            'تمت استعادة المظهر البحري الافتراضي (العمق الزمردي) وإعدادات الجداول.'
           );
         }}
-        resetBranchLabel="استعادة افتراضيات الجداول والأبعاد"
+        resetBranchLabel="استعادة افتراضيات المظهر والأبعاد"
       >
-        {/* Locked Obsidian & Gold Identity Status Banner */}
-        <section className="smoked-glass rounded-2xl border border-[#D4AF37]/30 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/15">
-              <ShieldCheck className="h-5 w-5 text-[#F3E5AB]" />
+        {/* Interactive Absolute Marine Themes 3D Studio */}
+        <section className="chamfered-glass-card smoked-glass-elevated p-4 sm:p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-xl border"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--accent) 40%, transparent)',
+                  backgroundColor: 'var(--bg-nav-active)',
+                }}
+              >
+                <Palette className="h-5 w-5" style={{ color: 'var(--accent-bright, var(--accent))' }} />
+              </div>
+              <div>
+                <div className="text-sm font-black" style={{ color: 'var(--accent-bright, var(--text-primary))' }}>
+                  الثيمات البحرية المطلقة — {currentThemeObj.name}
+                </div>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {currentThemeObj.description}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-sm font-black text-[#F3E5AB]">
-                الهوية البصرية المعتمدة: السبج والذهب (Obsidian & Gold)
-              </div>
-              <div className="text-[11px] text-[#9898AA]">
-                مقفل على نظام الزجاج الدخاني الأسود (#09090B) مع اللمسات الذهبية المعدنية (#D4AF37).
-              </div>
+            <div className="flex items-center gap-1.5">
+              {currentThemeObj.swatches.map((hex, i) => (
+                <span
+                  key={i}
+                  className="h-5 w-7 rounded-md border"
+                  style={{ backgroundColor: hex, borderColor: 'var(--border-color)' }}
+                />
+              ))}
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            {currentThemeObj.swatches.map((hex, i) => (
-              <span
-                key={i}
-                className="h-5 w-7 rounded-md border border-[#D4AF37]/35"
-                style={{ backgroundColor: hex }}
-              />
-            ))}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {MARINE_THEMES.map((theme) => {
+              const isSelected = currentThemeObj.id === theme.id;
+              return (
+                <motion.button
+                  key={theme.id}
+                  type="button"
+                  whileHover={reducedMotion ? undefined : { y: -4, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+                  transition={TABRIX_TACTILE_SPRING}
+                  onClick={() => {
+                    onUpdateThemePrefs({
+                      appTheme: theme.id,
+                      activeProfileId: null,
+                    });
+                    onNotifySuccess(`تم تفعيل ثيم "${theme.name}" البحري بنجاح.`);
+                  }}
+                  aria-pressed={isSelected}
+                  className="group relative flex flex-col justify-between gap-2.5 rounded-2xl border p-3 text-right cursor-pointer nexus-squircle"
+                  style={{
+                    background: `linear-gradient(155deg, ${theme.vars['--bg-table-header']} 0%, ${theme.vars['--bg-main']} 100%)`,
+                    borderColor: isSelected
+                      ? theme.vars['--accent']
+                      : theme.vars['--border-color'],
+                    boxShadow: isSelected
+                      ? `inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 24px -8px ${theme.vars['--marine-caustic-1']}, 0 0 0 1px ${theme.vars['--accent']}`
+                      : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px -10px rgba(2,10,22,0.75)',
+                  }}
+                >
+                  {/* 3D Miniature Marine Surface Preview */}
+                  <div
+                    className="relative h-12 w-full overflow-hidden rounded-xl border p-2 flex flex-col justify-between"
+                    style={{
+                      backgroundColor: theme.vars['--bg-surface'],
+                      borderColor: theme.vars['--border-color'],
+                    }}
+                  >
+                    <div
+                      className="h-1.5 w-2/3 rounded-full"
+                      style={{
+                        background: `linear-gradient(90deg, ${theme.vars['--accent-bright']}, ${theme.vars['--accent']})`,
+                      }}
+                    />
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className="h-2 w-8 rounded-full opacity-60"
+                        style={{ backgroundColor: theme.vars['--text-muted'] }}
+                      />
+                      <span
+                        className="h-3 w-3 rounded-full"
+                        style={{
+                          backgroundColor: theme.vars['--accent'],
+                          boxShadow: `0 0 10px ${theme.vars['--accent']}`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className="text-xs font-extrabold truncate"
+                        style={{ color: theme.vars['--text-primary'] }}
+                      >
+                        {theme.name}
+                      </span>
+                      {isSelected && (
+                        <CheckCircle2
+                          className="h-3.5 w-3.5 shrink-0"
+                          style={{ color: theme.vars['--accent-bright'] }}
+                        />
+                      )}
+                    </div>
+                    <div
+                      className="mt-0.5 text-[10px] truncate"
+                      style={{ color: theme.vars['--text-muted'] }}
+                    >
+                      {theme.englishName}
+                    </div>
+                  </div>
+                </motion.button>
+              );
+            })}
           </div>
         </section>
 
@@ -309,9 +412,11 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               const active = themePrefs.activeProfileId === profile.id;
               const isBuiltIn = profile.id.startsWith('preset_');
               return (
-                <div
+                <motion.div
                   key={profile.id}
-                  className="flex flex-col justify-between rounded-2xl border p-4 text-xs"
+                  whileHover={reducedMotion ? undefined : { y: -3, scale: 1.01 }}
+                  transition={TABRIX_TACTILE_SPRING}
+                  className="flex flex-col justify-between rounded-2xl border p-4 text-xs nexus-squircle"
                   style={{
                     backgroundColor: active
                       ? 'var(--bg-nav-active)'
@@ -373,7 +478,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                   >
                     {active ? 'مفعّل حالياً' : 'تطبيق الملف'}
                   </button>
-                </div>
+                </motion.div>
               );
             })}
           </div>
@@ -654,9 +759,12 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         {TABLE_THEMES.map((tableTheme) => {
           const selected = activeTableTheme === tableTheme.id;
           return (
-            <button
+            <motion.button
               key={tableTheme.id}
               type="button"
+              whileHover={reducedMotion ? undefined : { y: -3, scale: 1.015 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.98 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => {
                 onUpdateThemePrefs({
                   tableTheme: tableTheme.id,
@@ -664,7 +772,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                 });
                 onNotifySuccess(`تم تفعيل تصميم الجدول: ${tableTheme.name}`);
               }}
-              className="flex min-h-[124px] flex-col items-start rounded-2xl border p-3.5 text-right transition-colors"
+              className="flex min-h-[124px] flex-col items-start rounded-2xl border p-3.5 text-right transition-colors nexus-squircle"
               style={{
                 backgroundColor: selected
                   ? 'var(--bg-nav-active)'
@@ -700,7 +808,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               >
                 {tableTheme.description}
               </p>
-            </button>
+            </motion.button>
           );
         })}
       </div>
@@ -711,132 +819,136 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
           معاينة حية لمظهر الجدول والبطاقات الحالي:
         </div>
 
-        {activeTableTheme === 'card-based' ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+        <TabrixSubViewTransition
+          viewKey={activeTableTheme === 'card-based' ? 'cards' : 'table'}
+        >
+          {activeTableTheme === 'card-based' ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+              <Tabrix3DTiltSurface
+                className="border p-3.5 space-y-2"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span>حسين علي كاظم</span>
+                  <span style={{ color: 'var(--success)' }}>نشط</span>
+                </div>
+                <div className="flex items-center justify-between tabular-nums">
+                  <span>الأفراد: 5</span>
+                  <span>45 كغم</span>
+                  <span>1,500 د.ع</span>
+                </div>
+              </Tabrix3DTiltSurface>
+              <Tabrix3DTiltSurface
+                className="border p-3.5 space-y-2"
+                style={{
+                  backgroundColor: cond.highlightZeroIndividuals
+                    ? 'var(--warning-bg)'
+                    : 'var(--bg-main)',
+                  borderColor: cond.highlightZeroIndividuals
+                    ? 'var(--warning)'
+                    : 'var(--border-color)',
+                }}
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span>نموذج تنبيه 0 أفراد</span>
+                  <span style={{ color: 'var(--warning)' }}>0 أفراد</span>
+                </div>
+                <div className="flex items-center justify-between tabular-nums">
+                  <span>الأفراد: 0</span>
+                  <span>—</span>
+                  <span>0 د.ع</span>
+                </div>
+              </Tabrix3DTiltSurface>
+            </div>
+          ) : (
             <div
-              className="tabrix-card border p-3.5 space-y-2"
+              className="capsule-glass-card nexus-squircle overflow-x-auto border"
               style={{
-                backgroundColor: 'var(--bg-main)',
+                backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <div className="flex items-center justify-between font-bold">
-                <span>حسين علي كاظم</span>
-                <span style={{ color: 'var(--success)' }}>نشط</span>
-              </div>
-              <div className="flex items-center justify-between tabular-nums">
-                <span>الأفراد: 5</span>
-                <span>45 كغم</span>
-                <span>1,500 د.ع</span>
-              </div>
-            </div>
-            <div
-              className="tabrix-card border p-3.5 space-y-2"
-              style={{
-                backgroundColor: cond.highlightZeroIndividuals
-                  ? 'var(--warning-bg)'
-                  : 'var(--bg-main)',
-                borderColor: cond.highlightZeroIndividuals
-                  ? 'var(--warning)'
-                  : 'var(--border-color)',
-              }}
-            >
-              <div className="flex items-center justify-between font-bold">
-                <span>نموذج تنبيه 0 أفراد</span>
-                <span style={{ color: 'var(--warning)' }}>0 أفراد</span>
-              </div>
-              <div className="flex items-center justify-between tabular-nums">
-                <span>الأفراد: 0</span>
-                <span>—</span>
-                <span>0 د.ع</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div
-            className="tabrix-card overflow-x-auto border"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <table
-              className={`agency-table theme-${activeTableTheme} ${
-                themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
-              } text-right text-xs`}
-            >
-              <thead>
-                <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
-                  <th className="px-3 text-center">#</th>
-                  <th className="px-3">الاسم</th>
-                  <th className="px-3 text-center">الأفراد</th>
-                  <th className="px-3 text-center">الحصة</th>
-                  <th className="px-3 text-center">المبلغ</th>
-                  <th className="px-3 text-center">الحالة</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="px-3 text-center tabular-nums">1</td>
-                  <td className="px-3 font-semibold">حسين علي كاظم</td>
-                  <td
-                    className={`px-3 text-center font-bold ${
-                      themePrefs.tabularNumerals ? 'tabular-nums' : ''
-                    }`}
-                    style={
-                      themePrefs.smartNumericSplit
-                        ? { backgroundColor: 'var(--bg-numeric)' }
-                        : undefined
-                    }
-                  >
-                    5
-                  </td>
-                  <td
-                    className={`px-3 text-center ${
-                      themePrefs.tabularNumerals ? 'tabular-nums' : ''
-                    }`}
-                    style={
-                      themePrefs.smartNumericSplit
-                        ? { backgroundColor: 'var(--bg-numeric)' }
-                        : undefined
-                    }
-                  >
-                    45 كغم
-                  </td>
-                  <td
-                    className={`px-3 text-center ${
-                      themePrefs.tabularNumerals ? 'tabular-nums' : ''
-                    }`}
-                    style={
-                      themePrefs.smartNumericSplit
-                        ? { backgroundColor: 'var(--bg-numeric)' }
-                        : undefined
-                    }
-                  >
-                    1,500 د.ع
-                  </td>
-                  <td className="px-3 text-center">
-                    <span
-                      className={
-                        themePrefs.compactStatusBadges
-                          ? 'inline-block rounded-md px-2 py-0.5 text-[11px] font-bold'
-                          : 'text-xs font-semibold'
+              <table
+                className={`agency-table theme-${activeTableTheme} ${
+                  themePrefs.rowHoverHighlight ? 'hover-highlight' : ''
+                } text-right text-xs`}
+              >
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-table-header)' }}>
+                    <th className="px-3 text-center">#</th>
+                    <th className="px-3">الاسم</th>
+                    <th className="px-3 text-center">الأفراد</th>
+                    <th className="px-3 text-center">الحصة</th>
+                    <th className="px-3 text-center">المبلغ</th>
+                    <th className="px-3 text-center">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="px-3 text-center tabular-nums">1</td>
+                    <td className="px-3 font-semibold">حسين علي كاظم</td>
+                    <td
+                      className={`px-3 text-center font-bold ${
+                        themePrefs.tabularNumerals ? 'tabular-nums' : ''
+                      }`}
+                      style={
+                        themePrefs.smartNumericSplit
+                          ? { backgroundColor: 'var(--bg-numeric)' }
+                          : undefined
                       }
-                      style={{
-                        color: 'var(--success)',
-                        backgroundColor: themePrefs.compactStatusBadges
-                          ? 'var(--success-bg)'
-                          : 'transparent',
-                      }}
                     >
-                      نشط
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
+                      5
+                    </td>
+                    <td
+                      className={`px-3 text-center ${
+                        themePrefs.tabularNumerals ? 'tabular-nums' : ''
+                      }`}
+                      style={
+                        themePrefs.smartNumericSplit
+                          ? { backgroundColor: 'var(--bg-numeric)' }
+                          : undefined
+                      }
+                    >
+                      45 كغم
+                    </td>
+                    <td
+                      className={`px-3 text-center ${
+                        themePrefs.tabularNumerals ? 'tabular-nums' : ''
+                      }`}
+                      style={
+                        themePrefs.smartNumericSplit
+                          ? { backgroundColor: 'var(--bg-numeric)' }
+                          : undefined
+                      }
+                    >
+                      1,500 د.ع
+                    </td>
+                    <td className="px-3 text-center">
+                      <span
+                        className={
+                          themePrefs.compactStatusBadges
+                            ? 'inline-block rounded-md px-2 py-0.5 text-[11px] font-bold'
+                            : 'text-xs font-semibold'
+                        }
+                        style={{
+                          color: 'var(--success)',
+                          backgroundColor: themePrefs.compactStatusBadges
+                            ? 'var(--success-bg)'
+                            : 'transparent',
+                        }}
+                      >
+                        نشط
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </TabrixSubViewTransition>
       </div>
     </section>
   );

@@ -26,6 +26,8 @@ import {
   saveCustomExpertColumnPreset,
   setExpertColumnRank,
 } from '../utils/recycleBin';
+import { AnimatePresence, motion } from 'motion/react';
+import { TABRIX_POPOVER_VARIANTS } from '../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 
 export interface CustomizableColumnMeta {
@@ -151,43 +153,58 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
             <span>حفظ التعديلات مباشرة بدون تأكيد</span>
           </label>
 
-          {confirmResetOpen ? (
-            <div className="inline-flex items-center gap-1.5 rounded-full border p-1" style={{ borderColor: 'var(--danger)' }}>
-              <button
+          <AnimatePresence mode="wait" initial={false}>
+            {confirmResetOpen ? (
+              <motion.div
+                key="confirm-reset-actions"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="inline-flex items-center gap-1.5 rounded-full border p-1"
+                style={{ borderColor: 'var(--danger)' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResetExpertTableConfig();
+                    setConfirmResetOpen(false);
+                  }}
+                  className="nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white"
+                  style={{ backgroundColor: 'var(--danger)' }}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>تأكيد استعادة الافتراضي</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetOpen(false)}
+                  className="nexus-pill-btn px-2.5 py-1 text-xs font-semibold"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  إلغاء
+                </button>
+              </motion.div>
+            ) : (
+              <motion.button
+                key="open-reset-confirm"
                 type="button"
-                onClick={() => {
-                  onResetExpertTableConfig();
-                  setConfirmResetOpen(false);
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                onClick={() => setConfirmResetOpen(true)}
+                className="nexus-pill-btn inline-flex min-h-[36px] items-center gap-1 border px-3.5 py-1.5 font-bold hover:border-[var(--danger)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
                 }}
-                className="nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white"
-                style={{ backgroundColor: 'var(--danger)' }}
               >
-                <Check className="h-3.5 w-3.5" />
-                <span>تأكيد استعادة الافتراضي</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmResetOpen(false)}
-                className="nexus-pill-btn px-2.5 py-1 text-xs font-semibold"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                إلغاء
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmResetOpen(true)}
-              className="nexus-pill-btn inline-flex min-h-[36px] items-center gap-1 border px-3.5 py-1.5 font-bold hover:border-[var(--danger)]"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>استعادة الضبط الافتراضي</span>
-            </button>
-          )}
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>استعادة الضبط الافتراضي</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -757,43 +774,52 @@ export const ColumnCustomizerPanel: React.FC<ColumnCustomizerPanelProps> = ({
             </button>
           </div>
 
-          {selectedPersonIds.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Tag className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              <span className="font-semibold">
-                تعيين فئة للمحدد ({selectedPersonIds.length}):
-              </span>
-              <select
-                value={bulkCategoryValue}
-                onChange={(e) => setBulkCategoryValue(e.target.value)}
-                className="min-h-[34px] rounded-lg border px-2 py-1"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
+          <AnimatePresence>
+            {selectedPersonIds.length > 0 && (
+              <motion.div
+                key="bulk-category-assign-strip"
+                variants={TABRIX_POPOVER_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex flex-wrap items-center gap-2 pt-1"
               >
-                <option value="">بدون فئة</option>
-                {expertTableConfig.customCategories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() =>
-                  onBulkUpdateCategory(selectedPersonIds, bulkCategoryValue)
-                }
-                className="nexus-pill-btn min-h-[34px] px-4 py-1 font-bold"
-                style={{
-                  backgroundColor: 'var(--success)',
-                  color: 'var(--success-fg)',
-                }}
-              >
-                تطبيق على المحدد
-              </button>
-            </div>
-          )}
+                <Tag className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span className="font-semibold">
+                  تعيين فئة للمحدد ({selectedPersonIds.length}):
+                </span>
+                <select
+                  value={bulkCategoryValue}
+                  onChange={(e) => setBulkCategoryValue(e.target.value)}
+                  className="min-h-[34px] rounded-lg border px-2 py-1"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <option value="">بدون فئة</option>
+                  {expertTableConfig.customCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onBulkUpdateCategory(selectedPersonIds, bulkCategoryValue)
+                  }
+                  className="nexus-pill-btn min-h-[34px] px-4 py-1 font-bold"
+                  style={{
+                    backgroundColor: 'var(--success)',
+                    color: 'var(--success-fg)',
+                  }}
+                >
+                  تطبيق على المحدد
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </section>

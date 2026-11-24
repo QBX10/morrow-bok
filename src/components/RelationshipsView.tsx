@@ -9,8 +9,11 @@ import {
   Trash2,
   Truck,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { TabrixPillIndicator } from './ui/TabrixMotionPrimitives';
+import { TABRIX_POPOVER_VARIANTS } from '../utils/tabrixMotion';
 import type {
   Agency,
   CalculationSettings,
@@ -270,56 +273,69 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
         </button>
       </div>
 
-      {upcomingReminders.length > 0 && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--warning-bg)',
-            borderColor: 'var(--warning)',
-            color: 'var(--warning)',
-          }}
-        >
-          <span className="inline-flex items-center gap-2">
-            <Bell className="h-4 w-4 shrink-0" />
-            <span>
-              تنبيه التذكيرات المستحقة أو القريبة ({upcomingReminders.length}):{' '}
-              {upcomingReminders
-                .slice(0, 3)
-                .map((r) => `${r.personName} (${r.reminderDate})`)
-                .join(' · ')}
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setActiveCategory('reminder')}
-            className="nexus-pill-btn border px-3 py-1 text-[11px]"
-            style={{ borderColor: 'var(--warning)' }}
+      <AnimatePresence>
+        {upcomingReminders.length > 0 && (
+          <motion.div
+            key="upcoming-reminders-banner"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--warning-bg)',
+              borderColor: 'var(--warning)',
+              color: 'var(--warning)',
+            }}
           >
-            عرض التذكيرات
-          </button>
-        </div>
-      )}
+            <span className="inline-flex items-center gap-2">
+              <Bell className="h-4 w-4 shrink-0" />
+              <span>
+                تنبيه التذكيرات المستحقة أو القريبة ({upcomingReminders.length}):{' '}
+                {upcomingReminders
+                  .slice(0, 3)
+                  .map((r) => `${r.personName} (${r.reminderDate})`)
+                  .join(' · ')}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveCategory('reminder')}
+              className="nexus-pill-btn border px-3 py-1 text-[11px]"
+              style={{ borderColor: 'var(--warning)' }}
+            >
+              عرض التذكيرات
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Category Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <button
           type="button"
           onClick={() => setActiveCategory('all')}
-          className="nexus-pill-btn border px-3.5 py-2 font-bold"
+          className="nexus-pill-btn relative overflow-hidden border px-3.5 py-2 font-bold"
           style={{
             backgroundColor:
-              activeCategory === 'all' ? 'var(--accent)' : 'var(--bg-surface)',
+              activeCategory === 'all' ? 'transparent' : 'var(--bg-surface)',
             borderColor:
               activeCategory === 'all'
                 ? 'var(--accent)'
                 : 'var(--border-color)',
             color:
               activeCategory === 'all'
-                ? 'var(--accent-fg)'
+                ? 'var(--accent)'
                 : 'var(--text-primary)',
           }}
         >
-          الكل ({relations.length})
+          {activeCategory === 'all' && (
+            <TabrixPillIndicator
+              layoutId="relationships-cat-pill"
+              className="rounded-full"
+            />
+          )}
+          <span className="relative z-10">الكل ({relations.length})</span>
         </button>
 
         {RELATION_CATEGORIES.map((cat) => {
@@ -329,14 +345,22 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
               key={cat.id}
               type="button"
               onClick={() => setActiveCategory(cat.id)}
-              className="nexus-pill-btn border px-3.5 py-2 font-bold"
+              className="nexus-pill-btn relative overflow-hidden border px-3.5 py-2 font-bold"
               style={{
-                backgroundColor: active ? 'var(--accent)' : 'var(--bg-surface)',
+                backgroundColor: active ? 'transparent' : 'var(--bg-surface)',
                 borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                color: active ? 'var(--accent)' : 'var(--text-primary)',
               }}
             >
-              {cat.label} ({categoryCounts[cat.id] || 0})
+              {active && (
+                <TabrixPillIndicator
+                  layoutId="relationships-cat-pill"
+                  className="rounded-full"
+                />
+              )}
+              <span className="relative z-10">
+                {cat.label} ({categoryCounts[cat.id] || 0})
+              </span>
             </button>
           );
         })}
@@ -362,13 +386,7 @@ export const RelationshipsView: React.FC<RelationshipsViewProps> = ({
       />
 
       {/* Search Bar */}
-      <div
-        className="flex flex-wrap items-center gap-3 rounded-xl border p-3"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
-      >
+      <div className="nexus-squircle flex flex-wrap items-center gap-3 p-3">
         <div className="relative min-w-[220px] flex-1">
           <Search
             className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"

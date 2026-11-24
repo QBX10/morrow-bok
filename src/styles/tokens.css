@@ -1,23 +1,24 @@
-/* ─── Locked Obsidian & Gold Identity Tokens + Smoked Glassmorphism ─────────── */
+/* ─── Absolute Marine Identity Tokens + 3D Spatial Glassmorphism ─────────── */
 :root {
   color-scheme: dark;
 
-  /* Core Palette: Deep Obsidian & Metallic Gold */
-  --obsidian-bg: #09090B;
-  --obsidian-surface: #121216;
-  --obsidian-surface-elevated: #18181D;
-  --gold-primary: #D4AF37;
-  --gold-bright: #F3E5AB;
-  --gold-amber: #F5B041;
-  --gold-border: rgba(212, 175, 55, 0.22);
-  --gold-border-strong: rgba(212, 175, 55, 0.42);
-  --gold-glow: rgba(212, 175, 55, 0.16);
+  /* Dynamic Marine Palette Aliases (driven by active Marine Theme in themes.ts) */
+  --obsidian-bg: var(--bg-main, #040B14);
+  --obsidian-surface: var(--bg-surface, #0A1726);
+  --obsidian-surface-elevated: var(--bg-table-header, #0E1F33);
+  --gold-primary: var(--accent, #10B981);
+  --gold-bright: var(--accent-bright, #6EE7B7);
+  --gold-amber: var(--accent, #10B981);
+  --gold-border: var(--border-color, rgba(52, 211, 153, 0.24));
+  --gold-border-strong: color-mix(in srgb, var(--accent, #10B981) 46%, transparent);
+  --gold-glow: var(--marine-caustic-1, rgba(16, 185, 129, 0.16));
 
-  /* Smoked Glassmorphism */
-  --glass-bg-smoked: rgba(18, 18, 22, 0.68);
-  --glass-bg-smoked-strong: rgba(14, 14, 18, 0.84);
-  --glass-specular-top: inset 0 1px 0 rgba(243, 229, 171, 0.14);
-  --glass-blur: blur(20px) saturate(160%);
+  /* 3D Oceanic Smoked Glassmorphism */
+  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #0A1726) 72%, transparent);
+  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #0A1726) 86%, transparent);
+  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 20%, rgba(255, 255, 255, 0.14));
+  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.55);
+  --glass-blur: blur(22px) saturate(165%);
 
   /* Motion Timing */
   --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
@@ -50,63 +51,97 @@ h2 {
   line-height: 1.35;
 }
 
-/* Metallic Gold Gradient Text */
-.gold-gradient-text {
-  background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 52%, #B8860B 100%);
+/* Luminous Marine Gradient Text */
+.gold-gradient-text,
+.marine-gradient-text {
+  background: linear-gradient(
+    135deg,
+    var(--accent-bright, #6EE7B7) 0%,
+    var(--accent, #10B981) 52%,
+    var(--accent-deep, #047857) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* Smoked Glass Card Surface + Specular Top Rim */
+/* 3D Spatial Perspective Stage */
+.tabrix-3d-stage {
+  perspective: 1400px;
+  transform-style: preserve-3d;
+}
+
+/* 3D Marine Smoked Glass Card Surface + Specular Bevel Rim */
 .smoked-glass {
   background: var(--glass-bg-smoked);
-  border: 1px solid var(--gold-border);
+  border: 1px solid var(--border-color);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+  transform-style: preserve-3d;
   box-shadow:
     var(--glass-specular-top),
-    0 18px 44px -22px rgba(0, 0, 0, 0.78);
+    var(--glass-bevel-bottom),
+    0 22px 48px -20px rgba(2, 10, 22, 0.85),
+    0 2px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 18%, rgba(2, 8, 18, 0.7));
 }
 
 .smoked-glass-elevated {
-  background: var(--glass-bg-smoked-strong);
-  border: 1px solid rgba(212, 175, 55, 0.28);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--bg-table-header, #0E1F33) 86%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0A1726) 92%, transparent) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  backdrop-filter: blur(24px) saturate(175%);
+  -webkit-backdrop-filter: blur(24px) saturate(175%);
+  transform-style: preserve-3d;
   box-shadow:
-    inset 0 1px 0 rgba(243, 229, 171, 0.18),
-    0 24px 58px -20px rgba(0, 0, 0, 0.85),
-    0 0 36px -18px rgba(212, 175, 55, 0.24);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 26%, rgba(255, 255, 255, 0.16)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.68),
+    0 28px 64px -20px rgba(2, 10, 22, 0.9),
+    0 3px 0 0 color-mix(in srgb, var(--accent-deep) 24%, rgba(2, 8, 18, 0.75)),
+    0 0 44px -18px var(--marine-caustic-1, rgba(16, 185, 129, 0.26));
 }
 
-/* Chamfered Cut-Corner Glass Card for 3D Auth & Special Surfaces */
+/* Sculpted 3D Chamfered Glass Card for Auth, Hero & Spatial Surfaces */
 .chamfered-glass-card {
   position: relative;
-  border-radius: 22px;
+  border-radius: calc(var(--card-radius, 22px) + 2px);
   background: linear-gradient(
-    155deg,
-    rgba(24, 24, 30, 0.82) 0%,
-    rgba(12, 12, 16, 0.88) 100%
+    152deg,
+    color-mix(in srgb, var(--bg-table-header, #0E1F33) 88%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main, #040B14) 94%, transparent) 100%
   );
-  border: 1px solid rgba(212, 175, 55, 0.26);
-  backdrop-filter: blur(24px) saturate(165%);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  backdrop-filter: blur(26px) saturate(175%);
+  -webkit-backdrop-filter: blur(26px) saturate(175%);
+  transform-style: preserve-3d;
   box-shadow:
-    inset 0 1px 0 rgba(243, 229, 171, 0.2),
-    inset 0 -1px 0 rgba(212, 175, 55, 0.08),
-    0 28px 64px -20px rgba(0, 0, 0, 0.9),
-    0 0 48px -24px rgba(212, 175, 55, 0.22);
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 30%, rgba(255, 255, 255, 0.2)),
+    inset 0 -2.5px 0 rgba(2, 10, 22, 0.75),
+    0 34px 72px -20px rgba(2, 10, 22, 0.94),
+    0 4px 0 0 color-mix(in srgb, var(--accent-deep) 26%, rgba(2, 8, 18, 0.8)),
+    0 0 56px -22px var(--marine-caustic-1, rgba(16, 185, 129, 0.3));
 }
 
-/* Subtle Ambient Gold Orbs (never neon, soft architectural warmth) */
+/* Abyssal Marine Atmosphere & Flowing Caustic Orbs */
 .ambient-obsidian-canvas {
-  background-color: #09090B;
+  background-color: var(--bg-main, #040B14);
   background-image:
-    radial-gradient(880px circle at 88% -8%, rgba(212, 175, 55, 0.095), transparent 62%),
-    radial-gradient(720px circle at 10% 106%, rgba(243, 229, 171, 0.05), transparent 58%),
-    radial-gradient(520px circle at 50% 45%, rgba(212, 175, 55, 0.03), transparent 65%);
+    radial-gradient(920px circle at 88% -8%, var(--marine-caustic-1, rgba(16, 185, 129, 0.15)), transparent 62%),
+    radial-gradient(760px circle at 10% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.11)), transparent 58%),
+    radial-gradient(560px circle at 50% 45%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 65%);
   background-attachment: fixed;
+}
+
+@keyframes marineCausticDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-14px, 12px, 0) scale(1.045);
+  }
 }
 
 .ambient-orb-gold {
@@ -116,26 +151,32 @@ h2 {
   border-radius: 9999px;
   background: radial-gradient(
     circle,
-    rgba(212, 175, 55, 0.22) 0%,
-    rgba(245, 176, 65, 0.08) 45%,
+    var(--marine-caustic-1, rgba(16, 185, 129, 0.22)) 0%,
+    var(--marine-caustic-2, rgba(6, 182, 212, 0.1)) 46%,
     transparent 74%
   );
-  filter: blur(42px);
+  filter: blur(44px);
+  animation: marineCausticDrift 14s ease-in-out infinite;
 }
 
 .ambient-orb-gold-1 {
   top: -120px;
   right: -90px;
-  width: 420px;
-  height: 420px;
+  width: 440px;
+  height: 440px;
 }
 
 .ambient-orb-gold-2 {
   bottom: -140px;
   left: -100px;
-  width: 380px;
-  height: 380px;
-  opacity: 0.72;
+  width: 400px;
+  height: 400px;
+  opacity: 0.78;
+  animation-delay: -7s;
+}
+
+html[data-reduce-motion="1"] .ambient-orb-gold {
+  animation: none !important;
 }
 
 /* 3D Flip Card Architecture (Perspective + Backface Culling) */
@@ -165,47 +206,88 @@ h2 {
   transform: rotateY(180deg);
 }
 
-/* Gold Action Button */
-.obsidian-gold-cta {
-  background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 54%, #C59B27 100%);
-  color: #09090B;
+/* 3D Sculpted Bioluminescent Marine CTA Button */
+.obsidian-gold-cta,
+.marine-3d-cta {
+  background: linear-gradient(
+    135deg,
+    var(--accent-bright, #6EE7B7) 0%,
+    var(--accent, #10B981) 52%,
+    var(--accent-deep, #047857) 100%
+  );
+  color: var(--accent-fg, #031510);
   font-weight: 800;
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 55%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 10px 26px -10px rgba(212, 175, 55, 0.55);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 0 color-mix(in srgb, var(--accent-deep) 65%, rgba(0, 0, 0, 0.35)),
+    0 3px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
+    0 12px 28px -10px color-mix(in srgb, var(--accent) 62%, transparent);
   transition:
     transform 180ms var(--ease-luxury),
     filter 180ms var(--ease-luxury),
     box-shadow 180ms var(--ease-luxury);
 }
 
-.obsidian-gold-cta:hover:not(:disabled) {
-  transform: translateY(-1px);
+.obsidian-gold-cta:hover:not(:disabled),
+.marine-3d-cta:hover:not(:disabled) {
+  transform: translateY(-2px);
   filter: brightness(1.06);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 14px 30px -10px rgba(212, 175, 55, 0.72);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.56),
+    inset 0 -2px 0 color-mix(in srgb, var(--accent-deep) 65%, rgba(0, 0, 0, 0.35)),
+    0 5px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
+    0 16px 34px -10px color-mix(in srgb, var(--accent) 75%, transparent);
 }
 
-.obsidian-gold-cta:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-/* Curved RTL Glass Sidebar Edge */
-.curved-glass-sidebar {
-  border-top-left-radius: 28px;
-  border-bottom-left-radius: 28px;
-  background: rgba(14, 14, 18, 0.74);
-  border-left: 1px solid rgba(212, 175, 55, 0.22);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
+.obsidian-gold-cta:active:not(:disabled),
+.marine-3d-cta:active:not(:disabled) {
+  transform: translateY(1.5px) scale(0.985);
   box-shadow:
-    inset 1px 0 0 rgba(243, 229, 171, 0.08),
-    -12px 0 36px -22px rgba(0, 0, 0, 0.85);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 1px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
+    0 6px 14px -8px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Curved RTL 3D Glass Sidebar Edge */
+.curved-glass-sidebar {
+  border-top-left-radius: 30px;
+  border-bottom-left-radius: 30px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-surface) 84%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main) 88%, transparent) 100%
+  );
+  border-left: 1px solid var(--border-color);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  box-shadow:
+    inset 1.5px 0 0 color-mix(in srgb, var(--accent-bright) 14%, rgba(255, 255, 255, 0.08)),
+    -14px 0 40px -22px rgba(2, 10, 22, 0.88);
 }
 
 /* Top Glow Cap for Floating Nav */
 .nav-top-glow-cap {
-  background: linear-gradient(90deg, transparent 5%, #F3E5AB 50%, transparent 95%);
-  box-shadow: 0 2px 12px rgba(212, 175, 55, 0.85);
+  background: linear-gradient(90deg, transparent 5%, var(--accent-bright, #6EE7B7) 50%, transparent 95%);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent, #10B981) 85%, transparent);
+}
+
+/* 3D Spatial Floating Sculpture Animation */
+@keyframes marineFloat3D {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotateX(0deg);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0) rotateX(4deg);
+  }
+}
+
+.marine-float-3d {
+  transform-style: preserve-3d;
+  animation: marineFloat3D 5.5s ease-in-out infinite;
+}
+
+html[data-reduce-motion="1"] .marine-float-3d {
+  animation: none !important;
 }

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   Bot,
@@ -34,6 +35,17 @@ import {
   normalizeAssistantSettings,
   type QuotaCheckResult,
 } from '../../../utils/assistantQuota';
+import {
+  TABRIX_EASE,
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../../../utils/tabrixMotion';
+import {
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from '../../ui/TabrixMotionPrimitives';
 
 interface ServerOrchestrationStatus {
   cloudConfigured: boolean;
@@ -76,6 +88,12 @@ interface AiModelsArchitectureStudioProps {
 }
 
 type StudioTab = 'routing' | 'registry' | 'integration';
+
+const STUDIO_TAB_ORDER: Record<StudioTab, number> = {
+  routing: 0,
+  registry: 1,
+  integration: 2,
+};
 
 const TASK_KEYS_ORDER: AiTaskKey[] = [
   'command_orchestration',
@@ -194,6 +212,8 @@ export const AiModelsArchitectureStudio: React.FC<
   );
 
   const [activeTab, setActiveTab] = useState<StudioTab>('routing');
+  const reducedMotion = useTabrixReducedMotion();
+  const tabDirection = useTabrixOrderedDirection(activeTab, STUDIO_TAB_ORDER);
   const [serverStatus, setServerStatus] = useState<ServerOrchestrationStatus | null>(
     null
   );
@@ -353,7 +373,7 @@ export const AiModelsArchitectureStudio: React.FC<
   return (
     <section
       data-testid="assistant-settings-section"
-      className="rounded-2xl border p-5 sm:p-6 space-y-6"
+      className="capsule-glass-card rounded-2xl border p-5 sm:p-6 space-y-6"
       style={{
         backgroundColor: 'var(--bg-surface)',
         borderColor: 'var(--border-color)',
@@ -640,19 +660,28 @@ export const AiModelsArchitectureStudio: React.FC<
               key={tabKey}
               type="button"
               onClick={() => setActiveTab(tabKey)}
-              className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-xs font-extrabold whitespace-nowrap shrink-0 transition-colors"
+              className="relative inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-xs font-extrabold whitespace-nowrap shrink-0 transition-colors"
               style={{
-                backgroundColor: isActive ? 'var(--accent)' : 'transparent',
-                color: isActive ? 'var(--accent-fg)' : 'var(--text-muted)',
+                color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
               }}
             >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span>{label}</span>
+              {isActive && (
+                <TabrixPillIndicator
+                  layoutId="ai-studio-tab-pill"
+                  className="rounded-lg"
+                />
+              )}
+              <Icon
+                className="relative z-10 h-3.5 w-3.5 shrink-0"
+                style={{ color: isActive ? 'var(--accent)' : undefined }}
+              />
+              <span className="relative z-10">{label}</span>
             </button>
           );
         })}
       </div>
 
+      <TabrixSubViewTransition viewKey={activeTab} direction={tabDirection}>
       {/* TAB 1: Specialized Task Routing + Primary + Backup + Final Morrow Local */}
       {activeTab === 'routing' && (
         <div
@@ -864,40 +893,51 @@ export const AiModelsArchitectureStudio: React.FC<
                 </div>
 
                 {/* Real Live Probe Output */}
-                {probe && !probe.loading && (
-                  <div
-                    className="rounded-xl border px-3.5 py-2.5 text-xs space-y-1"
-                    style={{
-                      backgroundColor: probe.ok
-                        ? 'var(--success-bg)'
-                        : 'var(--warning-bg)',
-                      borderColor: probe.ok ? 'var(--success)' : 'var(--warning)',
-                    }}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 font-extrabold">
-                      <span>
-                        {probe.ok
-                          ? `استجاب عبر: ${probe.modelId}${probe.fallbackUsed ? ' (تم التبديل للاحتياطي)' : ''}`
-                          : 'تعذر المسار السحابي — المرجع المحلي Morrow جاهز كخيار أخير'}
-                      </span>
-                      {typeof probe.latencyMs === 'number' && (
-                        <span className="font-mono tabular-nums text-[11px]">
-                          {probe.latencyMs} ms · محاولات {probe.attemptsCount ?? 1}
+                <AnimatePresence initial={false}>
+                  {probe && !probe.loading && (
+                    <motion.div
+                      key={`probe-${probeKey}`}
+                      variants={
+                        reducedMotion
+                          ? TABRIX_REDUCED_VARIANTS
+                          : TABRIX_POPOVER_VARIANTS
+                      }
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="rounded-xl border px-3.5 py-2.5 text-xs space-y-1"
+                      style={{
+                        backgroundColor: probe.ok
+                          ? 'var(--success-bg)'
+                          : 'var(--warning-bg)',
+                        borderColor: probe.ok ? 'var(--success)' : 'var(--warning)',
+                      }}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 font-extrabold">
+                        <span>
+                          {probe.ok
+                            ? `استجاب عبر: ${probe.modelId}${probe.fallbackUsed ? ' (تم التبديل للاحتياطي)' : ''}`
+                            : 'تعذر المسار السحابي — المرجع المحلي Morrow جاهز كخيار أخير'}
                         </span>
+                        {typeof probe.latencyMs === 'number' && (
+                          <span className="font-mono tabular-nums text-[11px]">
+                            {probe.latencyMs} ms · محاولات {probe.attemptsCount ?? 1}
+                          </span>
+                        )}
+                      </div>
+                      {probe.replySnippet && (
+                        <p className="text-[11px] leading-relaxed">
+                          {probe.replySnippet}
+                        </p>
                       )}
-                    </div>
-                    {probe.replySnippet && (
-                      <p className="text-[11px] leading-relaxed">
-                        {probe.replySnippet}
-                      </p>
-                    )}
-                    {probe.errorSummary && !probe.ok && (
-                      <p className="text-[11px]" style={{ color: 'var(--danger)' }}>
-                        {probe.errorSummary}
-                      </p>
-                    )}
-                  </div>
-                )}
+                      {probe.errorSummary && !probe.ok && (
+                        <p className="text-[11px]" style={{ color: 'var(--danger)' }}>
+                          {probe.errorSummary}
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
@@ -1017,28 +1057,39 @@ export const AiModelsArchitectureStudio: React.FC<
                   </button>
                 </div>
 
-                {probe && !probe.loading && (
-                  <div
-                    className="rounded-xl border px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2"
-                    style={{
-                      backgroundColor: probe.ok
-                        ? 'var(--success-bg)'
-                        : 'var(--warning-bg)',
-                      borderColor: probe.ok ? 'var(--success)' : 'var(--warning)',
-                    }}
-                  >
-                    <span>
-                      {probe.replySnippet ||
-                        probe.errorSummary ||
-                        'انتهى الفحص.'}
-                    </span>
-                    {typeof probe.latencyMs === 'number' && (
-                      <span className="font-mono tabular-nums text-[11px]">
-                        {probe.latencyMs} ms
+                <AnimatePresence initial={false}>
+                  {probe && !probe.loading && (
+                    <motion.div
+                      key={`reg-probe-${probeKey}`}
+                      variants={
+                        reducedMotion
+                          ? TABRIX_REDUCED_VARIANTS
+                          : TABRIX_POPOVER_VARIANTS
+                      }
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="rounded-xl border px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2"
+                      style={{
+                        backgroundColor: probe.ok
+                          ? 'var(--success-bg)'
+                          : 'var(--warning-bg)',
+                        borderColor: probe.ok ? 'var(--success)' : 'var(--warning)',
+                      }}
+                    >
+                      <span>
+                        {probe.replySnippet ||
+                          probe.errorSummary ||
+                          'انتهى الفحص.'}
                       </span>
-                    )}
-                  </div>
-                )}
+                      {typeof probe.latencyMs === 'number' && (
+                        <span className="font-mono tabular-nums text-[11px]">
+                          {probe.latencyMs} ms
+                        </span>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
@@ -1131,6 +1182,7 @@ export const AiModelsArchitectureStudio: React.FC<
           })}
         </div>
       )}
+      </TabrixSubViewTransition>
 
       {/* Always-Reachable Quota, Cache & Strict Offline Section */}
       <div
@@ -1157,10 +1209,15 @@ export const AiModelsArchitectureStudio: React.FC<
           className="h-2 w-full overflow-hidden rounded-full"
           style={{ backgroundColor: 'var(--bg-main)' }}
         >
-          <div
-            className="h-full transition-all"
+          <motion.div
+            className="h-full"
+            initial={false}
+            animate={{ width: `${assistantQuotaInfo?.dailyPercent ?? 0}%` }}
+            transition={{
+              duration: reducedMotion ? 0.05 : 0.4,
+              ease: TABRIX_EASE,
+            }}
             style={{
-              width: `${assistantQuotaInfo?.dailyPercent ?? 0}%`,
               backgroundColor:
                 (assistantQuotaInfo?.dailyPercent ?? 0) >=
                 normalizedSettings.quotaWarningPercent

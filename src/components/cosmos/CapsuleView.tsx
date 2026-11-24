@@ -1,6 +1,12 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { Filter, Layers, Lock } from 'lucide-react';
 import type { CosmosNode } from '../../utils/cosmosRegistry';
+import {
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SUBVIEW_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 import { SectionLogo } from '../settings/sectionLogos';
 
 interface CapsuleViewProps {
@@ -18,10 +24,19 @@ export const CapsuleView: React.FC<CapsuleViewProps> = ({
   hasModificationFilter = false,
   children,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
+
   return (
-    <section className="cosmos-world-enter space-y-4">
+    <motion.section
+      key={capsule.id}
+      variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_SUBVIEW_VARIANTS}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="space-y-4"
+    >
       <div
-        className="cosmos-glass-panel border p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3"
+        className="cosmos-glass-panel capsule-glass-card border p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3"
         style={{ borderColor: 'var(--border-color)' }}
       >
         <div className="flex items-start gap-3 min-w-0">
@@ -80,6 +95,6 @@ export const CapsuleView: React.FC<CapsuleViewProps> = ({
       </div>
 
       <div className="space-y-3">{children}</div>
-    </section>
+    </motion.section>
   );
 };

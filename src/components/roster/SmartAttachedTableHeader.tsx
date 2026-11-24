@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlignCenter,
   AlignLeft,
@@ -18,7 +19,14 @@ import {
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
 import type {
   AttachedHeaderFieldKey,
   CustomHeaderSubSection,
@@ -92,6 +100,7 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
   onCustomizerOpenChange,
   onSaveHeader,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [localOpen, setLocalOpen] = useState(false);
   const modalOpen = customizerOpen !== undefined ? customizerOpen : localOpen;
   const setModalOpen = (next: boolean) => {
@@ -396,10 +405,13 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
 
           {!locked && (
             <div className="no-print flex shrink-0 items-center">
-              <button
+              <motion.button
                 type="button"
                 data-testid="customize-attached-header-btn"
                 onClick={() => setModalOpen(true)}
+                whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                transition={TABRIX_TACTILE_SPRING}
                 className="nexus-pill-btn inline-flex min-h-[34px] items-center gap-1.5 border px-3.5 py-1 text-[11px] font-extrabold whitespace-nowrap"
                 style={{
                   backgroundColor: isDarkLedger
@@ -416,7 +428,7 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                   style={{ color: isDarkLedger ? '#38bdf8' : 'var(--accent)' }}
                 />
                 <span>تخصيص الترويسة</span>
-              </button>
+              </motion.button>
             </div>
           )}
         </div>
@@ -982,114 +994,121 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {draftSubSections.map((sub, idx) => (
-                    <div
-                      key={sub.id}
-                      className="flex flex-wrap items-center gap-2 rounded-xl border p-2"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDraftSubSections((prev) =>
-                            prev.map((item) =>
-                              item.id === sub.id
-                                ? { ...item, visible: item.visible === false }
-                                : item
-                            )
-                          )
-                        }
-                        title={sub.visible === false ? 'إظهار' : 'إخفاء'}
-                        className="rounded border p-1.5"
-                        style={{ borderColor: 'var(--border-color)' }}
+                  <AnimatePresence initial={false}>
+                    {draftSubSections.map((sub, idx) => (
+                      <motion.div
+                        key={sub.id}
+                        layout={!reducedMotion}
+                        variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="flex flex-wrap items-center gap-2 rounded-xl border p-2"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
                       >
-                        {sub.visible === false ? (
-                          <EyeOff className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
-                        ) : (
-                          <Eye className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                        )}
-                      </button>
-
-                      <input
-                        type="text"
-                        value={sub.label}
-                        onChange={(e) =>
-                          setDraftSubSections((prev) =>
-                            prev.map((item) =>
-                              item.id === sub.id
-                                ? { ...item, label: e.target.value }
-                                : item
-                            )
-                          )
-                        }
-                        placeholder="التسمية (مثال: القضاء)"
-                        className="w-32 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      />
-                      <input
-                        type="text"
-                        value={sub.value}
-                        onChange={(e) =>
-                          setDraftSubSections((prev) =>
-                            prev.map((item) =>
-                              item.id === sub.id
-                                ? { ...item, value: e.target.value }
-                                : item
-                            )
-                          )
-                        }
-                        placeholder="القيمة أو النص الفرعي..."
-                        className="min-w-[140px] flex-1 rounded-lg border px-2.5 py-1.5 text-xs"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      />
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={idx === 0}
-                          onClick={() => moveDraftSubSection(sub.id, -1)}
-                          className="rounded border p-1 disabled:opacity-30"
-                          style={{ borderColor: 'var(--border-color)' }}
-                        >
-                          <ArrowUp className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={idx === draftSubSections.length - 1}
-                          onClick={() => moveDraftSubSection(sub.id, 1)}
-                          className="rounded border p-1 disabled:opacity-30"
-                          style={{ borderColor: 'var(--border-color)' }}
-                        >
-                          <ArrowDown className="h-3 w-3" />
-                        </button>
                         <button
                           type="button"
                           onClick={() =>
                             setDraftSubSections((prev) =>
-                              prev.filter((item) => item.id !== sub.id)
+                              prev.map((item) =>
+                                item.id === sub.id
+                                  ? { ...item, visible: item.visible === false }
+                                  : item
+                              )
                             )
                           }
-                          aria-label="حذف العنوان الفرعي"
+                          title={sub.visible === false ? 'إظهار' : 'إخفاء'}
                           className="rounded border p-1.5"
-                          style={{
-                            borderColor: 'var(--danger)',
-                            color: 'var(--danger)',
-                          }}
+                          style={{ borderColor: 'var(--border-color)' }}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          {sub.visible === false ? (
+                            <EyeOff className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                          )}
                         </button>
-                      </div>
-                    </div>
-                  ))}
+
+                        <input
+                          type="text"
+                          value={sub.label}
+                          onChange={(e) =>
+                            setDraftSubSections((prev) =>
+                              prev.map((item) =>
+                                item.id === sub.id
+                                  ? { ...item, label: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          placeholder="التسمية (مثال: القضاء)"
+                          className="w-32 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                        <input
+                          type="text"
+                          value={sub.value}
+                          onChange={(e) =>
+                            setDraftSubSections((prev) =>
+                              prev.map((item) =>
+                                item.id === sub.id
+                                  ? { ...item, value: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          placeholder="القيمة أو النص الفرعي..."
+                          className="min-w-[140px] flex-1 rounded-lg border px-2.5 py-1.5 text-xs"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => moveDraftSubSection(sub.id, -1)}
+                            className="rounded border p-1 disabled:opacity-30"
+                            style={{ borderColor: 'var(--border-color)' }}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === draftSubSections.length - 1}
+                            onClick={() => moveDraftSubSection(sub.id, 1)}
+                            className="rounded border p-1 disabled:opacity-30"
+                            style={{ borderColor: 'var(--border-color)' }}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftSubSections((prev) =>
+                                prev.filter((item) => item.id !== sub.id)
+                              )
+                            }
+                            aria-label="حذف العنوان الفرعي"
+                            className="rounded border p-1.5"
+                            style={{
+                              borderColor: 'var(--danger)',
+                              color: 'var(--danger)',
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -1118,20 +1137,20 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                       const Icon = opt.icon;
                       const active = (draftFf.align || 'right') === opt.id;
                       return (
-                        <button
+                        <motion.button
                           key={opt.id}
                           type="button"
+                          whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                          transition={TABRIX_TACTILE_SPRING}
                           onClick={() =>
                             setDraftFf((p) => ({
                               ...p,
                               align: opt.id as FreeformHeaderAlign,
                             }))
                           }
-                          className="inline-flex items-center justify-center gap-1 rounded-lg border py-1.5 text-[11px] font-bold"
+                          className="relative overflow-hidden inline-flex items-center justify-center gap-1 rounded-lg border py-1.5 text-[11px] font-bold"
                           style={{
-                            backgroundColor: active
-                              ? 'var(--bg-nav-active)'
-                              : 'var(--bg-main)',
+                            backgroundColor: 'var(--bg-main)',
                             borderColor: active
                               ? 'var(--accent)'
                               : 'var(--border-color)',
@@ -1140,9 +1159,15 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                               : 'var(--text-primary)',
                           }}
                         >
-                          <Icon className="h-3.5 w-3.5" />
-                          <span>{opt.label}</span>
-                        </button>
+                          {active && (
+                            <TabrixPillIndicator
+                              layoutId="attached-hdr-align-pill"
+                              className="rounded-lg"
+                            />
+                          )}
+                          <Icon className="relative z-10 h-3.5 w-3.5" />
+                          <span className="relative z-10">{opt.label}</span>
+                        </motion.button>
                       );
                     })}
                   </div>
@@ -1197,28 +1222,35 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                 {PRESET_LABELS.map((p) => {
                   const active = (draftFf.stylePreset || 'classic_official') === p.id;
                   return (
-                    <button
+                    <motion.button
                       key={p.id}
                       type="button"
+                      whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                      whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                      transition={TABRIX_TACTILE_SPRING}
                       onClick={() =>
                         setDraftFf((prev) => ({
                           ...prev,
                           stylePreset: p.id,
                         }))
                       }
-                      className="rounded-xl border px-2.5 py-2 text-[11px] font-bold"
+                      className="relative overflow-hidden rounded-xl border px-2.5 py-2 text-[11px] font-bold"
                       style={{
-                        backgroundColor: active
-                          ? 'var(--bg-nav-active)'
-                          : 'var(--bg-main)',
+                        backgroundColor: 'var(--bg-main)',
                         borderColor: active
                           ? 'var(--accent)'
                           : 'var(--border-color)',
                         color: active ? 'var(--accent)' : 'var(--text-primary)',
                       }}
                     >
-                      {p.label}
-                    </button>
+                      {active && (
+                        <TabrixPillIndicator
+                          layoutId="attached-hdr-preset-pill"
+                          className="rounded-xl"
+                        />
+                      )}
+                      <span className="relative z-10">{p.label}</span>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -1229,8 +1261,10 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
               className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"
               style={{ borderColor: 'var(--border-color)' }}
             >
-              <button
+              <motion.button
                 type="button"
+                whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                transition={TABRIX_TACTILE_SPRING}
                 onClick={() => {
                   setDraftOrder(DEFAULT_FIELD_ORDER);
                   setDraftVisible(DEFAULT_FIELD_ORDER);
@@ -1249,19 +1283,25 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>إعادة الافتراضي</span>
-              </button>
+              </motion.button>
 
               <div className="flex items-center gap-2">
-                <button
+                <motion.button
                   type="button"
+                  whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => setModalOpen(false)}
                   className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
@@ -1270,7 +1310,7 @@ export const SmartAttachedTableHeader: React.FC<SmartAttachedTableHeaderProps> =
                 >
                   <Check className="h-3.5 w-3.5" />
                   <span>حفظ وتطبيق الرأس</span>
-                </button>
+                </motion.button>
               </div>
             </div>
         </form>

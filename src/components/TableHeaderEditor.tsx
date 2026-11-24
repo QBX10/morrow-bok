@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { Calendar, Check, Clock, Edit3 } from 'lucide-react';
 import type { SectionTableHeaderMeta } from '../types/agency';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 
 interface TableHeaderEditorProps {
@@ -16,6 +18,7 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
   subtitleSuffix,
   compact = false,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(meta.title);
   const [subtitle, setSubtitle] = useState(meta.subtitle);
@@ -87,8 +90,11 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
           </span>
         )}
 
-        <button
+        <motion.button
           type="button"
+          whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+          whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+          transition={TABRIX_TACTILE_SPRING}
           onClick={() => setEditing(true)}
           aria-label="تعديل عنوان الجدول والصفحة والتاريخ"
           className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-[11px] font-semibold"
@@ -100,7 +106,7 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
         >
           <Edit3 className="h-3 w-3" />
           <span>تعديل العنوان والتاريخ</span>
-        </button>
+        </motion.button>
       </div>
 
       {(meta.subtitle || subtitleSuffix) && (
@@ -198,16 +204,22 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
               </label>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button
+                <motion.button
                   type="button"
+                  whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => setEditing(false)}
                   className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
@@ -216,7 +228,7 @@ export const TableHeaderEditor: React.FC<TableHeaderEditorProps> = ({
                 >
                   <Check className="h-3.5 w-3.5" />
                   <span>حفظ العنوان والتاريخ</span>
-                </button>
+                </motion.button>
               </div>
             </form>
         </div>

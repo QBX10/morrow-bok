@@ -1,5 +1,7 @@
 import React, { useRef } from 'react';
+import { motion } from 'motion/react';
 import { ArrowLeft } from 'lucide-react';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './NexusDuotoneIcon';
 
 export interface SmartDashboardSubIcon {
@@ -42,16 +44,30 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
   onOpen,
 }) => {
   const cardRef = useRef<HTMLElement | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
   const displaySubIcons = subIcons.slice(0, 4);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
     const el = cardRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-    const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-    el.style.setProperty('--card-mx', `${xPct.toFixed(1)}%`);
-    el.style.setProperty('--card-my', `${yPct.toFixed(1)}%`);
+    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    el.style.setProperty('--card-mx', `${(nx * 100).toFixed(1)}%`);
+    el.style.setProperty('--card-my', `${(ny * 100).toFixed(1)}%`);
+    if (document.documentElement.dataset.reduceMotion !== '1') {
+      const rx = ((0.5 - ny) * 5.2).toFixed(2);
+      const ry = ((nx - 0.5) * 6.4).toFixed(2);
+      el.style.setProperty('--card-rx', `${rx}deg`);
+      el.style.setProperty('--card-ry', `${ry}deg`);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    const el = cardRef.current;
+    if (!el) return;
+    el.style.setProperty('--card-rx', '0deg');
+    el.style.setProperty('--card-ry', '0deg');
   };
 
   return (
@@ -59,12 +75,13 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
       ref={cardRef}
       data-testid={testId}
       onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
       className="nexus-squircle smart-dashboard-card group relative flex flex-col justify-between gap-4 overflow-hidden p-5 text-right"
       style={{
         borderColor: active ? 'var(--accent)' : 'var(--border-color)',
       }}
     >
-      {/* Dynamic Pointer-Reactive Golden Sheen (Obsidian & Gold Atmosphere) */}
+      {/* Dynamic Pointer-Reactive Marine Specular Sheen */}
       <div
         aria-hidden="true"
         className="smart-dashboard-card-sheen pointer-events-none absolute inset-0"
@@ -137,11 +154,14 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
           aria-label={`اختصارات ${title}`}
         >
           {displaySubIcons.map((sub, idx) => (
-            <button
+            <motion.button
               key={sub.id}
               type="button"
               title={sub.hint || sub.label}
               aria-label={sub.hint ? `${sub.label} — ${sub.hint}` : sub.label}
+              whileHover={reducedMotion ? undefined : { y: -3, scale: 1.04 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.94 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => {
                 if (sub.onClick) {
                   sub.onClick();
@@ -176,7 +196,7 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
               <span className="line-clamp-1 w-full text-[11px] font-bold leading-tight">
                 {sub.label}
               </span>
-            </button>
+            </motion.button>
           ))}
         </div>
       )}
@@ -196,11 +216,14 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
         >
           <span>{actionLabel}</span>
         </button>
-        <button
+        <motion.button
           type="button"
           onClick={onOpen}
           aria-hidden="true"
           tabIndex={-1}
+          whileHover={reducedMotion ? undefined : { scale: 1.05 }}
+          whileTap={reducedMotion ? undefined : { scale: 0.94 }}
+          transition={TABRIX_TACTILE_SPRING}
           className="nexus-pill-btn inline-flex items-center gap-1 border px-2.5 py-1 text-[10px] font-extrabold opacity-80 transition-all duration-200 group-hover:opacity-100 group-hover:border-[var(--accent)]"
           style={{
             backgroundColor: 'var(--bg-main)',
@@ -210,7 +233,7 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
         >
           <span>دخول</span>
           <ArrowLeft className="h-3 w-3 transition-transform duration-200 group-hover:-translate-x-0.5" />
-        </button>
+        </motion.button>
       </div>
     </article>
   );

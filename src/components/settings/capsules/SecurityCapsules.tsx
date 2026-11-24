@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   CloudUpload,
   Download,
@@ -29,6 +30,11 @@ import type {
   HierarchyNode,
 } from '../../../utils/hierarchyRegistry';
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../../utils/tabrixMotion';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 import { AiModelsArchitectureStudio } from './AiModelsArchitectureStudio';
@@ -94,6 +100,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
 }) => {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [pinDraft, setPinDraft] = useState(securityPrefs.privacyPin || '');
+  const reducedMotion = useTabrixReducedMotion();
 
   useEffect(() => {
     setPinDraft(securityPrefs.privacyPin || '');
@@ -569,64 +576,75 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
           </div>
         ) : (
           <div className="space-y-2.5 text-xs">
-            {recycleBin.map((entry) => {
-              const kindLabel =
-                entry.kind === 'person'
-                  ? 'مستفيد'
-                  : entry.kind === 'ready_list'
-                  ? 'قائمة جاهزة'
-                  : entry.kind === 'relation'
-                  ? 'علاقة متابعة'
-                  : 'مصروف مالي';
-              return (
-                <div
-                  key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3.5"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
-                  <div>
-                    <span className="font-extrabold">{entry.label}</span>
-                    <span
-                      className="mx-2 text-[11px]"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      ({kindLabel}) · حُذف في {entry.deletedAt.slice(0, 10)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onRestoreRecycleBinItem(entry.id);
-                        onNotifySuccess(`تمت استعادة: ${entry.label}`);
-                      }}
-                      className="inline-flex min-h-[38px] items-center gap-1 rounded-xl px-3.5 py-1.5 font-extrabold"
-                      style={{
-                        backgroundColor: 'var(--success)',
-                        color: 'var(--success-fg)',
-                      }}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      <span>استعادة</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onPurgeRecycleBinItem(entry.id)}
-                      className="min-h-[38px] rounded-xl border px-3 py-1.5 font-bold"
-                      style={{
-                        borderColor: 'var(--border-color)',
-                        color: 'var(--danger)',
-                      }}
-                    >
-                      حذف نهائي
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            <AnimatePresence initial={false}>
+              {recycleBin.map((entry) => {
+                const kindLabel =
+                  entry.kind === 'person'
+                    ? 'مستفيد'
+                    : entry.kind === 'ready_list'
+                    ? 'قائمة جاهزة'
+                    : entry.kind === 'relation'
+                    ? 'علاقة متابعة'
+                    : 'مصروف مالي';
+                return (
+                  <motion.div
+                    key={entry.id}
+                    layout={!reducedMotion}
+                    variants={
+                      reducedMotion
+                        ? TABRIX_REDUCED_VARIANTS
+                        : TABRIX_POPOVER_VARIANTS
+                    }
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3.5"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div>
+                      <span className="font-extrabold">{entry.label}</span>
+                      <span
+                        className="mx-2 text-[11px]"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        ({kindLabel}) · حُذف في {entry.deletedAt.slice(0, 10)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onRestoreRecycleBinItem(entry.id);
+                          onNotifySuccess(`تمت استعادة: ${entry.label}`);
+                        }}
+                        className="inline-flex min-h-[38px] items-center gap-1 rounded-xl px-3.5 py-1.5 font-extrabold"
+                        style={{
+                          backgroundColor: 'var(--success)',
+                          color: 'var(--success-fg)',
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>استعادة</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onPurgeRecycleBinItem(entry.id)}
+                        className="min-h-[38px] rounded-xl border px-3 py-1.5 font-bold"
+                        style={{
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--danger)',
+                        }}
+                      >
+                        حذف نهائي
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
         )}
       </section>

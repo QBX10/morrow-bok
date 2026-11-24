@@ -8,6 +8,12 @@ import {
   registerWithPasswordApi,
 } from '../../lib/authClient';
 import { DotMatrixPattern, GeometricRavenCrest } from '../brand/VectorMotifs';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface FlipAuthGuardProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -20,6 +26,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFlippingCrest, setIsFlippingCrest] = useState(false);
+  const reducedMotion = useTabrixReducedMotion();
 
   // Sign-In state
   const [loginEmail, setLoginEmail] = useState('');
@@ -145,7 +152,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
               transition={{ duration: 0.28 }}
               className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
             >
-              <div className="p-4 rounded-full bg-[#09090B]/90 border border-[#D4AF37]/50 shadow-[0_0_40px_rgba(212,175,55,0.45)]">
+              <div className="p-4 rounded-full bg-[var(--bg-main)]/90 border border-[var(--accent)]/50 shadow-[0_0_40px_var(--marine-caustic-1)]">
                 <GeometricRavenCrest size={56} />
               </div>
             </motion.div>
@@ -170,10 +177,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div className="flex items-center gap-3">
                     <GeometricRavenCrest size={42} />
                     <div>
-                      <span className="font-mono-num text-[10px] tracking-[0.22em] uppercase text-[#D4AF37] block">
+                      <span className="font-mono-num text-[10px] tracking-[0.22em] uppercase text-[var(--accent)] block">
                         MORROW VAULT
                       </span>
-                      <h1 className="font-display-ar text-xl font-bold text-[#F4F4F6]">
+                      <h1 className="font-display-ar text-xl font-bold text-[var(--text-primary)]">
                         تسجيل الدخول
                       </h1>
                     </div>
@@ -182,14 +189,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                     <button
                       type="button"
                       onClick={onReplayOnboarding}
-                      className="text-[11px] font-semibold text-[#9898AA] hover:text-[#F3E5AB] transition-colors cursor-pointer"
+                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent-bright)] transition-colors cursor-pointer"
                     >
                       عرض المقدمة
                     </button>
                   )}
                 </div>
 
-                <p className="text-xs text-[#9898AA] leading-relaxed mb-5">
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-5">
                   ادخل إلى مساحتك المعزولة لإدارة الوكالات والحصص بضغط وتشفير فوري.
                 </p>
 
@@ -197,14 +204,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div>
                     <label
                       htmlFor="flip-login-email"
-                      className="block text-xs font-semibold text-[#D4D4D8] mb-1.5"
+                      className="block text-xs font-semibold text-[var(--text-primary)]/90 mb-1.5"
                     >
                       البريد الإلكتروني
                     </label>
                     <div className="relative">
                       <Mail
                         size={16}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]/80"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--accent)]/85"
                       />
                       <input
                         id="flip-login-email"
@@ -213,7 +220,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         placeholder="name@example.com"
-                        className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/45 pr-10 pl-3.5 py-2.5 text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-black/35 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                   </div>
@@ -221,14 +228,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div>
                     <label
                       htmlFor="flip-login-password"
-                      className="block text-xs font-semibold text-[#D4D4D8] mb-1.5"
+                      className="block text-xs font-semibold text-[var(--text-primary)]/90 mb-1.5"
                     >
                       كلمة المرور
                     </label>
                     <div className="relative">
                       <Lock
                         size={16}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]/80"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--accent)]/85"
                       />
                       <input
                         id="flip-login-password"
@@ -237,52 +244,69 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/45 pr-10 pl-3.5 py-2.5 text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-black/35 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                   </div>
 
-                  {errorMsg && !isFlipped && (
-                    <div
-                      role="alert"
-                      className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
-                    >
-                      {errorMsg}
-                    </div>
-                  )}
+                  <AnimatePresence initial={false}>
+                    {errorMsg && !isFlipped && (
+                      <motion.div
+                        key="login-error"
+                        variants={
+                          reducedMotion
+                            ? TABRIX_REDUCED_VARIANTS
+                            : TABRIX_POPOVER_VARIANTS
+                        }
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        role="alert"
+                        className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
+                      >
+                        {errorMsg}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                  <button
+                  <motion.button
                     type="submit"
                     disabled={busy}
+                    whileHover={reducedMotion || busy ? undefined : { y: -2, scale: 1.01 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
+                    transition={TABRIX_TACTILE_SPRING}
                     className="obsidian-gold-cta w-full py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60"
                   >
                     {busy ? 'جارٍ التحقق...' : 'دخول إلى مساحة العمل'}
-                  </button>
+                  </motion.button>
                 </form>
 
                 <div className="my-4 flex items-center gap-3">
                   <div className="h-px flex-1 bg-white/10" />
-                  <span className="text-[11px] text-[#9898AA]">أو</span>
+                  <span className="text-[11px] text-[var(--text-muted)]">أو</span>
                   <div className="h-px flex-1 bg-white/10" />
                 </div>
 
-                <button
+                <motion.button
                   type="button"
                   disabled={busy}
+                  whileHover={reducedMotion || busy ? undefined : { y: -1.5, scale: 1.01 }}
+                  whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={handleQuickGoogle}
-                  className="w-full py-2.5 px-4 rounded-xl border border-[#D4AF37]/25 bg-white/[0.04] hover:bg-[#D4AF37]/12 text-xs font-semibold text-[#F4F4F6] flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+                  className="w-full py-2.5 px-4 rounded-xl border border-[var(--border-color)] bg-white/[0.04] hover:bg-[var(--bg-nav-active)] text-xs font-semibold text-[var(--text-primary)] flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
                 >
-                  <Sparkles size={14} className="text-[#F3E5AB]" />
+                  <Sparkles size={14} className="text-[var(--accent-bright)]" />
                   <span>الدخول السريع عبر Google / Gmail</span>
-                </button>
+                </motion.button>
               </div>
 
-              <div className="relative z-10 mt-6 pt-4 border-t border-[#D4AF37]/15 flex items-center justify-between gap-2 text-xs">
-                <span className="text-[#9898AA]">ليس لديك حساب بعد؟</span>
+              <div className="relative z-10 mt-6 pt-4 border-t border-[var(--border-color)] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[var(--text-muted)]">ليس لديك حساب بعد؟</span>
                 <button
                   type="button"
                   onClick={() => triggerFlip(true)}
-                  className="inline-flex items-center gap-1.5 font-bold text-[#F3E5AB] hover:text-[#D4AF37] transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 font-bold text-[var(--accent-bright)] hover:text-[var(--accent)] transition-colors cursor-pointer"
                 >
                   <ArrowLeftRight size={14} />
                   <span>إنشاء حساب جديد</span>
@@ -301,17 +325,17 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div className="flex items-center gap-3">
                     <GeometricRavenCrest size={42} />
                     <div>
-                      <span className="font-mono-num text-[10px] tracking-[0.22em] uppercase text-[#D4AF37] block">
+                      <span className="font-mono-num text-[10px] tracking-[0.22em] uppercase text-[var(--accent)] block">
                         NEW WORKSPACE
                       </span>
-                      <h1 className="font-display-ar text-xl font-bold text-[#F4F4F6]">
+                      <h1 className="font-display-ar text-xl font-bold text-[var(--text-primary)]">
                         إنشاء حساب جديد
                       </h1>
                     </div>
                   </div>
                 </div>
 
-                <p className="text-xs text-[#9898AA] leading-relaxed mb-5">
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-5">
                   يُنشئ النظام مساحة معزولة تماماً لحسابك الجديد مع ضغط فوري لبياناتك.
                 </p>
 
@@ -319,14 +343,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div>
                     <label
                       htmlFor="flip-register-name"
-                      className="block text-xs font-semibold text-[#D4D4D8] mb-1.5"
+                      className="block text-xs font-semibold text-[var(--text-primary)]/90 mb-1.5"
                     >
                       الاسم الكامل
                     </label>
                     <div className="relative">
                       <User
                         size={16}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]/80"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--accent)]/85"
                       />
                       <input
                         id="flip-register-name"
@@ -334,7 +358,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         value={regName}
                         onChange={(e) => setRegName(e.target.value)}
                         placeholder="أحمد كريم"
-                        className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/45 pr-10 pl-3.5 py-2.5 text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-black/35 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                   </div>
@@ -342,14 +366,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div>
                     <label
                       htmlFor="flip-register-email"
-                      className="block text-xs font-semibold text-[#D4D4D8] mb-1.5"
+                      className="block text-xs font-semibold text-[var(--text-primary)]/90 mb-1.5"
                     >
                       البريد الإلكتروني
                     </label>
                     <div className="relative">
                       <Mail
                         size={16}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]/80"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--accent)]/85"
                       />
                       <input
                         id="flip-register-email"
@@ -358,7 +382,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         placeholder="user@example.com"
-                        className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/45 pr-10 pl-3.5 py-2.5 text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-black/35 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                   </div>
@@ -366,14 +390,14 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <div>
                     <label
                       htmlFor="flip-register-password"
-                      className="block text-xs font-semibold text-[#D4D4D8] mb-1.5"
+                      className="block text-xs font-semibold text-[var(--text-primary)]/90 mb-1.5"
                     >
                       كلمة المرور
                     </label>
                     <div className="relative">
                       <Lock
                         size={16}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]/80"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--accent)]/85"
                       />
                       <input
                         id="flip-register-password"
@@ -382,36 +406,50 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         placeholder="6 أحرف فأكثر"
-                        className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/45 pr-10 pl-3.5 py-2.5 text-sm text-[#F4F4F6] placeholder-[#71717A] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-black/35 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                   </div>
 
-                  {errorMsg && isFlipped && (
-                    <div
-                      role="alert"
-                      className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
-                    >
-                      {errorMsg}
-                    </div>
-                  )}
+                  <AnimatePresence initial={false}>
+                    {errorMsg && isFlipped && (
+                      <motion.div
+                        key="register-error"
+                        variants={
+                          reducedMotion
+                            ? TABRIX_REDUCED_VARIANTS
+                            : TABRIX_POPOVER_VARIANTS
+                        }
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        role="alert"
+                        className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
+                      >
+                        {errorMsg}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                  <button
+                  <motion.button
                     type="submit"
                     disabled={busy}
+                    whileHover={reducedMotion || busy ? undefined : { y: -2, scale: 1.01 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
+                    transition={TABRIX_TACTILE_SPRING}
                     className="obsidian-gold-cta w-full py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60"
                   >
                     {busy ? 'جارٍ إنشاء المساحة...' : 'إنشاء الحساب والدخول'}
-                  </button>
+                  </motion.button>
                 </form>
               </div>
 
-              <div className="relative z-10 mt-6 pt-4 border-t border-[#D4AF37]/15 flex items-center justify-between gap-2 text-xs">
-                <span className="text-[#9898AA]">لديك حساب مسجل مسبقاً؟</span>
+              <div className="relative z-10 mt-6 pt-4 border-t border-[var(--border-color)] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[var(--text-muted)]">لديك حساب مسجل مسبقاً؟</span>
                 <button
                   type="button"
                   onClick={() => triggerFlip(false)}
-                  className="inline-flex items-center gap-1.5 font-bold text-[#F3E5AB] hover:text-[#D4AF37] transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 font-bold text-[var(--accent-bright)] hover:text-[var(--accent)] transition-colors cursor-pointer"
                 >
                   <ArrowLeftRight size={14} />
                   <span>العودة لتسجيل الدخول</span>

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlertTriangle,
   Bot,
@@ -30,6 +31,11 @@ import {
   SmartExtractionLab,
   type SmartLabFilterMode,
 } from './SmartExtractionLab';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 export type DraftFilterMode = SmartLabFilterMode;
 
@@ -101,6 +107,7 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
   const [internalLabOpen, setInternalLabOpen] = useState(true);
   const [zoomRow, setZoomRow] = useState<QuickExtractEvaluatedRow | null>(null);
   const [cropModalOpen, setCropModalOpen] = useState(false);
+  const reducedMotion = useTabrixReducedMotion();
 
   const copilotSectionRef = useRef<HTMLDivElement | null>(null);
   const labOpen = controlledLabOpen ?? internalLabOpen;
@@ -338,24 +345,33 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
                 },
                 { id: 'verified', label: `مؤكد ≥99% (${counts.verified})` },
               ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onChangeFilterMode(tab.id)}
-                className="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
-                style={{
-                  backgroundColor:
-                    filterMode === tab.id ? 'var(--accent)' : 'var(--bg-main)',
-                  borderColor:
-                    filterMode === tab.id ? 'var(--accent)' : 'var(--border-color)',
-                  color:
-                    filterMode === tab.id ? 'var(--accent-fg)' : 'var(--text-primary)',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
+            ).map((tab) => {
+              const isActive = filterMode === tab.id;
+              return (
+                <motion.button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onChangeFilterMode(tab.id)}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
+                  className="relative overflow-hidden rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: isActive ? 'transparent' : 'var(--bg-main)',
+                    borderColor: isActive ? 'var(--accent)' : 'var(--border-color)',
+                    color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
+                  }}
+                >
+                  {isActive && (
+                    <TabrixPillIndicator
+                      layoutId="zero-trust-filter-pill"
+                      className="rounded-lg"
+                      style={{ backgroundColor: 'var(--accent)' }}
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </motion.button>
+              );
+            })}
 
             {filterMode !== 'all' &&
               visibleRows.length > 0 &&
@@ -434,27 +450,28 @@ export const ZeroTrustDraftWorkspace: React.FC<ZeroTrustDraftWorkspaceProps> = (
       />
 
       {/* Interactive Custom Region Crop Modal ("قص منطقة أخرى") */}
-      {cropModalOpen && (
-        <CustomRegionCropModal
-          sourceImageUrl={sourceImageUrl}
-          onClose={() => setCropModalOpen(false)}
-          onSubmitCrop={async (dataUrl, box) => {
-            await onAnalyzeCroppedRegion(dataUrl, box);
-            setCropModalOpen(false);
-          }}
-        />
-      )}
+      <CustomRegionCropModal
+        open={cropModalOpen}
+        sourceImageUrl={sourceImageUrl}
+        onClose={() => setCropModalOpen(false)}
+        onSubmitCrop={async (dataUrl, box) => {
+          await onAnalyzeCroppedRegion(dataUrl, box);
+          setCropModalOpen(false);
+        }}
+      />
     </div>
   );
 };
 
 interface CustomRegionCropModalProps {
+  open: boolean;
   sourceImageUrl?: string;
   onClose: () => void;
   onSubmitCrop: (croppedDataUrl: string, box?: NormalizedBox) => Promise<void>;
 }
 
 const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
+  open,
   sourceImageUrl,
   onClose,
   onSubmitCrop,
@@ -532,7 +549,7 @@ const CustomRegionCropModal: React.FC<CustomRegionCropModalProps> = ({
 
   return (
     <FullScreenPushPage
-      open
+      open={open}
       onBack={onClose}
       title="قص منطقة أخرى وإضافتها لمسودة السحب"
       subtitle="ارسم مستطيلاً بالسحب فوق المعلومة أو السطر الناقص ليقوم المحرك بسحبه وإضافته للمسودة فوراً"

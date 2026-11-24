@@ -5,15 +5,16 @@ import type {
   CardShadowLevel,
   FontSizeStep,
   FontWeightStep,
+  MarineAppThemeId,
   RowDensityStep,
   TableThemeId,
   ThemePreferences,
 } from '../types/agency';
 
-export type ThemeCapsuleGroupId = 'classic';
+export type ThemeCapsuleGroupId = 'marine' | 'classic';
 
 export interface AppThemeDefinition {
-  id: AppThemeId;
+  id: MarineAppThemeId;
   name: string;
   englishName: string;
   description: string;
@@ -35,7 +36,11 @@ export interface AppThemeDefinition {
     '--border-color': string;
     '--grid-color': string;
     '--accent': string;
+    '--accent-bright': string;
+    '--accent-deep': string;
     '--accent-fg': string;
+    '--marine-caustic-1': string;
+    '--marine-caustic-2': string;
     '--success': string;
     '--success-fg': string;
     '--success-bg': string;
@@ -47,45 +52,219 @@ export interface AppThemeDefinition {
   };
 }
 
-export const OBSIDIAN_GOLD_THEME: AppThemeDefinition = {
-  id: 'obsidian-gold',
-  name: 'السبج والذهب',
-  englishName: 'Obsidian & Gold',
-  mood: 'الهوية البصرية الحصرية المعتمدة',
+export const ABYSSAL_EMERALD_THEME: AppThemeDefinition = {
+  id: 'abyssal-emerald',
+  name: 'العمق الزمردي',
+  englishName: 'Abyssal Emerald',
+  mood: 'عمق محيطي زمردي متلألئ',
   description:
-    'أسود سبجي عميق (#09090B) مع زجاجية داكنة مصقولة ولمسات ذهب معدني فاخرة (#D4AF37).',
+    'أعماق محيطية داكنة (#040B14) مع زجاجية بحرية مصقولة وإضاءة زمردية حيوية (#10B981).',
   isDark: true,
-  swatches: ['#09090B', '#121216', '#D4AF37'],
+  capsuleGroup: 'marine',
+  swatches: ['#040B14', '#0A1828', '#10B981'],
   vars: {
-    '--bg-main': '#09090B',
-    '--bg-surface': '#121216',
-    '--bg-header': '#0D0D11',
-    '--bg-table-header': '#16161C',
-    '--bg-nav-active': 'rgba(212, 175, 55, 0.14)',
-    '--bg-zebra': 'rgba(255, 255, 255, 0.024)',
-    '--bg-numeric': 'rgba(212, 175, 55, 0.055)',
-    '--row-hover-bg': 'rgba(212, 175, 55, 0.11)',
-    '--text-primary': '#F4F4F6',
-    '--text-muted': '#9898AA',
-    '--border-color': 'rgba(212, 175, 55, 0.22)',
-    '--grid-color': 'rgba(212, 175, 55, 0.12)',
-    '--accent': '#D4AF37',
-    '--accent-fg': '#09090B',
+    '--bg-main': '#040B14',
+    '--bg-surface': '#0A1726',
+    '--bg-header': '#06101C',
+    '--bg-table-header': '#0E1F33',
+    '--bg-nav-active': 'rgba(16, 185, 129, 0.16)',
+    '--bg-zebra': 'rgba(110, 231, 183, 0.025)',
+    '--bg-numeric': 'rgba(16, 185, 129, 0.075)',
+    '--row-hover-bg': 'rgba(16, 185, 129, 0.12)',
+    '--text-primary': '#ECFDF5',
+    '--text-muted': '#8BB0BA',
+    '--border-color': 'rgba(52, 211, 153, 0.24)',
+    '--grid-color': 'rgba(52, 211, 153, 0.13)',
+    '--accent': '#10B981',
+    '--accent-bright': '#6EE7B7',
+    '--accent-deep': '#047857',
+    '--accent-fg': '#031510',
+    '--marine-caustic-1': 'rgba(16, 185, 129, 0.16)',
+    '--marine-caustic-2': 'rgba(6, 182, 212, 0.11)',
     '--success': '#10B981',
-    '--success-fg': '#04271D',
+    '--success-fg': '#031F16',
     '--success-bg': 'rgba(16, 185, 129, 0.16)',
-    '--warning': '#F5B041',
-    '--warning-bg': 'rgba(245, 176, 65, 0.16)',
-    '--danger': '#EF4444',
+    '--warning': '#F59E0B',
+    '--warning-bg': 'rgba(245, 158, 11, 0.16)',
+    '--danger': '#F43F5E',
     '--danger-fg': '#FFFFFF',
-    '--danger-bg': 'rgba(239, 68, 68, 0.16)',
+    '--danger-bg': 'rgba(244, 63, 94, 0.16)',
   },
 };
 
-// Locked single-theme architecture: Obsidian & Gold only.
-export const APP_THEMES: AppThemeDefinition[] = [OBSIDIAN_GOLD_THEME];
-export const MODERN_APP_THEMES: AppThemeDefinition[] = [];
-export const ALL_APP_THEMES: AppThemeDefinition[] = [OBSIDIAN_GOLD_THEME];
+export const MIDNIGHT_TRENCH_THEME: AppThemeDefinition = {
+  id: 'midnight-trench',
+  name: 'خندق ماريانا',
+  englishName: 'Mariana Trench',
+  mood: 'أزرق أعماق كهربائي نقي',
+  description:
+    'أزرق محيطي سحيق (#030812) بطبقات زجاجية شفافة وإشعاع فيروزي متوهج (#06B6D4).',
+  isDark: true,
+  capsuleGroup: 'marine',
+  swatches: ['#030812', '#081426', '#06B6D4'],
+  vars: {
+    '--bg-main': '#030812',
+    '--bg-surface': '#081426',
+    '--bg-header': '#050D1A',
+    '--bg-table-header': '#0C1C34',
+    '--bg-nav-active': 'rgba(6, 182, 212, 0.17)',
+    '--bg-zebra': 'rgba(103, 232, 249, 0.024)',
+    '--bg-numeric': 'rgba(6, 182, 212, 0.075)',
+    '--row-hover-bg': 'rgba(6, 182, 212, 0.12)',
+    '--text-primary': '#ECFEFF',
+    '--text-muted': '#8AA8C2',
+    '--border-color': 'rgba(34, 211, 238, 0.24)',
+    '--grid-color': 'rgba(34, 211, 238, 0.13)',
+    '--accent': '#06B6D4',
+    '--accent-bright': '#67E8F9',
+    '--accent-deep': '#0E7490',
+    '--accent-fg': '#03131A',
+    '--marine-caustic-1': 'rgba(6, 182, 212, 0.17)',
+    '--marine-caustic-2': 'rgba(59, 130, 246, 0.12)',
+    '--success': '#10B981',
+    '--success-fg': '#031F16',
+    '--success-bg': 'rgba(16, 185, 129, 0.16)',
+    '--warning': '#F59E0B',
+    '--warning-bg': 'rgba(245, 158, 11, 0.16)',
+    '--danger': '#F43F5E',
+    '--danger-fg': '#FFFFFF',
+    '--danger-bg': 'rgba(244, 63, 94, 0.16)',
+  },
+};
+
+export const BIOLUMINESCENT_REEF_THEME: AppThemeDefinition = {
+  id: 'bioluminescent-reef',
+  name: 'الشعاب المضيئة',
+  englishName: 'Bioluminescent Reef',
+  mood: 'توهج مرجاني وأكوامارين حي',
+  description:
+    'خلفية بحرية نيلية داكنة (#050C16) مع بريق الأكوامارين المضيء (#2DD4BF) وتدرج حريري.',
+  isDark: true,
+  capsuleGroup: 'marine',
+  swatches: ['#050C16', '#0B1A2D', '#2DD4BF'],
+  vars: {
+    '--bg-main': '#050C16',
+    '--bg-surface': '#0B1A2D',
+    '--bg-header': '#071221',
+    '--bg-table-header': '#10243C',
+    '--bg-nav-active': 'rgba(45, 212, 191, 0.16)',
+    '--bg-zebra': 'rgba(153, 246, 228, 0.025)',
+    '--bg-numeric': 'rgba(45, 212, 191, 0.07)',
+    '--row-hover-bg': 'rgba(45, 212, 191, 0.12)',
+    '--text-primary': '#F0FDFA',
+    '--text-muted': '#8FB2BA',
+    '--border-color': 'rgba(45, 212, 191, 0.24)',
+    '--grid-color': 'rgba(45, 212, 191, 0.13)',
+    '--accent': '#2DD4BF',
+    '--accent-bright': '#99F6E4',
+    '--accent-deep': '#0F766E',
+    '--accent-fg': '#041A18',
+    '--marine-caustic-1': 'rgba(45, 212, 191, 0.16)',
+    '--marine-caustic-2': 'rgba(16, 185, 129, 0.11)',
+    '--success': '#10B981',
+    '--success-fg': '#031F16',
+    '--success-bg': 'rgba(16, 185, 129, 0.16)',
+    '--warning': '#FBBF24',
+    '--warning-bg': 'rgba(251, 191, 36, 0.16)',
+    '--danger': '#FB7185',
+    '--danger-fg': '#FFFFFF',
+    '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+  },
+};
+
+export const ARCTIC_FJORD_THEME: AppThemeDefinition = {
+  id: 'arctic-fjord',
+  name: 'المضيق القطبي',
+  englishName: 'Arctic Fjord',
+  mood: 'جليد بحري صافٍ وإضاءة سماوية',
+  description:
+    'أردواز بحري عميق (#07111C) مع أسطح كريستالية صافية ولمسات سماوية باردة (#38BDF8).',
+  isDark: true,
+  capsuleGroup: 'marine',
+  swatches: ['#07111C', '#0F1E30', '#38BDF8'],
+  vars: {
+    '--bg-main': '#07111C',
+    '--bg-surface': '#0F1E30',
+    '--bg-header': '#091624',
+    '--bg-table-header': '#14273E',
+    '--bg-nav-active': 'rgba(56, 189, 248, 0.17)',
+    '--bg-zebra': 'rgba(186, 230, 253, 0.024)',
+    '--bg-numeric': 'rgba(56, 189, 248, 0.075)',
+    '--row-hover-bg': 'rgba(56, 189, 248, 0.12)',
+    '--text-primary': '#F0F9FF',
+    '--text-muted': '#90ACC4',
+    '--border-color': 'rgba(56, 189, 248, 0.25)',
+    '--grid-color': 'rgba(56, 189, 248, 0.13)',
+    '--accent': '#38BDF8',
+    '--accent-bright': '#BAE6FD',
+    '--accent-deep': '#0284C7',
+    '--accent-fg': '#041421',
+    '--marine-caustic-1': 'rgba(56, 189, 248, 0.16)',
+    '--marine-caustic-2': 'rgba(45, 212, 191, 0.11)',
+    '--success': '#10B981',
+    '--success-fg': '#031F16',
+    '--success-bg': 'rgba(16, 185, 129, 0.16)',
+    '--warning': '#F59E0B',
+    '--warning-bg': 'rgba(245, 158, 11, 0.16)',
+    '--danger': '#F43F5E',
+    '--danger-fg': '#FFFFFF',
+    '--danger-bg': 'rgba(244, 63, 94, 0.16)',
+  },
+};
+
+export const PELAGIC_SAPPHIRE_THEME: AppThemeDefinition = {
+  id: 'pelagic-sapphire',
+  name: 'العمق الياقوتي',
+  englishName: 'Pelagic Sapphire',
+  mood: 'ياقوت بحري ملكي وعمق مهيب',
+  description:
+    'أعماق المحيط الهادئ الليلية (#050A18) مع زجاجية ياقوتية فاخرة (#60A5FA) وتباين حاد.',
+  isDark: true,
+  capsuleGroup: 'marine',
+  swatches: ['#050A18', '#0D1730', '#60A5FA'],
+  vars: {
+    '--bg-main': '#050A18',
+    '--bg-surface': '#0D1730',
+    '--bg-header': '#081024',
+    '--bg-table-header': '#132142',
+    '--bg-nav-active': 'rgba(96, 165, 250, 0.17)',
+    '--bg-zebra': 'rgba(191, 219, 254, 0.024)',
+    '--bg-numeric': 'rgba(96, 165, 250, 0.075)',
+    '--row-hover-bg': 'rgba(96, 165, 250, 0.12)',
+    '--text-primary': '#EFF6FF',
+    '--text-muted': '#92A8CC',
+    '--border-color': 'rgba(96, 165, 250, 0.25)',
+    '--grid-color': 'rgba(96, 165, 250, 0.13)',
+    '--accent': '#60A5FA',
+    '--accent-bright': '#BFDBFE',
+    '--accent-deep': '#2563EB',
+    '--accent-fg': '#040B1C',
+    '--marine-caustic-1': 'rgba(96, 165, 250, 0.17)',
+    '--marine-caustic-2': 'rgba(34, 211, 238, 0.11)',
+    '--success': '#10B981',
+    '--success-fg': '#031F16',
+    '--success-bg': 'rgba(16, 185, 129, 0.16)',
+    '--warning': '#F59E0B',
+    '--warning-bg': 'rgba(245, 158, 11, 0.16)',
+    '--danger': '#F43F5E',
+    '--danger-fg': '#FFFFFF',
+    '--danger-bg': 'rgba(244, 63, 94, 0.16)',
+  },
+};
+
+export const OBSIDIAN_GOLD_THEME = ABYSSAL_EMERALD_THEME;
+
+export const MARINE_THEMES: AppThemeDefinition[] = [
+  ABYSSAL_EMERALD_THEME,
+  MIDNIGHT_TRENCH_THEME,
+  BIOLUMINESCENT_REEF_THEME,
+  ARCTIC_FJORD_THEME,
+  PELAGIC_SAPPHIRE_THEME,
+];
+
+export const APP_THEMES: AppThemeDefinition[] = MARINE_THEMES;
+export const MODERN_APP_THEMES: AppThemeDefinition[] = MARINE_THEMES;
+export const ALL_APP_THEMES: AppThemeDefinition[] = MARINE_THEMES;
 
 export const APP_THEME_CAPSULES: Array<{
   id: ThemeCapsuleGroupId;
@@ -94,15 +273,40 @@ export const APP_THEME_CAPSULES: Array<{
   themes: AppThemeDefinition[];
 }> = [
   {
-    id: 'classic',
-    title: 'الهوية المعتمدة — السبج والذهب',
-    subtitle: 'نظام الألوان الوحيد المعتمد عبر كامل التطبيق',
-    themes: APP_THEMES,
+    id: 'marine',
+    title: 'الثيمات البحرية المطلقة — Absolute Marine',
+    subtitle: 'خمس هويات محيطية ثلاثية الأبعاد مصممة بأعماق مائية وزجاج مصقول',
+    themes: MARINE_THEMES,
   },
 ];
 
-export function resolveAppThemeId(_rawId?: string | null): AppThemeId {
-  return 'obsidian-gold';
+const LEGACY_APP_THEME_MAP: Record<string, MarineAppThemeId> = {
+  'emerald-forest': 'bioluminescent-reef',
+  'charcoal-emerald': 'bioluminescent-reef',
+  'soft-mint': 'bioluminescent-reef',
+  'sage-linen': 'bioluminescent-reef',
+  'arctic-snow': 'arctic-fjord',
+  'nordic-dusk': 'arctic-fjord',
+  'alabaster-glass': 'arctic-fjord',
+  aurora: 'pelagic-sapphire',
+  'nordic-navy': 'pelagic-sapphire',
+  'midnight-slate': 'pelagic-sapphire',
+  'midnight-indigo': 'pelagic-sapphire',
+  cyberpunk: 'midnight-trench',
+  'obsidian-gold': 'abyssal-emerald',
+  'desert-mirage': 'abyssal-emerald',
+  'royal-crimson': 'abyssal-emerald',
+  'zen-minimal': 'arctic-fjord',
+  'warm-paper': 'arctic-fjord',
+  'crisp-daylight': 'arctic-fjord',
+};
+
+export function resolveAppThemeId(rawId?: string | null): MarineAppThemeId {
+  if (!rawId) return 'abyssal-emerald';
+  if (MARINE_THEMES.some((t) => t.id === rawId)) {
+    return rawId as MarineAppThemeId;
+  }
+  return LEGACY_APP_THEME_MAP[rawId] || 'abyssal-emerald';
 }
 
 export interface TableThemeDefinition {
@@ -118,7 +322,7 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'الجدول الزجاجي',
     englishName: 'Glass Table',
     description:
-      'صفوف شفافة ناعمة بلمسة زجاجية وفواصل ذهبية خفيفة للغاية.',
+      'صفوف شفافة ناعمة بلمسة زجاجية بحرية وفواصل ضوئية خفيفة للغاية.',
   },
   {
     id: 'paper-ledger',
@@ -139,7 +343,7 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'التنفيذي الملكي',
     englishName: 'Royal Executive',
     description:
-      'رأس بارز باللون الذهبي وتباين واضح للأعمدة الرقمية والحصص.',
+      'رأس بارز باللون البحري المعتمد وتباين واضح للأعمدة الرقمية والحصص.',
   },
   {
     id: 'pastel-blocks',
@@ -160,14 +364,14 @@ export const TABLE_THEMES: TableThemeDefinition[] = [
     name: 'المصفوفة الرقمية',
     englishName: 'Neon Matrix',
     description:
-      'توهج ذهبي خفيف عند التمرير وإبراز رقمي متساوٍ مخصص للتدقيق السريع.',
+      'توهج مائي خفيف عند التمرير وإبراز رقمي متساوٍ مخصص للتدقيق السريع.',
   },
   {
     id: 'card-based',
     name: 'العرض البطاقي المرن',
     englishName: 'Card-Based Table',
     description:
-      'يحول كل سجل إلى بطاقة مستقلة أنيقة تحتوي الاسم والأفراد والحصة والمبلغ والحالة.',
+      'يحول كل سجل إلى بطاقة مستقلة ثلاثية الأبعاد تحتوي الاسم والأفراد والحصة والمبلغ والحالة.',
   },
 ];
 
@@ -260,15 +464,15 @@ export const ROW_DENSITY_MAP: Record<
 
 export const SHADOW_LEVEL_CSS: Record<CardShadowLevel, string> = {
   none: 'none',
-  soft: '0 8px 24px -10px rgba(0, 0, 0, 0.55)',
-  elevated: '0 18px 42px -14px rgba(0, 0, 0, 0.78)',
+  soft: '0 12px 28px -12px rgba(2, 10, 22, 0.65)',
+  elevated: '0 22px 48px -14px rgba(2, 10, 22, 0.85)',
 };
 
 export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: 'preset_night_work',
-    name: 'وضع السبج والذهب القياسي',
-    appTheme: 'obsidian-gold',
+    name: 'وضع العمق الزمردي القياسي',
+    appTheme: 'abyssal-emerald',
     tableTheme: 'glass',
     fontFamily: 'ibm-plex',
     fontSizePx: 15,
@@ -285,8 +489,8 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   },
   {
     id: 'preset_fast_reading',
-    name: 'وضع التدقيق المكثف',
-    appTheme: 'obsidian-gold',
+    name: 'وضع خندق ماريانا المكثف',
+    appTheme: 'midnight-trench',
     tableTheme: 'data-grid',
     fontFamily: 'cairo',
     fontSizePx: 16,
@@ -304,7 +508,7 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
 ];
 
 export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
-  appTheme: 'obsidian-gold',
+  appTheme: 'abyssal-emerald',
   tableTheme: 'glass',
   fontFamily: 'ibm-plex',
   fontSize: 'md',
@@ -316,7 +520,7 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   borderRadiusPx: 22,
   cardShadowLevel: 'soft',
   glassEffect: true,
-  glassOpacityPct: 68,
+  glassOpacityPct: 70,
   themeColorMode: 'dark',
   customBgColor: '',
   customSurfaceColor: '',
@@ -339,8 +543,11 @@ export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   activeRowFocusMode: true,
 };
 
-export function getAppThemeById(_id?: string | null): AppThemeDefinition {
-  return OBSIDIAN_GOLD_THEME;
+export function getAppThemeById(id?: string | null): AppThemeDefinition {
+  const resolvedId = resolveAppThemeId(id);
+  return (
+    ALL_APP_THEMES.find((t) => t.id === resolvedId) || ABYSSAL_EMERALD_THEME
+  );
 }
 
 export function applyThemePreferencesToDocument(
@@ -354,7 +561,7 @@ export function applyThemePreferencesToDocument(
 ): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  const theme = OBSIDIAN_GOLD_THEME;
+  const theme = getAppThemeById(prefs.appTheme);
 
   const fontId = resolveArabicFontId(prefs.fontFamily);
   const font = ARABIC_FONTS.find((f) => f.id === fontId) || ARABIC_FONTS[0];
@@ -400,7 +607,7 @@ export function applyThemePreferencesToDocument(
     prefs.glassOpacityPct >= 40 &&
     prefs.glassOpacityPct <= 100
       ? prefs.glassOpacityPct / 100
-      : 0.68;
+      : 0.7;
 
   const shadowCss =
     SHADOW_LEVEL_CSS[prefs.cardShadowLevel || 'soft'] || SHADOW_LEVEL_CSS.soft;
@@ -414,9 +621,9 @@ export function applyThemePreferencesToDocument(
   root.style.setProperty('--card-radius', `${radiusPx}px`);
   root.style.setProperty('--glass-opacity', String(glassOpacity));
   root.style.setProperty('--card-shadow', shadowCss);
-  root.style.setProperty('--accent-ai', '#D4AF37');
-  root.style.setProperty('--accent-ai-glow', 'rgba(212, 175, 55, 0.42)');
-  root.dataset.appTheme = 'obsidian-gold';
+  root.style.setProperty('--accent-ai', theme.vars['--accent']);
+  root.style.setProperty('--accent-ai-glow', theme.vars['--marine-caustic-1']);
+  root.dataset.appTheme = theme.id;
   root.dataset.tableTheme = resolveTableThemeId(prefs.tableTheme);
   root.dataset.glass = prefs.glassEffect !== false ? '1' : '0';
   root.dataset.reduceMotion = accessibility?.reduceMotion ? '1' : '0';

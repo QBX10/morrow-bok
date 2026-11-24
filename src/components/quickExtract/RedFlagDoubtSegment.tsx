@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Check, Crop, Edit3, GitBranch } from 'lucide-react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 import type {
   NormalizedBox,
   QuickExtractEvaluatedRow,
@@ -103,6 +110,7 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
   focusedFields = ALL_QUICK_EXTRACT_FIELDS,
   onUpdateRow,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [editingActive, setEditingActive] = useState(false);
 
   const focusSet = new Set(
@@ -173,9 +181,12 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
 
         {/* Immediate Correct / Edit Actions */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
+          <motion.button
             type="button"
             disabled={!allReadyForConfirm}
+            whileHover={reducedMotion || !allReadyForConfirm ? undefined : { scale: 1.03 }}
+            whileTap={reducedMotion || !allReadyForConfirm ? undefined : { scale: 0.95 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={() =>
               onUpdateRow(row.id, {
                 doubtConfirmed: true,
@@ -190,10 +201,13 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
           >
             <Check className="h-3.5 w-3.5" />
             <span>صحيح</span>
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             type="button"
+            whileHover={reducedMotion ? undefined : { scale: 1.03 }}
+            whileTap={reducedMotion ? undefined : { scale: 0.95 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={() => setEditingActive((v) => !v)}
             className="inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-xs font-bold"
             style={{
@@ -206,7 +220,7 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
           >
             <Edit3 className="h-3.5 w-3.5" />
             <span>تعديل</span>
-          </button>
+          </motion.button>
         </div>
       </div>
 
@@ -291,38 +305,50 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
       )}
 
       {/* Name & Prefix Tree Suggestions (Explicit Click Only - Never Blind Auto-Commit) */}
-      {focusSet.has('name') && treeAnalysis.suggestedNames.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span
-            className="inline-flex items-center gap-1 font-bold"
-            style={{ color: 'var(--accent)' }}
+      <AnimatePresence initial={false}>
+        {focusSet.has('name') && treeAnalysis.suggestedNames.length > 0 && (
+          <motion.div
+            key="doubt-suggestions"
+            variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-wrap items-center gap-2 text-xs"
           >
-            <GitBranch className="h-3.5 w-3.5" />
-            <span>مطابقات مقترحة من شجرة الأسماء:</span>
-          </span>
-          {treeAnalysis.suggestedNames.map((cand) => (
-            <button
-              key={cand}
-              type="button"
-              onClick={() =>
-                onUpdateRow(
-                  row.id,
-                  { resolvedName: cand },
-                  { resetConfirmOnNameEdit: true }
-                )
-              }
-              className="rounded-lg border px-2.5 py-1 font-semibold hover:opacity-85"
-              style={{
-                backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-              }}
+            <span
+              className="inline-flex items-center gap-1 font-bold"
+              style={{ color: 'var(--accent)' }}
             >
-              {cand}
-            </button>
-          ))}
-        </div>
-      )}
+              <GitBranch className="h-3.5 w-3.5" />
+              <span>مطابقات مقترحة من شجرة الأسماء:</span>
+            </span>
+            {treeAnalysis.suggestedNames.map((cand) => (
+              <motion.button
+                key={cand}
+                type="button"
+                whileHover={reducedMotion ? undefined : { scale: 1.03 }}
+                whileTap={reducedMotion ? undefined : { scale: 0.95 }}
+                transition={TABRIX_TACTILE_SPRING}
+                onClick={() =>
+                  onUpdateRow(
+                    row.id,
+                    { resolvedName: cand },
+                    { resetConfirmOnNameEdit: true }
+                  )
+                }
+                className="rounded-lg border px-2.5 py-1 font-semibold hover:opacity-85"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent)',
+                }}
+              >
+                {cand}
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Focused Correction & Confirmation Inputs */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-6">
@@ -459,9 +485,12 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
         )}
 
         <div className="flex items-end">
-          <button
+          <motion.button
             type="button"
             disabled={!allReadyForConfirm}
+            whileHover={reducedMotion || !allReadyForConfirm ? undefined : { y: -1, scale: 1.02 }}
+            whileTap={reducedMotion || !allReadyForConfirm ? undefined : { scale: 0.96 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={() =>
               onUpdateRow(row.id, {
                 doubtConfirmed: true,
@@ -476,7 +505,7 @@ export const RedFlagDoubtSegment: React.FC<RedFlagDoubtSegmentProps> = ({
           >
             <Check className="h-3.5 w-3.5" />
             <span>اعتماد وتأكيد الصف</span>
-          </button>
+          </motion.button>
         </div>
       </div>
     </div>

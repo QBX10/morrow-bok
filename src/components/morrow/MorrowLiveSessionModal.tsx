@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Camera,
@@ -22,6 +23,13 @@ import { PermissionGuardModal } from '../permissions/PermissionGuardModal';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
 import { MorrowSubPageHeader } from './MorrowSubPageHeader';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SPRING,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowLiveSessionModalProps {
   open: boolean;
@@ -89,6 +97,8 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
   const [quickTextInput, setQuickTextInput] = useState('');
   const [permissionGuide, setPermissionGuide] = useState<MediaPermissionGuide | null>(null);
   const [boundToWorkspace, setBoundToWorkspace] = useState(false);
+  const reducedMotion = useTabrixReducedMotion();
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const wsRef = useRef<WebSocket | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -453,7 +463,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
     setQuickTextInput('');
   };
 
-  if (!open) return null;
+  if (layout === 'page' && !open) return null;
 
   const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
   const secs = String(elapsedSec % 60).padStart(2, '0');
@@ -524,60 +534,82 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
 
         {/* Center Interactive Voice / Optional Video Stage */}
         <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
-          {cameraOn && (
-            <div className="relative mx-auto overflow-hidden rounded-2xl border max-w-md aspect-video bg-black" style={{ borderColor: 'var(--border-color)' }}>
-              <video
-                ref={videoElRef}
-                muted
-                playsInline
-                className="h-full w-full object-cover"
-              />
-              <span
-                className="absolute bottom-2 right-2 rounded-lg px-2 py-0.5 text-[11px] font-bold"
-                style={{ backgroundColor: 'rgba(15,23,42,0.78)', color: '#fff' }}
+          <AnimatePresence>
+            {cameraOn && (
+              <motion.div
+                key="live-camera-preview"
+                variants={popoverVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="relative mx-auto overflow-hidden rounded-2xl border max-w-md aspect-video bg-black"
+                style={{ borderColor: 'var(--border-color)' }}
               >
-                بث الكاميرا لـ Morrow (١ إطار/ث)
-              </span>
-            </div>
-          )}
+                <video
+                  ref={videoElRef}
+                  muted
+                  playsInline
+                  className="h-full w-full object-cover"
+                />
+                <span
+                  className="absolute bottom-2 right-2 rounded-lg px-2 py-0.5 text-[11px] font-bold"
+                  style={{ backgroundColor: 'rgba(15,23,42,0.78)', color: '#fff' }}
+                >
+                  بث الكاميرا لـ Morrow (١ إطار/ث)
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Glowing 3D Electric Indigo Orb Voice Stage */}
           <div className="flex flex-col items-center justify-center py-4">
-            <div
-              className={`relative flex h-28 w-28 items-center justify-center transition-transform duration-150 ${
+            <motion.div
+              animate={{
+                scale:
+                  status === 'live' && !reducedMotion
+                    ? 1 + (isModelSpeaking ? 0.09 : micLevel * 0.16)
+                    : 1,
+              }}
+              transition={TABRIX_SPRING}
+              className={`relative flex h-28 w-28 items-center justify-center ${
                 status === 'live' ? 'nexus-orb-3d' : 'rounded-full border-2'
               }`}
               style={
-                status === 'live'
+                status !== 'live'
                   ? {
-                      transform: `scale(${1 + (isModelSpeaking ? 0.08 : micLevel * 0.14)})`,
-                    }
-                  : {
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }
+                  : undefined
               }
             >
               <Volume2
                 className="h-10 w-10"
                 style={{ color: status === 'live' ? '#FFFFFF' : 'var(--text-muted)' }}
               />
-            </div>
+            </motion.div>
           </div>
 
-          {errorText && (
-            <div
-              className="flex items-start gap-2.5 rounded-2xl border p-3.5 text-xs font-semibold"
-              style={{
-                backgroundColor: 'var(--danger-bg)',
-                borderColor: 'var(--danger)',
-                color: 'var(--danger)',
-              }}
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>{errorText}</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {errorText && (
+              <motion.div
+                key="live-error-banner"
+                variants={popoverVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex items-start gap-2.5 rounded-2xl border p-3.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: 'var(--danger-bg)',
+                  borderColor: 'var(--danger)',
+                  color: 'var(--danger)',
+                }}
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{errorText}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Live Transcript Feed */}
           <div
@@ -594,29 +626,36 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
                   : 'في انتظار بدء الجلسة الصوتية المباشرة.'}
               </div>
             ) : (
-              turns.map((turn) => (
-                <div
-                  key={turn.id}
-                  className={`flex flex-col ${turn.role === 'user' ? 'items-start' : 'items-end'}`}
-                >
-                  <div
-                    className="max-w-[88%] rounded-2xl border px-3.5 py-2 text-xs leading-relaxed"
-                    style={{
-                      backgroundColor:
-                        turn.role === 'user' ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
+              <AnimatePresence initial={false}>
+                {turns.map((turn) => (
+                  <motion.div
+                    key={turn.id}
+                    layout={!reducedMotion}
+                    variants={popoverVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className={`flex flex-col ${turn.role === 'user' ? 'items-start' : 'items-end'}`}
                   >
                     <div
-                      className="mb-0.5 text-[10px] font-extrabold"
-                      style={{ color: turn.role === 'user' ? 'var(--accent)' : 'var(--text-muted)' }}
+                      className="max-w-[88%] rounded-2xl border px-3.5 py-2 text-xs leading-relaxed"
+                      style={{
+                        backgroundColor:
+                          turn.role === 'user' ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
                     >
-                      {turn.role === 'user' ? 'أنت' : 'Morrow لايف'}
+                      <div
+                        className="mb-0.5 text-[10px] font-extrabold"
+                        style={{ color: turn.role === 'user' ? 'var(--accent)' : 'var(--text-muted)' }}
+                      >
+                        {turn.role === 'user' ? 'أنت' : 'Morrow لايف'}
+                      </div>
+                      <div>{turn.text}</div>
                     </div>
-                    <div>{turn.text}</div>
-                  </div>
-                </div>
-              ))
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             )}
           </div>
         </div>
@@ -657,9 +696,11 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
           </form>
 
           <div className="flex flex-wrap items-center justify-center gap-2.5">
-            <button
+            <motion.button
               type="button"
               onClick={() => setMuted((m) => !m)}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               className="nexus-pill-btn inline-flex h-11 items-center gap-2 border px-4 text-xs font-extrabold"
               style={{
                 backgroundColor: muted ? 'var(--warning-bg)' : 'var(--bg-surface)',
@@ -669,11 +710,13 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             >
               {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               <span>{muted ? 'إلغاء كتم المايك' : 'كتم المايك'}</span>
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
               onClick={toggleCamera}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               className="nexus-pill-btn inline-flex h-11 items-center gap-2 border px-4 text-xs font-extrabold"
               style={{
                 backgroundColor: cameraOn ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
@@ -683,11 +726,13 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             >
               {cameraOn ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
               <span>{cameraOn ? 'إيقاف الكاميرا' : 'تشغيل الكاميرا'}</span>
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
               onClick={handleEndSession}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               className="nexus-pill-btn inline-flex h-11 items-center gap-2 px-5 text-xs font-extrabold"
               style={{
                 backgroundColor: 'var(--danger)',
@@ -696,38 +741,45 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             >
               <PhoneOff className="h-4 w-4" />
               <span>إنهاء المحادثة</span>
-            </button>
+            </motion.button>
           </div>
         </div>
       </div>
 
-      {layout === 'page' && permissionGuide && (
-        <div
-          className="mt-4 rounded-2xl border p-4 text-xs space-y-2"
-          style={{
-            backgroundColor: 'var(--warning-bg)',
-            borderColor: 'var(--warning)',
-          }}
-        >
-          <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
-            {permissionGuide.title}
-          </div>
-          <p>{permissionGuide.reason}</p>
-          <ul className="list-disc pr-5 space-y-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-            {permissionGuide.steps.map((s, idx) => (
-              <li key={idx}>{s}</li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={() => setPermissionGuide(null)}
-            className="rounded-xl border px-3 py-1.5 text-[11px] font-bold"
-            style={{ backgroundColor: 'rgba(19, 20, 26, 0.9)', borderColor: 'var(--border-color)' }}
+      <AnimatePresence>
+        {layout === 'page' && permissionGuide && (
+          <motion.div
+            key="live-permission-guide"
+            variants={popoverVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="mt-4 rounded-2xl border p-4 text-xs space-y-2"
+            style={{
+              backgroundColor: 'var(--warning-bg)',
+              borderColor: 'var(--warning)',
+            }}
           >
-            إغلاق التنبيه
-          </button>
-        </div>
-      )}
+            <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
+              {permissionGuide.title}
+            </div>
+            <p>{permissionGuide.reason}</p>
+            <ul className="list-disc pr-5 space-y-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+              {permissionGuide.steps.map((s, idx) => (
+                <li key={idx}>{s}</li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => setPermissionGuide(null)}
+              className="rounded-xl border px-3 py-1.5 text-[11px] font-bold"
+              style={{ backgroundColor: 'rgba(19, 20, 26, 0.9)', borderColor: 'var(--border-color)' }}
+            >
+              إغلاق التنبيه
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 

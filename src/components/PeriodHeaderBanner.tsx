@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlignCenter,
   AlignLeft,
@@ -10,7 +11,14 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import { TabrixPillIndicator } from './ui/TabrixMotionPrimitives';
 import type {
   FreeformHeaderAlign,
   FreeformHeaderConfig,
@@ -69,6 +77,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
       : [],
   };
 
+  const reducedMotion = useTabrixReducedMotion();
   const [modalOpen, setModalOpen] = useState(false);
 
   // Modal draft state
@@ -319,8 +328,11 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
           </div>
 
           {!readOnly && onSavePeriodAndHeader && (
-            <button
+            <motion.button
               type="button"
+              whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => setModalOpen(true)}
               className="nexus-pill-btn inline-flex shrink-0 items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
@@ -331,15 +343,18 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span>تخصيص الفترة والترويسة الحرة</span>
-            </button>
+            </motion.button>
           )}
         </div>
       )}
 
       {resolvedHeader.showPeriodCard === false && !readOnly && onSavePeriodAndHeader && (
         <div className="flex justify-end">
-          <button
+          <motion.button
             type="button"
+            whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+            whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+            transition={TABRIX_TACTILE_SPRING}
             onClick={() => setModalOpen(true)}
             className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap"
             style={{
@@ -350,7 +365,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
           >
             <Palette className="h-3.5 w-3.5" />
             <span>إظهار / تخصيص الفترة والترويسة الحرة</span>
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -513,38 +528,50 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                     عناوين فرعية حرة (تحتها أو بجانبها)
                   </label>
 
-                  {freeSubtitles.map((sub, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={sub}
-                        onChange={(e) => {
-                          const next = [...freeSubtitles];
-                          next[idx] = e.target.value;
-                          setFreeSubtitles(next);
-                        }}
-                        className="flex-1 rounded-lg border px-3 py-1.5"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setFreeSubtitles(freeSubtitles.filter((_, i) => i !== idx))
-                        }
-                        aria-label="حذف العنوان الفرعي"
-                        className="rounded-lg border p-2 hover:opacity-80"
-                        style={{
-                          borderColor: 'var(--border-color)',
-                          color: 'var(--danger)',
-                        }}
+                  <AnimatePresence initial={false}>
+                    {freeSubtitles.map((sub, idx) => (
+                      <motion.div
+                        key={`sub-row-${idx}`}
+                        layout={!reducedMotion}
+                        variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="flex items-center gap-2"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <input
+                          type="text"
+                          value={sub}
+                          onChange={(e) => {
+                            const next = [...freeSubtitles];
+                            next[idx] = e.target.value;
+                            setFreeSubtitles(next);
+                          }}
+                          className="flex-1 rounded-lg border px-3 py-1.5"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                        <motion.button
+                          type="button"
+                          whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                          transition={TABRIX_TACTILE_SPRING}
+                          onClick={() =>
+                            setFreeSubtitles(freeSubtitles.filter((_, i) => i !== idx))
+                          }
+                          aria-label="حذف العنوان الفرعي"
+                          className="rounded-lg border p-2 hover:opacity-80"
+                          style={{
+                            borderColor: 'var(--border-color)',
+                            color: 'var(--danger)',
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </motion.button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
 
                   <div className="flex items-center gap-2">
                     <input
@@ -590,24 +617,30 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                           { id: 'lg', label: 'كبير' },
                           { id: 'xl', label: 'بارز' },
                         ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setSize(opt.id)}
-                          className="flex-1 rounded-md py-1.5 font-bold"
-                          style={{
-                            backgroundColor:
-                              size === opt.id ? 'var(--accent)' : 'transparent',
-                            color:
-                              size === opt.id
-                                ? 'var(--accent-fg)'
+                      ).map((opt) => {
+                        const active = size === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSize(opt.id)}
+                            className="relative flex-1 overflow-hidden rounded-md py-1.5 font-bold"
+                            style={{
+                              color: active
+                                ? 'var(--accent)'
                                 : 'var(--text-primary)',
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                            }}
+                          >
+                            {active && (
+                              <TabrixPillIndicator
+                                layoutId="period-header-size-pill"
+                                className="rounded-md"
+                              />
+                            )}
+                            <span className="relative z-10">{opt.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -622,23 +655,27 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                         ] as const
                       ).map((opt) => {
                         const Icon = opt.icon;
+                        const active = align === opt.id;
                         return (
                           <button
                             key={opt.id}
                             type="button"
                             onClick={() => setAlign(opt.id)}
-                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 font-bold"
+                            className="relative inline-flex flex-1 items-center justify-center gap-1 overflow-hidden rounded-md py-1.5 font-bold"
                             style={{
-                              backgroundColor:
-                                align === opt.id ? 'var(--accent)' : 'transparent',
-                              color:
-                                align === opt.id
-                                  ? 'var(--accent-fg)'
-                                  : 'var(--text-primary)',
+                              color: active
+                                ? 'var(--accent)'
+                                : 'var(--text-primary)',
                             }}
                           >
-                            <Icon className="h-3.5 w-3.5" />
-                            <span>{opt.label}</span>
+                            {active && (
+                              <TabrixPillIndicator
+                                layoutId="period-header-align-pill"
+                                className="rounded-md"
+                              />
+                            )}
+                            <Icon className="relative z-10 h-3.5 w-3.5" />
+                            <span className="relative z-10">{opt.label}</span>
                           </button>
                         );
                       })}
@@ -745,16 +782,22 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                <button
+                <motion.button
                   type="button"
+                  whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => setModalOpen(false)}
                   className="nexus-pill-btn border px-4 py-2 font-semibold"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   إلغاء
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   className="nexus-pill-btn inline-flex items-center gap-1.5 px-5 py-2 font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
@@ -763,7 +806,7 @@ export const PeriodHeaderBanner: React.FC<PeriodHeaderBannerProps> = ({
                 >
                   <Check className="h-3.5 w-3.5" />
                   <span>حفظ الفترة والترويسة</span>
-                </button>
+                </motion.button>
               </div>
             </form>
       </FullScreenPushPage>

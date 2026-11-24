@@ -155,7 +155,7 @@ export function getCleanTenantInitialState(_uid?: string | null): AppDatabaseSta
     },
     themePrefs: {
       ...DEFAULT_THEME_PREFERENCES,
-      appTheme: 'obsidian-gold',
+      appTheme: 'abyssal-emerald',
       themeColorMode: 'dark',
     },
     recycleBin: [],

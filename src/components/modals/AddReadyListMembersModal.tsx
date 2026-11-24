@@ -121,8 +121,6 @@ export const AddReadyListMembersModal: React.FC<
       }));
   }, [relations, relCatFilter, personMap, searchQuery]);
 
-  if (!open) return null;
-
   const togglePick = (pid: number) => {
     setSelectedIds((curr) =>
       curr.includes(pid) ? curr.filter((x) => x !== pid) : [...curr, pid]

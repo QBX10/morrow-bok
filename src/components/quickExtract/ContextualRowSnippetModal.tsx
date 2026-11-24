@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlertTriangle,
   Eye,
@@ -10,6 +11,11 @@ import {
 import type { NormalizedBox, QuickExtractEvaluatedRow } from '../../types/agency';
 import { getFullRowCropBox } from '../../utils/zeroTrustExtract';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 function useCroppedRowDataUrl(
   imageUrl?: string,
@@ -178,7 +184,13 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
 }) => {
   const [zoom, setZoom] = useState(1.5);
   const [viewMode, setViewMode] = useState<'row_crop' | 'full_source'>('row_crop');
-  const fullBox = row ? getFullRowCropBox(row) : null;
+  const lastRowRef = useRef<QuickExtractEvaluatedRow | null>(row);
+  if (row) {
+    lastRowRef.current = row;
+  }
+  const displayRow = row ?? lastRowRef.current;
+  const reducedMotion = useTabrixReducedMotion();
+  const fullBox = displayRow ? getFullRowCropBox(displayRow) : null;
   const croppedUrl = useCroppedRowDataUrl(sourceImageUrl, fullBox);
 
   useEffect(() => {
@@ -188,14 +200,14 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
     }
   }, [row, croppedUrl]);
 
-  if (!row) return null;
+  if (!displayRow) return null;
 
   return (
     <FullScreenPushPage
       open={Boolean(row)}
       onBack={onClose}
-      title={`التحقق البصري للسطر #${row.rowIndex} — ${row.resolvedName || 'اسم غير واضح'}`}
-      subtitle={`النص المقروء: ${row.rawSnippet || 'غير متوفر'}`}
+      title={`التحقق البصري للسطر #${displayRow.rowIndex} — ${displayRow.resolvedName || 'اسم غير واضح'}`}
+      subtitle={`النص المقروء: ${displayRow.rawSnippet || 'غير متوفر'}`}
       icon={<Eye className="h-4 w-4" />}
       maxWidthClass="max-w-5xl"
       headerActions={
@@ -211,33 +223,45 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
               <button
                 type="button"
                 onClick={() => setViewMode('row_crop')}
-                className="nexus-pill-btn px-3 py-1 text-xs font-bold"
+                className="relative overflow-hidden nexus-pill-btn px-3 py-1 text-xs font-bold"
                 style={{
-                  backgroundColor:
-                    viewMode === 'row_crop' ? 'var(--accent)' : 'transparent',
+                  backgroundColor: 'transparent',
                   color:
                     viewMode === 'row_crop'
                       ? 'var(--accent-fg)'
                       : 'var(--text-primary)',
                 }}
               >
-                قص السطر
+                {viewMode === 'row_crop' && (
+                  <TabrixPillIndicator
+                    layoutId="row-zoom-mode-pill"
+                    className="rounded-full"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  />
+                )}
+                <span className="relative z-10">قص السطر</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('full_source')}
-                className="nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold"
+                className="relative overflow-hidden nexus-pill-btn inline-flex items-center gap-1 px-3 py-1 text-xs font-bold"
                 style={{
-                  backgroundColor:
-                    viewMode === 'full_source' ? 'var(--accent)' : 'transparent',
+                  backgroundColor: 'transparent',
                   color:
                     viewMode === 'full_source'
                       ? 'var(--accent-fg)'
                       : 'var(--text-primary)',
                 }}
               >
-                <Eye className="h-3.5 w-3.5" />
-                الأصل
+                {viewMode === 'full_source' && (
+                  <TabrixPillIndicator
+                    layoutId="row-zoom-mode-pill"
+                    className="rounded-full"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  />
+                )}
+                <Eye className="relative z-10 h-3.5 w-3.5" />
+                <span className="relative z-10">الأصل</span>
               </button>
             </div>
           )}
@@ -273,18 +297,18 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
       }
     >
       <div className="nexus-squircle p-4">
-        {viewMode === 'row_crop' && croppedUrl ? (
+          {viewMode === 'row_crop' && croppedUrl ? (
           <div
             className="flex min-h-48 items-center justify-center overflow-auto rounded-2xl border bg-white p-3"
             style={{ borderColor: 'var(--border-color)' }}
           >
-            <img
+            <motion.img
               src={croppedUrl}
-              alt={`السطر الكامل ${row.rowIndex}`}
+              alt={`السطر الكامل ${displayRow.rowIndex}`}
+              animate={{ scale: zoom }}
+              transition={TABRIX_TACTILE_SPRING}
               style={{
-                transform: `scale(${zoom})`,
                 transformOrigin: 'center center',
-                transition: 'transform 0.15s ease',
               }}
               className="max-w-full object-contain"
             />
@@ -323,8 +347,8 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
           </div>
         ) : sourcePdfUrl ? (
           <iframe
-            src={`${sourcePdfUrl}#page=${row.pageNumber || 1}`}
-            title={`معاينة صفحة ${row.pageNumber || 1}`}
+            src={`${sourcePdfUrl}#page=${displayRow.pageNumber || 1}`}
+            title={`معاينة صفحة ${displayRow.pageNumber || 1}`}
             className="h-[72vh] w-full rounded-2xl border bg-white"
             style={{ borderColor: 'var(--border-color)' }}
           />
@@ -334,7 +358,7 @@ export const RowZoomViewerModal: React.FC<RowZoomViewerModalProps> = ({
             style={{ borderColor: 'var(--border-color)' }}
           >
             لا تتوفر صورة أصلية لهذا السطر. النص المستخرج:{' '}
-            <span className="font-mono">{row.rawSnippet}</span>
+            <span className="font-mono">{displayRow.rawSnippet}</span>
           </div>
         )}
       </div>

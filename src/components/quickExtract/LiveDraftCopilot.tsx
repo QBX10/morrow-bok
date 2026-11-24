@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Bot,
   CheckCircle2,
@@ -15,6 +16,11 @@ import type {
 } from '../../types/agency';
 import type { AiTaskRoutingMap } from '../../types/assistant';
 import { computeRowZeroTrustSummary } from '../../utils/zeroTrustExtract';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 export interface CopilotOperation {
   type:
@@ -157,6 +163,8 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
   const [resilienceNote, setResilienceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   useEffect(() => {
     if (presetPrompt) {
@@ -372,127 +380,140 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
         </div>
       </div>
 
-      {!collapsed && (
-        <>
-          <div
-            className="flex flex-wrap gap-1.5 border-b px-3 py-2"
-            style={{ borderColor: 'var(--border-color)' }}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="copilot-expanded-body"
+            variants={popoverVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
           >
-            {quickPrompts.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => void sendMessage(q)}
-                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors"
+            <div
+              className="flex flex-wrap gap-1.5 border-b px-3 py-2"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              {quickPrompts.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => void sendMessage(q)}
+                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <Sparkles className="h-2.5 w-2.5" style={{ color: 'var(--accent)' }} />
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-[300px] flex-1 space-y-2.5 overflow-y-auto p-3 text-xs">
+              <AnimatePresence initial={false}>
+                {messages.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    variants={popoverVariants}
+                    initial="initial"
+                    animate="animate"
+                    className={`flex flex-col gap-1 ${
+                      m.role === 'user' ? 'items-start' : 'items-end'
+                    }`}
+                  >
+                    <div
+                      className="max-w-[92%] rounded-xl border px-3 py-2 leading-relaxed"
+                      style={{
+                        backgroundColor:
+                          m.role === 'user' ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <div>{m.text}</div>
+                      {m.appliedActions && m.appliedActions.length > 0 && (
+                        <div
+                          className="mt-2 space-y-1 border-t pt-1.5"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          {m.appliedActions.map((act, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1 text-[11px] font-medium"
+                              style={{ color: 'var(--success)' }}
+                            >
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              <span>{act}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {loading && (
+                <div
+                  className="flex items-center gap-2 text-[11px]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>جاري تحليل المسودة وتنفيذ الطلب...</span>
+                </div>
+              )}
+
+              {resilienceNote && (
+                <div
+                  className="rounded-lg border px-2.5 py-1.5 text-[11px]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  {resilienceNote}
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void sendMessage();
+              }}
+              className="flex items-center gap-2 border-t p-2.5"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="اسأل المساعد (مثال: كم عدد الصفوف المشكوك فيها؟)..."
+                className="flex-1 rounded-lg border px-2.5 py-1.5 text-xs"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-primary)',
                 }}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--accent)' }}
               >
-                <Sparkles className="h-2.5 w-2.5" style={{ color: 'var(--accent)' }} />
-                {q}
+                <Send className="h-3.5 w-3.5" />
+                إرسال
               </button>
-            ))}
-          </div>
-
-          <div className="max-h-[300px] flex-1 space-y-2.5 overflow-y-auto p-3 text-xs">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex flex-col gap-1 ${
-                  m.role === 'user' ? 'items-start' : 'items-end'
-                }`}
-              >
-                <div
-                  className="max-w-[92%] rounded-xl border px-3 py-2 leading-relaxed"
-                  style={{
-                    backgroundColor:
-                      m.role === 'user' ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  <div>{m.text}</div>
-                  {m.appliedActions && m.appliedActions.length > 0 && (
-                    <div
-                      className="mt-2 space-y-1 border-t pt-1.5"
-                      style={{ borderColor: 'var(--border-color)' }}
-                    >
-                      {m.appliedActions.map((act, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-1 text-[11px] font-medium"
-                          style={{ color: 'var(--success)' }}
-                        >
-                          <CheckCircle2 className="h-3 w-3 shrink-0" />
-                          <span>{act}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div
-                className="flex items-center gap-2 text-[11px]"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>جاري تحليل المسودة وتنفيذ الطلب...</span>
-              </div>
-            )}
-
-            {resilienceNote && (
-              <div
-                className="rounded-lg border px-2.5 py-1.5 text-[11px]"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {resilienceNote}
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void sendMessage();
-            }}
-            className="flex items-center gap-2 border-t p-2.5"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="اسأل المساعد (مثال: كم عدد الصفوف المشكوك فيها؟)..."
-              className="flex-1 rounded-lg border px-2.5 py-1.5 text-xs"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: 'var(--accent)' }}
-            >
-              <Send className="h-3.5 w-3.5" />
-              إرسال
-            </button>
-          </form>
-        </>
-      )}
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </aside>
   );
 };

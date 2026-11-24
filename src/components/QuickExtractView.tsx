@@ -105,7 +105,17 @@ import {
   ZeroTrustDraftWorkspace,
   type DraftFilterMode,
 } from './quickExtract/ZeroTrustDraftWorkspace';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  useTabrixOrderedDirection,
+} from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
+import {
+  Tabrix3DTiltSurface,
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from './ui/TabrixMotionPrimitives';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -2071,31 +2081,45 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     activeSession?.inferredMetadata ??
     pendingMetadata;
 
+  const captureDirection = useTabrixOrderedDirection(
+    captureMode,
+    ['pdf', 'camera_burst', 'universal_files'] as const
+  );
+  const ucrsTabDirection = useTabrixOrderedDirection(
+    ucrsTab,
+    ['pipeline', 'identity_plan', 'coverage_sessions', 'semantic_search'] as const
+  );
+
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 space-y-5 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Top Proactive Header Metadata Inference Notification Banner */}
-      {(topNotificationMetadata || (analysis && analysis.status !== 'rejected')) && (
-        <MetadataInferenceBanner
-          metadata={topNotificationMetadata}
-          agencies={agencies}
-          onConfirm={(confirmedMeta) =>
-            updateInferredMetadata(confirmedMeta, true)
-          }
-          onUpdate={(editedMeta) =>
-            updateInferredMetadata(editedMeta, true)
-          }
-        />
-      )}
+      <AnimatePresence>
+        {(topNotificationMetadata || (analysis && analysis.status !== 'rejected')) && (
+          <motion.div
+            key="metadata-inference-banner"
+            variants={TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <MetadataInferenceBanner
+              metadata={topNotificationMetadata}
+              agencies={agencies}
+              onConfirm={(confirmedMeta) =>
+                updateInferredMetadata(confirmedMeta, true)
+              }
+              onUpdate={(editedMeta) =>
+                updateInferredMetadata(editedMeta, true)
+              }
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Top Pipeline Header + Universal Intake Switcher */}
       <section
         data-assistant-target="quick-extract-root"
-        className="tabrix-card rounded-2xl border p-4 backdrop-blur-md sm:p-5"
-        style={{
-          backgroundColor:
-            'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
-          borderColor: 'var(--border-color)',
-        }}
+        className="capsule-glass-card rounded-2xl border p-4 backdrop-blur-md sm:p-5"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex items-start gap-3.5 min-w-0 sm:flex-1">
@@ -2223,18 +2247,22 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('pdf');
               setUploadError('');
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
             style={{
-              backgroundColor:
-                captureMode === 'pdf' ? 'var(--accent)' : 'transparent',
               color:
                 captureMode === 'pdf'
-                  ? 'var(--accent-fg)'
+                  ? 'var(--accent)'
                   : 'var(--text-primary)',
             }}
           >
-            <FileText className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-            <span>ملفات PDF</span>
+            {captureMode === 'pdf' && (
+              <TabrixPillIndicator
+                layoutId="quick-extract-capture-pill"
+                className="rounded-lg"
+              />
+            )}
+            <FileText className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="relative z-10">ملفات PDF</span>
           </button>
 
           <button
@@ -2243,20 +2271,22 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('camera_burst');
               setUploadError('');
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
             style={{
-              backgroundColor:
-                captureMode === 'camera_burst'
-                  ? 'var(--accent)'
-                  : 'transparent',
               color:
                 captureMode === 'camera_burst'
-                  ? 'var(--accent-fg)'
+                  ? 'var(--accent)'
                   : 'var(--text-primary)',
             }}
           >
-            <Camera className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-            <span>كاميرا الدفتر اليدوي (Burst)</span>
+            {captureMode === 'camera_burst' && (
+              <TabrixPillIndicator
+                layoutId="quick-extract-capture-pill"
+                className="rounded-lg"
+              />
+            )}
+            <Camera className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="relative z-10">كاميرا الدفتر اليدوي (Burst)</span>
           </button>
 
           <button
@@ -2265,20 +2295,22 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('universal_files');
               setUploadError('');
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-start text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-start text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
             style={{
-              backgroundColor:
-                captureMode === 'universal_files'
-                  ? 'var(--accent)'
-                  : 'transparent',
               color:
                 captureMode === 'universal_files'
-                  ? 'var(--accent-fg)'
+                  ? 'var(--accent)'
                   : 'var(--text-primary)',
             }}
           >
-            <Layers className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-            <span>استيعاب شامل (صور / Word / Excel / نص)</span>
+            {captureMode === 'universal_files' && (
+              <TabrixPillIndicator
+                layoutId="quick-extract-capture-pill"
+                className="rounded-lg"
+              />
+            )}
+            <Layers className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="relative z-10">استيعاب شامل (صور / Word / Excel / نص)</span>
           </button>
         </div>
 
@@ -2359,22 +2391,28 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   setScanMode('fast');
                   onUpdateQuickExtractPrefs({ defaultScanMode: 'fast' });
                 }}
-                className="inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-2 font-bold"
+                className="relative overflow-hidden inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-2 font-bold"
                 style={{
                   backgroundColor:
-                    scanMode === 'fast' ? 'var(--accent)' : 'var(--bg-surface)',
+                    scanMode === 'fast' ? 'transparent' : 'var(--bg-surface)',
                   borderColor:
                     scanMode === 'fast'
                       ? 'var(--accent)'
                       : 'var(--border-color)',
                   color:
                     scanMode === 'fast'
-                      ? 'var(--accent-fg)'
+                      ? 'var(--accent)'
                       : 'var(--text-primary)',
                 }}
               >
-                <Zap className="h-3.5 w-3.5" />
-                <span>الوضع السريع</span>
+                {scanMode === 'fast' && (
+                  <TabrixPillIndicator
+                    layoutId="quick-extract-scanmode-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <Zap className="relative z-10 h-3.5 w-3.5" />
+                <span className="relative z-10">الوضع السريع</span>
               </button>
               <button
                 type="button"
@@ -2382,22 +2420,28 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                   setScanMode('audit');
                   onUpdateQuickExtractPrefs({ defaultScanMode: 'audit' });
                 }}
-                className="inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-2 font-bold"
+                className="relative overflow-hidden inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-2 font-bold"
                 style={{
                   backgroundColor:
-                    scanMode === 'audit' ? 'var(--accent)' : 'var(--bg-surface)',
+                    scanMode === 'audit' ? 'transparent' : 'var(--bg-surface)',
                   borderColor:
                     scanMode === 'audit'
                       ? 'var(--accent)'
                       : 'var(--border-color)',
                   color:
                     scanMode === 'audit'
-                      ? 'var(--accent-fg)'
+                      ? 'var(--accent)'
                       : 'var(--text-primary)',
                 }}
               >
-                <ShieldAlert className="h-3.5 w-3.5" />
-                <span>الوضع المدقق</span>
+                {scanMode === 'audit' && (
+                  <TabrixPillIndicator
+                    layoutId="quick-extract-scanmode-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <ShieldAlert className="relative z-10 h-3.5 w-3.5" />
+                <span className="relative z-10">الوضع المدقق</span>
               </button>
             </div>
             <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -2530,224 +2574,250 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
         </div>
 
-        {/* Intake Dropzones */}
-        {captureMode === 'pdf' && (
-          <label
-            className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors hover:opacity-90"
-            style={{
-              backgroundColor: 'var(--bg-main)',
-              borderColor: 'var(--accent)',
-            }}
-          >
-            {loading ? (
-              <>
-                <Loader2
-                  className="h-8 w-8 animate-spin"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <div className="mt-2 text-sm font-bold">
-                  جارٍ فحص جودة الصفحات وعزل الجداول العربية ({fileName})...
-                </div>
-                <div
-                  className="mt-1 text-xs"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  تحديد الهوية · القراءة التدريجية · تقرير النواقص
-                </div>
-              </>
-            ) : (
-              <>
-                <Upload
-                  className="h-8 w-8"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <div className="mt-2 text-sm font-bold">
-                  {fileName
-                    ? `ملف محدد: ${fileName} — انقر لاختيار ملف آخر`
-                    : 'اضغط هنا لرفع ملف PDF (جداول قديمة أو مرسلة)'}
-                </div>
-                <div
-                  className="mt-1 text-xs"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  صيغة PDF (بحد أقصى 20 ميجابايت) · يدعم القراءة التدريجية والرفض الآمن
-                </div>
-              </>
-            )}
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              disabled={loading}
-              onChange={handlePdfUpload}
-              className="hidden"
-            />
-          </label>
-        )}
-
-        {captureMode === 'camera_burst' && (
-          <BurstCameraCapture
-            analyzing={loading}
-            scanMode={scanMode}
-            onBurstReadyAndAnalyze={handleCameraBurstAnalyze}
-          />
-        )}
-
-        {captureMode === 'universal_files' && (
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Intake Dropzones with 3D Enter/Exit transition */}
+        <TabrixSubViewTransition viewKey={captureMode} direction={captureDirection}>
+          {captureMode === 'pdf' && (
             <label
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-5 py-6 text-center transition-colors hover:opacity-90"
+              className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors hover:opacity-90"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--accent)',
               }}
             >
               {loading ? (
-                <Loader2
-                  className="h-7 w-7 animate-spin"
-                  style={{ color: 'var(--accent)' }}
-                />
+                <>
+                  <Loader2
+                    className="h-8 w-8 animate-spin"
+                    style={{ color: 'var(--accent)' }}
+                  />
+                  <div className="mt-2 text-sm font-bold">
+                    جارٍ فحص جودة الصفحات وعزل الجداول العربية ({fileName})...
+                  </div>
+                  <div
+                    className="mt-1 text-xs"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    تحديد الهوية · القراءة التدريجية · تقرير النواقص
+                  </div>
+                </>
               ) : (
-                <Upload className="h-7 w-7" style={{ color: 'var(--accent)' }} />
+                <>
+                  <Upload
+                    className="h-8 w-8"
+                    style={{ color: 'var(--accent)' }}
+                  />
+                  <div className="mt-2 text-sm font-bold">
+                    {fileName
+                      ? `ملف محدد: ${fileName} — انقر لاختيار ملف آخر`
+                      : 'اضغط هنا لرفع ملف PDF (جداول قديمة أو مرسلة)'}
+                  </div>
+                  <div
+                    className="mt-1 text-xs"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    صيغة PDF (بحد أقصى 20 ميجابايت) · يدعم القراءة التدريجية والرفض الآمن
+                  </div>
+                </>
               )}
-              <div className="mt-2 text-xs font-bold sm:text-sm">
-                ارفع صورًا (حتى 8)، أو ملف Excel / CSV / Word (.docx) / TXT
-              </div>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                يتعرف النظام تلقائيًا على صيغة الملف ويستخرج الجداول والكيانات بدقة
-              </div>
               <input
                 type="file"
-                multiple
-                accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv,.docx,.txt,.md"
+                accept="application/pdf,.pdf"
                 disabled={loading}
-                onChange={(e) => {
-                  if (e.target.files) {
-                    void handleUniversalFilesUpload(e.target.files, 'new');
-                  }
-                  e.target.value = '';
-                }}
+                onChange={handlePdfUpload}
                 className="hidden"
               />
             </label>
+          )}
 
-            <div
-              className="flex flex-col justify-between gap-2 rounded-xl border p-3.5"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <label htmlFor="ucrs-paste-text" className="text-xs font-bold">
-                أو الصق نصًا / كشفًا جاهزًا (مثل رسالة واتساب أو جدول منسوخ):
-              </label>
-              <textarea
-                id="ucrs-paste-text"
-                rows={3}
-                value={pastedText}
-                onChange={(e) => setPastedText(e.target.value)}
-                placeholder="مثال:&#10;الاسم,الأفراد,الملاحظات&#10;أحمد علي حسن,5,توصيل الكرادة&#10;سالم محمد جاسم,3,محجوب مؤقت"
-                className="w-full rounded-lg border p-2 text-xs"
+          {captureMode === 'camera_burst' && (
+            <BurstCameraCapture
+              analyzing={loading}
+              scanMode={scanMode}
+              onBurstReadyAndAnalyze={handleCameraBurstAnalyze}
+            />
+          )}
+
+          {captureMode === 'universal_files' && (
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label
+                className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-5 py-6 text-center transition-colors hover:opacity-90"
                 style={{
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--accent)',
+                }}
+              >
+                {loading ? (
+                  <Loader2
+                    className="h-7 w-7 animate-spin"
+                    style={{ color: 'var(--accent)' }}
+                  />
+                ) : (
+                  <Upload className="h-7 w-7" style={{ color: 'var(--accent)' }} />
+                )}
+                <div className="mt-2 text-xs font-bold sm:text-sm">
+                  ارفع صورًا (حتى 8)، أو ملف Excel / CSV / Word (.docx) / TXT
+                </div>
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  يتعرف النظام تلقائيًا على صيغة الملف ويستخرج الجداول والكيانات بدقة
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv,.docx,.txt,.md"
+                  disabled={loading}
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      void handleUniversalFilesUpload(e.target.files, 'new');
+                    }
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              <div
+                className="flex flex-col justify-between gap-2 rounded-xl border p-3.5"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                 }}
-              />
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  disabled={loading || !pastedText.trim()}
-                  onClick={handleAnalyzePastedText}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold disabled:opacity-40"
+              >
+                <label htmlFor="ucrs-paste-text" className="text-xs font-bold">
+                  أو الصق نصًا / كشفًا جاهزًا (مثل رسالة واتساب أو جدول منسوخ):
+                </label>
+                <textarea
+                  id="ucrs-paste-text"
+                  rows={3}
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="مثال:&#10;الاسم,الأفراد,الملاحظات&#10;أحمد علي حسن,5,توصيل الكرادة&#10;سالم محمد جاسم,3,محجوب مؤقت"
+                  className="w-full rounded-lg border p-2 text-xs"
                   style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
                   }}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>قراءة وفهم النص مباشرة</span>
-                </button>
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={loading || !pastedText.trim()}
+                    onClick={handleAnalyzePastedText}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold disabled:opacity-40"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                    }}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>قراءة وفهم النص مباشرة</span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </TabrixSubViewTransition>
 
-        {resilienceStatus && (
-          <div
-            role="status"
-            className="mt-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold backdrop-blur-sm transition-all duration-200"
-            style={{
-              borderColor: 'var(--warning)',
-              backgroundColor: 'var(--warning-bg)',
-              color: 'var(--warning)',
-            }}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4 shrink-0" />
-            )}
-            <span>{resilienceStatus}</span>
-          </div>
-        )}
-
-        {selectionToast && (
-          <div
-            role="status"
-            className="mt-3 flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold"
-            style={{
-              borderColor: 'var(--success)',
-              backgroundColor: 'var(--success-bg)',
-              color: 'var(--success)',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>{selectionToast}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectionToast('')}
-              className="text-[11px] underline"
+        <AnimatePresence>
+          {resilienceStatus && (
+            <motion.div
+              key="qe-resilience-status"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              role="status"
+              className="mt-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold backdrop-blur-sm"
+              style={{
+                borderColor: 'var(--warning)',
+                backgroundColor: 'var(--warning-bg)',
+                color: 'var(--warning)',
+              }}
             >
-              إخفاء
-            </button>
-          </div>
-        )}
+              {loading ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 shrink-0" />
+              )}
+              <span>{resilienceStatus}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {uploadError && (
-          <div
-            role="alert"
-            className="mt-3 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-semibold"
-            style={{
-              borderColor: 'var(--danger)',
-              backgroundColor: 'var(--danger-bg)',
-              color: 'var(--danger)',
-            }}
-          >
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{uploadError}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {selectionToast && (
+            <motion.div
+              key="qe-selection-toast"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              role="status"
+              className="mt-3 flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold"
+              style={{
+                borderColor: 'var(--success)',
+                backgroundColor: 'var(--success-bg)',
+                color: 'var(--success)',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>{selectionToast}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectionToast('')}
+                className="text-[11px] underline"
+              >
+                إخفاء
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {ttsStatus && (
-          <div
-            className="mt-2 flex items-center gap-2 text-xs font-semibold"
-            style={{ color: 'var(--accent)' }}
-          >
-            <Volume2 className="h-3.5 w-3.5 shrink-0" />
-            <span>{ttsStatus}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {uploadError && (
+            <motion.div
+              key="qe-upload-error"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              role="alert"
+              className="mt-3 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-semibold"
+              style={{
+                borderColor: 'var(--danger)',
+                backgroundColor: 'var(--danger-bg)',
+                color: 'var(--danger)',
+              }}
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{uploadError}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {ttsStatus && (
+            <motion.div
+              key="qe-tts-status"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mt-2 flex items-center gap-2 text-xs font-semibold"
+              style={{ color: 'var(--accent)' }}
+            >
+              <Volume2 className="h-3.5 w-3.5 shrink-0" />
+              <span>{ttsStatus}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       {/* UCRS Workspace Sub-Navigation */}
       <nav
         aria-label="أقسام منظومة القراءة الكونية"
-        className="flex flex-wrap items-center gap-1.5 rounded-xl border p-1.5 text-xs"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-color)',
-        }}
+        className="capsule-glass-card flex flex-wrap items-center gap-1.5 rounded-xl border p-1.5 text-xs"
       >
         {(
           [
@@ -2780,78 +2850,98 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setUcrsTab(tab.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 font-bold whitespace-nowrap"
+              className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 font-bold whitespace-nowrap"
               style={{
-                backgroundColor: active ? 'var(--accent)' : 'transparent',
-                color: active ? 'var(--accent-fg)' : 'var(--text-primary)',
+                color: active ? 'var(--accent)' : 'var(--text-primary)',
               }}
             >
-              <Icon className="h-3.5 w-3.5" />
-              <span>{tab.label}</span>
+              {active && (
+                <TabrixPillIndicator
+                  layoutId="quick-extract-ucrs-pill"
+                  className="rounded-lg"
+                />
+              )}
+              <Icon className="relative z-10 h-3.5 w-3.5" />
+              <span className="relative z-10">{tab.label}</span>
             </button>
           );
         })}
       </nav>
 
       {/* Always show Identity & Plan card inside identity_plan tab, OR right after extraction when not yet approved */}
-      {(ucrsTab === 'identity_plan' ||
-        (activeSession?.identity && ucrsTab === 'pipeline' && !activeSession.plan.approved)) &&
-        activeSession?.identity && (
-          <UcrsIdentityAndPlanCard
-            identity={activeSession.identity}
-            plan={activeSession.plan}
-            onUpdatePlan={(nextPlan) =>
-              persistSession({ ...activeSession, plan: nextPlan })
-            }
-            onApproveAndExecute={handleApproveAndExecutePlan}
-            onDiscardSession={resetAll}
+      <AnimatePresence>
+        {(ucrsTab === 'identity_plan' ||
+          (activeSession?.identity && ucrsTab === 'pipeline' && !activeSession.plan.approved)) &&
+          activeSession?.identity && (
+            <motion.div
+              key="ucrs-identity-plan-card"
+              variants={TABRIX_POPOVER_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <UcrsIdentityAndPlanCard
+                identity={activeSession.identity}
+                plan={activeSession.plan}
+                onUpdatePlan={(nextPlan) =>
+                  persistSession({ ...activeSession, plan: nextPlan })
+                }
+                onApproveAndExecute={handleApproveAndExecutePlan}
+                onDiscardSession={resetAll}
+              />
+            </motion.div>
+          )}
+      </AnimatePresence>
+
+      {/* Sub-Tabs Content Transition */}
+      <TabrixSubViewTransition
+        viewKey={ucrsTab === 'pipeline' ? 'pipeline' : ucrsTab}
+        direction={ucrsTabDirection}
+        className="space-y-5"
+      >
+        {ucrsTab === 'semantic_search' && (
+          <UcrsSemanticSearchPanel
+            activeSession={activeSession}
+            allSessions={ucrsSessions}
+            onJumpToRow={handleJumpToRow}
+            onSpeakText={speakArabicText}
           />
         )}
 
-      {/* Semantic Search Panel */}
-      {ucrsTab === 'semantic_search' && (
-        <UcrsSemanticSearchPanel
-          activeSession={activeSession}
-          allSessions={ucrsSessions}
-          onJumpToRow={handleJumpToRow}
-          onSpeakText={speakArabicText}
-        />
-      )}
-
-      {/* Coverage, Visual Map, Diagnostics, Fusion, Sessions & Learning Rules */}
-      {ucrsTab === 'coverage_sessions' && (
-        <UcrsCoverageAndSessionsPanel
-          activeSession={activeSession}
-          allSessions={ucrsSessions}
-          learningRules={ucrsLearningRules}
-          sourceImageUrl={activeSourceImageUrl}
-          loading={loading}
-          onAppendSupplementaryFiles={(fl) =>
-            void handleUniversalFilesUpload(fl, 'append_fusion')
-          }
-          onAnalyzeCroppedRegion={handleAnalyzeCroppedRegion}
-          onLoadSession={handleLoadSession}
-          onDuplicateSession={handleDuplicateSession}
-          onMergeWithSession={handleMergeWithSession}
-          onDeleteSession={(id) => onDeleteUcrsSession?.(id)}
-          onAddLearningRule={(wrongToken, correctedToken) =>
-            onUpsertUcrsLearningRule?.({
-              id: `lr_${Date.now().toString(36)}`,
-              wrongToken,
-              correctedToken,
-              sourceContext: 'إضافة يدوية من المستخدم',
-              usageCount: 1,
-              createdAt: new Date().toISOString().slice(0, 10),
-              enabled: true,
-            })
-          }
-          onToggleLearningRule={(id) => onToggleUcrsLearningRule?.(id)}
-          onDeleteLearningRule={(id) => onDeleteUcrsLearningRule?.(id)}
-          onJumpToRow={handleJumpToRow}
-          onSpeakText={speakArabicText}
-          onOpenReportsModal={() => setReportsModalOpen(true)}
-        />
-      )}
+        {ucrsTab === 'coverage_sessions' && (
+          <UcrsCoverageAndSessionsPanel
+            activeSession={activeSession}
+            allSessions={ucrsSessions}
+            learningRules={ucrsLearningRules}
+            sourceImageUrl={activeSourceImageUrl}
+            loading={loading}
+            onAppendSupplementaryFiles={(fl) =>
+              void handleUniversalFilesUpload(fl, 'append_fusion')
+            }
+            onAnalyzeCroppedRegion={handleAnalyzeCroppedRegion}
+            onLoadSession={handleLoadSession}
+            onDuplicateSession={handleDuplicateSession}
+            onMergeWithSession={handleMergeWithSession}
+            onDeleteSession={(id) => onDeleteUcrsSession?.(id)}
+            onAddLearningRule={(wrongToken, correctedToken) =>
+              onUpsertUcrsLearningRule?.({
+                id: `lr_${Date.now().toString(36)}`,
+                wrongToken,
+                correctedToken,
+                sourceContext: 'إضافة يدوية من المستخدم',
+                usageCount: 1,
+                createdAt: new Date().toISOString().slice(0, 10),
+                enabled: true,
+              })
+            }
+            onToggleLearningRule={(id) => onToggleUcrsLearningRule?.(id)}
+            onDeleteLearningRule={(id) => onDeleteUcrsLearningRule?.(id)}
+            onJumpToRow={handleJumpToRow}
+            onSpeakText={speakArabicText}
+            onOpenReportsModal={() => setReportsModalOpen(true)}
+          />
+        )}
+      </TabrixSubViewTransition>
 
       {/* Safe Rejection Gate Banner */}
       {analysis?.status === 'rejected' && (
@@ -3058,13 +3148,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
           {/* 4-Metric Audit Bar */}
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div
-              className="rounded-xl border px-4 py-3"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
+            <Tabrix3DTiltSurface className="px-4 py-3">
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 فحص جودة المصدر
               </div>
@@ -3074,15 +3158,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {analysis.clarityScore}% · مقبول
               </div>
-            </div>
+            </Tabrix3DTiltSurface>
 
-            <div
-              className="rounded-xl border px-4 py-3"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
+            <Tabrix3DTiltSurface className="px-4 py-3">
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 الصفوف المؤكدة 100%
               </div>
@@ -3092,12 +3170,11 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {verifiedRows.length} من {rows.length} صف
               </div>
-            </div>
+            </Tabrix3DTiltSurface>
 
-            <div
-              className="rounded-xl border px-4 py-3"
+            <Tabrix3DTiltSurface
+              className="px-4 py-3"
               style={{
-                backgroundColor: 'var(--bg-surface)',
                 borderColor:
                   doubtedRows.length > 0
                     ? 'var(--danger)'
@@ -3118,12 +3195,11 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {doubtedRows.length} قيد للمراجعة
               </div>
-            </div>
+            </Tabrix3DTiltSurface>
 
-            <div
-              className="rounded-xl border px-4 py-3"
+            <Tabrix3DTiltSurface
+              className="px-4 py-3"
               style={{
-                backgroundColor: 'var(--bg-surface)',
                 borderColor:
                   missingRows.length > 0
                     ? 'var(--danger)'
@@ -3144,7 +3220,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {missingRows.length} صف ناقص
               </div>
-            </div>
+            </Tabrix3DTiltSurface>
           </section>
 
           {/* Stage 2A: Red-Flag Doubt & Arabic Glyph Decomposition Panel */}

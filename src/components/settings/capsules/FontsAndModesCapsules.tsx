@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Calendar,
   CheckCircle2,
@@ -32,6 +33,10 @@ import {
   FONT_WEIGHT_MAP,
   ROW_DENSITY_MAP,
 } from '../../../utils/themes';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../../utils/tabrixMotion';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 
@@ -66,6 +71,7 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
   onOpenCapsule,
   onNotifySuccess,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const activeFont =
     ARABIC_FONTS.find((f) => f.id === themePrefs.fontFamily) || ARABIC_FONTS[0];
   const numeralSystem = accessibility?.numeralSystem || 'western';
@@ -402,16 +408,19 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
             {ARABIC_FONTS.map((font) => {
               const selected = themePrefs.fontFamily === font.id;
               return (
-                <button
+                <motion.button
                   key={font.id}
                   type="button"
+                  whileHover={reducedMotion ? undefined : { y: -3, scale: 1.015 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.98 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => {
                     onUpdateThemePrefs({
                       fontFamily: font.id as ArabicFontId,
                     });
                     onNotifySuccess(`تم اختيار الخط: ${font.name}`);
                   }}
-                  className="flex min-h-[116px] flex-col items-start rounded-2xl border p-4 text-right transition-colors"
+                  className="flex min-h-[116px] flex-col items-start rounded-2xl border p-4 text-right transition-colors nexus-squircle"
                   style={{
                     fontFamily: font.cssFamily,
                     backgroundColor: selected
@@ -449,7 +458,7 @@ export const FontsCapsules: React.FC<FontsCapsulesProps> = ({
                   <div className="mt-2.5 text-xs font-bold tabular-nums">
                     {formatSampleNumber('Morrow · 5 أفراد · 45 كغم · 1,500 د.ع')}
                   </div>
-                </button>
+                </motion.button>
               );
             })}
           </div>

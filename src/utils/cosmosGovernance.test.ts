@@ -36,7 +36,7 @@ function makeContext(feePerIndividualIqd = 200): AssistantUiContext {
     selectedAgencyId: null,
     focusedPersonId: null,
     modeTier: INITIAL_DATABASE_STATE.modeTier,
-    themeId: INITIAL_DATABASE_STATE.themePrefs?.appTheme || 'obsidian-gold',
+    themeId: INITIAL_DATABASE_STATE.themePrefs?.appTheme || 'abyssal-emerald',
     agencies: INITIAL_DATABASE_STATE.agencies.map((a) => ({
       id: a.id,
       name: a.name,
@@ -124,10 +124,10 @@ test('natural Arabic & Iraqi dialect search ("وين هذا؟") finds key worlds
   }
 });
 
-test('preserves locked Obsidian & Gold theme, 8 table themes, 6 fonts, and safe migration/default settings', () => {
-  assert.equal(APP_THEMES.length, 1);
-  assert.equal(MODERN_APP_THEMES.length, 0);
-  assert.equal(ALL_APP_THEMES.length, 1);
+test('preserves 5 Absolute Marine themes, 8 table themes, 6 fonts, and safe migration/default settings', () => {
+  assert.equal(APP_THEMES.length, 5);
+  assert.equal(MODERN_APP_THEMES.length, 5);
+  assert.equal(ALL_APP_THEMES.length, 5);
   assert.equal(TABLE_THEMES.length, 8);
   assert.equal(ARABIC_FONTS.length, 6);
 

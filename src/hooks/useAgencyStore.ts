@@ -88,6 +88,7 @@ import {
   applyThemePreferencesToDocument,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
+  resolveAppThemeId,
   resolveArabicFontId,
   resolveTableThemeId,
 } from '../utils/themes';
@@ -278,7 +279,7 @@ function normalizeLoadedWorkspaceState(
     themePrefs: {
       ...DEFAULT_THEME_PREFERENCES,
       ...(parsed.themePrefs || {}),
-      appTheme: 'obsidian-gold',
+      appTheme: resolveAppThemeId(parsed.themePrefs?.appTheme),
       themeColorMode: 'dark',
       customBgColor: '',
       customSurfaceColor: '',
@@ -461,7 +462,7 @@ export function useAgencyStore(activeUid: string | null = null) {
   const activeThemePrefs: ThemePreferences = {
     ...DEFAULT_THEME_PREFERENCES,
     ...(state.themePrefs || {}),
-    appTheme: 'obsidian-gold',
+    appTheme: resolveAppThemeId(state.themePrefs?.appTheme),
     themeColorMode: 'dark',
     customBgColor: '',
     customSurfaceColor: '',
@@ -484,6 +485,7 @@ export function useAgencyStore(activeUid: string | null = null) {
     }
   }, [
     uiDensity,
+    activeThemePrefs.appTheme,
     activeThemePrefs.tableTheme,
     activeThemePrefs.fontFamily,
     activeThemePrefs.fontSize,
@@ -569,14 +571,14 @@ export function useAgencyStore(activeUid: string | null = null) {
   }, []);
 
   const setDarkTheme = useCallback((_darkTheme: boolean) => {
-    // Locked single-theme architecture: always Obsidian & Gold dark surface
+    // Deep Absolute Marine dark surface preserved across all 5 marine themes
     setState((prev) => ({
       ...prev,
       darkTheme: true,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
-        appTheme: 'obsidian-gold',
+        appTheme: resolveAppThemeId(prev.themePrefs?.appTheme),
         themeColorMode: 'dark',
       },
     }));
@@ -588,7 +590,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
         ...patch,
-        appTheme: 'obsidian-gold',
+        appTheme: resolveAppThemeId(patch.appTheme ?? prev.themePrefs?.appTheme),
         themeColorMode: 'dark',
         customBgColor: '',
         customSurfaceColor: '',
@@ -613,7 +615,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       darkTheme: true,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
-        appTheme: 'obsidian-gold',
+        appTheme: 'abyssal-emerald',
         themeColorMode: 'dark',
         savedProfiles:
           prev.themePrefs?.savedProfiles && prev.themePrefs.savedProfiles.length > 0
@@ -625,7 +627,7 @@ export function useAgencyStore(activeUid: string | null = null) {
   }, []);
 
   const saveCustomThemePreset = useCallback((_preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => {
-    // No-op: Theme locked to Obsidian & Gold
+    // Presets are anchored to the 5 curated Absolute Marine Themes
   }, []);
 
   const deleteCustomThemePreset = useCallback((_presetId: string) => {
@@ -811,7 +813,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       const profile: AppearanceProfile = {
         id,
         name: cleanName.slice(0, 80),
-        appTheme: 'obsidian-gold',
+        appTheme: resolveAppThemeId(cur.appTheme),
         tableTheme: resolveTableThemeId(cur.tableTheme),
         fontFamily: resolveArabicFontId(cur.fontFamily),
         fontSizePx: cur.fontSizePx ?? 15,
@@ -861,7 +863,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         darkTheme: true,
         themePrefs: {
           ...cur,
-          appTheme: 'obsidian-gold',
+          appTheme: resolveAppThemeId(found.appTheme),
           themeColorMode: 'dark',
           tableTheme: resolveTableThemeId(found.tableTheme),
           fontFamily: resolveArabicFontId(found.fontFamily),

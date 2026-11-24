@@ -718,6 +718,13 @@ export interface AuditIssue {
   message: string;
 }
 
+export type MarineAppThemeId =
+  | 'abyssal-emerald'
+  | 'midnight-trench'
+  | 'bioluminescent-reef'
+  | 'arctic-fjord'
+  | 'pelagic-sapphire';
+
 export type ClassicAppThemeId =
   | 'obsidian-gold'
   | 'aurora'
@@ -734,7 +741,7 @@ export type ModernAppThemeId =
   | 'sage-linen'
   | 'midnight-indigo';
 
-export type AppThemeId = ClassicAppThemeId | ModernAppThemeId;
+export type AppThemeId = MarineAppThemeId | ClassicAppThemeId | ModernAppThemeId;
 
 export type TableThemeId =
   | 'glass'

@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   ArrowDownUp,
   ArrowRight,
@@ -20,7 +21,9 @@ import {
   Unlock,
 } from 'lucide-react';
 import type { ModeCapabilities } from '../../utils/modePermissions';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
 
 interface LedgerActionsDrawerProps {
   open: boolean;
@@ -103,6 +106,7 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
   onOpenSettings,
   onBackToHub,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const runAndClose = (fn: () => void) => {
     onClose();
     fn();
@@ -257,15 +261,16 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                   ).map((opt) => {
                     const active = statusFilter === opt.id;
                     return (
-                      <button
+                      <motion.button
                         key={opt.id}
                         type="button"
+                        whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                        whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                        transition={TABRIX_TACTILE_SPRING}
                         onClick={() => onChangeStatusFilter(opt.id)}
-                        className="rounded-lg border px-2.5 py-1.5 font-bold"
+                        className="relative overflow-hidden rounded-lg border px-2.5 py-1.5 font-bold"
                         style={{
-                          backgroundColor: active
-                            ? 'var(--bg-nav-active)'
-                            : 'var(--bg-main)',
+                          backgroundColor: 'var(--bg-main)',
                           borderColor: active
                             ? 'var(--accent)'
                             : 'var(--border-color)',
@@ -274,8 +279,14 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                             : 'var(--text-primary)',
                         }}
                       >
-                        {opt.label}
-                      </button>
+                        {active && (
+                          <TabrixPillIndicator
+                            layoutId="ledger-drawer-status-pill"
+                            className="rounded-lg"
+                          />
+                        )}
+                        <span className="relative z-10">{opt.label}</span>
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -350,9 +361,12 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                 التحرير وإدارة السجلات
               </div>
 
-              <button
+              <motion.button
                 type="button"
                 disabled={isTableLocked}
+                whileHover={reducedMotion || isTableLocked ? undefined : { y: -1.5, scale: 1.01 }}
+                whileTap={reducedMotion || isTableLocked ? undefined : { scale: 0.97 }}
+                transition={TABRIX_TACTILE_SPRING}
                 onClick={() => runAndClose(onAddPerson)}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 font-bold disabled:opacity-45"
                 style={{
@@ -362,7 +376,7 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
               >
                 <Plus className="h-4 w-4" />
                 <span>إضافة سجل جديد</span>
-              </button>
+              </motion.button>
 
               <button
                 type="button"
@@ -417,9 +431,11 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
               )}
 
               <div className="grid grid-cols-2 gap-2">
-                <button
+                <motion.button
                   type="button"
                   disabled={!canUndo || isTableLocked}
+                  whileTap={reducedMotion || !canUndo || isTableLocked ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={onUndo}
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 font-bold disabled:opacity-40"
                   style={{
@@ -429,10 +445,12 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                 >
                   <Undo2 className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
                   <span>تراجع</span>
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="button"
                   disabled={!canRedo || isTableLocked}
+                  whileTap={reducedMotion || !canRedo || isTableLocked ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={onRedo}
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 font-bold disabled:opacity-40"
                   style={{
@@ -442,7 +460,7 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                 >
                   <Redo2 className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
                   <span>إعادة</span>
-                </button>
+                </motion.button>
               </div>
             </div>
           )}
@@ -534,8 +552,11 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
 
             <div className="grid grid-cols-2 gap-2">
               {capabilities.canUseExcelTools && (
-                <button
+                <motion.button
                   type="button"
+                  whileHover={reducedMotion ? undefined : { y: -1, scale: 1.015 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => runAndClose(onExportExcel)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 font-bold"
                   style={{
@@ -548,12 +569,15 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                     style={{ color: 'var(--accent)' }}
                   />
                   <span>Excel</span>
-                </button>
+                </motion.button>
               )}
 
               {capabilities.canSortAndFilter && (
-                <button
+                <motion.button
                   type="button"
+                  whileHover={reducedMotion ? undefined : { y: -1, scale: 1.015 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={TABRIX_TACTILE_SPRING}
                   onClick={() => runAndClose(onPrintPdf)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 font-bold"
                   style={{
@@ -566,7 +590,7 @@ export const LedgerActionsDrawer: React.FC<LedgerActionsDrawerProps> = ({
                     style={{ color: 'var(--accent)' }}
                   />
                   <span>طباعة / PDF</span>
-                </button>
+                </motion.button>
               )}
             </div>
           </div>

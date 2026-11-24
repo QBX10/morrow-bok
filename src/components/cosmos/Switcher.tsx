@@ -1,6 +1,11 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { Eye, EyeOff, Globe2, Lock } from 'lucide-react';
 import type { CosmosNode } from '../../utils/cosmosRegistry';
+import {
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 import { SectionLogo } from '../settings/sectionLogos';
 import { BottomSheet } from './BottomSheet';
 import { OrbitalMapView } from './OrbitalMapView';
@@ -26,6 +31,7 @@ export const Switcher: React.FC<SwitcherProps> = ({
   onSelectNode,
   onToggleHiddenWorld,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   return (
     <BottomSheet
       open={open}
@@ -44,9 +50,11 @@ export const Switcher: React.FC<SwitcherProps> = ({
             const canHide = world.worldId !== 'world_legacy_archive' && world.worldId !== 'world_agencies_tables';
 
             return (
-              <div
+              <motion.div
                 key={world.id}
-                className="flex items-center justify-between gap-2 rounded-2xl border p-3 transition-all"
+                whileHover={reducedMotion ? undefined : { y: -3, scale: 1.015 }}
+                transition={TABRIX_TACTILE_SPRING}
+                className="flex items-center justify-between gap-2 rounded-2xl border p-3 transition-colors nexus-squircle"
                 style={{
                   backgroundColor: isActive ? 'var(--bg-nav-active)' : 'var(--bg-main)',
                   borderColor: isActive ? world.accentColor : 'var(--border-color)',
@@ -94,7 +102,7 @@ export const Switcher: React.FC<SwitcherProps> = ({
                     {isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
                 )}
-              </div>
+              </motion.div>
             );
           })}
         </div>

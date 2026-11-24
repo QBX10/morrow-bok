@@ -372,8 +372,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     setActiveIndex(0);
   }, [query]);
 
-  if (!open) return null;
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();

@@ -4,6 +4,7 @@ import type {
   HierarchyBadge,
   HierarchyNode,
 } from '../../utils/hierarchyRegistry';
+import { useTabrix3DTilt } from '../../utils/tabrixMotion';
 import { SectionLogo } from './sectionLogos';
 
 interface NodeCardProps {
@@ -24,23 +25,33 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   onOpen,
 }) => {
   const desc = node.description || node.subtitle;
+  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLButtonElement>({
+    maxTiltX: 4.8,
+    maxTiltY: 5.8,
+  });
 
   return (
     <button
+      ref={tiltRef}
+      {...tiltHandlers}
       type="button"
       data-capsule-node-id={node.id}
       onClick={() => onOpen(node)}
-      className="smart-living-card group flex min-h-[196px] w-full flex-col justify-between border p-5 sm:p-6 text-right active:scale-[0.99]"
+      className="smart-living-card group relative flex min-h-[196px] w-full flex-col justify-between overflow-hidden border p-5 sm:p-6 text-right active:scale-[0.99] cursor-pointer"
       style={{
         borderColor: active
           ? 'var(--accent)'
           : 'color-mix(in srgb, var(--border-color) 85%, transparent)',
       }}
     >
-      <div className="w-full space-y-3.5">
+      <div
+        aria-hidden="true"
+        className="smart-dashboard-card-sheen pointer-events-none absolute inset-0"
+      />
+      <div className="relative z-[1] w-full space-y-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="transition-transform duration-200 group-hover:scale-[1.04]">
+            <span className="transition-transform duration-300 group-hover:scale-[1.08] group-hover:-rotate-2">
               <SectionLogo
                 icon={node.logo || node.icon}
                 tone={node.accentTone}
@@ -114,7 +125,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       </div>
 
       <div
-        className="mt-4 flex min-h-[36px] w-full items-center justify-between border-t pt-3 text-xs font-bold"
+        className="relative z-[1] mt-4 flex min-h-[36px] w-full items-center justify-between border-t pt-3 text-xs font-bold"
         style={{
           borderColor: 'color-mix(in srgb, var(--border-color) 75%, transparent)',
           color: 'var(--accent)',

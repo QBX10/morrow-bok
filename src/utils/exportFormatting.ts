@@ -128,13 +128,46 @@ export function resolveThemePrintPalette(
   themeId?: AppThemeId
 ): PrintThemePalette {
   switch (themeId) {
+    case 'abyssal-emerald':
     case 'emerald-forest':
       return {
-        headerBg: '#064e3b',
-        headerText: '#ffffff',
+        headerBg: '#042f2e',
+        headerText: '#ecfdf5',
         accent: '#059669',
         tableHeadBg: '#ecfdf5',
         border: '#a7f3d0',
+      };
+    case 'midnight-trench':
+      return {
+        headerBg: '#082f49',
+        headerText: '#ecfeff',
+        accent: '#0891b2',
+        tableHeadBg: '#ecfeff',
+        border: '#a5f3fc',
+      };
+    case 'bioluminescent-reef':
+      return {
+        headerBg: '#134e4a',
+        headerText: '#f0fdfa',
+        accent: '#0d9488',
+        tableHeadBg: '#f0fdfa',
+        border: '#99f6e4',
+      };
+    case 'arctic-fjord':
+      return {
+        headerBg: '#0c4a6e',
+        headerText: '#f0f9ff',
+        accent: '#0284c7',
+        tableHeadBg: '#f0f9ff',
+        border: '#bae6fd',
+      };
+    case 'pelagic-sapphire':
+      return {
+        headerBg: '#1e3a8a',
+        headerText: '#eff6ff',
+        accent: '#2563eb',
+        tableHeadBg: '#eff6ff',
+        border: '#bfdbfe',
       };
     case 'desert-mirage':
       return {
@@ -155,11 +188,11 @@ export function resolveThemePrintPalette(
     case 'obsidian-gold':
     case 'cyberpunk':
       return {
-        headerBg: '#111827',
-        headerText: '#f9fafb',
-        accent: '#ca8a04',
-        tableHeadBg: '#f3f4f6',
-        border: '#d1d5db',
+        headerBg: '#040B14',
+        headerText: '#ECFDF5',
+        accent: '#10B981',
+        tableHeadBg: '#ECFDF5',
+        border: '#A7F3D0',
       };
     case 'aurora':
     default:

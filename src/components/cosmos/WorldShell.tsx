@@ -1,4 +1,5 @@
 import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -26,6 +27,14 @@ import {
 } from '../../utils/cosmosRegistry';
 import { SectionLogo } from '../settings/sectionLogos';
 import { BottomSheet } from './BottomSheet';
+import { TabrixSubViewTransition } from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SPRING,
+  TABRIX_SUBVIEW_VARIANTS,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 // Per-world Isolated Error Boundary
 class WorldErrorBoundary extends Component<
@@ -105,6 +114,25 @@ class WorldErrorBoundary extends Component<
 
 export type WorldSubTab = 'quick' | 'galaxies' | 'favorites' | 'search';
 
+const WORLD_TAB_ORDER: Record<WorldSubTab, number> = {
+  quick: 0,
+  galaxies: 1,
+  favorites: 2,
+  search: 3,
+};
+
+const WorldTabStage: React.FC<{ activeTab: WorldSubTab; children: React.ReactNode }> = ({
+  activeTab,
+  children,
+}) => {
+  const direction = useTabrixOrderedDirection(activeTab, WORLD_TAB_ORDER);
+  return (
+    <TabrixSubViewTransition viewKey={activeTab} direction={direction}>
+      {children}
+    </TabrixSubViewTransition>
+  );
+};
+
 interface WorldShellProps {
   world: CosmosNode;
   rootCosmos: CosmosNode;
@@ -152,6 +180,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   favoritesSlot,
   children,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [scrolledCompact, setScrolledCompact] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,9 +226,13 @@ export const WorldShell: React.FC<WorldShellProps> = ({
 
   return (
     <WorldErrorBoundary worldTitle={world.title}>
-      <div
+      <motion.div
         ref={containerRef}
-        className="cosmos-world-enter cosmos-one-handed-shell relative min-h-[calc(100dvh-64px)] pb-28"
+        key={world.worldId}
+        variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_SUBVIEW_VARIANTS}
+        initial="initial"
+        animate="animate"
+        className="cosmos-one-handed-shell relative min-h-[calc(100dvh-64px)] pb-28"
         style={{
           backgroundImage: world.gradient,
         }}
@@ -367,6 +400,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
         <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-6">
           {liveStageSlot}
 
+          <WorldTabStage activeTab={activeTab}>
           {activeTab === 'search' ? (
             <section className="space-y-4">
               <div
@@ -489,6 +523,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
           ) : (
             children
           )}
+          </WorldTabStage>
         </div>
 
         {/* Dedicated World Bottom Navigation Bar */}
@@ -516,18 +551,26 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => onChangeTab(tab.id)}
-                  className="cosmos-touch-target flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 rounded-xl py-1.5 text-[11px] sm:text-xs font-extrabold transition-colors"
+                  className="cosmos-touch-target relative flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 overflow-hidden rounded-xl py-1.5 text-[11px] sm:text-xs font-extrabold transition-colors"
                   style={
                     active
                       ? {
-                          backgroundColor: 'var(--bg-nav-active)',
                           color: world.accentColor || 'var(--accent)',
                         }
                       : { color: 'var(--text-muted)' }
                   }
                 >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
+                  {active && (
+                    <motion.span
+                      layoutId={`world-shell-tab-${world.id}`}
+                      transition={TABRIX_SPRING}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-xl"
+                      style={{ backgroundColor: 'var(--bg-nav-active)' }}
+                    />
+                  )}
+                  <Icon className="relative z-10 h-4 w-4" />
+                  <span className="relative z-10">{tab.label}</span>
                 </button>
               );
             })}
@@ -649,7 +692,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             </div>
           </div>
         </BottomSheet>
-      </div>
+      </motion.div>
     </WorldErrorBoundary>
   );
 };

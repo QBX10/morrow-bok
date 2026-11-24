@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   Check,
   FolderKanban,
@@ -16,8 +17,10 @@ import type {
   AssistantResponseStyle,
 } from '../../types/assistant';
 import type { ApprovedCloudModelId, ModelHealthRecord } from '../../lib/aiConfig';
+import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
+import { TabrixPillIndicator } from '../ui/TabrixMotionPrimitives';
 
 export interface BrainOptionItem {
   id: AssistantBrainMode;
@@ -85,6 +88,7 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
   onOpenCanvas,
   onOpenModelsStudio,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   return (
     <FullScreenPushPage
       open={open}
@@ -123,8 +127,11 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
       footer={
         <div className="flex flex-wrap items-center gap-2">
           {onOpenCanvas && (
-            <button
+            <motion.button
               type="button"
+              whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => {
                 onClose();
                 onOpenCanvas();
@@ -138,12 +145,15 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
             >
               <LayoutPanelLeft className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>اللوحة التفاعلية</span>
-            </button>
+            </motion.button>
           )}
 
           {onOpenModelsStudio && (
-            <button
+            <motion.button
               type="button"
+              whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.02 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={TABRIX_TACTILE_SPRING}
               onClick={() => {
                 onClose();
                 onOpenModelsStudio();
@@ -156,7 +166,7 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span>استوديو النماذج والتوجيه</span>
-            </button>
+            </motion.button>
           )}
         </div>
       }
@@ -258,22 +268,31 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
               {collaborationOptions.map((col) => {
                 const active = collaborationMode === col.id;
                 return (
-                  <button
+                  <motion.button
                     key={col.id}
                     type="button"
+                    whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                    transition={TABRIX_TACTILE_SPRING}
                     onClick={() => onChangeCollaborationMode(col.id)}
                     title={col.desc}
-                    className="nexus-pill-btn border px-3 py-2 text-center text-[11px] font-bold whitespace-nowrap"
+                    className="relative overflow-hidden nexus-pill-btn border px-3 py-2 text-center text-[11px] font-bold whitespace-nowrap"
                     style={{
-                      backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      backgroundColor: 'var(--bg-main)',
                       borderColor: active
                         ? 'var(--accent-ai, #5B4FE9)'
                         : 'var(--border-color)',
                       color: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--text-primary)',
                     }}
                   >
-                    {col.shortLabel}
-                  </button>
+                    {active && (
+                      <TabrixPillIndicator
+                        layoutId="morrow-popover-collab-pill"
+                        className="rounded-full"
+                      />
+                    )}
+                    <span className="relative z-10">{col.shortLabel}</span>
+                  </motion.button>
                 );
               })}
             </div>
@@ -297,9 +316,12 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
               {RESPONSE_STYLE_OPTIONS.map((opt) => {
                 const active = responseStyle === opt.id;
                 return (
-                  <button
+                  <motion.button
                     key={opt.id}
                     type="button"
+                    whileHover={reducedMotion ? undefined : { y: -1.5, scale: 1.015 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+                    transition={TABRIX_TACTILE_SPRING}
                     onClick={() => onChangeResponseStyle(opt.id)}
                     className="rounded-2xl border px-3.5 py-2.5 text-right transition-colors hover:border-[var(--accent-ai)]"
                     style={{
@@ -320,7 +342,7 @@ export const MorrowModelMenuPopover: React.FC<MorrowModelMenuPopoverProps> = ({
                     <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                       {opt.desc}
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>

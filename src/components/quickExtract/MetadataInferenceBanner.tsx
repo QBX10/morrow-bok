@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Building2,
@@ -11,6 +12,11 @@ import {
 } from 'lucide-react';
 import type { Agency, InferredDocumentMetadata } from '../../types/agency';
 import { ZERO_TRUST_CONFIDENCE_THRESHOLD } from '../../utils/zeroTrustExtract';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MetadataInferenceBannerProps {
   metadata: InferredDocumentMetadata | null | undefined;
@@ -36,6 +42,8 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
   const [centerNumber, setCenterNumber] = useState(
     metadata?.centerOrAgencyNumber || ''
   );
+  const reducedMotion = useTabrixReducedMotion();
+  const bannerVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   useEffect(() => {
     setAgencyName(metadata?.agencyName || '');
@@ -133,8 +141,16 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
         color: 'var(--text-primary)',
       }}
     >
+      <AnimatePresence mode="wait" initial={false}>
       {!editing ? (
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <motion.div
+          key="metadata-view"
+          variants={bannerVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+        >
           <div className="flex items-start gap-3">
             {meta.confirmedByUser ? (
               <Check
@@ -290,9 +306,16 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
               تعديل الهوية
             </button>
           </div>
-        </div>
+        </motion.div>
       ) : (
-        <div className="space-y-3">
+        <motion.div
+          key="metadata-edit"
+          variants={bannerVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="space-y-3"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold">تعديل هوية الجدول والترويسة المستنتجة</span>
             <button
@@ -415,8 +438,9 @@ export const MetadataInferenceBanner: React.FC<MetadataInferenceBannerProps> = (
               حفظ وتأكيد الهوية
             </button>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

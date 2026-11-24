@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertCircle,
   BookOpen,
@@ -18,6 +19,12 @@ import type {
   UcrsReadingPlan,
   UcrsRelevanceLevel,
 } from '../../types/agency';
+import { Tabrix3DTiltSurface } from '../ui/TabrixMotionPrimitives';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface UcrsIdentityAndPlanCardProps {
   identity: UcrsContentIdentity;
@@ -62,6 +69,8 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
 }) => {
   const [editingPlan, setEditingPlan] = useState(false);
   const rel = RELEVANCE_META[identity.relevanceLevel] || RELEVANCE_META.useful;
+  const reducedMotion = useTabrixReducedMotion();
+  const editorVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   return (
     <section
@@ -69,7 +78,9 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
       className="grid grid-cols-1 gap-4 lg:grid-cols-2"
     >
       {/* Content Identity & Discovery Card */}
-      <div
+      <Tabrix3DTiltSurface
+        maxTiltX={3.8}
+        maxTiltY={4.5}
         className="space-y-3 rounded-xl border p-4"
         style={{
           backgroundColor: 'var(--bg-surface)',
@@ -217,10 +228,12 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
             </button>
           </div>
         )}
-      </div>
+      </Tabrix3DTiltSurface>
 
       {/* Reading Plan Card */}
-      <div
+      <Tabrix3DTiltSurface
+        maxTiltX={3.8}
+        maxTiltY={4.5}
         className="flex flex-col justify-between space-y-3 rounded-xl border p-4"
         style={{
           backgroundColor: 'var(--bg-surface)',
@@ -273,14 +286,20 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
             </div>
           </div>
 
-          {editingPlan && (
-            <div
-              className="space-y-2.5 rounded-lg border p-3 text-xs"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--accent)',
-              }}
-            >
+          <AnimatePresence initial={false}>
+            {editingPlan && (
+              <motion.div
+                key="ucrs-plan-editor"
+                variants={editorVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="space-y-2.5 rounded-lg border p-3 text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--accent)',
+                }}
+              >
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block font-semibold">النية / الوضع</label>
@@ -342,8 +361,9 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
                 />
                 <span>تطبيق قواعد التعلم الذاتي المكتسبة من تصحيحاتك تلقائيًا</span>
               </label>
-            </div>
-          )}
+            </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
@@ -372,7 +392,7 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
             )}
           </button>
         </div>
-      </div>
+      </Tabrix3DTiltSurface>
     </section>
   );
 };

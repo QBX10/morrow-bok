@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Camera, RefreshCw, Upload } from 'lucide-react';
 import {
   buildPermissionRecoveryGuide,
@@ -9,6 +10,12 @@ import { PermissionGuardModal } from '../permissions/PermissionGuardModal';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from '../ui/NexusDuotoneIcon';
 import { MorrowSubPageHeader } from './MorrowSubPageHeader';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion';
 
 interface MorrowCameraSnapModalProps {
   open: boolean;
@@ -30,6 +37,8 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
   const [ready, setReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [permissionGuide, setPermissionGuide] = useState<MediaPermissionGuide | null>(null);
+  const reducedMotion = useTabrixReducedMotion();
+  const popoverVariants = reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS;
 
   const stopStream = () => {
     if (streamRef.current) {
@@ -101,7 +110,7 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
     );
   };
 
-  if (!open) return null;
+  if (layout === 'page' && !open) return null;
 
   const cameraCard = (
     <div className="nexus-squircle w-full overflow-hidden p-4 sm:p-5 space-y-4">
@@ -174,10 +183,12 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
           </button>
         </div>
 
-        <button
+        <motion.button
           type="button"
           disabled={!ready}
           onClick={() => void handleSnap()}
+          whileTap={reducedMotion || !ready ? undefined : { scale: 0.96 }}
+          transition={TABRIX_TACTILE_SPRING}
           className="nexus-pill-btn inline-flex h-10 items-center gap-2 px-5 text-xs font-extrabold disabled:opacity-45"
           style={{
             backgroundColor: 'var(--accent-ai, #5B4FE9)',
@@ -186,7 +197,7 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
         >
           <Camera className="h-4 w-4" />
           <span>التقاط الصورة الآن</span>
-        </button>
+        </motion.button>
       </div>
     </div>
   );
@@ -209,28 +220,35 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
 
         {cameraCard}
 
-        {permissionGuide && (
-          <div
-            className="mt-4 nexus-squircle p-4 text-xs space-y-2"
-            style={{
-              backgroundColor: 'var(--warning-bg)',
-              borderColor: 'var(--warning)',
-            }}
-          >
-            <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
-              {permissionGuide.title}
-            </div>
-            <p>{permissionGuide.reason}</p>
-            <ul
-              className="list-disc pr-5 space-y-1 text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
+        <AnimatePresence>
+          {permissionGuide && (
+            <motion.div
+              key="camera-permission-guide"
+              variants={popoverVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mt-4 nexus-squircle p-4 text-xs space-y-2"
+              style={{
+                backgroundColor: 'var(--warning-bg)',
+                borderColor: 'var(--warning)',
+              }}
             >
-              {permissionGuide.steps.map((s, idx) => (
-                <li key={idx}>{s}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+              <div className="font-extrabold" style={{ color: 'var(--warning)' }}>
+                {permissionGuide.title}
+              </div>
+              <p>{permissionGuide.reason}</p>
+              <ul
+                className="list-disc pr-5 space-y-1 text-[11px]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {permissionGuide.steps.map((s, idx) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     );
   }

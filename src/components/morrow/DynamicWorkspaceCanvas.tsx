@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   AlertTriangle,
@@ -57,6 +58,18 @@ import {
   MACRO_STEP_LABELS,
 } from '../../utils/morrowWorkspaceEngine.ts';
 import { exportRosterToExcel } from '../../utils/excelExport.ts';
+import {
+  TABRIX_EASE,
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  useTabrixOrderedDirection,
+  useTabrixReducedMotion,
+} from '../../utils/tabrixMotion.ts';
+import {
+  Tabrix3DTiltSurface,
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from '../ui/TabrixMotionPrimitives.tsx';
 
 interface DynamicWorkspaceCanvasProps {
   canvasMode: MorrowCanvasMode;
@@ -80,6 +93,15 @@ interface DynamicWorkspaceCanvasProps {
   cloudConfigured?: boolean;
   taskRouting?: AiTaskRoutingMap;
 }
+
+const CANVAS_TAB_ORDER: Record<MorrowCanvasMode, number> = {
+  overview_charts: 0,
+  editable_table: 1,
+  executive_report: 2,
+  forecast: 3,
+  text_analysis: 4,
+  macro_studio: 5,
+};
 
 const CANVAS_TABS: Array<{
   id: MorrowCanvasMode;
@@ -116,6 +138,9 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
   cloudConfigured,
   taskRouting,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
+  const canvasDirection = useTabrixOrderedDirection(canvasMode, CANVAS_TAB_ORDER);
+
   // Chart metric focus
   const [chartMetric, setChartMetric] = useState<'individuals' | 'bags' | 'profit'>('individuals');
   const [hoveredAgencyId, setHoveredAgencyId] = useState<number | null>(null);
@@ -504,23 +529,35 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => onChangeCanvasMode(tab.id)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-transform duration-150 active:scale-[0.98]"
+                className="relative inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors duration-150 active:scale-[0.98]"
                 style={
                   active
                     ? {
-                        backgroundColor: 'var(--accent)',
                         borderColor: 'var(--accent)',
-                        color: 'var(--accent-fg)',
+                        color: 'var(--text-primary)',
                       }
                     : {
                         backgroundColor: 'var(--bg-surface)',
                         borderColor: 'var(--border-color)',
-                        color: 'var(--text-primary)',
+                        color: 'var(--text-muted)',
                       }
                 }
               >
-                {tab.icon}
-                <span>{tab.label}</span>
+                {active && (
+                  <TabrixPillIndicator
+                    layoutId="morrow-canvas-tab-pill"
+                    className="rounded-xl"
+                  />
+                )}
+                <span
+                  className="relative z-10 flex items-center gap-1.5"
+                  style={{ color: active ? 'var(--accent)' : undefined }}
+                >
+                  {tab.icon}
+                  <span style={{ color: active ? 'var(--text-primary)' : undefined }}>
+                    {tab.label}
+                  </span>
+                </span>
               </button>
             );
           })}
@@ -529,6 +566,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
 
       {/* Canvas Body */}
       <div className="p-3.5 sm:p-5 space-y-4">
+        <TabrixSubViewTransition viewKey={canvasMode} direction={canvasDirection}>
         {/* MODE 1: OVERVIEW & INTERACTIVE CHARTS */}
         {canvasMode === 'overview_charts' && (
           <div className="space-y-4">
@@ -560,9 +598,9 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   tone: indexed.totals.blockedCount > 0 ? 'var(--warning)' : 'var(--success)',
                 },
               ].map((kpi, idx) => (
-                <div
+                <Tabrix3DTiltSurface
                   key={idx}
-                  className="rounded-xl border p-3 transition-transform duration-150 hover:-translate-y-0.5"
+                  className="rounded-xl border p-3"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -580,7 +618,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   <div className="mt-0.5 text-[10px] tabular-nums truncate" style={{ color: 'var(--text-muted)' }}>
                     {kpi.sub}
                   </div>
-                </div>
+                </Tabrix3DTiltSurface>
               ))}
             </div>
 
@@ -601,28 +639,37 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                       { id: 'individuals' as const, label: 'الأفراد' },
                       { id: 'bags' as const, label: 'الأكياس' },
                       { id: 'profit' as const, label: 'صافي الربح' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setChartMetric(opt.id)}
-                        className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
-                        style={
-                          chartMetric === opt.id
-                            ? {
-                                backgroundColor: 'var(--accent)',
-                                borderColor: 'var(--accent)',
-                                color: 'var(--accent-fg)',
-                              }
-                            : {
-                                backgroundColor: 'var(--bg-surface)',
-                                borderColor: 'var(--border-color)',
-                              }
-                        }
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                    ].map((opt) => {
+                      const activeMetric = chartMetric === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setChartMetric(opt.id)}
+                          className="relative rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                          style={
+                            activeMetric
+                              ? {
+                                  borderColor: 'var(--accent)',
+                                  color: 'var(--text-primary)',
+                                }
+                              : {
+                                  backgroundColor: 'var(--bg-surface)',
+                                  borderColor: 'var(--border-color)',
+                                  color: 'var(--text-muted)',
+                                }
+                          }
+                        >
+                          {activeMetric && (
+                            <TabrixPillIndicator
+                              layoutId="morrow-chart-metric-pill"
+                              className="rounded-lg"
+                            />
+                          )}
+                          <span className="relative z-10">{opt.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -666,29 +713,37 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                           className="mt-2 h-2.5 w-full overflow-hidden rounded-full"
                           style={{ backgroundColor: 'var(--bg-main)' }}
                         >
-                          <svg width="100%" height="10" aria-hidden="true">
-                            <rect
-                              x="0"
-                              y="0"
-                              width={`${pct}%`}
-                              height="10"
-                              rx="5"
-                              fill="var(--accent)"
-                            />
-                          </svg>
+                          <motion.div
+                            className="h-full rounded-full"
+                            initial={false}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: reducedMotion ? 0.05 : 0.4, ease: TABRIX_EASE }}
+                            style={{ backgroundColor: 'var(--accent)' }}
+                          />
                         </div>
-                        {isHovered && (
-                          <div
-                            className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] tabular-nums"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            <span>العائلات: {item.activeHouseholds}</span>
-                            <span>·</span>
-                            <span>المحجوب: {item.blockedCount}</span>
-                            <span>·</span>
-                            <span>اضغط لفتح جدول الوكالة</span>
-                          </div>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {isHovered && (
+                            <motion.div
+                              key={`hover-bar-${item.id}`}
+                              variants={
+                                reducedMotion
+                                  ? TABRIX_REDUCED_VARIANTS
+                                  : TABRIX_POPOVER_VARIANTS
+                              }
+                              initial="initial"
+                              animate="animate"
+                              exit="exit"
+                              className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] tabular-nums"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              <span>العائلات: {item.activeHouseholds}</span>
+                              <span>·</span>
+                              <span>المحجوب: {item.blockedCount}</span>
+                              <span>·</span>
+                              <span>اضغط لفتح جدول الوكالة</span>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -805,34 +860,47 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   تعديل مباشر محمي بقاعدة Zero-Trust: تعديلاتك هنا تُرسل إلى طابور الموافقات أولاً ولا تغيّر الجدول الفعلي إلا بعد موافقتك.
                 </span>
               </div>
-              {pendingEditsList.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPendingEdits({})}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
+              <AnimatePresence initial={false}>
+                {pendingEditsList.length > 0 && (
+                  <motion.div
+                    key="pending-edits-bar"
+                    variants={
+                      reducedMotion
+                        ? TABRIX_REDUCED_VARIANTS
+                        : TABRIX_POPOVER_VARIANTS
+                    }
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="flex items-center gap-2"
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    <span>تراجع</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={commitInlineEditsToApprovalQueue}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 font-extrabold"
-                    style={{
-                      backgroundColor: 'var(--accent)',
-                      color: 'var(--accent-fg)',
-                    }}
-                  >
-                    <ClipboardCheck className="h-3.5 w-3.5" />
-                    <span>إرسال ({pendingEditsList.length}) للموافقة</span>
-                  </button>
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => setPendingEdits({})}
+                      className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>تراجع</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={commitInlineEditsToApprovalQueue}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 font-extrabold"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                      <span>إرسال ({pendingEditsList.length}) للموافقة</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1321,9 +1389,19 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
               </div>
             </div>
 
-            {textAnalysis && (
-              <div
-                className="rounded-xl border p-3.5 space-y-2.5"
+            <AnimatePresence initial={false}>
+              {textAnalysis && (
+                <motion.div
+                  key="text-analysis-result"
+                  variants={
+                    reducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="rounded-xl border p-3.5 space-y-2.5"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -1390,8 +1468,9 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -1419,10 +1498,20 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
               </button>
             </div>
 
-            {creatingMacro && (
-              <form
-                onSubmit={handleSaveCustomMacro}
-                className="rounded-xl border p-3.5 space-y-3 text-xs"
+            <AnimatePresence initial={false}>
+              {creatingMacro && (
+                <motion.form
+                  key="macro-creator-form"
+                  variants={
+                    reducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  onSubmit={handleSaveCustomMacro}
+                  className="rounded-xl border p-3.5 space-y-3 text-xs"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--accent)',
@@ -1507,8 +1596,9 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                     حفظ الماكرو
                   </button>
                 </div>
-              </form>
-            )}
+                </motion.form>
+              )}
+            </AnimatePresence>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {macros.map((macro) => (
@@ -1572,77 +1662,89 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
               ))}
             </div>
 
-            {activeMacroResult && (
-              <div
-                className="rounded-xl border p-4 space-y-3"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold">
-                    نتيجة تنفيذ: {activeMacroResult.macroName}
+            <AnimatePresence initial={false}>
+              {activeMacroResult && (
+                <motion.div
+                  key={activeMacroResult.macroName}
+                  variants={
+                    reducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="rounded-xl border p-4 space-y-3"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-extrabold">
+                      نتيجة تنفيذ: {activeMacroResult.macroName}
+                    </div>
+                    {activeMacroResult.stagedDraftTools.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onStageToolDrafts(
+                            activeMacroResult.stagedDraftTools,
+                            `ماكرو: ${activeMacroResult.macroName}`
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-extrabold"
+                        style={{
+                          backgroundColor: 'var(--success)',
+                          color: 'var(--success-fg)',
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>
+                          إرسال خطوات الحفظ ({activeMacroResult.stagedDraftTools.length}) للموافقة الآمنة
+                        </span>
+                      </button>
+                    )}
                   </div>
-                  {activeMacroResult.stagedDraftTools.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onStageToolDrafts(
-                          activeMacroResult.stagedDraftTools,
-                          `ماكرو: ${activeMacroResult.macroName}`
-                        )
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-extrabold"
-                      style={{
-                        backgroundColor: 'var(--success)',
-                        color: 'var(--success-fg)',
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>
-                        إرسال خطوات الحفظ ({activeMacroResult.stagedDraftTools.length}) للموافقة الآمنة
-                      </span>
-                    </button>
-                  )}
-                </div>
 
-                <div className="space-y-1.5 text-xs">
-                  {activeMacroResult.steps.map((st, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-2.5 rounded-xl border px-3 py-2"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    >
-                      {st.status === 'warning' ? (
-                        <AlertTriangle
-                          className="h-4 w-4 shrink-0 mt-0.5"
-                          style={{ color: 'var(--warning)' }}
-                        />
-                      ) : (
-                        <CheckCircle2
-                          className="h-4 w-4 shrink-0 mt-0.5"
-                          style={{
-                            color: st.status === 'staged_draft' ? 'var(--accent)' : 'var(--success)',
-                          }}
-                        />
-                      )}
-                      <div>
-                        <div className="font-bold">{st.label}</div>
-                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                          {st.detail}
+                  <div className="space-y-1.5 text-xs">
+                    {activeMacroResult.steps.map((st, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-2.5 rounded-xl border px-3 py-2"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        {st.status === 'warning' ? (
+                          <AlertTriangle
+                            className="h-4 w-4 shrink-0 mt-0.5"
+                            style={{ color: 'var(--warning)' }}
+                          />
+                        ) : (
+                          <CheckCircle2
+                            className="h-4 w-4 shrink-0 mt-0.5"
+                            style={{
+                              color: st.status === 'staged_draft' ? 'var(--accent)' : 'var(--success)',
+                            }}
+                          />
+                        )}
+                        <div>
+                          <div className="font-bold">{st.label}</div>
+                          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            {st.detail}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
+        </TabrixSubViewTransition>
       </div>
     </section>
   );

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -35,6 +36,12 @@ import type {
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 
 interface TopBarProps {
   capabilities: ModeCapabilities;
@@ -121,6 +128,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onGoBack,
   onGoForward,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -498,40 +506,48 @@ export const TopBar: React.FC<TopBarProps> = ({
             </span>
           </button>
 
-          {showViewTitle && (
-            <div
-              key={`view-ctx-${activeView}`}
-              className="topbar-context-enter flex min-w-0 items-center gap-1.5"
-            >
-              <span
-                className="hidden sm:inline text-xs select-none"
-                style={{ color: 'var(--border-color)' }}
-                aria-hidden="true"
+          <AnimatePresence mode="wait" initial={false}>
+            {showViewTitle && (
+              <motion.div
+                key={`view-ctx-${activeView}`}
+                variants={
+                  reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+                }
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex min-w-0 items-center gap-1.5"
               >
-                /
-              </span>
-              <span
-                className={`truncate text-xs sm:text-sm font-bold ${
-                  searchOpen
-                    ? 'hidden sm:inline max-w-[110px] md:max-w-[160px]'
-                    : 'max-w-[140px] sm:max-w-[220px]'
-                }`}
-                style={{ color: 'var(--text-primary)' }}
-                title={activeViewLabel}
-              >
-                {activeViewLabel}
-              </span>
-              {activePeriodLabel && !searchOpen && (
                 <span
-                  className="hidden xl:inline truncate max-w-[150px] text-[11px] font-semibold"
-                  style={{ color: 'var(--text-muted)' }}
-                  title={activePeriodLabel}
+                  className="hidden sm:inline text-xs select-none"
+                  style={{ color: 'var(--border-color)' }}
+                  aria-hidden="true"
                 >
-                  · {activePeriodLabel}
+                  /
                 </span>
-              )}
-            </div>
-          )}
+                <span
+                  className={`truncate text-xs sm:text-sm font-bold ${
+                    searchOpen
+                      ? 'hidden sm:inline max-w-[110px] md:max-w-[160px]'
+                      : 'max-w-[140px] sm:max-w-[220px]'
+                  }`}
+                  style={{ color: 'var(--text-primary)' }}
+                  title={activeViewLabel}
+                >
+                  {activeViewLabel}
+                </span>
+                {activePeriodLabel && !searchOpen && (
+                  <span
+                    className="hidden xl:inline truncate max-w-[150px] text-[11px] font-semibold"
+                    style={{ color: 'var(--text-muted)' }}
+                    title={activePeriodLabel}
+                  >
+                    · {activePeriodLabel}
+                  </span>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Zone 2: Search On-Demand (Expands cleanly only when triggered) */}
@@ -539,49 +555,68 @@ export const TopBar: React.FC<TopBarProps> = ({
           ref={searchWrapRef}
           className={`relative ${searchOpen ? 'flex-1 max-w-md min-w-[140px]' : 'hidden'}`}
         >
-          {searchOpen && (
-            <div
-              className="topbar-search-expand flex items-center gap-2 rounded-xl border px-2.5 h-8 transition-colors focus-within:border-[var(--accent)]"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--accent)',
-              }}
-            >
-              <Search
-                className="h-3.5 w-3.5 shrink-0"
-                style={{ color: 'var(--accent)' }}
-              />
-              <input
-                ref={searchInputRef}
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={searchPlaceholder}
-                aria-label="بحث سريع في التطبيق"
-                className="w-full bg-transparent text-xs outline-none placeholder:text-[var(--text-muted)]"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchOpen(false);
+          <AnimatePresence initial={false}>
+            {searchOpen && (
+              <motion.div
+                key="topbar-search-input-box"
+                variants={
+                  reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+                }
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex items-center gap-2 rounded-xl border px-2.5 h-8 transition-colors focus-within:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--accent)',
+                  transformOrigin: 'top center',
                 }}
-                aria-label="إغلاق البحث"
-                className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
               >
-                <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
-              </button>
-            </div>
-          )}
+                <Search
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: 'var(--accent)' }}
+                />
+                <input
+                  ref={searchInputRef}
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  aria-label="بحث سريع في التطبيق"
+                  className="w-full bg-transparent text-xs outline-none placeholder:text-[var(--text-muted)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchOpen(false);
+                  }}
+                  aria-label="إغلاق البحث"
+                  className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
+                >
+                  <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {searchOpen && searchQuery.trim() && (
-            <div
-              className="tabrix-popover-enter absolute inset-x-0 top-full z-50 mt-2 max-h-[380px] overflow-y-auto rounded-2xl border p-2.5 shadow-xl"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
+          <AnimatePresence>
+            {searchOpen && searchQuery.trim() && (
+              <motion.div
+                key="topbar-search-popover"
+                variants={
+                  reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+                }
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="smoked-glass-elevated absolute inset-x-0 top-full z-50 mt-2 max-h-[380px] overflow-y-auto rounded-2xl border p-2.5 shadow-xl"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  transformOrigin: 'top center',
+                }}
+              >
               {!hasSearchHits ? (
                 <div
                   className="py-6 text-center text-xs"
@@ -733,8 +768,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                   )}
                 </div>
               )}
-            </div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Zone 3: Search Trigger + Context-Smart Controls + Morrow CTA + Notifications + Account */}
@@ -764,12 +800,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           {adaptiveAction && (() => {
             const ActionIcon = adaptiveAction.icon;
             return (
-              <button
+              <motion.button
                 key={`ctx-act-${activeView}-${adaptiveAction.label}`}
                 type="button"
                 onClick={adaptiveAction.onClick}
                 title={adaptiveAction.title}
-                className="topbar-context-enter nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0"
+                variants={
+                  reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS
+                }
+                initial="initial"
+                animate="animate"
+                whileHover={reducedMotion ? undefined : { scale: 1.02 }}
+                whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                transition={TABRIX_TACTILE_SPRING}
+                className="nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -778,7 +822,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               >
                 <ActionIcon className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
                 <span>{adaptiveAction.label}</span>
-              </button>
+              </motion.button>
             );
           })()}
 
@@ -817,18 +861,18 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             )}
 
-          {/* Primary Smart AI Studio CTA (Obsidian & Gold Accent) */}
+          {/* Primary Smart AI Studio CTA (Absolute Marine 3D Accent) */}
           <button
             type="button"
             onClick={onOpenMorrowStudio}
             className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3 sm:px-3.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
             style={{
               background:
-                'linear-gradient(135deg, rgba(212, 175, 55, 0.22) 0%, rgba(20, 20, 26, 0.92) 100%)',
-              borderColor: 'rgba(212, 175, 55, 0.45)',
-              color: '#F3E5AB',
+                'linear-gradient(135deg, color-mix(in srgb, var(--accent) 26%, var(--bg-table-header, #0E1F33)) 0%, color-mix(in srgb, var(--bg-main) 92%, transparent) 100%)',
+              borderColor: 'color-mix(in srgb, var(--accent) 48%, transparent)',
+              color: 'var(--accent-bright, var(--text-primary))',
               boxShadow:
-                'inset 0 1px 0 rgba(243, 229, 171, 0.2), 0 6px 16px -6px rgba(212, 175, 55, 0.28)',
+                'inset 0 1px 0 color-mix(in srgb, var(--accent-bright) 24%, transparent), 0 6px 16px -6px color-mix(in srgb, var(--accent) 32%, transparent)',
             }}
           >
             <Bot className="h-3.5 w-3.5 shrink-0" />
@@ -839,8 +883,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               <span
                 className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-black tabular-nums"
                 style={{
-                  backgroundColor: '#F5B041',
-                  color: '#121212',
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
                 }}
               >
                 {pendingDraftsCount}
@@ -872,14 +916,25 @@ export const TopBar: React.FC<TopBarProps> = ({
               )}
             </button>
 
-            {notifOpen && (
-              <div
-                className="tabrix-popover-enter absolute left-0 top-full z-50 mt-2 w-80 max-w-[90vw] rounded-2xl border p-3 shadow-xl"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
+            <AnimatePresence>
+              {notifOpen && (
+                <motion.div
+                  key="topbar-notif-popover"
+                  variants={
+                    reducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="smoked-glass-elevated absolute left-0 top-full z-50 mt-2 w-80 max-w-[90vw] rounded-2xl border p-3 shadow-xl"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    transformOrigin: 'top left',
+                  }}
+                >
                 <div className="mb-2 flex items-center justify-between px-1">
                   <span className="text-xs font-extrabold">تنبيهات العمليات والوكالات</span>
                   <span
@@ -928,8 +983,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Account Menu (Includes Quick Command Palette Trigger ⌘K) */}
@@ -966,13 +1022,24 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
 
-              {accountMenuOpen && (
-                <div
-                  className="tabrix-popover-enter nexus-glass-lite absolute left-0 top-full z-50 mt-2 w-60 rounded-3xl border p-2.5 shadow-xl space-y-1.5 text-xs"
-                  style={{
-                    borderColor: 'var(--border-color)',
-                  }}
-                >
+              <AnimatePresence>
+                {accountMenuOpen && (
+                  <motion.div
+                    key="topbar-account-popover"
+                    variants={
+                      reducedMotion
+                        ? TABRIX_REDUCED_VARIANTS
+                        : TABRIX_POPOVER_VARIANTS
+                    }
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="smoked-glass-elevated nexus-glass-lite absolute left-0 top-full z-50 mt-2 w-60 rounded-3xl border p-2.5 shadow-xl space-y-1.5 text-xs"
+                    style={{
+                      borderColor: 'var(--border-color)',
+                      transformOrigin: 'top left',
+                    }}
+                  >
                   <div
                     className="rounded-xl border px-3 py-2"
                     style={{
@@ -1039,8 +1106,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                       ⌘K
                     </span>
                   </button>
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>

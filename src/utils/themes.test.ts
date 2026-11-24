@@ -14,12 +14,12 @@ import {
   TABLE_THEMES,
 } from './themes.ts';
 
-test('locks application theme exclusively to Obsidian & Gold while preserving 8 table themes and 6 Google fonts', () => {
-  assert.equal(APP_THEMES.length, 1);
-  assert.equal(MODERN_APP_THEMES.length, 0);
-  assert.equal(ALL_APP_THEMES.length, 1);
+test('exposes 5 Absolute Marine themes while preserving 8 table themes and 6 Google fonts', () => {
+  assert.equal(APP_THEMES.length, 5);
+  assert.equal(MODERN_APP_THEMES.length, 5);
+  assert.equal(ALL_APP_THEMES.length, 5);
   assert.equal(APP_THEME_CAPSULES.length, 1);
-  assert.equal(APP_THEMES[0].id, 'obsidian-gold');
+  assert.equal(APP_THEMES[0].id, 'abyssal-emerald');
   assert.equal(TABLE_THEMES.length, 8);
   assert.equal(ARABIC_FONTS.length, 6);
   assert.ok(DEFAULT_APPEARANCE_PROFILES.length >= 2);
@@ -30,24 +30,29 @@ test('locks application theme exclusively to Obsidian & Gold while preserving 8 
     assert.ok(theme.vars['--bg-main']);
     assert.ok(theme.vars['--bg-surface']);
     assert.ok(theme.vars['--accent']);
+    assert.ok(theme.vars['--accent-bright']);
+    assert.ok(theme.vars['--accent-deep']);
     assert.ok(theme.vars['--text-primary']);
   }
 });
 
-test('resolves all legacy and unknown theme IDs safely to obsidian-gold', () => {
-  assert.equal(resolveAppThemeId('midnight-slate'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('warm-paper'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('crisp-daylight'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('charcoal-emerald'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('nordic-navy'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('soft-mint'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('unknown-theme'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('alabaster-glass'), 'obsidian-gold');
-  assert.equal(resolveAppThemeId('nordic-dusk'), 'obsidian-gold');
+test('resolves marine theme IDs and maps legacy/unknown theme IDs safely', () => {
+  assert.equal(resolveAppThemeId('abyssal-emerald'), 'abyssal-emerald');
+  assert.equal(resolveAppThemeId('midnight-trench'), 'midnight-trench');
+  assert.equal(resolveAppThemeId('bioluminescent-reef'), 'bioluminescent-reef');
+  assert.equal(resolveAppThemeId('arctic-fjord'), 'arctic-fjord');
+  assert.equal(resolveAppThemeId('pelagic-sapphire'), 'pelagic-sapphire');
 
-  assert.equal(getAppThemeById('obsidian-gold').isDark, true);
+  assert.equal(resolveAppThemeId('obsidian-gold'), 'abyssal-emerald');
+  assert.equal(resolveAppThemeId('midnight-slate'), 'pelagic-sapphire');
+  assert.equal(resolveAppThemeId('charcoal-emerald'), 'bioluminescent-reef');
+  assert.equal(resolveAppThemeId('nordic-dusk'), 'arctic-fjord');
+  assert.equal(resolveAppThemeId('unknown-theme'), 'abyssal-emerald');
+
+  assert.equal(getAppThemeById('abyssal-emerald').isDark, true);
+  assert.equal(getAppThemeById('midnight-trench').id, 'midnight-trench');
   assert.equal(getAppThemeById('desert-mirage').isDark, true);
-  assert.equal(getAppThemeById('desert-mirage').id, 'obsidian-gold');
+  assert.equal(getAppThemeById('desert-mirage').id, 'abyssal-emerald');
 
   assert.equal(resolveTableThemeId('classic-quota'), 'paper-ledger');
   assert.equal(resolveTableThemeId('financial-audit'), 'data-grid');

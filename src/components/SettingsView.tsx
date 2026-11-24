@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   Archive,
@@ -55,6 +56,15 @@ import {
   X,
 } from 'lucide-react';
 import { DEFAULT_WORKSPACE_COSMOS } from '../data/seedData';
+import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SPRING,
+  useTabrixDirection,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
+import { getAppThemeById } from '../utils/themes';
 import type {
   AccessibilityAndExperiencePrefs,
   AppDatabaseState,
@@ -1916,6 +1926,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   };
 
+  const tabrixReducedMotion = useTabrixReducedMotion();
+  const activeThemeName = useMemo(
+    () => getAppThemeById(themePrefs.appTheme).name,
+    [themePrefs.appTheme]
+  );
+  const settingsLevelDepth =
+    currentScreenMode === 'hub'
+      ? 0
+      : !activeGalaxySpec
+      ? 1
+      : !resolvedSubAxisSpec && activeGalaxySpec.subAxes.length > 1
+      ? 2
+      : 3;
+  const settingsTransitionKey =
+    currentScreenMode === 'hub'
+      ? 'hub'
+      : !activeGalaxySpec
+      ? `sec-${effectiveSectionId}`
+      : !resolvedSubAxisSpec && activeGalaxySpec.subAxes.length > 1
+      ? `gal-${activeGalaxySpec.id}`
+      : `cap-${currentCapsuleId || activeGalaxySpec.subAxes[0]?.id || 'root'}`;
+  const settingsTransitionTuple = useMemo(
+    () => ({ depth: settingsLevelDepth, key: settingsTransitionKey }),
+    [settingsLevelDepth, settingsTransitionKey]
+  );
+  const settingsHierarchyDir = useTabrixDirection(
+    settingsTransitionTuple,
+    (prev, next) => (next.depth >= prev.depth ? 1 : -1)
+  );
+
   return (
     <div
       data-settings-display-mode={displayMode}
@@ -1983,10 +2023,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </>
             )}
 
-            <nav
+            <motion.nav
               aria-label="مسار الإعدادات"
               key={`nav-${topBarContextKey}`}
-              className={`topbar-context-enter flex min-w-0 items-center gap-1 text-xs ${
+              variants={
+                tabrixReducedMotion
+                  ? TABRIX_REDUCED_VARIANTS
+                  : TABRIX_POPOVER_VARIANTS
+              }
+              initial="initial"
+              animate="animate"
+              className={`flex min-w-0 items-center gap-1 text-xs ${
                 settingsSearchOpen ? 'hidden sm:flex' : 'flex'
               }`}
             >
@@ -2094,7 +2141,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                 </>
               )}
-            </nav>
+            </motion.nav>
           </div>
 
           {/* Center: Expandable On-Demand Settings Search */}
@@ -2102,100 +2149,131 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             ref={settingsSearchWrapRef}
             className={`relative ${settingsSearchOpen ? 'flex-1 max-w-md min-w-[150px]' : 'hidden'}`}
           >
-            {settingsSearchOpen && (
-              <div
-                className="topbar-search-expand flex h-8 items-center gap-2 rounded-xl border px-2.5 transition-colors focus-within:border-[var(--accent)]"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'var(--accent)',
-                }}
-              >
-                <Search
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <input
-                  ref={settingsSearchInputRef}
-                  type="search"
-                  value={settingsSearch}
-                  onChange={(e) => setSettingsSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && deepSearchHits.length > 0) {
-                      deepSearchHits[0].onOpen();
-                    }
+            <AnimatePresence initial={false}>
+              {settingsSearchOpen && (
+                <motion.div
+                  key="settings-search-input-box"
+                  variants={
+                    tabrixReducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="flex h-8 items-center gap-2 rounded-xl border px-2.5 transition-colors focus-within:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--accent)',
+                    transformOrigin: 'top center',
                   }}
-                  placeholder="بحث في الإعدادات والأدوات..."
-                  aria-label="بحث في الإعدادات"
-                  className="w-full bg-transparent text-xs outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsSearch('');
-                    setSettingsSearchOpen(false);
-                  }}
-                  aria-label="إغلاق البحث"
-                  className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
                 >
-                  <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
-                </button>
-              </div>
-            )}
-
-            {settingsSearchOpen && settingsSearch.trim() && (
-              <div
-                className="tabrix-popover-enter absolute inset-x-0 top-full z-50 mt-2 max-h-[360px] overflow-y-auto rounded-2xl border p-2 shadow-xl space-y-1"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-color)',
-                }}
-              >
-                {deepSearchHits.length === 0 ? (
-                  <div
-                    className="py-5 text-center text-xs"
-                    style={{ color: 'var(--text-muted)' }}
+                  <Search
+                    className="h-3.5 w-3.5 shrink-0"
+                    style={{ color: 'var(--accent)' }}
+                  />
+                  <input
+                    ref={settingsSearchInputRef}
+                    type="search"
+                    value={settingsSearch}
+                    onChange={(e) => setSettingsSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && deepSearchHits.length > 0) {
+                        deepSearchHits[0].onOpen();
+                      }
+                    }}
+                    placeholder="بحث في الإعدادات والأدوات..."
+                    aria-label="بحث في الإعدادات"
+                    className="w-full bg-transparent text-xs outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsSearch('');
+                      setSettingsSearchOpen(false);
+                    }}
+                    aria-label="إغلاق البحث"
+                    className="p-0.5 rounded hover:bg-[var(--bg-surface)]"
                   >
-                    لا توجد نتائج مطابقة في الإعدادات.
-                  </div>
-                ) : (
-                  deepSearchHits.map((hit) => (
-                    <button
-                      key={hit.id}
-                      type="button"
-                      onClick={() => {
-                        setSettingsSearchOpen(false);
-                        hit.onOpen();
-                      }}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-right transition-colors hover:bg-[var(--bg-nav-active)]"
+                    <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {settingsSearchOpen && settingsSearch.trim() && (
+                <motion.div
+                  key="settings-search-popover"
+                  variants={
+                    tabrixReducedMotion
+                      ? TABRIX_REDUCED_VARIANTS
+                      : TABRIX_POPOVER_VARIANTS
+                  }
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="smoked-glass-elevated absolute inset-x-0 top-full z-50 mt-2 max-h-[360px] overflow-y-auto rounded-2xl border p-2 shadow-xl space-y-1"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                    transformOrigin: 'top center',
+                  }}
+                >
+                  {deepSearchHits.length === 0 ? (
+                    <div
+                      className="py-5 text-center text-xs"
+                      style={{ color: 'var(--text-muted)' }}
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-extrabold">
-                          {hit.title}
-                        </div>
-                        <div
-                          className="truncate text-[11px]"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          {hit.subtitle}
-                        </div>
-                      </div>
-                      <span
-                        className="shrink-0 text-[10px] font-bold"
-                        style={{ color: 'var(--accent)' }}
+                      لا توجد نتائج مطابقة في الإعدادات.
+                    </div>
+                  ) : (
+                    deepSearchHits.map((hit) => (
+                      <button
+                        key={hit.id}
+                        type="button"
+                        onClick={() => {
+                          setSettingsSearchOpen(false);
+                          hit.onOpen();
+                        }}
+                        className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-right transition-colors hover:bg-[var(--bg-nav-active)]"
                       >
-                        {hit.trailLabel}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-extrabold">
+                            {hit.title}
+                          </div>
+                          <div
+                            className="truncate text-[11px]"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {hit.subtitle}
+                          </div>
+                        </div>
+                        <span
+                          className="shrink-0 text-[10px] font-bold"
+                          style={{ color: 'var(--accent)' }}
+                        >
+                          {hit.trailLabel}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* End: Max 2-3 Context-Smart Controls + Expandable Search Trigger */}
-          <div
+          <motion.div
             key={topBarContextKey}
-            className="topbar-context-enter flex shrink-0 items-center gap-1.5"
+            variants={
+              tabrixReducedMotion
+                ? TABRIX_REDUCED_VARIANTS
+                : TABRIX_POPOVER_VARIANTS
+            }
+            initial="initial"
+            animate="animate"
+            className="flex shrink-0 items-center gap-1.5"
           >
             {!settingsSearchOpen && (
               <button
@@ -2424,44 +2502,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
               </button>
             )}
-          </div>
+          </motion.div>
         </div>
       </header>
 
       {/* Inline Toast Notifications */}
-      {(feedback || errorFeedback) && (
-        <div className={`w-full px-4 pt-4 sm:px-6 ${containerMaxWidth}`}>
-          <div
-            role="status"
-            className="tabrix-view-enter flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold"
-            style={{
-              backgroundColor: errorFeedback
-                ? 'var(--danger-bg)'
-                : 'var(--success-bg)',
-              borderColor: errorFeedback ? 'var(--danger)' : 'var(--success)',
-              color: errorFeedback ? 'var(--danger)' : 'var(--success)',
-            }}
+      <AnimatePresence>
+        {(feedback || errorFeedback) && (
+          <motion.div
+            key={errorFeedback || feedback}
+            initial={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.985 }}
+            transition={{ duration: tabrixReducedMotion ? 0.05 : 0.2 }}
+            className={`w-full px-4 pt-4 sm:px-6 ${containerMaxWidth}`}
           >
-            <span>{errorFeedback || feedback}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setFeedback('');
-                setErrorFeedback('');
+            <div
+              role="status"
+              className="flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold"
+              style={{
+                backgroundColor: errorFeedback
+                  ? 'var(--danger-bg)'
+                  : 'var(--success-bg)',
+                borderColor: errorFeedback ? 'var(--danger)' : 'var(--success)',
+                color: errorFeedback ? 'var(--danger)' : 'var(--success)',
               }}
-              aria-label="إغلاق التنبيه"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
+              <span>{errorFeedback || feedback}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedback('');
+                  setErrorFeedback('');
+                }}
+                aria-label="إغلاق التنبيه"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
+      <TabrixSubViewTransition
+        viewKey={settingsTransitionKey}
+        direction={settingsHierarchyDir}
+        className="flex-1 flex flex-col"
+      >
       {/* ─── LEVEL 1: SETTINGS HUB (الأقسام الرئيسية ببطاقات حية ذكية) ──────── */}
       {currentScreenMode === 'hub' && (
         <main
           data-testid="settings-sections-hub"
-          className={`tabrix-view-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+          className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Executive Settings Identity Strip */}
           <section className="nexus-squircle p-5 sm:p-6">
@@ -2487,7 +2579,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     الهوية والخط
                   </div>
                   <div className="font-extrabold">
-                    السبج والذهب · {activeFontObj.name}
+                    {activeThemeName} · {activeFontObj.name}
                   </div>
                 </div>
                 <div
@@ -2520,23 +2612,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   ['operations', 'الحاسبة والسحب والذكاء'],
                   ['security', 'الأمان والصحة والحوكمة'],
                 ] as Array<[DomainCategory, string]>
-              ).map(([cat, label]) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setDomainFilter(cat)}
-                  className="nexus-pill-btn min-h-[36px] border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
-                  style={{
-                    backgroundColor:
-                      domainFilter === cat ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                    borderColor:
-                      domainFilter === cat ? 'var(--accent)' : 'var(--border-color)',
-                    color: domainFilter === cat ? 'var(--accent)' : 'var(--text-muted)',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+              ).map(([cat, label]) => {
+                const active = domainFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setDomainFilter(cat)}
+                    className="nexus-pill-btn relative min-h-[36px] overflow-hidden border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                    style={{
+                      backgroundColor: active ? 'transparent' : 'var(--bg-main)',
+                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                      color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="settings-domain-pill"
+                        transition={tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-full"
+                        style={{ backgroundColor: 'var(--bg-nav-active)' }}
+                      />
+                    )}
+                    <span className="relative z-10">{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
@@ -2574,7 +2676,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <main
           key={`sec-${effectiveSectionId}`}
           data-testid={`settings-detail-${effectiveSectionId}`}
-          className={`capsule-level-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+          className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Section Banner */}
           <section className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
@@ -2650,7 +2752,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <main
             key={`gal-${activeGalaxySpec.id}`}
             data-testid={`settings-detail-${effectiveSectionId}`}
-            className={`capsule-level-enter w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+            className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
           >
             <section className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
               <div className="flex items-start gap-3.5">
@@ -2712,7 +2814,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <main
             key={`cap-${currentCapsuleId || activeGalaxySpec.subAxes[0]?.id}`}
             data-testid={`settings-detail-${effectiveSectionId}`}
-            className={`capsule-level-enter w-full flex-1 space-y-5 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
+            className={`w-full flex-1 space-y-5 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
           >
             {/* Connected Sub-Axis Header & Quick Sibling Switcher */}
             <section className="nexus-squircle p-4 sm:p-5 space-y-3">
@@ -2779,20 +2881,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         key={sa.id}
                         type="button"
                         onClick={() => setCapsuleId(sa.id)}
-                        className="nexus-pill-btn inline-flex min-h-[36px] items-center gap-2 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                        className="nexus-pill-btn relative inline-flex min-h-[36px] items-center gap-2 overflow-hidden border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
                         style={{
-                          backgroundColor: isActive
-                            ? 'var(--accent)'
-                            : 'var(--bg-main)',
+                          backgroundColor: isActive ? 'transparent' : 'var(--bg-main)',
                           borderColor: isActive
                             ? 'var(--accent)'
                             : 'var(--border-color)',
                           color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
                         }}
                       >
-                        <span>{sa.title}</span>
+                        {isActive && (
+                          <motion.span
+                            layoutId="settings-sibling-capsule-pill"
+                            transition={
+                              tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING
+                            }
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 rounded-full"
+                            style={{ backgroundColor: 'var(--accent)' }}
+                          />
+                        )}
+                        <span className="relative z-10">{sa.title}</span>
                         {sa.badgeText && (
-                          <span className="text-[10px] opacity-85 tabular-nums">
+                          <span className="relative z-10 text-[10px] opacity-85 tabular-nums">
                             · {sa.badgeText}
                           </span>
                         )}
@@ -2811,6 +2922,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </main>
         )}
+      </TabrixSubViewTransition>
     </div>
   );
 };

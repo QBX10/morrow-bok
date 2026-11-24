@@ -31,11 +31,18 @@ import {
   formatNumberCompact,
   getExpenseCategoryLabel,
 } from '../utils/agencyLogic';
+import { AnimatePresence, motion } from 'motion/react';
 import { DEFAULT_CUSTOM_EXPENSE_CATEGORIES } from '../data/seedData';
 import { runAsyncExportTask } from '../hooks/useToastQueue';
 import { exportFinancialReportToExcel } from '../utils/excelExport';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import { TABRIX_EASE, useTabrixOrderedDirection } from '../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  Tabrix3DTiltSurface,
+  TabrixPillIndicator,
+  TabrixSubViewTransition,
+} from './ui/TabrixMotionPrimitives';
 
 interface FinanceWorkspaceViewProps {
   agencies: Agency[];
@@ -342,6 +349,13 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
       ? Math.round((metrics.profit / metrics.revenue) * 100)
       : 0;
 
+  const categoryDir = useTabrixOrderedDirection(category, {
+    worker_wages: 0,
+    packaging: 1,
+    hospitality: 2,
+    custom: 3,
+  });
+
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 pb-24 sm:p-6 sm:pb-20">
       {/* Top Living Finance Header */}
@@ -419,7 +433,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
         className="space-y-4"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="nexus-squircle p-4 sm:p-5">
+          <Tabrix3DTiltSurface className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               عدد الأكياس
             </div>
@@ -429,18 +443,18 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                 ? ` + ${formatNumberCompact(metrics.remainderKg)} كغم`
                 : ''}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
 
-          <div className="nexus-squircle p-4 sm:p-5">
+          <Tabrix3DTiltSurface className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               عدد الأفراد المشمولين
             </div>
             <div className="mt-1.5 text-xl font-black tabular-nums">
               {metrics.activeIndividuals} فرد
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
 
-          <div className="nexus-squircle p-4 sm:p-5">
+          <Tabrix3DTiltSurface className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               الإيرادات التقديرية
             </div>
@@ -450,9 +464,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.revenue)}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
 
-          <div className="nexus-squircle p-4 sm:p-5">
+          <Tabrix3DTiltSurface className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               أجور العمال
             </div>
@@ -462,9 +476,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.workerWages)}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
 
-          <div className="nexus-squircle p-4 sm:p-5">
+          <Tabrix3DTiltSurface className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               الصرفيات التشغيلية (تعبئة · ضيافة · خاصة)
             </div>
@@ -474,10 +488,10 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.generalExpenses)}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
 
-          <div
-            className="nexus-squircle p-4 sm:p-5"
+          <Tabrix3DTiltSurface
+            className="p-4 sm:p-5"
             style={{
               borderColor:
                 metrics.profit >= 0 ? 'var(--success)' : 'var(--danger)',
@@ -502,7 +516,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.profit)}
             </div>
-          </div>
+          </Tabrix3DTiltSurface>
         </div>
 
         {/* Live Expense Category Breakdown Progress Bar */}
@@ -532,30 +546,42 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
 
           <div className="nexus-progress-track flex h-3 w-full">
             {wagesPct > 0 && (
-              <div
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${wagesPct}%` }}
+                transition={{ duration: 0.45, ease: TABRIX_EASE }}
                 className="nexus-progress-glow h-full"
-                style={{ width: `${wagesPct}%`, backgroundColor: 'var(--warning)' }}
+                style={{ backgroundColor: 'var(--warning)' }}
                 title={`أجور العمال: ${formatIqd(metrics.workerWages)}`}
               />
             )}
             {packagingPct > 0 && (
-              <div
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${packagingPct}%` }}
+                transition={{ duration: 0.45, ease: TABRIX_EASE }}
                 className="nexus-progress-glow h-full"
-                style={{ width: `${packagingPct}%`, backgroundColor: 'var(--accent)' }}
+                style={{ backgroundColor: 'var(--accent)' }}
                 title={`مستلزمات التعبئة: ${formatIqd(metrics.packagingExpenses)}`}
               />
             )}
             {hospitalityPct > 0 && (
-              <div
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${hospitalityPct}%` }}
+                transition={{ duration: 0.45, ease: TABRIX_EASE }}
                 className="nexus-progress-glow h-full"
-                style={{ width: `${hospitalityPct}%`, backgroundColor: 'var(--success)' }}
+                style={{ backgroundColor: 'var(--success)' }}
                 title={`ضيافة وطعام: ${formatIqd(metrics.hospitalityExpenses)}`}
               />
             )}
             {otherExpPct > 0 && (
-              <div
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${otherExpPct}%` }}
+                transition={{ duration: 0.45, ease: TABRIX_EASE }}
                 className="nexus-progress-glow h-full"
-                style={{ width: `${otherExpPct}%`, backgroundColor: 'var(--danger)' }}
+                style={{ backgroundColor: 'var(--danger)' }}
                 title="مصروفات خاصة وعامة"
               />
             )}
@@ -635,16 +661,15 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => setCategory(tab.id)}
-                  className="living-control flex items-center gap-2.5 rounded-xl border p-3 text-right"
+                  className="living-control relative flex items-center gap-2.5 rounded-xl border p-3 text-right overflow-hidden"
                   style={{
-                    backgroundColor: active
-                      ? 'var(--bg-nav-active)'
-                      : 'var(--bg-main)',
-                    borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                    backgroundColor: active ? 'transparent' : 'var(--bg-main)',
+                    borderColor: active ? 'transparent' : 'var(--border-color)',
                   }}
                 >
+                  {active && <TabrixPillIndicator layoutId="finance-category-pill" />}
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+                    className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
                     style={{
                       backgroundColor: 'var(--bg-surface)',
                       borderColor: active
@@ -655,7 +680,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                   >
                     {tab.icon}
                   </span>
-                  <span className="min-w-0">
+                  <span className="relative z-10 min-w-0">
                     <span className="block truncate text-xs font-extrabold">
                       {tab.label}
                     </span>
@@ -671,6 +696,11 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             })}
           </div>
 
+          <TabrixSubViewTransition
+            viewKey={`finance-cat-${category}`}
+            direction={categoryDir}
+            className="space-y-3"
+          >
           {/* One-Tap Presets Strip per Category */}
           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
             {category === 'worker_wages' && (
@@ -1015,13 +1045,18 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
               </div>
             )}
           </form>
+          </TabrixSubViewTransition>
 
           {/* Saved Recurring Expense Templates */}
-          {recurringTemplates.length > 0 && (
-            <div
-              className="border-t pt-3 space-y-2"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
+          <AnimatePresence initial={false}>
+            {recurringTemplates.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="border-t pt-3 space-y-2"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
               <div className="flex items-center gap-1.5 text-[11px] font-extrabold" style={{ color: 'var(--text-muted)' }}>
                 <Repeat className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
                 <span>قوالب المصروفات المتكررة (تسجيل بضغطة واحدة للوكالة الحالية):</span>
@@ -1054,8 +1089,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            </motion.div>
+            )}
+          </AnimatePresence>
         </section>
       )}
 
@@ -1079,23 +1115,30 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                 ['hospitality', 'الضيافة'],
                 ['custom', 'خاصة وعامة'],
               ] as Array<[CategoryFilter, string]>
-            ).map(([fKey, fLabel]) => (
-              <button
-                key={fKey}
-                type="button"
-                onClick={() => setLedgerFilter(fKey)}
-                className="rounded-lg border px-2.5 py-1 font-bold transition-colors"
-                style={{
-                  backgroundColor:
-                    ledgerFilter === fKey ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                  borderColor:
-                    ledgerFilter === fKey ? 'var(--accent)' : 'var(--border-color)',
-                  color: ledgerFilter === fKey ? 'var(--accent)' : 'var(--text-muted)',
-                }}
-              >
-                {fLabel}
-              </button>
-            ))}
+            ).map(([fKey, fLabel]) => {
+              const active = ledgerFilter === fKey;
+              return (
+                <button
+                  key={fKey}
+                  type="button"
+                  onClick={() => setLedgerFilter(fKey)}
+                  className="relative rounded-lg border px-2.5 py-1 font-bold transition-colors"
+                  style={{
+                    backgroundColor: active ? 'transparent' : 'var(--bg-main)',
+                    borderColor: active ? 'transparent' : 'var(--border-color)',
+                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                >
+                  {active && (
+                    <TabrixPillIndicator
+                      layoutId="finance-ledger-filter-pill"
+                      className="rounded-lg"
+                    />
+                  )}
+                  <span className="relative z-10">{fLabel}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

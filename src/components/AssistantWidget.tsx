@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Bookmark,
@@ -61,6 +62,12 @@ import { MorrowMessageCard } from './morrow/MorrowMessageCard';
 import { PermissionGuardModal } from './permissions/PermissionGuardModal';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import {
+  TABRIX_POPOVER_VARIANTS,
+  TABRIX_REDUCED_VARIANTS,
+  TABRIX_SPRING,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 
 interface AssistantWidgetProps {
   isOpen: boolean;
@@ -287,6 +294,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   modelHealthSnapshots = [],
   hideLauncher: _hideLauncher = false,
 }) => {
+  const reducedMotion = useTabrixReducedMotion();
   const [inputValue, setInputValue] = useState('');
   const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
   const [brainSheetOpen, setBrainSheetOpen] = useState(false);
@@ -446,40 +454,47 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
   return (
     <>
       {/* Guided Spotlight Floating Banner ("وريني") */}
-      {spotlight && (
-        <aside
-          role="status"
-          aria-live="polite"
-          className="no-print fixed top-[78px] left-1/2 z-[var(--z-toast)] flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderColor: 'var(--accent)',
-            color: 'var(--text-primary)',
-            boxShadow: '0 0 0 2px var(--accent), 0 10px 28px rgba(0,0,0,0.24)',
-          }}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Navigation className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-            <div className="min-w-0">
-              <div className="truncate text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                {spotlight.title}
-              </div>
-              <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {spotlight.description}
+      <AnimatePresence>
+        {spotlight && (
+          <motion.aside
+            key={`spotlight-${spotlight.targetId}`}
+            role="status"
+            aria-live="polite"
+            variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="smoked-glass-elevated no-print fixed top-[78px] left-1/2 z-[var(--z-toast)] flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--accent)',
+              color: 'var(--text-primary)',
+              boxShadow: '0 0 0 2px var(--accent), 0 10px 28px rgba(0,0,0,0.24)',
+            }}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Navigation className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
+              <div className="min-w-0">
+                <div className="truncate text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                  {spotlight.title}
+                </div>
+                <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {spotlight.description}
+                </div>
               </div>
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={onDismissSpotlight}
-            aria-label="إغلاق مؤشر الإرشاد"
-            className="rounded-lg border px-2.5 py-1 text-[11px] font-bold shrink-0"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            فهمت
-          </button>
-        </aside>
-      )}
+            <button
+              type="button"
+              onClick={onDismissSpotlight}
+              aria-label="إغلاق مؤشر الإرشاد"
+              className="nexus-pill-btn rounded-lg border px-2.5 py-1 text-[11px] font-bold shrink-0"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              فهمت
+            </button>
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
       {/* Full-Screen Push Panel — Morrow Assistant */}
       <FullScreenPushPage
@@ -806,93 +821,116 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
             </button>
           </div>
 
-          {thinAlertText && (
-            <div
-              className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
-              style={{
-                backgroundColor: 'var(--warning-bg)',
-                borderColor: 'var(--warning)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => onSendMessage('افحص التطبيق')}
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-right font-semibold hover:underline"
-              >
-                <AlertTriangle
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--warning)' }}
-                />
-                <span className="truncate">{thinAlertText}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setTipDismissed(true)}
-                aria-label="إخفاء التنبيه"
-                className="rounded p-1 hover:opacity-75"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
-          {connectivity === 'online' && queuedTasks.length > 0 && (
-            <div
-              className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
-              style={{
-                backgroundColor: 'var(--bg-nav-active)',
-                borderColor: 'var(--accent-ai, #5B4FE9)',
-              }}
-            >
-              <span
-                className="inline-flex items-center gap-1 font-bold"
-                style={{ color: 'var(--accent-ai, #5B4FE9)' }}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                <span>{queuedTasks.length} طلب محفوظ جاهز للتنفيذ</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => onRunQueuedTask(queuedTasks[0])}
-                className="nexus-pill-btn px-3 py-1 font-bold whitespace-nowrap"
+          <AnimatePresence>
+            {thinAlertText && (
+              <motion.div
+                key="assistant-thin-alert"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: reducedMotion ? 0.05 : 0.2 }}
+                className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
                 style={{
-                  backgroundColor: 'var(--accent-ai, #5B4FE9)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--warning-bg)',
+                  borderColor: 'var(--warning)',
+                  color: 'var(--text-primary)',
                 }}
               >
-                نفّذ الآن
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => onSendMessage('افحص التطبيق')}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-right font-semibold hover:underline"
+                >
+                  <AlertTriangle
+                    className="h-3.5 w-3.5 shrink-0"
+                    style={{ color: 'var(--warning)' }}
+                  />
+                  <span className="truncate">{thinAlertText}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipDismissed(true)}
+                  aria-label="إخفاء التنبيه"
+                  className="rounded p-1 hover:opacity-75"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {connectivity === 'online' && queuedTasks.length > 0 && (
+              <motion.div
+                key="assistant-queued-banner"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: reducedMotion ? 0.05 : 0.2 }}
+                className="nexus-squircle flex items-center justify-between gap-2 px-4 py-2.5 text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  borderColor: 'var(--accent-ai, #5B4FE9)',
+                }}
+              >
+                <span
+                  className="inline-flex items-center gap-1 font-bold"
+                  style={{ color: 'var(--accent-ai, #5B4FE9)' }}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>{queuedTasks.length} طلب محفوظ جاهز للتنفيذ</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRunQueuedTask(queuedTasks[0])}
+                  className="nexus-pill-btn px-3 py-1 font-bold whitespace-nowrap"
+                  style={{
+                    backgroundColor: 'var(--accent-ai, #5B4FE9)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  نفّذ الآن
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Chat Messages Feed */}
           <div className="space-y-3 text-xs sm:text-[13px]">
-            {messages.map((msg) => (
-              <MorrowMessageCard
-                key={msg.id}
-                message={msg}
-                compact
-                copied={copiedMsgId === msg.id}
-                savedToQueue={savedPromptSet.has(msg.id)}
-                hasUndoableAction={hasUndoableAction}
-                onCopy={handleCopyMessage}
-                onTogglePin={onTogglePinMessage}
-                onRetry={onRetryLastPrompt ? () => onRetryLastPrompt() : undefined}
-                onChoiceClick={onChoiceClick}
-                onResolveDiff={onResolveDiff}
-                onTriggerSpotlight={onTriggerSpotlight}
-                onTriggerCanvasHandoff={onTriggerCanvasHandoff}
-                onUndoLastAction={onUndoLastAction}
-                onSendPrompt={(promptText) =>
-                  onSendMessage(promptText, { fromFloatingWidget: true })
-                }
-                onSavePromptToQueue={(msgId, promptText) => {
-                  onSaveToQueue(promptText, 'بانتظار السحابة');
-                  setSavedPromptSet((prev) => new Set(prev).add(msgId));
-                }}
-              />
-            ))}
+            <AnimatePresence initial={false}>
+              {messages.map((msg) => (
+                <motion.div
+                  key={msg.id}
+                  initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.985 }}
+                  transition={reducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+                >
+                  <MorrowMessageCard
+                    message={msg}
+                    compact
+                    copied={copiedMsgId === msg.id}
+                    savedToQueue={savedPromptSet.has(msg.id)}
+                    hasUndoableAction={hasUndoableAction}
+                    onCopy={handleCopyMessage}
+                    onTogglePin={onTogglePinMessage}
+                    onRetry={onRetryLastPrompt ? () => onRetryLastPrompt() : undefined}
+                    onChoiceClick={onChoiceClick}
+                    onResolveDiff={onResolveDiff}
+                    onTriggerSpotlight={onTriggerSpotlight}
+                    onTriggerCanvasHandoff={onTriggerCanvasHandoff}
+                    onUndoLastAction={onUndoLastAction}
+                    onSendPrompt={(promptText) =>
+                      onSendMessage(promptText, { fromFloatingWidget: true })
+                    }
+                    onSavePromptToQueue={(msgId, promptText) => {
+                      onSaveToQueue(promptText, 'بانتظار السحابة');
+                      setSavedPromptSet((prev) => new Set(prev).add(msgId));
+                    }}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
 
             {isThinking && (
               <div
