@@ -3,12 +3,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Archive,
   Bot,
+  BrainCircuit,
   CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  DatabaseZap,
   FolderKanban,
   HeartHandshake,
   Home,
@@ -32,10 +32,6 @@ import type {
 } from '../types/agency';
 import type { MorrowCenterTab } from '../types/assistant';
 import type { CompressionStats } from '../services/compression/compressionEngine';
-import {
-  formatBytesCompact,
-  formatCompressionBadgeText,
-} from '../services/compression/compressionEngine';
 import { computeAgencyMetrics } from '../utils/agencyLogic';
 import type { ModeCapabilities } from '../utils/modePermissions';
 import { GeometricRavenCrest } from './brand/VectorMotifs';
@@ -77,7 +73,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   readyListsCount,
   archivesCount,
   pendingDraftsCount = 0,
-  compressionStats = null,
+  compressionStats: _compressionStats = null,
   calculationSettings,
   capabilities,
   collapsed,
@@ -161,7 +157,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     Morrow
                   </div>
                   <div className="truncate text-[10px] font-semibold text-[var(--text-muted)]">
-                    {activePeriod?.quotaName || 'الهوية البحرية المطلقة'}
+                    {activePeriod?.quotaName || 'إدارة الوكالات والتوزيع'}
                   </div>
                 </div>
               </div>
@@ -182,7 +178,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                title={collapsed ? 'تثبيت التوسيع (260px)' : 'طي القائمة الجانبية (68px)'}
+                title={collapsed ? 'تثبيت التوسيع' : 'طي القائمة الجانبية'}
                 aria-label={collapsed ? 'توسيع القائمة الجانبية' : 'طي القائمة الجانبية'}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-xl border border-[var(--border-color)] bg-black/35 text-[var(--text-muted)] hover:text-[var(--accent-bright)] hover:border-[var(--accent)] transition-colors cursor-pointer"
               >
@@ -494,41 +490,29 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <button
+              type="button"
+              data-testid="sidebar-smart-models-btn"
+              onClick={() => navAndClose('smart_models')}
+              className={itemClass(activeView === 'smart_models')}
+              style={itemStyle(activeView === 'smart_models')}
+              title="النماذج الذكية"
+            >
+              {renderActivePill(activeView === 'smart_models')}
+              <BrainCircuit className="relative z-10 h-4 w-4 shrink-0 text-[var(--accent)]" />
+              {!compact && (
+                <span className="relative z-10 truncate whitespace-nowrap">النماذج الذكية</span>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Bottom Pinned: Smart Compression Badge + User Profile + Settings */}
+        {/* Bottom Pinned: User Profile + Settings */}
         <div
           className="border-t p-3 space-y-2"
           style={{ borderColor: 'var(--border-color)' }}
         >
-          {/* Live Smart Compression Indicator */}
-          <div
-            title={
-              compressionStats
-                ? `الحجم الأصلي: ${formatBytesCompact(compressionStats.rawBytes)} ← بعد الضغط: ${formatBytesCompact(compressionStats.compressedBytes)}`
-                : 'محرك الضغط التلقائي قبل الحفظ نشط'
-            }
-            className={`rounded-xl border border-[var(--border-color)] bg-[var(--bg-nav-active)] px-2.5 py-2 flex items-center gap-2 ${
-              compact ? 'justify-center px-1' : 'justify-between'
-            }`}
-          >
-            <DatabaseZap className="h-4 w-4 shrink-0 text-[var(--accent-bright)]" />
-            {!compact && (
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono-num text-[10px] font-bold text-[var(--accent-bright)] whitespace-nowrap">
-                  {formatCompressionBadgeText(compressionStats)}
-                </div>
-                {compressionStats && compressionStats.rawBytes > 0 && (
-                  <div className="truncate font-mono-num text-[9px] text-[var(--text-muted)]">
-                    {formatBytesCompact(compressionStats.compressedBytes)} من{' '}
-                    {formatBytesCompact(compressionStats.rawBytes)}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           <button
             type="button"
             onClick={() => navAndClose('account_security')}
@@ -573,7 +557,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     className="block truncate text-[10px] font-medium text-[var(--text-muted)]"
                     dir="auto"
                   >
-                    {authUser?.email || authUser?.username || 'مساحة معزولة'}
+                    {authUser?.email || authUser?.username || 'إدارة الحساب والأمان'}
                   </span>
                 </span>
               )}

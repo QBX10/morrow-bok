@@ -92,6 +92,10 @@ import {
   resolveArabicFontId,
   resolveTableThemeId,
 } from '../utils/themes';
+import {
+  applySpatial3DPrefsToDocument,
+  resolveSpatial3DPrefs,
+} from '../utils/spatial3dConfig';
 
 const DEFAULT_MAX_UNDO_HISTORY = 35;
 
@@ -473,6 +477,8 @@ export function useAgencyStore(activeUid: string | null = null) {
   const activeCosmos: WorkspaceCosmosState = mergeWorkspaceCosmos(state.workspaceCosmos);
   const uiDensity = state.generalPrefs?.uiDensity || 'balanced';
 
+  const activeSpatial3dPrefs = resolveSpatial3DPrefs(state.generalPrefs?.spatial3dPrefs);
+
   useEffect(() => {
     applyThemePreferencesToDocument(activeThemePrefs, {
       reduceMotion: activeCosmos.accessibility.reduceMotion,
@@ -480,11 +486,18 @@ export function useAgencyStore(activeUid: string | null = null) {
       numeralSystem: activeCosmos.accessibility.numeralSystem,
       calendarSystem: activeCosmos.accessibility.calendarSystem,
     });
+    applySpatial3DPrefsToDocument(activeSpatial3dPrefs);
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.uiDensity = uiDensity;
     }
   }, [
     uiDensity,
+    activeSpatial3dPrefs.themeId,
+    activeSpatial3dPrefs.tiltIntensity,
+    activeSpatial3dPrefs.cardDensity,
+    activeSpatial3dPrefs.customColors?.accent,
+    activeSpatial3dPrefs.customColors?.secondary,
+    activeSpatial3dPrefs.customColors?.surfaceTone,
     activeThemePrefs.appTheme,
     activeThemePrefs.tableTheme,
     activeThemePrefs.fontFamily,
@@ -2830,6 +2843,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         ...(DEFAULT_GENERAL_PREFS.agencyAccentColors || {}),
         ...(state.generalPrefs?.agencyAccentColors || {}),
       },
+      spatial3dPrefs: activeSpatial3dPrefs,
     },
     securityPrefs: {
       ...DEFAULT_SECURITY_PREFS,

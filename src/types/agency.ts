@@ -15,6 +15,7 @@ export type AppView =
   | 'data_archives'
   | 'google_workspace'
   | 'morrow_center'
+  | 'smart_models'
   | 'account_security'
   | 'settings';
 
@@ -899,6 +900,31 @@ export interface HomeLayoutPrefs {
   activeMiniWidgets: HomeMiniWidgetId[];
 }
 
+export type Spatial3DThemeId =
+  | 'emerald_smoked'
+  | 'holographic_cyan'
+  | 'crimson_obsidian'
+  | 'royal_amethyst'
+  | 'solar_obsidian_gold'
+  | 'arctic_titanium';
+
+export type SpatialTiltIntensity = 'off' | 'subtle' | 'dynamic';
+export type SpatialCardDensity = 'compact' | 'balanced' | 'spacious';
+export type SpatialSurfaceTone = 'abyssal' | 'midnight' | 'obsidian' | 'graphite';
+
+export interface SpatialCustomColors {
+  accent?: string;
+  secondary?: string;
+  surfaceTone?: SpatialSurfaceTone;
+}
+
+export interface Spatial3DPrefs {
+  themeId: Spatial3DThemeId;
+  tiltIntensity: SpatialTiltIntensity;
+  cardDensity: SpatialCardDensity;
+  customColors?: SpatialCustomColors;
+}
+
 export interface GeneralAppPrefs {
   confirmBeforeDelete: boolean;
   confirmBeforeEdit: boolean;
@@ -913,6 +939,7 @@ export interface GeneralAppPrefs {
   agencyAccentColors?: Record<number, string>;
   dismissedAttentionIds?: string[];
   homeLayoutPrefs?: HomeLayoutPrefs;
+  spatial3dPrefs?: Spatial3DPrefs;
   customExpenseCategories?: string[];
   recurringExpenseTemplates?: RecurringExpenseTemplate[];
 }

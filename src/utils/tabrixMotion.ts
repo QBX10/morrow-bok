@@ -39,8 +39,9 @@ const VIEW_ORDER: Record<AppView, number> = {
   data_archives: 7,
   google_workspace: 8,
   morrow_center: 9,
-  account_security: 10,
-  settings: 11,
+  smart_models: 10,
+  account_security: 11,
+  settings: 12,
 };
 
 export function getTabrixViewOrder(view: AppView): number {

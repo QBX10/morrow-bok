@@ -87,20 +87,21 @@ h2 {
 
 .smoked-glass-elevated {
   background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--bg-table-header, #0E1F33) 86%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0A1726) 92%, transparent) 100%
+    158deg,
+    color-mix(in srgb, var(--bg-table-header, #0E1F33) 84%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0A1726) 90%, transparent) 55%,
+    color-mix(in srgb, var(--bg-main, #040B14) 94%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
-  backdrop-filter: blur(24px) saturate(175%);
-  -webkit-backdrop-filter: blur(24px) saturate(175%);
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border-color));
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
   transform-style: preserve-3d;
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 26%, rgba(255, 255, 255, 0.16)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.68),
-    0 28px 64px -20px rgba(2, 10, 22, 0.9),
-    0 3px 0 0 color-mix(in srgb, var(--accent-deep) 24%, rgba(2, 8, 18, 0.75)),
-    0 0 44px -18px var(--marine-caustic-1, rgba(16, 185, 129, 0.26));
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 30%, rgba(255, 255, 255, 0.2)),
+    inset 0 -2px 0 rgba(2, 10, 22, 0.7),
+    0 30px 68px -20px rgba(2, 10, 22, 0.92),
+    0 3px 0 0 color-mix(in srgb, var(--accent-deep) 26%, rgba(2, 8, 18, 0.78)),
+    0 0 48px -16px var(--marine-caustic-1, rgba(16, 185, 129, 0.28));
 }
 
 /* Sculpted 3D Chamfered Glass Card for Auth, Hero & Spatial Surfaces */
@@ -108,29 +109,30 @@ h2 {
   position: relative;
   border-radius: calc(var(--card-radius, 22px) + 2px);
   background: linear-gradient(
-    152deg,
-    color-mix(in srgb, var(--bg-table-header, #0E1F33) 88%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main, #040B14) 94%, transparent) 100%
+    148deg,
+    color-mix(in srgb, var(--bg-table-header, #0E1F33) 86%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0A1726) 90%, transparent) 52%,
+    color-mix(in srgb, var(--bg-main, #040B14) 95%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
-  backdrop-filter: blur(26px) saturate(175%);
-  -webkit-backdrop-filter: blur(26px) saturate(175%);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-color));
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   transform-style: preserve-3d;
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 30%, rgba(255, 255, 255, 0.2)),
-    inset 0 -2.5px 0 rgba(2, 10, 22, 0.75),
-    0 34px 72px -20px rgba(2, 10, 22, 0.94),
-    0 4px 0 0 color-mix(in srgb, var(--accent-deep) 26%, rgba(2, 8, 18, 0.8)),
-    0 0 56px -22px var(--marine-caustic-1, rgba(16, 185, 129, 0.3));
+    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 34%, rgba(255, 255, 255, 0.22)),
+    inset 0 -2.5px 0 rgba(2, 10, 22, 0.78),
+    0 36px 76px -20px rgba(2, 10, 22, 0.95),
+    0 4px 0 0 color-mix(in srgb, var(--accent-deep) 28%, rgba(2, 8, 18, 0.82)),
+    0 0 60px -20px var(--marine-caustic-1, rgba(16, 185, 129, 0.34));
 }
 
 /* Abyssal Marine Atmosphere & Flowing Caustic Orbs */
 .ambient-obsidian-canvas {
   background-color: var(--bg-main, #040B14);
   background-image:
-    radial-gradient(920px circle at 88% -8%, var(--marine-caustic-1, rgba(16, 185, 129, 0.15)), transparent 62%),
-    radial-gradient(760px circle at 10% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.11)), transparent 58%),
-    radial-gradient(560px circle at 50% 45%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 65%);
+    radial-gradient(960px circle at 86% -6%, var(--marine-caustic-1, rgba(16, 185, 129, 0.16)), transparent 60%),
+    radial-gradient(800px circle at 10% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.13)), transparent 58%),
+    radial-gradient(580px circle at 50% 45%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 65%);
   background-attachment: fixed;
 }
 
@@ -291,3 +293,58 @@ html[data-reduce-motion="1"] .ambient-orb-gold {
 html[data-reduce-motion="1"] .marine-float-3d {
   animation: none !important;
 }
+
+/* ─── Spatial 3D Skeleton Layers 1 & 2 ────────────────────────────────────── */
+.recessed-well {
+  background: linear-gradient(
+    180deg,
+    rgba(2, 7, 14, 0.78) 0%,
+    color-mix(in srgb, var(--bg-main, #040B14) 92%, #000000) 100%
+  );
+  box-shadow:
+    inset 0 2px 12px rgba(0, 0, 0, 0.85),
+    inset 0 1px 1px rgba(255, 255, 255, 0.06);
+}
+
+.laser-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--spatial-accent, var(--accent, #10B981)) 55%, transparent) 28%,
+    color-mix(in srgb, var(--spatial-secondary, #22D3EE) 55%, transparent) 72%,
+    transparent 100%
+  );
+}
+
+.glass-bento-card {
+  background: linear-gradient(
+    152deg,
+    color-mix(in srgb, var(--bg-surface, #0A1726) 76%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main, #040B14) 86%, transparent) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(52, 211, 153, 0.24)) 92%, rgba(255, 255, 255, 0.1));
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    0 20px 44px -20px rgba(0, 0, 0, 0.88);
+  will-change: transform;
+}
+
+.glass-bento-card-elevated {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--bg-table-header, #0E1F33) 84%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main, #040B14) 92%, transparent) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10B981)) 38%, rgba(255, 255, 255, 0.12));
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.58),
+    0 28px 64px -20px rgba(0, 0, 0, 0.92),
+    0 0 42px -18px var(--spatial-glow, rgba(16, 185, 129, 0.28));
+}
+

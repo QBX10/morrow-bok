@@ -54,6 +54,10 @@ import type {
   Person,
   RelationEntry,
   SettingsSectionId,
+  Spatial3DThemeId,
+  SpatialCardDensity,
+  SpatialSurfaceTone,
+  SpatialTiltIntensity,
 } from '../types/agency';
 import {
   auditAgencyPersons,
@@ -76,6 +80,17 @@ import {
   TabrixPillIndicator,
 } from './ui/TabrixMotionPrimitives';
 import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
+import { RecessedChannelWell } from './spatial3d/SpatialPrimitives';
+import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
+import {
+  CURATED_ACCENT_SWATCHES,
+  CURATED_SECONDARY_SWATCHES,
+  SPATIAL_3D_THEMES,
+  SURFACE_TONE_PRESETS,
+  resolveActiveSpatialPalette,
+  resolveSpatial3DPrefs,
+} from '../utils/spatial3dConfig';
+import { BrainCircuit, Download } from 'lucide-react';
 
 interface AgenciesHubViewProps {
   agencies: Agency[];
@@ -88,6 +103,9 @@ interface AgenciesHubViewProps {
   capabilities: ModeCapabilities;
   generalPrefs?: GeneralAppPrefs;
   onUpdateGeneralPrefs?: (patch: Partial<GeneralAppPrefs>) => void;
+  onUpdateActivePeriod?: (patch: Partial<PeriodQuotaMeta>) => void;
+  onUpdateCalculationSettings?: (patch: Partial<CalculationSettings>) => void;
+  onExportBackupFile?: () => void;
   onAddExpense?: (input: {
     agencyId: number;
     description: string;
@@ -198,6 +216,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   capabilities,
   generalPrefs,
   onUpdateGeneralPrefs,
+  onUpdateActivePeriod,
+  onUpdateCalculationSettings,
+  onExportBackupFile,
   onAddExpense,
   onOpenMasterRoster,
   onOpenAgencyRoster,
@@ -212,12 +233,20 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [comparisonMetric, setComparisonMetric] =
     useState<ComparisonMetric>('individuals');
 
-  // Workspace Studio / Home Customizer State
+  // Workspace Studio / Home Control Hub State
   const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [hubTab, setHubTab] = useState<'agencies' | 'layout' | 'spatial3d' | 'smart'>('agencies');
   const [localLayoutPrefs, setLocalLayoutPrefs] = useState<HomeLayoutPrefs>(
     DEFAULT_HOME_LAYOUT_PREFS
   );
   const [dragSectionId, setDragSectionId] = useState<HomeSectionId | null>(null);
+  const [agencyDraftNames, setAgencyDraftNames] = useState<Record<number, string>>({});
+  const [hubNewAgencyName, setHubNewAgencyName] = useState('');
+  const [hubNewAgencyIcon, setHubNewAgencyIcon] = useState('🌾');
+  const [quotaDraftName, setQuotaDraftName] = useState(activePeriod?.quotaName || 'الوجبة الحالية');
+  const [kgPerIndDraft, setKgPerIndDraft] = useState(String(calculationSettings.kgPerIndividual));
+  const [feePerIndDraft, setFeePerIndDraft] = useState(String(calculationSettings.feePerIndividualIqd));
+  const [hubNotice, setHubNotice] = useState('');
 
   // Mini-Widgets Local Interactive State
   const [miniCalcIndividuals, setMiniCalcIndividuals] = useState('5');
@@ -237,6 +266,21 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('🌾');
   const logoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const spatialPrefs = useMemo(
+    () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
+    [generalPrefs?.spatial3dPrefs]
+  );
+
+  const activeSpatialPalette = useMemo(
+    () => resolveActiveSpatialPalette(spatialPrefs),
+    [spatialPrefs]
+  );
+
+  const updateSpatialPrefs = (patch: Partial<typeof spatialPrefs>) => {
+    const next = { ...spatialPrefs, ...patch };
+    onUpdateGeneralPrefs?.({ spatial3dPrefs: next });
+  };
 
   const layoutPrefs: HomeLayoutPrefs = useMemo(() => {
     const src = generalPrefs?.homeLayoutPrefs || localLayoutPrefs;
@@ -724,6 +768,26 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </Tabrix3DTiltSurface>
       </div>
+
+      <RecessedChannelWell className="mt-4 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+        <span className="font-bold text-[var(--text-muted)]">
+          معادلة الوجبة النشطة:{' '}
+          <strong className="font-mono-num text-[var(--text-primary)]">
+            {calculationSettings.kgPerIndividual} كغم/فرد · {calculationSettings.feePerIndividualIqd} د.ع/فرد
+          </strong>
+        </span>
+        {onNavigateView && (
+          <button
+            type="button"
+            data-testid="portfolio-smart-models-link"
+            onClick={() => onNavigateView('smart_models')}
+            className="inline-flex items-center gap-1.5 font-extrabold text-[var(--accent-bright)] hover:underline cursor-pointer"
+          >
+            <BrainCircuit className="h-3.5 w-3.5" />
+            <span>تحليل المحفظة في النماذج الذكية</span>
+          </button>
+        )}
+      </RecessedChannelWell>
     </section>
   );
 
@@ -828,19 +892,19 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
       />
 
       {agencies.length === 0 ? (
-        <div className="chamfered-glass-card smoked-glass-elevated p-8 sm:p-10 text-center space-y-5 relative overflow-hidden">
+        <div className="chamfered-glass-card smoked-glass-elevated p-6 sm:p-7 text-center space-y-4 relative overflow-hidden">
           <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
             <DotMatrixPattern />
           </div>
-          <div className="relative z-10 mx-auto w-20 h-20 flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-black/30">
-            <GeometricGoldCube size={64} />
+          <div className="relative z-10 mx-auto w-16 h-16 flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-black/30">
+            <GeometricGoldCube size={52} />
           </div>
           <div className="relative z-10 space-y-2 max-w-md mx-auto">
             <h3 className="font-display-ar text-lg sm:text-xl font-bold text-[var(--text-primary)]">
-              مساحتك المعزولة جاهزة للانطلاق
+              محفظة الوكالات جاهزة للانطلاق
             </h3>
             <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
-              هذا الحساب يبدأ بسجل نظيف تماماً وخاص بك وحدك. أنشئ وكالتك الأولى الآن أو جرّب النظام ببيانات نموذجية جاهزة.
+              ابدأ بإضافة وكالتك الأولى الآن أو جرّب النظام ببيانات نموذجية جاهزة.
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap items-center justify-center gap-3">
@@ -1345,9 +1409,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           {capabilities.canUseQuickExtract && (
             <SmartDashboardCard
               testId="dashboard-card-quick-extract"
-              title="السحب الذكي OCR"
-              subtitle="تفريغ الكشوفات من PDF والصور والكاميرا بدقة Zero-Trust."
-              metaText="PDF · صور · كاميرا · UCRS"
+              title="السحب الذكي"
+              subtitle="تفريغ الكشوفات من PDF والصور والكاميرا بدقة عالية."
+              metaText="PDF · صور · كاميرا"
               icon={<ScanLine className="h-5 w-5" />}
               actionLabel="فتح السحب الذكي"
               onOpen={() => onNavigateView('quick_extract')}
@@ -1410,7 +1474,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               {
                 id: 'portal-theme',
                 label: 'الجداول والخطوط',
-                hint: 'هوية السبج والذهب، الجداول الـ 8 والخطوط',
+                hint: 'الألوان، تصاميم الجداول والخطوط العربية',
                 icon: <Palette className="h-4 w-4" />,
                 onClick: () => onNavigateView('settings', 'appearance'),
               },
@@ -1585,30 +1649,42 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         </div>
 
         <div className="space-y-3">
-          {comparisonBars.map((bar) => (
-            <button
-              key={bar.agency.id}
-              type="button"
-              onClick={() => onOpenAgencyRoster(bar.agency.id)}
-              className="group block w-full text-right"
+          {comparisonBars.length === 0 ? (
+            <div
+              className="rounded-xl border border-dashed px-4 py-6 text-center text-xs font-semibold"
+              style={{
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-muted)',
+              }}
             >
-              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
-                <span className="flex items-center gap-1.5 font-bold group-hover:text-[var(--accent)] transition-colors">
-                  <span>{bar.agency.icon}</span>
-                  <span>{bar.agency.name}</span>
-                </span>
-                <span className="font-extrabold tabular-nums">{bar.formatted}</span>
-              </div>
-              <div className="nexus-progress-track h-2.5 w-full">
-                <div
-                  className="nexus-progress-glow h-full"
-                  style={{
-                    width: `${bar.widthPct}%`,
-                  }}
-                />
-              </div>
-            </button>
-          ))}
+              لا توجد وكالات للمقارنة بعد — أنشئ وكالتك الأولى لعرض مؤشرات الأداء التفاعلية.
+            </div>
+          ) : (
+            comparisonBars.map((bar) => (
+              <button
+                key={bar.agency.id}
+                type="button"
+                onClick={() => onOpenAgencyRoster(bar.agency.id)}
+                className="group block w-full text-right"
+              >
+                <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                  <span className="flex items-center gap-1.5 font-bold group-hover:text-[var(--accent)] transition-colors">
+                    <span>{bar.agency.icon}</span>
+                    <span>{bar.agency.name}</span>
+                  </span>
+                  <span className="font-extrabold tabular-nums">{bar.formatted}</span>
+                </div>
+                <div className="nexus-progress-track h-2.5 w-full">
+                  <div
+                    className="nexus-progress-glow h-full"
+                    style={{
+                      width: `${bar.widthPct}%`,
+                    }}
+                  />
+                </div>
+              </button>
+            ))
+          )}
         </div>
       </div>
     </section>
@@ -1940,19 +2016,23 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:pb-24">
-      {/* 1. Architectural 3D Marine Hero Header Card */}
-      <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-6 sm:p-8 flex flex-wrap items-center justify-between gap-6">
-        {/* Subtle DotMatrix & 3D Isometric Marine Prism */}
+    <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 pb-32 sm:px-6 lg:pb-28">
+      {/* 1. Architectural 3D Hero Header Card */}
+      <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-5 sm:p-6 flex flex-wrap items-center justify-between gap-5">
         <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
           <DotMatrixPattern />
         </div>
-        <div className="pointer-events-none hidden md:block absolute -left-4 -bottom-6 opacity-30">
-          <GeometricGoldCube size={140} />
-        </div>
 
-        <div className="relative z-10 flex items-start gap-4 min-w-0">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-nav-active)] shadow-[0_8px_24px_var(--marine-caustic-1)]">
+        <div className="relative z-10 flex items-center gap-4 min-w-0 flex-1">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15"
+            style={{
+              background:
+                'radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent-bright) 28%, transparent), color-mix(in srgb, var(--bg-table-header) 92%, #020810))',
+              boxShadow:
+                'inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 24px -10px var(--spatial-glow, rgba(16,185,129,0.55))',
+            }}
+          >
             <Building2 className="h-6 w-6 text-[var(--accent-bright)]" />
           </div>
           <div className="space-y-1.5 min-w-0">
@@ -1961,7 +2041,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 الوكالات والتوزيع
               </h1>
               {activePeriod && (
-                <span className="inline-flex items-center rounded-full border border-[var(--border-color)] bg-[var(--bg-nav-active)] px-3 py-0.5 font-mono-num text-[11px] font-bold text-[var(--accent-bright)] whitespace-nowrap">
+                <span className="inline-flex items-center rounded-xl border border-[var(--border-color)] bg-black/35 px-3 py-0.5 font-mono-num text-[11px] font-bold text-[var(--accent-bright)] whitespace-nowrap">
                   {activePeriod.quotaName} · {activePeriod.monthName} {activePeriod.year}
                 </span>
               )}
@@ -1979,32 +2059,48 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </div>
 
-        <div className="relative z-10 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onOpenMasterRoster}
-            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-[var(--border-color)] bg-black/35 hover:bg-black/55 hover:border-[var(--accent)] px-4 py-2 text-xs font-extrabold text-[var(--text-primary)] transition-all cursor-pointer whitespace-nowrap"
-          >
-            <Table2 className="h-4 w-4 text-[var(--accent)]" />
-            <span>السجل الشامل للوكالات</span>
-          </button>
+        {/* Interactive 3D Sculpted Crystal Orb + Symmetric 2-Column Hero Action Grid */}
+        <div className="relative z-10 flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
+          <div className="hidden md:flex shrink-0">
+            <MorrowHubOrb3D
+              spatialPrefs={spatialPrefs}
+              agencyCount={agencies.length}
+              activeIndividuals={masterMetrics.activeIndividuals}
+              issueCount={smartAgencySignals.length}
+            />
+          </div>
 
-          <button
-            type="button"
-            data-testid="home-customizer-btn"
-            onClick={() => setCustomizerOpen(true)}
-            className="obsidian-gold-cta inline-flex min-h-[42px] items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold cursor-pointer whitespace-nowrap"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span>تخصيص الواجهة</span>
-            {(layoutPrefs.activeMiniWidgets.length > 0 ||
-              layoutPrefs.hiddenSections.length > 0) && (
-              <span className="font-mono-num font-black">
-                · {layoutPrefs.activeMiniWidgets.length +
-                  layoutPrefs.hiddenSections.length}
+          <div className="grid grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[420px]">
+            <button
+              type="button"
+              data-testid="hero-master-roster-btn"
+              onClick={onOpenMasterRoster}
+              className="h-[52px] w-full rounded-2xl border border-[var(--border-color)] bg-black/45 hover:bg-black/65 hover:border-[var(--accent)] px-3 sm:px-4 text-xs sm:text-[13px] font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_24px_-12px_rgba(0,0,0,0.85)] transition-all cursor-pointer whitespace-nowrap"
+            >
+              <span className="w-8 h-8 rounded-xl bg-[var(--bg-nav-active)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
+                <Table2 className="h-4 w-4 text-[var(--accent-bright)]" />
               </span>
-            )}
-          </button>
+              <span className="truncate">السجل الشامل للوكالات</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="home-customizer-btn"
+              onClick={() => {
+                setHubNotice('');
+                setQuotaDraftName(activePeriod?.quotaName || 'الوجبة الحالية');
+                setKgPerIndDraft(String(calculationSettings.kgPerIndividual));
+                setFeePerIndDraft(String(calculationSettings.feePerIndividualIqd));
+                setCustomizerOpen(true);
+              }}
+              className="obsidian-gold-cta h-[52px] w-full rounded-2xl px-3 sm:px-4 text-xs sm:text-[13px] font-black inline-flex items-center justify-center gap-2.5 cursor-pointer whitespace-nowrap"
+            >
+              <span className="w-8 h-8 rounded-xl bg-black/20 border border-white/25 flex items-center justify-center shrink-0">
+                <SlidersHorizontal className="h-4 w-4" />
+              </span>
+              <span className="truncate">إدارة الواجهة الرئيسية</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -2095,222 +2191,818 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         .filter((id) => !layoutPrefs.hiddenSections.includes(id))
         .map((id) => sectionRenderers[id]?.())}
 
-      {/* Workspace Studio — Home Layout & Mini-Widgets Customizer Sheet */}
+      {/* Workspace Studio — 6-Module Home Interface Control Hub ("إدارة الواجهة الرئيسية") */}
       <BottomSheet
         open={customizerOpen}
         onClose={() => setCustomizerOpen(false)}
-        title="استوديو تخصيص الواجهة الرئيسية"
-        subtitle="إضافة وكالة جديدة، إعادة ترتيب الأقسام بالسحب أو الأسهم، وتفعيل الأقسام المصغرة"
+        title="إدارة الواجهة الرئيسية"
+        subtitle="تعديل أسماء الوكالات والحصص، إضافة وكالة، ترتيب الواجهة، وتخصيص الفضاء ثلاثي الأبعاد"
         icon={<SlidersHorizontal className="h-5 w-5" />}
       >
-        <div className="space-y-6">
-          {/* Quick Action: Add New Agency */}
-          {capabilities.canManageAgencies && (
+        <div className="space-y-5" data-testid="home-control-hub">
+          {/* 4 Structured Navigation Tabs inside the Control Hub */}
+          <div
+            role="tablist"
+            aria-label="أقسام إدارة الواجهة الرئيسية"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1.5 rounded-2xl recessed-well border border-white/10"
+          >
+            {(
+              [
+                ['agencies', 'الوكالات والحصص'],
+                ['layout', 'ترتيب الواجهة'],
+                ['spatial3d', 'الألوان والثيم'],
+                ['smart', 'إضافات ذكية'],
+              ] as const
+            ).map(([tId, tLabel]) => {
+              const active = hubTab === tId;
+              return (
+                <button
+                  key={tId}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-testid={`hub-tab-${tId}`}
+                  onClick={() => setHubTab(tId)}
+                  className="py-2 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: active ? 'var(--accent)' : 'transparent',
+                    color: active ? 'var(--accent-fg)' : 'var(--text-muted)',
+                    boxShadow: active ? '0 6px 16px -6px var(--spatial-glow)' : 'none',
+                  }}
+                >
+                  {tLabel}
+                </button>
+              );
+            })}
+          </div>
+
+          {hubNotice && (
             <div
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
-              }}
+              role="status"
+              className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-200 flex items-center gap-2"
             >
-              <div>
-                <div className="text-xs font-black">إدارة الوكالات</div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  إنشاء وكالة توزيع جديدة وفتح جدولها مباشرة
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAddOpen(true);
-                  setCustomizerOpen(false);
-                }}
-                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 px-4 text-xs font-extrabold"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>إضافة وكالة جديدة</span>
-              </button>
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>{hubNotice}</span>
             </div>
           )}
 
-          {/* Section Order & Show/Hide Controls */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black">
-                ترتيب وإظهار أقسام الرئيسية (اسحب أو استخدم الأسهم)
-              </h3>
-              <button
-                type="button"
-                onClick={resetHomeLayout}
-                className="inline-flex items-center gap-1 text-[11px] font-bold hover:underline"
-                style={{ color: 'var(--accent)' }}
-              >
-                <RotateCcw className="h-3 w-3" />
-                <span>استعادة الترتيب الافتراضي</span>
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {layoutPrefs.sectionOrder.map((secId, idx) => {
-                const isHidden = layoutPrefs.hiddenSections.includes(secId);
-                const meta = HOME_SECTION_META[secId];
-                return (
-                  <div
-                    key={secId}
-                    draggable
-                    onDragStart={() => setDragSectionId(secId)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => {
-                      if (dragSectionId) {
-                        reorderSectionDrag(dragSectionId, secId);
-                        setDragSectionId(null);
-                      }
-                    }}
-                    className="flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors"
-                    style={{
-                      backgroundColor: isHidden
-                        ? 'var(--bg-main)'
-                        : 'var(--bg-surface)',
-                      borderColor:
-                        dragSectionId === secId
-                          ? 'var(--accent)'
-                          : 'var(--border-color)',
-                      opacity: isHidden ? 0.65 : 1,
-                    }}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <GripVertical
-                        className="h-4 w-4 shrink-0 cursor-grab"
-                        style={{ color: 'var(--text-muted)' }}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-extrabold truncate">
-                          {meta.title}
-                        </div>
-                        <div
-                          className="text-[11px] truncate"
-                          style={{ color: 'var(--text-muted)' }}
+          {/* TAB 1: Rename Agencies Inline + Edit Quota/Batch + Add Agency */}
+          {hubTab === 'agencies' && (
+            <div className="space-y-5">
+              {/* Module 1: Rename Agencies Inline */}
+              <div className="space-y-2.5">
+                <h3 className="text-xs font-black text-[var(--text-primary)]">
+                  تغيير أسماء الوكالات مباشرة
+                </h3>
+                <div className="space-y-2">
+                  {agencies.map((ag) => {
+                    const draftVal = agencyDraftNames[ag.id] ?? ag.name;
+                    const changed = draftVal.trim() !== '' && draftVal.trim() !== ag.name;
+                    return (
+                      <div
+                        key={ag.id}
+                        className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-black/35 p-2.5"
+                      >
+                        <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">
+                          {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
+                        </span>
+                        <input
+                          type="text"
+                          data-testid={`hub-rename-agency-${ag.id}`}
+                          aria-label={`تعديل اسم ${ag.name}`}
+                          value={draftVal}
+                          onChange={(e) =>
+                            setAgencyDraftNames((prev) => ({
+                              ...prev,
+                              [ag.id]: e.target.value,
+                            }))
+                          }
+                          className="flex-1 min-w-[160px] h-9 rounded-xl border border-white/10 bg-black/40 px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                        />
+                        <button
+                          type="button"
+                          data-testid={`hub-save-agency-${ag.id}`}
+                          disabled={!changed}
+                          onClick={() => {
+                            if (!changed) return;
+                            onUpdateAgencyDetails(ag.id, { name: draftVal.trim() });
+                            setHubNotice(`تم تحديث اسم الوكالة إلى «${draftVal.trim()}»`);
+                          }}
+                          className="h-9 px-3.5 rounded-xl text-xs font-extrabold transition cursor-pointer disabled:opacity-40"
+                          style={{
+                            backgroundColor: 'var(--accent)',
+                            color: 'var(--accent-fg)',
+                          }}
                         >
-                          {meta.subtitle}
-                        </div>
+                          حفظ الاسم
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateAgencyDetails(ag.id, { isLocked: !ag.isLocked });
+                            setHubNotice(
+                              ag.isLocked
+                                ? `تم فتح وكالة «${ag.name}»`
+                                : `تم قفل وكالة «${ag.name}»`
+                            );
+                          }}
+                          className="h-9 px-2.5 rounded-xl border border-white/15 bg-white/5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                        >
+                          {ag.isLocked ? 'فتح' : 'قفل'}
+                        </button>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        disabled={idx === 0}
-                        onClick={() => moveSectionOrder(secId, 'up')}
-                        aria-label={`تحريك ${meta.title} للأعلى`}
-                        className="rounded-lg border p-1.5 disabled:opacity-30"
-                        style={{ borderColor: 'var(--border-color)' }}
-                      >
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx === layoutPrefs.sectionOrder.length - 1}
-                        onClick={() => moveSectionOrder(secId, 'down')}
-                        aria-label={`تحريك ${meta.title} للأسفل`}
-                        className="rounded-lg border p-1.5 disabled:opacity-30"
-                        style={{ borderColor: 'var(--border-color)' }}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleSectionVisibility(secId)}
-                        className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold"
-                        style={{
-                          backgroundColor: isHidden
-                            ? 'var(--bg-main)'
-                            : 'var(--bg-nav-active)',
-                          borderColor: isHidden
-                            ? 'var(--border-color)'
-                            : 'var(--accent)',
-                          color: isHidden ? 'var(--text-muted)' : 'var(--accent)',
-                        }}
-                      >
-                        {isHidden ? (
-                          <>
-                            <EyeOff className="h-3 w-3" />
-                            <span>مخفي</span>
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="h-3 w-3" />
-                            <span>ظاهر</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+              {/* Module 2: Edit Active Batch / Ration Quota */}
+              <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+                <h3 className="text-xs font-black text-[var(--text-primary)]">
+                  تعديل الوجبة والحصص والرسوم
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[var(--text-muted)] mb-1">
+                      اسم الوجبة الحالية
+                    </label>
+                    <input
+                      type="text"
+                      value={quotaDraftName}
+                      onChange={(e) => setQuotaDraftName(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-bold text-[var(--text-primary)]"
+                    />
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Ready-Made Mini Widgets Selector */}
-          <div className="space-y-2.5">
-            <h3 className="text-xs font-black">
-              أقسام مصغرة جاهزة للإضافة في الرئيسية
-            </h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {MINI_WIDGET_CATALOG.map((w) => {
-                const active = layoutPrefs.activeMiniWidgets.includes(w.id);
-                return (
+                  <div>
+                    <label className="block text-[11px] font-bold text-[var(--text-muted)] mb-1">
+                      حصة الفرد (كغم)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      dir="ltr"
+                      value={kgPerIndDraft}
+                      onChange={(e) => setKgPerIndDraft(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[var(--text-muted)] mb-1">
+                      رسم الفرد (د.ع)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={50}
+                      dir="ltr"
+                      value={feePerIndDraft}
+                      onChange={(e) => setFeePerIndDraft(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end pt-1">
                   <button
-                    key={w.id}
                     type="button"
-                    onClick={() => toggleMiniWidget(w.id)}
-                    className="living-control flex items-start gap-2.5 rounded-xl border p-3 text-right"
+                    data-testid="hub-save-quota-btn"
+                    onClick={() => {
+                      if (quotaDraftName.trim() && onUpdateActivePeriod) {
+                        onUpdateActivePeriod({ quotaName: quotaDraftName.trim() });
+                      }
+                      if (onUpdateCalculationSettings) {
+                        onUpdateCalculationSettings({
+                          kgPerIndividual: Math.max(1, Number(kgPerIndDraft) || 9),
+                          feePerIndividualIqd: Math.max(0, Number(feePerIndDraft) || 250),
+                        });
+                      }
+                      setHubNotice('تم حفظ إعدادات الوجبة والحصة والرسوم بنجاح.');
+                    }}
+                    className="h-9 px-4 rounded-xl text-xs font-extrabold cursor-pointer"
                     style={{
-                      backgroundColor: active
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
                     }}
                   >
-                    <span
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
+                    حفظ الوجبة والحصة
+                  </button>
+                </div>
+              </div>
+
+              {/* Module 3: Add Agency Directly */}
+              {capabilities.canManageAgencies && (
+                <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+                  <h3 className="text-xs font-black text-[var(--text-primary)]">
+                    إضافة وكالة جديدة مباشرة إلى المحفظة
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      data-testid="hub-add-agency-input"
+                      value={hubNewAgencyName}
+                      onChange={(e) => setHubNewAgencyName(e.target.value)}
+                      placeholder="مثال: وكالة النور التموينية"
+                      className="flex-1 min-w-[180px] h-10 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-bold text-[var(--text-primary)]"
+                    />
+                    <div className="flex items-center gap-1">
+                      {['🌾', '🏪', '📦', '🏢'].map((ic) => (
+                        <button
+                          key={ic}
+                          type="button"
+                          onClick={() => setHubNewAgencyIcon(ic)}
+                          className={`w-9 h-9 rounded-xl border text-base cursor-pointer ${
+                            hubNewAgencyIcon === ic
+                              ? 'border-[var(--accent)] bg-[var(--bg-nav-active)]'
+                              : 'border-white/10 bg-black/30'
+                          }`}
+                        >
+                          {ic}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="hub-add-agency-submit"
+                      onClick={() => {
+                        const clean = hubNewAgencyName.trim();
+                        if (!clean) return;
+                        onAddAgency(clean, hubNewAgencyIcon);
+                        setHubNewAgencyName('');
+                        setHubNotice(`تمت إضافة «${clean}» إلى محفظة الوكالات الموحدة.`);
+                      }}
+                      className="obsidian-gold-cta h-10 px-4 rounded-xl text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>إضافة الوكالة</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: Reorder & Toggle Sections */}
+          {hubTab === 'layout' && (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black">
+                  ترتيب وإظهار أقسام الرئيسية (اسحب أو استخدم الأسهم)
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetHomeLayout();
+                    setHubNotice('تمت استعادة الترتيب الافتراضي للأقسام.');
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold hover:underline cursor-pointer"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>استعادة الترتيب الافتراضي</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {layoutPrefs.sectionOrder.map((secId, idx) => {
+                  const isHidden = layoutPrefs.hiddenSections.includes(secId);
+                  const meta = HOME_SECTION_META[secId];
+                  return (
+                    <div
+                      key={secId}
+                      draggable
+                      onDragStart={() => setDragSectionId(secId)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (dragSectionId) {
+                          reorderSectionDrag(dragSectionId, secId);
+                          setDragSectionId(null);
+                        }
+                      }}
+                      className="flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors"
                       style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                        color: active ? 'var(--accent)' : 'var(--text-muted)',
+                        backgroundColor: isHidden
+                          ? 'var(--bg-main)'
+                          : 'var(--bg-surface)',
+                        borderColor:
+                          dragSectionId === secId
+                            ? 'var(--accent)'
+                            : 'var(--border-color)',
+                        opacity: isHidden ? 0.65 : 1,
                       }}
                     >
-                      {w.icon}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-extrabold truncate">
-                          {w.title}
-                        </span>
-                        <span
-                          className="text-[10px] font-black"
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <GripVertical
+                          className="h-4 w-4 shrink-0 cursor-grab"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
+                        <div className="min-w-0">
+                          <div className="text-xs font-extrabold truncate">
+                            {meta.title}
+                          </div>
+                          <div
+                            className="text-[11px] truncate"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {meta.subtitle}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveSectionOrder(secId, 'up')}
+                          aria-label={`تحريك ${meta.title} للأعلى`}
+                          data-testid={`hub-move-up-${secId}`}
+                          className="rounded-lg border p-1.5 disabled:opacity-30 cursor-pointer"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === layoutPrefs.sectionOrder.length - 1}
+                          onClick={() => moveSectionOrder(secId, 'down')}
+                          aria-label={`تحريك ${meta.title} للأسفل`}
+                          data-testid={`hub-move-down-${secId}`}
+                          className="rounded-lg border p-1.5 disabled:opacity-30 cursor-pointer"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSectionVisibility(secId)}
+                          data-testid={`hub-toggle-vis-${secId}`}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold cursor-pointer"
                           style={{
+                            backgroundColor: isHidden
+                              ? 'var(--bg-main)'
+                              : 'var(--bg-nav-active)',
+                            borderColor: isHidden
+                              ? 'var(--border-color)'
+                              : 'var(--accent)',
+                            color: isHidden ? 'var(--text-muted)' : 'var(--accent)',
+                          }}
+                        >
+                          {isHidden ? (
+                            <>
+                              <EyeOff className="h-3 w-3" />
+                              <span>مخفي</span>
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="h-3 w-3" />
+                              <span>ظاهر</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: 6 Curated Themes + Live Custom Color Studio */}
+          {hubTab === 'spatial3d' && (
+            <div className="space-y-5">
+              <div className="space-y-2.5">
+                <h3 className="text-xs font-black">
+                  الثيمات والمظهر العام
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {(Object.keys(SPATIAL_3D_THEMES) as Spatial3DThemeId[]).map((tId) => {
+                    const def = SPATIAL_3D_THEMES[tId];
+                    const active = spatialPrefs.themeId === tId && !spatialPrefs.customColors;
+                    return (
+                      <button
+                        key={tId}
+                        type="button"
+                        data-testid={`hub-theme-${tId}`}
+                        onClick={() => {
+                          updateSpatialPrefs({ themeId: tId, customColors: undefined });
+                          setHubNotice(`تم تفعيل ثيم: ${def.nameAr}`);
+                        }}
+                        className="rounded-2xl border p-3.5 text-right transition-all cursor-pointer"
+                        style={{
+                          borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                          backgroundColor: active ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.35)',
+                          boxShadow: active ? '0 10px 24px -12px var(--spatial-glow)' : 'none',
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            {def.swatches.map((hex) => (
+                              <span
+                                key={hex}
+                                className="w-4 h-4 rounded-full border border-white/25"
+                                style={{ backgroundColor: hex }}
+                              />
+                            ))}
+                          </div>
+                          {active && (
+                            <span
+                              className="text-[10px] font-black"
+                              style={{ color: 'var(--accent-bright)' }}
+                            >
+                              مفعّل
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs font-black text-[var(--text-primary)]">
+                          {def.nameAr}
+                        </div>
+                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-snug">
+                          {def.subtitleAr}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Custom Color Studio */}
+              <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-black/35 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-black text-[var(--text-primary)] flex items-center gap-1.5">
+                      <Palette className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <span>تخصيص الألوان يدوياً</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                      عدّل اللون الأساسي، الإضاءة الثانوية، وخلفية التطبيق بشكل فوري متزامن مع المجسمات ثلاثية الأبعاد
+                    </p>
+                  </div>
+                  {spatialPrefs.customColors && (
+                    <button
+                      type="button"
+                      data-testid="reset-custom-colors-btn"
+                      onClick={() => {
+                        updateSpatialPrefs({ customColors: undefined });
+                        setHubNotice('تمت استعادة ألوان الثيم الأصلية.');
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>استعادة ألوان الثيم</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Primary Accent Color Picker + Swatches */}
+                  <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold">اللون الأساسي</span>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <span
+                          dir="ltr"
+                          className="font-mono-num text-[11px] font-bold text-[var(--accent-bright)]"
+                        >
+                          {activeSpatialPalette.accent}
+                        </span>
+                        <input
+                          type="color"
+                          data-testid="custom-accent-color-picker"
+                          aria-label="اختيار اللون الأساسي"
+                          value={activeSpatialPalette.accent}
+                          onChange={(e) =>
+                            updateSpatialPrefs({
+                              customColors: {
+                                ...spatialPrefs.customColors,
+                                accent: e.target.value.toUpperCase(),
+                              },
+                            })
+                          }
+                          className="h-7 w-9 cursor-pointer rounded-lg border border-white/20 bg-transparent p-0.5"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {CURATED_ACCENT_SWATCHES.map((hex) => {
+                        const sel = activeSpatialPalette.accent === hex;
+                        return (
+                          <button
+                            key={hex}
+                            type="button"
+                            data-testid={`accent-swatch-${hex}`}
+                            aria-label={`اختيار اللون الأساسي ${hex}`}
+                            onClick={() =>
+                              updateSpatialPrefs({
+                                customColors: {
+                                  ...spatialPrefs.customColors,
+                                  accent: hex,
+                                },
+                              })
+                            }
+                            className="w-6 h-6 rounded-full border transition-transform hover:scale-110 cursor-pointer"
+                            style={{
+                              backgroundColor: hex,
+                              borderColor: sel ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+                              boxShadow: sel ? `0 0 12px ${hex}` : 'none',
+                              transform: sel ? 'scale(1.12)' : undefined,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Secondary Glow Color Picker + Swatches */}
+                  <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold">لون الإضاءة الثانوي</span>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <span
+                          dir="ltr"
+                          className="font-mono-num text-[11px] font-bold text-[var(--text-primary)]"
+                        >
+                          {activeSpatialPalette.secondary}
+                        </span>
+                        <input
+                          type="color"
+                          data-testid="custom-secondary-color-picker"
+                          aria-label="اختيار لون الإضاءة الثانوي"
+                          value={activeSpatialPalette.secondary}
+                          onChange={(e) =>
+                            updateSpatialPrefs({
+                              customColors: {
+                                ...spatialPrefs.customColors,
+                                secondary: e.target.value.toUpperCase(),
+                              },
+                            })
+                          }
+                          className="h-7 w-9 cursor-pointer rounded-lg border border-white/20 bg-transparent p-0.5"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {CURATED_SECONDARY_SWATCHES.map((hex) => {
+                        const sel = activeSpatialPalette.secondary === hex;
+                        return (
+                          <button
+                            key={hex}
+                            type="button"
+                            data-testid={`secondary-swatch-${hex}`}
+                            aria-label={`اختيار اللون الثانوي ${hex}`}
+                            onClick={() =>
+                              updateSpatialPrefs({
+                                customColors: {
+                                  ...spatialPrefs.customColors,
+                                  secondary: hex,
+                                },
+                              })
+                            }
+                            className="w-6 h-6 rounded-full border transition-transform hover:scale-110 cursor-pointer"
+                            style={{
+                              backgroundColor: hex,
+                              borderColor: sel ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+                              boxShadow: sel ? `0 0 12px ${hex}` : 'none',
+                              transform: sel ? 'scale(1.12)' : undefined,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Surface Tone Presets */}
+                <div className="space-y-2">
+                  <div className="text-xs font-extrabold">درجة الخلفية والزجاج</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(
+                      Object.entries(SURFACE_TONE_PRESETS) as Array<
+                        [SpatialSurfaceTone, (typeof SURFACE_TONE_PRESETS)[SpatialSurfaceTone]]
+                      >
+                    ).map(([toneId, preset]) => {
+                      const activeTone = spatialPrefs.customColors?.surfaceTone === toneId;
+                      return (
+                        <button
+                          key={toneId}
+                          type="button"
+                          data-testid={`surface-tone-${toneId}`}
+                          onClick={() =>
+                            updateSpatialPrefs({
+                              customColors: {
+                                ...spatialPrefs.customColors,
+                                surfaceTone: toneId,
+                              },
+                            })
+                          }
+                          className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold cursor-pointer transition-all"
+                          style={{
+                            borderColor: activeTone ? 'var(--accent)' : 'rgba(255,255,255,0.12)',
+                            backgroundColor: activeTone ? 'var(--bg-nav-active)' : preset.bgSurface,
+                            color: activeTone ? 'var(--accent-bright)' : 'var(--text-primary)',
+                          }}
+                        >
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/25 shrink-0"
+                            style={{ backgroundColor: preset.bgMain }}
+                          />
+                          <span className="truncate">{preset.labelAr}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+                  <div className="text-xs font-black">شدة الإمالة التفاعلية</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        ['off', 'إيقاف'],
+                        ['subtle', 'خفيف'],
+                        ['dynamic', 'ديناميكي'],
+                      ] as Array<[SpatialTiltIntensity, string]>
+                    ).map(([mode, label]) => {
+                      const activeTilt = spatialPrefs.tiltIntensity === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => updateSpatialPrefs({ tiltIntensity: mode })}
+                          className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                          style={{
+                            borderColor: activeTilt ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+                            backgroundColor: activeTilt ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                            color: activeTilt ? 'var(--accent-bright)' : 'var(--text-muted)',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+                  <div className="text-xs font-black">كثافة البطاقات</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        ['compact', 'مضغوط'],
+                        ['balanced', 'متوازن'],
+                        ['spacious', 'رحب'],
+                      ] as Array<[SpatialCardDensity, string]>
+                    ).map(([density, label]) => {
+                      const activeDensity = spatialPrefs.cardDensity === density;
+                      return (
+                        <button
+                          key={density}
+                          type="button"
+                          onClick={() => updateSpatialPrefs({ cardDensity: density })}
+                          className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                          style={{
+                            borderColor: activeDensity ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+                            backgroundColor: activeDensity ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                            color: activeDensity ? 'var(--accent-bright)' : 'var(--text-muted)',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Smart Utilities & Mini Widgets */}
+          {hubTab === 'smart' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-xs font-black">
+                  إضافات ذكية وإجراءات فورية
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {onNavigateView && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomizerOpen(false);
+                        onNavigateView('smart_models');
+                      }}
+                      className="rounded-xl border border-[var(--accent)]/45 bg-[var(--bg-nav-active)] p-3 text-right hover:brightness-110 transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 text-xs font-black text-[var(--accent-bright)]">
+                        <BrainCircuit className="h-4 w-4" />
+                        <span>فتح النماذج الذكية</span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                        تدقيق شامل وتنبؤ ذكي بالبيانات
+                      </p>
+                    </button>
+                  )}
+                  {onExportBackupFile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onExportBackupFile();
+                        setHubNotice('تم تصدير النسخة الاحتياطية المنظمة.');
+                      }}
+                      className="rounded-xl border border-[var(--border-color)] bg-black/35 p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 text-xs font-black text-[var(--text-primary)]">
+                        <Download className="h-4 w-4 text-[var(--accent)]" />
+                        <span>تصدير نسخة احتياطية</span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                        تنزيل ملف البيانات الاحتياطي
+                      </p>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetHomeLayout();
+                      updateSpatialPrefs({
+                        themeId: 'emerald_smoked',
+                        tiltIntensity: 'subtle',
+                        cardDensity: 'balanced',
+                        customColors: undefined,
+                      });
+                      setHubNotice('تمت استعادة التخطيط والألوان الافتراضية.');
+                    }}
+                    className="rounded-xl border border-[var(--border-color)] bg-black/35 p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-black text-[var(--text-primary)]">
+                      <RotateCcw className="h-4 w-4 text-[var(--accent)]" />
+                      <span>إعادة ضبط الواجهة</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                      تصفير التخصيصات والعودة للأصل
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-black">
+                  أقسام مصغرة جاهزة للإضافة في الرئيسية
+                </h4>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {MINI_WIDGET_CATALOG.map((w) => {
+                    const active = layoutPrefs.activeMiniWidgets.includes(w.id);
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => toggleMiniWidget(w.id)}
+                        className="living-control flex items-start gap-2.5 rounded-xl border p-3 text-right cursor-pointer"
+                        style={{
+                          backgroundColor: active
+                            ? 'var(--bg-nav-active)'
+                            : 'var(--bg-main)',
+                          borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                        }}
+                      >
+                        <span
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: active ? 'var(--accent)' : 'var(--border-color)',
                             color: active ? 'var(--accent)' : 'var(--text-muted)',
                           }}
                         >
-                          {active ? 'مفعّل ✓' : '+ إضافة'}
+                          {w.icon}
                         </span>
-                      </div>
-                      <div
-                        className="mt-0.5 text-[11px]"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        {w.subtitle}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-extrabold truncate">
+                              {w.title}
+                            </span>
+                            <span
+                              className="text-[10px] font-black"
+                              style={{
+                                color: active ? 'var(--accent)' : 'var(--text-muted)',
+                              }}
+                            >
+                              {active ? 'مفعّل ✓' : '+ إضافة'}
+                            </span>
+                          </div>
+                          <div
+                            className="mt-0.5 text-[11px]"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {w.subtitle}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </BottomSheet>
     </main>

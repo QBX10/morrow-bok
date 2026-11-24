@@ -103,6 +103,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const quickCommands = useMemo<PaletteEntry[]>(
     () => [
       {
+        id: 'cmd_smart_models',
+        group: 'النماذج الذكية 3D',
+        label: 'فتح واجهة النماذج الذكية ثلاثية الأبعاد (تحليل، تدقيق، تنبؤ)',
+        sublabel: 'نواة تحليل تفاعلية 3D لمقارنة الوكالات وكشف الأخطاء وتوليد الخطط',
+        icon: <Cpu className="h-4 w-4" />,
+        onRun: () => {
+          onNavigateView('smart_models');
+          onClose();
+        },
+      },
+      {
         id: 'cmd_morrow_center',
         group: 'مركز Morrow',
         label: 'فتح مركز Morrow (المحادثة، الموافقات، الذاكرة، الملاحظات)',

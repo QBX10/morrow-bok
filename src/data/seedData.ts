@@ -11,6 +11,7 @@ import type {
 } from '../types/agency';
 import { DEFAULT_CALCULATION_SETTINGS } from '../utils/agencyLogic';
 import { DEFAULT_GRANULAR_CONTROLS } from '../utils/modePermissions';
+import { DEFAULT_SPATIAL_3D_PREFS } from '../utils/spatial3dConfig';
 
 export const DEFAULT_WORKSPACE_COSMOS: WorkspaceCosmosState = {
   pinnedNodeIds: ['cap_master_roster_portal', 'cap_calc_fees'],
@@ -258,6 +259,7 @@ export const DEFAULT_GENERAL_PREFS: GeneralAppPrefs = {
     hiddenSections: [],
     activeMiniWidgets: [],
   },
+  spatial3dPrefs: { ...DEFAULT_SPATIAL_3D_PREFS },
   customExpenseCategories: [...DEFAULT_CUSTOM_EXPENSE_CATEGORIES],
   recurringExpenseTemplates: [],
 };

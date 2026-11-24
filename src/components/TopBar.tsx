@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bell,
   Bot,
+  BrainCircuit,
   Calculator,
   CheckCircle2,
   ChevronDown,
@@ -860,6 +861,22 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </button>
               </div>
             )}
+
+          {/* Smart Models 3D Quick-Launch CTA */}
+          <button
+            type="button"
+            data-testid="topbar-smart-models-btn"
+            onClick={() => onNavigateView('smart_models')}
+            title="النماذج الذكية"
+            className={`nexus-pill-btn hidden sm:inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+              activeView === 'smart_models'
+                ? 'border-[var(--accent)] bg-[var(--bg-nav-active)] text-[var(--accent-bright)]'
+                : 'border-[var(--border-color)] bg-black/35 text-[var(--text-primary)] hover:border-[var(--accent)]'
+            }`}
+          >
+            <BrainCircuit className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+            <span className="hidden lg:inline">النماذج الذكية</span>
+          </button>
 
           {/* Primary Smart AI Studio CTA (Absolute Marine 3D Accent) */}
           <button

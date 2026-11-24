@@ -33,6 +33,9 @@ import { clearSession, getStoredSession } from './lib/authClient';
 import { OnboardingFlow } from './components/auth/OnboardingFlow';
 import { FlipAuthGuard } from './components/auth/FlipAuthGuard';
 import { getTenantOnboardingKey } from './services/storage/tenantStorage';
+import { Spatial3DCanvas } from './components/spatial3d/Spatial3DCanvas';
+import { SmartModelsWorkspaceView } from './components/SmartModelsWorkspaceView';
+import { resolveSpatial3DPrefs } from './utils/spatial3dConfig';
 import type {
   AssistantExternalTableCommand,
   MorrowCanvasMode,
@@ -466,6 +469,7 @@ export default function App() {
     if (activeView === 'finance') return 'الحسابات والمالية';
     if (activeView === 'quick_extract') return 'السحب السريع';
     if (activeView === 'morrow_center') return 'مركز Morrow';
+    if (activeView === 'smart_models') return 'النماذج الذكية';
     if (activeView === 'data_archives') return 'البيانات والأرشفة الشهرية';
     if (activeView === 'google_workspace') return 'التقويم والمهام (Google)';
     if (activeView === 'account_security') return 'الحساب والبيانات والأمان';
@@ -1005,6 +1009,11 @@ export default function App() {
       ? `agency_roster_${selectedAgencyId}`
       : activeView;
 
+  const activeSpatialPrefs = useMemo(
+    () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
+    [generalPrefs?.spatial3dPrefs]
+  );
+
   if (!authUser) {
     return (
       <>
@@ -1019,6 +1028,8 @@ export default function App() {
               className="min-h-screen"
             >
               <OnboardingFlow
+                themeId={activeSpatialPrefs.themeId}
+                spatialPrefs={activeSpatialPrefs}
                 onComplete={() => {
                   try {
                     localStorage.setItem(getTenantOnboardingKey(null), '1');
@@ -1039,6 +1050,8 @@ export default function App() {
               className="min-h-screen"
             >
               <FlipAuthGuard
+                themeId={activeSpatialPrefs.themeId}
+                spatialPrefs={activeSpatialPrefs}
                 onAuthenticated={handleAuthenticated}
                 onReplayOnboarding={() => setOnboardingDone(false)}
               />
@@ -1052,8 +1065,12 @@ export default function App() {
 
   return (
     <div className="ambient-obsidian-canvas relative flex min-h-screen flex-col [overflow-x:clip]">
-      <div className="ambient-orb-gold ambient-orb-gold-1" />
-      <div className="ambient-orb-gold ambient-orb-gold-2" />
+      <Spatial3DCanvas
+        themeId={activeSpatialPrefs.themeId}
+        spatialPrefs={activeSpatialPrefs}
+        activeView={activeView}
+        reduceMotion={tabrixReducedMotion}
+      />
 
       {!isDedicatedFullScreenView && (
         <TopBar
@@ -1163,6 +1180,11 @@ export default function App() {
               capabilities={capabilities}
               generalPrefs={generalPrefs}
               onUpdateGeneralPrefs={setGeneralPrefs}
+              onUpdateActivePeriod={updateActivePeriod}
+              onUpdateCalculationSettings={(patch) =>
+                setCalculationSettings({ ...state.calculationSettings, ...patch })
+              }
+              onExportBackupFile={() => handleDownloadBackupJson(false)}
               onAddExpense={addExpense}
               onOpenMasterRoster={() => setActiveView('master_roster')}
               onOpenAgencyRoster={(id) => {
@@ -1443,6 +1465,25 @@ export default function App() {
           }
           onNotifyError={(msg) =>
             pushToast({ title: msg, tone: 'error' })
+          }
+        />
+      )}
+
+      {activeView === 'smart_models' && (
+        <SmartModelsWorkspaceView
+          state={state}
+          reduceMotion={tabrixReducedMotion}
+          onApplyAutoFixes={applyAssistantAutoFixes}
+          onOpenAgencyRoster={(agId) => {
+            setSelectedAgencyId(agId);
+            setActiveView('agency_roster');
+          }}
+          onNavigateView={(v) => handleNavigate(v)}
+          onShowToast={(msg, tone) =>
+            pushToast({
+              title: msg,
+              tone: tone === 'danger' ? 'error' : tone || 'info',
+            })
           }
         />
       )}

@@ -17,6 +17,7 @@ import {
 } from 'motion/react';
 import {
   Bot,
+  BrainCircuit,
   Home,
   PlusCircle,
   ScanLine,
@@ -47,13 +48,13 @@ export interface FloatingGlassBottomNavProps {
   className?: string;
 }
 
-const BADGE_DIAMETER = 44;
-const BADGE_REST_TOP = -10; // Protrudes 10px upward above the 60px pill top edge
+const BADGE_DIAMETER = 48;
+const BADGE_REST_TOP = -11; // Protrudes 11px upward above the 64px pill top edge
 
 const INDICATOR_SPRING = {
-  stiffness: 380,
-  damping: 26,
-  mass: 0.8,
+  stiffness: 420,
+  damping: 30,
+  mass: 0.85,
 };
 
 const TAP_SPRING = {
@@ -128,7 +129,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
   const aeroLiftY = useTransform(
     velocityX,
     [-1400, 0, 1400],
-    isReducedMotionActive ? [0, 0, 0] : [-6.5, 0, -6.5]
+    isReducedMotionActive ? [0, 0, 0] : [-5, 0, -5]
   );
   const aeroTilt = useTransform(
     velocityX,
@@ -277,7 +278,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
   return (
     <nav
       aria-label={ariaLabel}
-      className={`no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] flex flex-col items-center justify-end px-3 pb-[max(0.45rem,env(safe-area-inset-bottom))] pointer-events-none transition-transform duration-300 ${
+      className={`no-print pointer-events-none flex flex-col items-center justify-end px-2 transition-transform duration-300 ${
         hiddenByScroll ? 'translate-y-28' : 'translate-y-0'
       } ${className}`}
     >
@@ -286,7 +287,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
         role="tablist"
         onKeyDown={handleKeyDown}
         onMouseLeave={() => setHoveredIdx(null)}
-        className="pointer-events-auto relative h-[60px] w-[92%] max-w-[440px] rounded-full overflow-visible select-none"
+        className="pointer-events-auto relative h-16 w-[min(calc(100vw-84px),430px)] rounded-full overflow-visible select-none"
       >
         {/* Separate clipped glassmorphic surface layer with synchronized internal optical glow */}
         <div
@@ -579,7 +580,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
       {showHomeIndicator && (
         <div
           aria-hidden="true"
-          className="mt-1.5 h-[4px] w-[120px] rounded-full pointer-events-none"
+          className="mt-1.5 h-[4px] w-[120px] rounded-full pointer-events-none md:hidden"
           style={{ backgroundColor: 'rgba(255, 255, 255, 0.65)' }}
         />
       )}
@@ -636,8 +637,15 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
       }
       lastScrollYRef.current = curY;
     };
+    const onResize = () => {
+      setHiddenByScroll(false);
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    };
   }, []);
 
   const showSettingsSlot =
@@ -713,6 +721,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
       activeView === 'data_archives'
     ? 'master_roster'
     : activeView === 'morrow_center' ||
+      activeView === 'smart_models' ||
       activeView === 'google_workspace' ||
       isAssistantOpen
     ? 'morrow'
@@ -753,13 +762,41 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   };
 
   return (
-    <FloatingGlassBottomNav
-      items={items}
-      activeKey={resolvedActiveKey}
-      onChange={handleSelect}
-      hiddenByScroll={hiddenByScroll}
-      showHomeIndicator={true}
-      showLabels={true}
-    />
+    <div className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-3 px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
+      <FloatingGlassBottomNav
+        items={items}
+        activeKey={resolvedActiveKey}
+        onChange={handleSelect}
+        hiddenByScroll={hiddenByScroll}
+        showHomeIndicator={true}
+        showLabels={true}
+      />
+
+      {/* Orbital 3D Smart Models Quick-Launch Orb anchored beside the glass dock */}
+      <button
+        type="button"
+        data-testid="dock-smart-models-btn"
+        aria-label="النماذج الذكية"
+        title="النماذج الذكية"
+        onClick={() => onNavigateView('smart_models')}
+        className={`pointer-events-auto flex mb-2 md:mb-0 h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full border backdrop-blur-xl transition-all cursor-pointer ${
+          hiddenByScroll ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'
+        }`}
+        style={{
+          borderColor: activeView === 'smart_models' ? 'var(--accent-bright)' : 'var(--border-color)',
+          backgroundColor:
+            activeView === 'smart_models'
+              ? 'var(--accent)'
+              : 'color-mix(in srgb, var(--bg-surface, #0A1726) 76%, #020812)',
+          color: activeView === 'smart_models' ? 'var(--accent-fg)' : 'var(--accent-bright)',
+          boxShadow:
+            activeView === 'smart_models'
+              ? '0 10px 28px var(--spatial-glow)'
+              : '0 12px 28px rgba(0,0,0,0.65)',
+        }}
+      >
+        <BrainCircuit className="h-5 w-5" />
+      </button>
+    </div>
   );
 };

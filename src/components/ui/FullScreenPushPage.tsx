@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
 import {
@@ -60,7 +61,7 @@ export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, hideBack, handleBack]);
 
-  return (
+  const content = (
     <AnimatePresence>
       {open && (
         <motion.div
@@ -172,4 +173,9 @@ export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+  return content;
 };

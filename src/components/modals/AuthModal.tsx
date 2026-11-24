@@ -9,8 +9,8 @@ import {
   Mail,
   Phone,
   ShieldCheck,
+  Sparkles,
   User,
-  X,
 } from 'lucide-react';
 import {
   clearSession,
@@ -25,6 +25,10 @@ import {
 import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import {
+  normalizeUsernameInput,
+  validateAuthUsername,
+} from '../../utils/spatial3dConfig';
 
 interface AuthModalProps {
   open: boolean;
@@ -35,7 +39,7 @@ interface AuthModalProps {
   onLoggedOut: () => void;
 }
 
-type AuthTab = 'google' | 'username' | 'phone';
+type AuthTab = 'google' | 'username' | 'phone' | 'email';
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   open,
@@ -120,7 +124,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'تعذر تسجيل الدخول بحساب Gmail.'
+        err instanceof Error ? err.message : 'تعذر تسجيل الدخول بحساب Google.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('يرجى إدخال بريد إلكتروني صحيح.');
+      return;
+    }
+    if (isRegister && password.length < 6) {
+      setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      const session = isRegister
+        ? await registerWithPasswordApi({
+            mode: 'google',
+            displayName: displayName.trim() || cleanEmail.split('@')[0],
+            email: cleanEmail,
+            password,
+          })
+        : await loginWithPasswordApi({
+            mode: 'google',
+            identifier: cleanEmail,
+            password,
+          });
+      onAuthenticated(session.user);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر تسجيل الدخول بالبريد الإلكتروني.'
       );
     } finally {
       setLoading(false);
@@ -129,19 +170,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const check = validateAuthUsername(username);
+    if (!check.valid) {
+      setError(check.error || 'يرجى التحقق من اسم المستخدم.');
+      return;
+    }
     try {
       setLoading(true);
       setError('');
       const session = isRegister
         ? await registerWithPasswordApi({
             mode: 'username',
-            displayName: displayName.trim() || username.trim(),
-            username: username.trim(),
+            displayName: displayName.trim() || check.normalized,
+            username: check.normalized,
             password,
           })
         : await loginWithPasswordApi({
             mode: 'username',
-            identifier: username.trim(),
+            identifier: check.normalized,
             password,
           });
       onAuthenticated(session.user);
@@ -205,10 +251,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       hideBack={lockedGate}
       title={
         currentUser
-          ? 'إدارة الحساب وتسجيل الدخول المتعدد'
-          : 'تسجيل الدخول إلى نظام الوكالات'
+          ? 'إدارة الحساب وتبديل تسجيل الدخول — Morrow'
+          : 'تسجيل الدخول إلى Morrow'
       }
-      subtitle="حسابات Google أو اسم المستخدم أو رقم الهاتف"
+      subtitle="حساب Google، اسم المستخدم، رقم الهاتف، أو البريد الإلكتروني"
       icon={<ShieldCheck className="h-4 w-4" />}
       ariaLabel="تسجيل الدخول المتعدد"
       maxWidthClass="max-w-lg"
@@ -254,10 +300,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                     <div className="truncate" style={{ color: 'var(--text-muted)' }}>
                       {currentUser.provider === 'google'
-                        ? `Gmail: ${currentUser.email}`
+                        ? `البريد: ${currentUser.email}`
                         : currentUser.provider === 'phone'
                         ? `الهاتف: ${currentUser.phone}`
-                        : `اليوزر: ${currentUser.username}`}
+                        : `اسم المستخدم: ${currentUser.username}`}
                     </div>
                   </div>
                 </div>
@@ -267,7 +313,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     clearSession();
                     onLoggedOut();
                   }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold whitespace-nowrap"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold whitespace-nowrap cursor-pointer"
                   style={{
                     borderColor: 'var(--danger)',
                     color: 'var(--danger)',
@@ -283,7 +329,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="button"
                   disabled={avatarBusy}
                   onClick={() => avatarInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold hover:opacity-85 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold hover:opacity-85 disabled:opacity-50 cursor-pointer"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
@@ -308,18 +354,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* 3 Multi-Login Tabs */}
+          {/* 4 Multi-Login Tabs */}
           <div
             role="tablist"
             aria-label="طرق تسجيل الدخول"
-            className="grid grid-cols-3 gap-1 rounded-lg p-1"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl p-1"
             style={{ backgroundColor: 'var(--bg-main)' }}
           >
             {(
               [
-                ['google', 'Gmail', Mail],
-                ['username', 'يوزر', User],
+                ['google', 'Google', Sparkles],
+                ['username', 'اسم المستخدم', User],
                 ['phone', 'رقم الهاتف', Phone],
+                ['email', 'البريد', Mail],
               ] as Array<[AuthTab, string, React.FC<{ className?: string }>]>
             ).map(([key, label, Icon]) => {
               const active = tab === key;
@@ -329,16 +376,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   role="tab"
                   aria-selected={active}
                   type="button"
+                  data-testid={`modal-auth-tab-${key}`}
                   onClick={() => {
                     setTab(key);
                     setError('');
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-bold whitespace-nowrap transition-colors"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer"
                   style={{
-                    backgroundColor: active
-                      ? 'var(--bg-surface)'
-                      : 'transparent',
-                    color: active ? 'var(--accent)' : 'var(--text-muted)',
+                    backgroundColor: active ? 'var(--accent)' : 'transparent',
+                    color: active ? 'var(--accent-fg)' : 'var(--text-muted)',
                   }}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -384,14 +430,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span>
                     {loading
                       ? 'جارٍ الاتصال بـ Google...'
-                      : 'تسجيل الدخول السريع بحساب Google + التقويم والمهام'}
+                      : 'تسجيل الدخول بحساب Google'}
                   </span>
                 </span>
               </button>
 
               <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-                <span>أو الدخول السريع بالبريد</span>
+                <span>أو الدخول السريع ببريد Gmail</span>
                 <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
               </div>
 
@@ -401,7 +447,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     htmlFor="auth-gmail-email"
                     className="mb-1 block text-xs font-medium"
                   >
-                    حساب Gmail / البريد الإلكتروني
+                    حساب Gmail
                   </label>
                   <input
                     id="auth-gmail-email"
@@ -434,7 +480,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="مثال: منذر الحلو"
+                    placeholder="مثال: أحمد كريم"
                     className="w-full rounded-lg border px-3 py-2 text-sm"
                     style={{
                       backgroundColor: 'var(--bg-main)',
@@ -446,13 +492,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                  className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
                   }}
                 >
-                  {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Gmail'}
+                  {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Google'}
                 </button>
               </form>
             </div>
@@ -488,7 +534,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   htmlFor="auth-username-input"
                   className="mb-1 block text-xs font-medium"
                 >
-                  اسم المستخدم (يوزر)
+                  اسم المستخدم
                 </label>
                 <input
                   id="auth-username-input"
@@ -497,16 +543,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   required
                   value={username}
                   onChange={(e) => {
-                    setUsername(e.target.value);
+                    setUsername(normalizeUsernameInput(e.target.value));
                     setError('');
                   }}
-                  placeholder="munther_agency"
+                  placeholder="ali_agency90"
                   className="w-full rounded-lg border px-3 py-2 text-left text-sm"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
                   }}
                 />
+                <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  أحرف إنجليزية، أرقام، أو الرموز (_ . -) بدون مسافات
+                </p>
               </div>
 
               <div>
@@ -537,7 +586,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="button"
                     onClick={() => setShowPass((v) => !v)}
                     aria-label="إظهار أو إخفاء كلمة المرور"
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {showPass ? (
@@ -552,7 +601,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
                 style={{
                   backgroundColor: 'var(--accent)',
                   color: 'var(--accent-fg)',
@@ -561,8 +610,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading
                   ? 'يرجى الانتظار...'
                   : isRegister
-                  ? 'إنشاء حساب يوزر جديد'
-                  : 'تسجيل الدخول باليوزر'}
+                  ? 'إنشاء حساب جديد'
+                  : 'تسجيل الدخول باسم المستخدم'}
               </button>
 
               <button
@@ -571,12 +620,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setIsRegister((v) => !v);
                   setError('');
                 }}
-                className="w-full text-center text-xs font-semibold underline"
+                className="w-full text-center text-xs font-semibold underline cursor-pointer"
                 style={{ color: 'var(--accent)' }}
               >
                 {isRegister
                   ? 'لديك حساب مسبقًا؟ سجّل الدخول'
-                  : 'مستخدم جديد؟ أنشئ حسابًا باليوزر'}
+                  : 'مستخدم جديد؟ أنشئ حسابًا باسم المستخدم'}
               </button>
             </form>
           )}
@@ -591,7 +640,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setOtpSent(false);
                     setError('');
                   }}
-                  className="rounded-lg border py-1.5 font-semibold"
+                  className="rounded-lg border py-1.5 font-semibold cursor-pointer"
                   style={{
                     borderColor:
                       phoneSubMode === 'otp'
@@ -611,7 +660,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setPhoneSubMode('password');
                     setError('');
                   }}
-                  className="rounded-lg border py-1.5 font-semibold"
+                  className="rounded-lg border py-1.5 font-semibold cursor-pointer"
                   style={{
                     borderColor:
                       phoneSubMode === 'password'
@@ -698,7 +747,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -721,7 +770,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         setOtpCode('');
                         setDemoOtpHint('');
                       }}
-                      className="w-full text-center text-xs underline"
+                      className="w-full text-center text-xs underline cursor-pointer"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       تغيير رقم الهاتف
@@ -774,7 +823,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                    className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -785,7 +834,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsRegister((v) => !v)}
-                    className="w-full text-center text-xs font-semibold underline"
+                    className="w-full text-center text-xs font-semibold underline cursor-pointer"
                     style={{ color: 'var(--accent)' }}
                   >
                     {isRegister
@@ -794,6 +843,129 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
                 </>
               )}
+            </form>
+          )}
+
+          {tab === 'email' && (
+            <form onSubmit={handleEmailPasswordSubmit} className="space-y-3">
+              {isRegister && (
+                <div>
+                  <label
+                    htmlFor="auth-email-display"
+                    className="mb-1 block text-xs font-medium"
+                  >
+                    الاسم الكامل
+                  </label>
+                  <input
+                    id="auth-email-display"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="مثال: أحمد كريم"
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label
+                  htmlFor="auth-email-input"
+                  className="mb-1 block text-xs font-medium"
+                >
+                  البريد الإلكتروني
+                </label>
+                <input
+                  id="auth-email-input"
+                  type="email"
+                  dir="ltr"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError('');
+                  }}
+                  placeholder="name@example.com"
+                  className="w-full rounded-lg border px-3 py-2 text-left text-sm"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="auth-email-pass"
+                  className="mb-1 block text-xs font-medium"
+                >
+                  كلمة المرور
+                </label>
+                <div className="relative">
+                  <input
+                    id="auth-email-pass"
+                    type={showPass ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="••••••"
+                    className="w-full rounded-lg border px-3 py-2 pl-9 text-sm"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass((v) => !v)}
+                    aria-label="إظهار أو إخفاء كلمة المرور"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {showPass ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                {loading
+                  ? 'يرجى الانتظار...'
+                  : isRegister
+                  ? 'إنشاء حساب بالبريد'
+                  : 'تسجيل الدخول بالبريد الإلكتروني'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegister((v) => !v);
+                  setError('');
+                }}
+                className="w-full text-center text-xs font-semibold underline cursor-pointer"
+                style={{ color: 'var(--accent)' }}
+              >
+                {isRegister
+                  ? 'لديك حساب مسبقًا؟ سجّل الدخول'
+                  : 'مستخدم جديد؟ أنشئ حسابًا بالبريد الإلكتروني'}
+              </button>
             </form>
           )}
 
