@@ -3,21 +3,21 @@
   color-scheme: dark;
 
   /* Dynamic Marine Palette Aliases (driven by active Marine Theme in themes.ts) */
-  --obsidian-bg: var(--bg-main, #040B14);
-  --obsidian-surface: var(--bg-surface, #0A1726);
-  --obsidian-surface-elevated: var(--bg-table-header, #0E1F33);
-  --gold-primary: var(--accent, #10B981);
-  --gold-bright: var(--accent-bright, #6EE7B7);
-  --gold-amber: var(--accent, #10B981);
-  --gold-border: var(--border-color, rgba(52, 211, 153, 0.24));
-  --gold-border-strong: color-mix(in srgb, var(--accent, #10B981) 46%, transparent);
-  --gold-glow: var(--marine-caustic-1, rgba(16, 185, 129, 0.16));
+  --obsidian-bg: var(--bg-main, #040814);
+  --obsidian-surface: var(--bg-surface, #091326);
+  --obsidian-surface-elevated: var(--bg-table-header, #0F1E38);
+  --gold-primary: var(--accent, #10E0A6);
+  --gold-bright: var(--accent-bright, #86FFDE);
+  --gold-amber: var(--accent, #10E0A6);
+  --gold-border: var(--border-color, rgba(56, 239, 194, 0.25));
+  --gold-border-strong: color-mix(in srgb, var(--accent, #10E0A6) 48%, transparent);
+  --gold-glow: var(--marine-caustic-1, rgba(16, 224, 166, 0.18));
 
   /* 3D Oceanic Smoked Glassmorphism */
-  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #0A1726) 72%, transparent);
-  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #0A1726) 86%, transparent);
-  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 20%, rgba(255, 255, 255, 0.14));
-  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.55);
+  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #091326) 72%, transparent);
+  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #091326) 86%, transparent);
+  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #86FFDE) 24%, rgba(255, 255, 255, 0.16));
+  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.62);
   --glass-blur: blur(22px) saturate(165%);
 
   /* Motion Timing */
@@ -56,9 +56,9 @@ h2 {
 .marine-gradient-text {
   background: linear-gradient(
     135deg,
-    var(--accent-bright, #6EE7B7) 0%,
-    var(--accent, #10B981) 52%,
-    var(--accent-deep, #047857) 100%
+    var(--accent-bright, #86FFDE) 0%,
+    var(--accent, #10E0A6) 54%,
+    var(--spatial-secondary, #22D3EE) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -319,32 +319,62 @@ html[data-reduce-motion="1"] .marine-float-3d {
 }
 
 .glass-bento-card {
+  --spot-x: 50%;
+  --spot-y: 50%;
+  --spot-opacity: 0;
+  --tilt-rx: 0deg;
+  --tilt-ry: 0deg;
+  --tilt-scale: 1;
   background: linear-gradient(
     152deg,
-    color-mix(in srgb, var(--bg-surface, #0A1726) 76%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main, #040B14) 86%, transparent) 100%
+    color-mix(in srgb, var(--bg-surface, #091326) 76%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main, #040814) 86%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--border-color, rgba(52, 211, 153, 0.24)) 92%, rgba(255, 255, 255, 0.1));
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(56, 239, 194, 0.25)) 92%, rgba(255, 255, 255, 0.1));
   backdrop-filter: blur(22px) saturate(165%);
   -webkit-backdrop-filter: blur(22px) saturate(165%);
+  transform-style: preserve-3d;
+  transform: perspective(1200px) rotateX(var(--tilt-rx)) rotateY(var(--tilt-ry)) scale3d(var(--tilt-scale), var(--tilt-scale), 1);
+  transition: transform 180ms var(--ease-luxury), border-color 220ms var(--ease-luxury), box-shadow 220ms var(--ease-luxury);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
-    0 20px 44px -20px rgba(0, 0, 0, 0.88);
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.52),
+    0 22px 48px -20px rgba(0, 0, 0, 0.9);
   will-change: transform;
 }
 
 .glass-bento-card-elevated {
   background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--bg-table-header, #0E1F33) 84%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main, #040B14) 92%, transparent) 100%
+    148deg,
+    color-mix(in srgb, var(--bg-table-header, #0F1E38) 82%, transparent) 0%,
+    color-mix(in srgb, var(--bg-main, #040814) 90%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10B981)) 38%, rgba(255, 255, 255, 0.12));
+  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10E0A6)) 36%, rgba(255, 255, 255, 0.12));
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.58),
-    0 28px 64px -20px rgba(0, 0, 0, 0.92),
-    0 0 42px -18px var(--spatial-glow, rgba(16, 185, 129, 0.28));
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 24px 54px -22px rgba(2, 8, 22, 0.88),
+    0 0 38px -18px var(--spatial-glow, rgba(16, 224, 166, 0.24));
 }
+
+/* Editorial Eyebrow Metadata & Recessed Single-Elevation Metric Wells */
+.editorial-eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  color: var(--text-muted);
+}
+
+.metric-well {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-main, #040916) 58%, rgba(255, 255, 255, 0.02));
+  border: 1px solid color-mix(in srgb, var(--border-color) 65%, rgba(255, 255, 255, 0.06));
+  transition: border-color 180ms var(--ease-luxury), background-color 180ms var(--ease-luxury);
+}
+
+.metric-well:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-color));
+  background: color-mix(in srgb, var(--bg-main, #040916) 46%, var(--accent) 4%);
+}
+
 

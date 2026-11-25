@@ -4,6 +4,7 @@ import type { Spatial3DPrefs } from '../../types/agency';
 import {
   computeHubOrbTelemetry,
   resolveActiveSpatialPalette,
+  triggerGlobalSpatialPulse,
 } from '../../utils/spatial3dConfig';
 import {
   createAdaptiveRenderLoop,
@@ -292,6 +293,7 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
       type="button"
       onClick={() => {
         liveRef.current.boostUntil = performance.now() + 900;
+        triggerGlobalSpatialPulse(1.2);
         onPulse?.();
       }}
       data-testid="morrow-hub-orb-3d"

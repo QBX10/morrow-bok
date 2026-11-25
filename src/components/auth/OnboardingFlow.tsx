@@ -23,6 +23,7 @@ import {
   useTabrixDirection,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
+import { triggerGlobalSpatialPulse } from '../../utils/spatial3dConfig';
 import type { Spatial3DPrefs, Spatial3DThemeId } from '../../types/agency';
 
 interface OnboardingFlowProps {
@@ -196,7 +197,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
             </div>
           </div>
 
-          {/* Split 3D Stage: Copy + Interactive 3D Smart Cat Companion */}
+          {/* Split 3D Stage: Copy + Interactive 3D Morrow Neural Sovereign Entity */}
           <div className="grid grid-cols-1 lg:grid-cols-[1.12fr_0.95fr] gap-6 items-center">
             <div className="tabrix-3d-stage">
               <AnimatePresence mode="wait" custom={slideDir} initial={false}>
@@ -274,7 +275,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               </AnimatePresence>
             </div>
 
-            {/* Interactive Cyber-Geometric 3D Smart Cat Mascot */}
+            {/* Interactive 3D Morrow Neural Sovereign Entity */}
             <MorrowMascot3D
               themeId={themeId}
               spatialPrefs={spatialPrefs}
@@ -295,7 +296,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     key={s.id}
                     type="button"
                     aria-label={`الانتقال إلى الشريحة ${idx + 1}`}
-                    onClick={() => setStepIndex(idx)}
+                    onClick={() => {
+                      if (idx !== stepIndex) {
+                        triggerGlobalSpatialPulse(1.15);
+                        setStepIndex(idx);
+                      }
+                    }}
                     animate={{ width: active ? 34 : 10 }}
                     transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                     className="h-2.5 rounded-full cursor-pointer"
@@ -316,7 +322,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                   type="button"
                   whileHover={reducedMotion ? undefined : { y: -1.5 }}
                   whileTap={reducedMotion ? undefined : { scale: 0.97 }}
-                  onClick={() => setStepIndex((prev) => Math.max(0, prev - 1))}
+                  onClick={() => {
+                    triggerGlobalSpatialPulse(1.1);
+                    setStepIndex((prev) => Math.max(0, prev - 1));
+                  }}
                   className="px-4 py-2.5 rounded-xl border border-white/15 bg-white/[0.04] hover:bg-white/[0.08] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowRight size={14} />
@@ -331,6 +340,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 whileTap={reducedMotion ? undefined : { scale: 0.97 }}
                 transition={TABRIX_TACTILE_SPRING}
                 onClick={() => {
+                  triggerGlobalSpatialPulse(1.2);
                   if (isLast) {
                     onComplete();
                   } else {

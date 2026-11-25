@@ -2004,8 +2004,8 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 className="nexus-pill-btn flex min-h-[46px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
                 style={{
                   background:
-                    'linear-gradient(135deg, var(--accent-ai, #5B4FE9) 0%, #4338CA 100%)',
-                  color: '#FFFFFF',
+                    'linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%)',
+                  color: 'var(--accent-fg, #021712)',
                 }}
               >
                 <Share2 className="h-4 w-4" />

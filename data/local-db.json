@@ -91,32 +91,6 @@
       "createdAt": "2026-11-24T17:59:26.318Z"
     },
     {
-      "id": 8,
-      "uid": "usr_4c23d8102f9f4c5a",
-      "authProvider": "username",
-      "displayName": "أحمد تجربة",
-      "email": null,
-      "username": "verify_morrow_user",
-      "phone": null,
-      "avatarUrl": null,
-      "passwordHash": "60fca9e1af6783532efa043e1f839b72:3078d2192cd89a8ef9f654c6bfecfdc6e202ee9af9071a05b1f01ffd07e44cd05f65210c6cbc4f776dcf6bae57762f2e721af0e0d9d5f9c1cd0ccff33850a93d",
-      "role": "manager",
-      "createdAt": "2026-11-24T19:00:15.090Z"
-    },
-    {
-      "id": 9,
-      "uid": "usr_f6499be0fce74924",
-      "authProvider": "username",
-      "displayName": "أحمد تجربة",
-      "email": null,
-      "username": "verify_r2_user",
-      "phone": null,
-      "avatarUrl": null,
-      "passwordHash": "c5293624fb91e7e69fe783af28bda2f6:1f60b5200b9386556b84471699f46ae749769970b6d7a8c8a14de4d55af18ad288958b53ca86adbcaea5394b0edd3d1a741fced4f461bac71639ddfc7e3f197d",
-      "role": "manager",
-      "createdAt": "2026-11-24T19:04:16.765Z"
-    },
-    {
       "id": 10,
       "uid": "gml_85bfe9a75b0c413f",
       "authProvider": "google",
@@ -141,6 +115,19 @@
       "passwordHash": "c0c72e39d315e954fb8e8ba50ce722b5:d3031f7a91159f9a0a8883f9779aeb3c8cab29b43108b8a0ccff7fc205ffa0ec8bc6fafb4ca45bc0663459413d7fe0fc94a423a04297a0fa72c16c3435e5e990",
       "role": "manager",
       "createdAt": "2026-11-24T19:21:12.117Z"
+    },
+    {
+      "id": 12,
+      "uid": "usr_e5c04c2a13464b75",
+      "authProvider": "username",
+      "displayName": "مستخدم اختبار",
+      "email": null,
+      "username": "morrow_verify_u1",
+      "phone": null,
+      "avatarUrl": null,
+      "passwordHash": "6ce0b4cc2962585947d762b3e4ed29e0:bc50acdfc22392576ed656a3aeb70d7a8e56da3d775b5d01da94f45a774c48f013ba3828bc575407d4fa1d7f7a8d8f8694e3152d38c3d9040aa6b2eb3a355826",
+      "role": "manager",
+      "createdAt": "2026-11-24T20:40:40.548Z"
     }
   ],
   "snapshots": []

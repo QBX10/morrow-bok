@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { triggerGlobalSpatialPulse } from '../../utils/spatial3dConfig';
 import {
   createAdaptiveRenderLoop,
   createRoomEnvPMREM,
@@ -68,6 +69,7 @@ export const SmartModelCore3D: React.FC<SmartModelCore3DProps> = ({
 
   const triggerCorePulse = () => {
     liveRef.current.pulseUntil = performance.now() + 950;
+    triggerGlobalSpatialPulse(1.35);
     onPulseClick?.();
   };
 
@@ -118,7 +120,7 @@ export const SmartModelCore3D: React.FC<SmartModelCore3DProps> = ({
     scene.environment = pmrem.envMap;
 
     const camera = new THREE.PerspectiveCamera(40, w / Math.max(1, h), 0.1, 40);
-    camera.position.set(0, 0, 5.55);
+    camera.position.set(0, 0, 6.1);
 
     const keyLight = new THREE.PointLight(0x10b981, 24, 22);
     keyLight.position.set(2.8, 3.2, 4.0);
@@ -404,7 +406,7 @@ export const SmartModelCore3D: React.FC<SmartModelCore3DProps> = ({
         </div>
       )}
 
-      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-black/55 border border-white/10 backdrop-blur-md text-[11px] font-bold text-[var(--text-primary)]">
+      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-[#050C1A]/85 border border-white/15 text-[11px] font-bold text-[var(--text-primary)]">
         {executionState === 'thinking'
           ? 'جاري التحليل...'
           : executionState === 'complete'
@@ -415,7 +417,7 @@ export const SmartModelCore3D: React.FC<SmartModelCore3DProps> = ({
       <button
         type="button"
         onClick={triggerCorePulse}
-        className="absolute bottom-3 left-3 px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 border border-white/15 text-[10px] font-bold backdrop-blur-md cursor-pointer transition"
+        className="absolute bottom-3 left-3 px-2.5 py-1 rounded-lg bg-[#050C1A]/88 hover:bg-[#0A1830] border border-white/15 text-[10px] font-bold cursor-pointer transition"
         style={{ color: accentHex }}
       >
         نبضة 3D ✨

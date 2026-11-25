@@ -36,8 +36,13 @@ import {
 } from '../../utils/tabrixMotion';
 import {
   normalizeUsernameInput,
+  triggerGlobalSpatialPulse,
   validateAuthUsername,
 } from '../../utils/spatial3dConfig';
+import {
+  playTactileFeedback,
+  shouldFireTactileEvent,
+} from '../../utils/tactileFeedback';
 
 interface FlipAuthGuardProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -97,14 +102,24 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
 
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const lastTactileRef = React.useRef(0);
+
+  const triggerFieldTactile = () => {
+    const now = performance.now();
+    if (!shouldFireTactileEvent(now, lastTactileRef.current, 85)) return;
+    lastTactileRef.current = now;
+    playTactileFeedback('tap', { sound: true, haptic: true });
+  };
 
   const triggerFlip = (toCreateAccount: boolean) => {
+    playTactileFeedback('tap', { sound: true, haptic: true });
     setErrorMsg('');
     setOtpSent(false);
     setOtpCode('');
     setDemoOtpHint('');
     setIsFlippingCrest(true);
     setIsFlipped(toCreateAccount);
+    triggerGlobalSpatialPulse(1.25);
     window.setTimeout(() => {
       setIsFlippingCrest(false);
     }, 520);
@@ -747,7 +762,19 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         </AnimatePresence>
 
         {/* 3D Flip Container */}
-        <div className="flip-perspective w-full">
+        <div
+          className="flip-perspective w-full"
+          onPointerDownCapture={(e) => {
+            if ((e.target as HTMLElement)?.tagName === 'INPUT') {
+              triggerFieldTactile();
+            }
+          }}
+          onFocusCapture={(e) => {
+            if ((e.target as HTMLElement)?.tagName === 'INPUT') {
+              triggerFieldTactile();
+            }
+          }}
+        >
           <div
             className={`flip-card-inner relative w-full min-h-[630px] ${
               isFlipped ? 'is-flipped' : ''
@@ -1001,7 +1028,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                           type="text"
                           value={regName}
                           onChange={(e) => setRegName(e.target.value)}
-                          placeholder="أحمد كريم"
+                          placeholder="اكتب اسمك هنا"
                           className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                         />
                       </div>

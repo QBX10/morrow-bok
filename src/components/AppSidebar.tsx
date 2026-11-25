@@ -194,7 +194,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           {/* Group 1: Agencies & Rosters */}
           <div className="space-y-1">
             {!compact && (
-              <div className="px-2 pb-1 text-[10px] font-bold tracking-wide text-[#9898AA]">
+              <div className="px-2 pb-1 text-[10px] font-bold tracking-wide text-[var(--text-muted)]">
                 الوكالات والسجلات
               </div>
             )}
@@ -308,7 +308,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             style={{ borderColor: 'var(--border-color)' }}
           >
             {!compact && (
-              <div className="px-2 pb-1 text-[10px] font-bold tracking-wide text-[#9898AA]">
+              <div className="px-2 pb-1 text-[10px] font-bold tracking-wide text-[var(--text-muted)]">
                 العمليات والأدوات
               </div>
             )}

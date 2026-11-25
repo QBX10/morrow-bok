@@ -1166,7 +1166,7 @@ export default function App() {
         <TabrixPageTransition
           viewKey={activeRouteKey}
           direction={navDirection}
-          className={!isDedicatedFullScreenView ? 'pb-24' : ''}
+          className={!isDedicatedFullScreenView ? 'pb-24 lg:pb-8' : ''}
         >
           {activeView === 'hub' && (
             <AgenciesHubView
@@ -1578,6 +1578,7 @@ export default function App() {
           onClearMessages={assistant.clearMessages}
           onRetryLastPrompt={assistant.retryLastPrompt}
           modelHealthSnapshots={assistant.modelHealthSnapshots}
+          spatialPrefs={state.generalPrefs?.spatial3dPrefs}
           canViewFinance={capabilities.canViewFinance}
           canUseQuickExtract={capabilities.canUseQuickExtract}
         />

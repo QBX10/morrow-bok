@@ -5,16 +5,21 @@ import {
   SPATIAL_3D_THEMES,
   buildGradientMeshLayers,
   computeHubOrbTelemetry,
+  computeParticleDisplacement,
   computeReadableForeground,
+  createFloatingParticleFieldSpec,
   getDensityPaddingClass,
   getSpatialThemeDef,
+  getSpatialViewChoreography,
   getTiltConfig,
   normalizeHexColor,
   normalizeUsernameInput,
   resolveActiveSpatialPalette,
+  resolveMorrowEntityMoodState,
   resolveSpatial3DPrefs,
   validateAuthUsername,
 } from './spatial3dConfig.ts';
+import { shouldFireTactileEvent } from './tactileFeedback.ts';
 import {
   SMART_MODELS_CATALOG,
   SMART_TASK_CHIPS,
@@ -156,3 +161,103 @@ test('smartModelsEngine returns grounded multi-agency analysis and exports', () 
 test('tabrixMotion VIEW_ORDER includes smart_models', () => {
   assert.ok(getTabrixViewOrder('smart_models') >= 0);
 });
+
+test('getSpatialViewChoreography returns distinct camera and stage presets across views', () => {
+  const hubPreset = getSpatialViewChoreography('hub');
+  const morrowPreset = getSpatialViewChoreography('morrow_center');
+  const rosterPreset = getSpatialViewChoreography('master_roster');
+
+  assert.equal(hubPreset.cameraZ, 25.5);
+  assert.ok(morrowPreset.cameraZ < hubPreset.cameraZ);
+  assert.ok(morrowPreset.stageScale > hubPreset.stageScale);
+  assert.ok(morrowPreset.ringSpeedMult > rosterPreset.ringSpeedMult);
+  assert.notEqual(hubPreset.stageYaw, rosterPreset.stageYaw);
+});
+
+test('resolveMorrowEntityMoodState produces articulated telemetry for greet, excited, and focus moods', () => {
+  const greetIdle = resolveMorrowEntityMoodState('greet', 0, false);
+  const excitedPulse = resolveMorrowEntityMoodState('excited', 2, true);
+  const focusIdle = resolveMorrowEntityMoodState('focus', 1, false);
+
+  assert.ok(excitedPulse.coreSpinSpeed > focusIdle.coreSpinSpeed);
+  assert.ok(focusIdle.coreSpinSpeed > greetIdle.coreSpinSpeed);
+  assert.ok(excitedPulse.wingFlareRad > 0.25);
+  assert.ok(focusIdle.wingFlareRad < 0);
+  assert.ok(excitedPulse.eyeScaleY > focusIdle.eyeScaleY);
+  assert.ok(excitedPulse.emissiveBoost > greetIdle.emissiveBoost);
+  assert.ok(excitedPulse.hoverAmplitude > focusIdle.hoverAmplitude);
+});
+
+test('createFloatingParticleFieldSpec and computeParticleDisplacement produce bounded depth-aware mouse motion', () => {
+  const hwField = createFloatingParticleFieldSpec(false);
+  const swField = createFloatingParticleFieldSpec(true);
+  assert.equal(hwField.count, 680);
+  assert.equal(swField.count, 320);
+  assert.equal(hwField.basePositions.length, hwField.count * 3);
+
+  for (let i = 0; i < hwField.count; i++) {
+    const x = hwField.basePositions[i * 3];
+    const y = hwField.basePositions[i * 3 + 1];
+    const z = hwField.basePositions[i * 3 + 2];
+    assert.ok(Number.isFinite(x) && Math.abs(x) <= 23);
+    assert.ok(Number.isFinite(y) && Math.abs(y) <= 14);
+    assert.ok(Number.isFinite(z) && z <= 4 && z >= -23);
+    assert.ok(hwField.depthLayers[i] >= 0.3 && hwField.depthLayers[i] <= 1.0);
+  }
+
+  const nearAtRest = computeParticleDisplacement({
+    baseX: 0,
+    baseY: 0,
+    baseZ: 0,
+    phase: 0,
+    speed: 0.5,
+    depthWeight: 1,
+    timeSec: 0,
+    pointerX: 0,
+    pointerY: 0,
+    pointerSpeed: 0,
+    pulseActive: false,
+    pulseProgress: 0,
+    pulseIntensity: 1,
+  });
+  const nearMoved = computeParticleDisplacement({
+    baseX: 0,
+    baseY: 0,
+    baseZ: 0,
+    phase: 0,
+    speed: 0.5,
+    depthWeight: 1,
+    timeSec: 0,
+    pointerX: 0.85,
+    pointerY: 0.45,
+    pointerSpeed: 1.4,
+    pulseActive: true,
+    pulseProgress: 0.1,
+    pulseIntensity: 1.2,
+  });
+  const farMoved = computeParticleDisplacement({
+    baseX: 0,
+    baseY: 0,
+    baseZ: -18,
+    phase: 0,
+    speed: 0.5,
+    depthWeight: 0.34,
+    timeSec: 0,
+    pointerX: 0.85,
+    pointerY: 0.45,
+    pointerSpeed: 1.4,
+    pulseActive: false,
+    pulseProgress: 0,
+    pulseIntensity: 1,
+  });
+
+  assert.ok(Math.abs(nearMoved.x - nearAtRest.x) > Math.abs(farMoved.x - nearAtRest.x));
+  assert.ok(nearMoved.glowBoost >= 0 && nearMoved.glowBoost <= 1);
+});
+
+test('shouldFireTactileEvent enforces cooldown to prevent duplicate input focus/pointer chimes', () => {
+  assert.equal(shouldFireTactileEvent(1000, 0, 85), true);
+  assert.equal(shouldFireTactileEvent(1040, 1000, 85), false);
+  assert.equal(shouldFireTactileEvent(1085, 1000, 85), true);
+});
+

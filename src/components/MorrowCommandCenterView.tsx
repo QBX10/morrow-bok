@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   Bot,
+  Box,
   Camera,
   Check,
   CheckCircle2,
@@ -43,6 +44,7 @@ import type {
   PeriodQuotaMeta,
   Person,
   SettingsSectionId,
+  Spatial3DPrefs,
 } from '../types/agency.ts';
 import type {
   AiCollaborationMode,
@@ -111,7 +113,17 @@ import {
 } from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
-import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
+import {
+  Tabrix3DTiltSurface,
+  TabrixSubViewTransition,
+} from './ui/TabrixMotionPrimitives';
+import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
+import { MorrowMascot3D } from './spatial3d/MorrowMascot3D';
+import morrowCommandStageBg from '../assets/images/morrow_command_stage_1795554012568.jpg';
+import {
+  resolveSpatial3DPrefs,
+  triggerGlobalSpatialPulse,
+} from '../utils/spatial3dConfig';
 import {
   SPECIALIZED_ASSISTANTS,
   type MorrowWorkspacePage,
@@ -205,6 +217,7 @@ interface MorrowCommandCenterViewProps {
   >;
   canViewFinance?: boolean;
   canUseQuickExtract?: boolean;
+  spatialPrefs?: Spatial3DPrefs;
 }
 
 interface AttachedDocumentItem {
@@ -467,7 +480,13 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   modelHealthSnapshots = [],
   canViewFinance = true,
   canUseQuickExtract = true,
+  spatialPrefs,
 }) => {
+  const [commandHeroMode, setCommandHeroMode] = useState<'orb' | 'entity'>('orb');
+  const resolvedSpatialPrefs = useMemo(
+    () => resolveSpatial3DPrefs(spatialPrefs),
+    [spatialPrefs]
+  );
   // Dual Hamburger Drawers + Clickable Center Morrow Model Selector + Standalone Page State
   const reducedMotion = useTabrixReducedMotion();
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
@@ -1741,7 +1760,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   ? 'var(--bg-nav-active)'
                   : 'var(--bg-surface)',
                 borderColor: modelMenuOpen
-                  ? 'var(--accent-ai, #5B4FE9)'
+                  ? 'var(--accent-ai, #12E5AD)'
                   : 'var(--border-color)',
                 color: 'var(--text-primary)',
               }}
@@ -1858,102 +1877,167 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             {!hasConversationContent ? (
               <section
                 aria-label="شاشة بداية Morrow"
-                className="my-auto mx-auto flex w-full max-w-xl flex-col items-center justify-center py-6 text-center space-y-6"
+                className="my-auto mx-auto flex w-full max-w-2xl flex-col items-center justify-center py-3 sm:py-4 text-center space-y-4"
               >
-                {/* Centered Glowing 3D Electric Indigo AI Orb */}
+                {/* 2D–3D Integrated Spatial Welcome Stage */}
                 <div
-                  className="nexus-orb-3d relative flex h-24 w-24 items-center justify-center"
-                  aria-hidden="true"
+                  className="morrow-showcase-frame relative w-full overflow-hidden p-4 sm:p-5 space-y-4"
                 >
-                  <svg
-                    viewBox="0 0 48 48"
-                    className="h-10 w-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.35)]"
-                    fill="none"
-                  >
-                    <path
-                      d="M24 6C25.9 15.8 32.2 22.1 42 24C32.2 25.9 25.9 32.2 24 42C22.1 32.2 15.8 25.9 6 24C15.8 22.1 22.1 15.8 24 6Z"
-                      stroke="#FFFFFF"
-                      strokeWidth="2.1"
-                      strokeLinejoin="round"
-                      fill="rgba(255, 255, 255, 0.22)"
-                    />
-                    <circle cx="24" cy="24" r="3.4" fill="#FFFFFF" />
-                  </svg>
-                </div>
+                  <img
+                    src={morrowCommandStageBg}
+                    alt=""
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.22]"
+                  />
 
-                <div className="space-y-2.5">
-                  <h1
-                    className="text-3xl sm:text-4xl font-black tracking-tight"
-                    style={{ textWrap: 'balance', color: 'var(--text-primary)' }}
-                  >
-                    من أين نبدأ؟
-                  </h1>
-                  <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-                    {activeAssistant.name} ·{' '}
-                    <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                      {activeAgency?.name || 'جميع الوكالات'}
+                  {/* Top 2D–3D Mode Eyebrow & Switcher */}
+                  <div className="relative z-10 flex flex-wrap items-center justify-between gap-2">
+                    <span className="editorial-eyebrow inline-flex items-center gap-1.5 text-[var(--accent-bright)]">
+                      <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                      <span>Morrow · Spatial 3D Command</span>
                     </span>
-                    {activePeriodLabel ? ` · ${activePeriodLabel}` : ''}
-                  </p>
+
+                    <div
+                      role="tablist"
+                      aria-label="وضع العرض ثلاثي الأبعاد في مركز Morrow"
+                      className="inline-flex items-center gap-1 rounded-xl border p-0.5 bg-black/50"
+                      style={{ borderColor: 'var(--border-color)' }}
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={commandHeroMode === 'orb'}
+                        data-testid="morrow-hero-mode-orb"
+                        onClick={() => {
+                          setCommandHeroMode('orb');
+                          triggerGlobalSpatialPulse(1.2);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                        style={{
+                          backgroundColor: commandHeroMode === 'orb' ? 'var(--accent)' : 'transparent',
+                          color: commandHeroMode === 'orb' ? 'var(--accent-fg)' : 'var(--text-muted)',
+                        }}
+                      >
+                        <Cpu className="h-3 w-3" />
+                        <span>نواة Morrow 3D</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={commandHeroMode === 'entity'}
+                        data-testid="morrow-hero-mode-entity"
+                        onClick={() => {
+                          setCommandHeroMode('entity');
+                          triggerGlobalSpatialPulse(1.35);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                        style={{
+                          backgroundColor: commandHeroMode === 'entity' ? 'var(--accent)' : 'transparent',
+                          color: commandHeroMode === 'entity' ? 'var(--accent-fg)' : 'var(--text-muted)',
+                        }}
+                      >
+                        <Box className="h-3 w-3" />
+                        <span>المجسم التفاعلي</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Interactive 3D Stage Surface (Zero backdrop-blur over WebGL canvas) */}
+                  <div className="relative z-10 flex flex-col items-center justify-center">
+                    {commandHeroMode === 'orb' ? (
+                      <div className="flex flex-col items-center gap-3 py-1">
+                        <MorrowHubOrb3D
+                          spatialPrefs={resolvedSpatialPrefs}
+                          agencyCount={agencies.length}
+                          activeIndividuals={persons.length}
+                          issueCount={pendingDrafts.length}
+                          className="!w-[116px] !h-[116px] sm:!w-[128px] sm:!h-[128px]"
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        data-testid="morrow-command-entity-3d"
+                        className="w-full max-w-md h-[210px] sm:h-[230px] overflow-hidden rounded-2xl border border-white/15 bg-[#040916]"
+                      >
+                        <MorrowMascot3D
+                          spatialPrefs={resolvedSpatialPrefs}
+                          onGreetClick={() => triggerGlobalSpatialPulse(1.4)}
+                          className="!min-h-full !h-full !border-0 !rounded-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative z-10 space-y-1.5">
+                    <h1
+                      className="font-display-ar text-2xl sm:text-3xl font-black tracking-tight marine-gradient-text"
+                      style={{ textWrap: 'balance' }}
+                    >
+                      من أين نبدأ؟
+                    </h1>
+                    <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {activeAssistant.name} ·{' '}
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {activeAgency?.name || 'جميع الوكالات'}
+                      </span>
+                      {activePeriodLabel ? ` · ${activePeriodLabel}` : ''}
+                    </p>
+                  </div>
                 </div>
 
-                {/* Minimal Quick-Action Chips */}
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                  <button
+                {/* 3D Tilting Quick-Action Bento Chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full pt-0.5">
+                  <Tabrix3DTiltSurface
+                    as="button"
                     type="button"
-                    onClick={() => submitChatPrompt('أعطني ملخص اليوم')}
-                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
+                    onClick={() => {
+                      triggerGlobalSpatialPulse(1.25);
+                      submitChatPrompt('أعطني ملخص اليوم');
                     }}
+                    className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <Sparkles className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-ai, #12E5AD)' }} />
                     <span>ملخص اليوم</span>
-                  </button>
+                  </Tabrix3DTiltSurface>
 
-                  <button
+                  <Tabrix3DTiltSurface
+                    as="button"
                     type="button"
-                    onClick={() => submitChatPrompt('ماذا لو رسم الفرد 500')}
-                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
+                    onClick={() => {
+                      triggerGlobalSpatialPulse(1.25);
+                      submitChatPrompt('ماذا لو رسم الفرد 500');
                     }}
+                    className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <TrendingUp className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <TrendingUp className="h-4 w-4" style={{ color: 'var(--spatial-secondary, #38BDF8)' }} />
                     <span>محاكاة مالية</span>
-                  </button>
+                  </Tabrix3DTiltSurface>
 
-                  <button
+                  <Tabrix3DTiltSurface
+                    as="button"
                     type="button"
-                    onClick={() => submitChatPrompt('قارن بين الوكالات')}
-                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
+                    onClick={() => {
+                      triggerGlobalSpatialPulse(1.25);
+                      submitChatPrompt('قارن بين الوكالات');
                     }}
+                    className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <BarChart3 className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <BarChart3 className="h-4 w-4" style={{ color: 'var(--accent-bright, #98FFE5)' }} />
                     <span>مقارنة الوكالات</span>
-                  </button>
+                  </Tabrix3DTiltSurface>
 
-                  <button
+                  <Tabrix3DTiltSurface
+                    as="button"
                     type="button"
-                    onClick={() => submitChatPrompt('افحص التطبيق')}
-                    className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
+                    onClick={() => {
+                      triggerGlobalSpatialPulse(1.25);
+                      submitChatPrompt('افحص التطبيق');
                     }}
+                    className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                    <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent-ai, #12E5AD)' }} />
                     <span>فحص السجلات</span>
-                  </button>
+                  </Tabrix3DTiltSurface>
                 </div>
 
                 {/* Subtle Dynamic Suggestion Chips if present */}
@@ -1964,7 +2048,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         key={sug.id}
                         type="button"
                         onClick={() => submitChatPrompt(sug.prompt)}
-                        className="rounded-full px-3 py-1 text-[11px] font-semibold transition-colors hover:text-slate-100"
+                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-semibold transition-colors hover:border-[var(--accent)] hover:text-slate-100 cursor-pointer"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         {sug.label}
@@ -2849,15 +2933,15 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       aria-label="إرسال"
                       className="nexus-pill-btn inline-flex h-10 w-10 items-center justify-center shrink-0 hover:opacity-95 disabled:opacity-45"
                       style={{
-                        backgroundColor: 'var(--accent-ai, #5B4FE9)',
-                        color: '#FFFFFF',
+                        backgroundColor: 'var(--accent-ai, var(--accent))',
+                        color: 'var(--accent-fg, #021712)',
                       }}
                     >
                       <Send className="h-4 w-4" />
                     </button>
                   ) : null}
 
-                  {/* Circular Glowing Electric Indigo Live Audio Waveform Button */}
+                  {/* Circular Glowing Theme-Synced Live Audio Waveform Button */}
                   <button
                     type="button"
                     data-testid="morrow-start-live-btn"
@@ -2867,10 +2951,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                     className="nexus-pill-btn inline-flex h-10 w-10 items-center justify-center shrink-0 transition-transform hover:scale-[1.04]"
                     style={{
                       background:
-                        'linear-gradient(135deg, #5B4FE9 0%, #818CF8 100%)',
-                      color: '#FFFFFF',
+                        'linear-gradient(135deg, var(--accent) 0%, var(--spatial-secondary, #22D3EE) 100%)',
+                      color: 'var(--accent-fg, #021712)',
                       boxShadow:
-                        '0 0 22px rgba(91, 79, 233, 0.58), 0 0 8px rgba(129, 140, 248, 0.35)',
+                        '0 0 22px var(--spatial-glow), 0 0 10px var(--spatial-glow-secondary)',
                     }}
                   >
                     <svg
@@ -3016,7 +3100,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+                <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent-ai, #12E5AD)' }} />
                 <span>فحص وتوليد مسودة إصلاح</span>
               </button>
             }

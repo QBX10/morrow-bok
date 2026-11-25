@@ -1,4 +1,5 @@
 import type {
+  AppView,
   Spatial3DPrefs,
   Spatial3DThemeId,
   SpatialCardDensity,
@@ -120,24 +121,24 @@ export const CURATED_SECONDARY_SWATCHES = [
 export const SPATIAL_3D_THEMES: Record<Spatial3DThemeId, Spatial3DThemeDefinition> = {
   emerald_smoked: {
     id: 'emerald_smoked',
-    nameAr: 'زمرد سبجي مدخّن',
-    subtitleAr: 'أعماق داكنة بلمعان زمردي متدرج',
-    bgMain: '#040B0F',
-    bgSurface: '#091721',
-    bgHeader: '#061118',
-    bgTableHeader: '#0D202D',
-    accent: '#10B981',
-    accentBright: '#6EE7B7',
-    accentDeep: '#047857',
-    accentFg: '#031510',
-    secondary: '#06B6D4',
-    borderColor: 'rgba(52, 211, 153, 0.26)',
-    glowRgba: 'rgba(16, 185, 129, 0.24)',
-    secondaryGlowRgba: 'rgba(6, 182, 212, 0.16)',
-    nodeColorHex: 0x10b981,
+    nameAr: 'زمرد نيون وأعماق سبجية',
+    subtitleAr: 'سماء ليلية سبجية مع إضاءة أوروراً زمردية وسماوية',
+    bgMain: '#040814',
+    bgSurface: '#091326',
+    bgHeader: '#060D1B',
+    bgTableHeader: '#0F1E38',
+    accent: '#10E0A6',
+    accentBright: '#86FFDE',
+    accentDeep: '#059669',
+    accentFg: '#021712',
+    secondary: '#22D3EE',
+    borderColor: 'rgba(56, 239, 194, 0.25)',
+    glowRgba: 'rgba(16, 224, 166, 0.26)',
+    secondaryGlowRgba: 'rgba(34, 211, 238, 0.18)',
+    nodeColorHex: 0x10e0a6,
     ringColorHex: 0x22d3ee,
-    coreColorHex: 0x6ee7b7,
-    swatches: ['#040B0F', '#10B981', '#06B6D4'],
+    coreColorHex: 0x86ffde,
+    swatches: ['#040814', '#10E0A6', '#22D3EE'],
   },
   holographic_cyan: {
     id: 'holographic_cyan',
@@ -635,4 +636,335 @@ export function computeHubOrbTelemetry(
     alertIntensity,
   };
 }
+
+export interface SpatialViewChoreography {
+  cameraZ: number;
+  cameraYOffset: number;
+  stageYaw: number;
+  stagePitch: number;
+  stageScale: number;
+  ringSpeedMult: number;
+}
+
+const VIEW_CHOREOGRAPHY_TABLE: Record<AppView, SpatialViewChoreography> = {
+  hub: {
+    cameraZ: 25.5,
+    cameraYOffset: 0,
+    stageYaw: 0,
+    stagePitch: 0.04,
+    stageScale: 1,
+    ringSpeedMult: 1,
+  },
+  agency_roster: {
+    cameraZ: 27.5,
+    cameraYOffset: -0.45,
+    stageYaw: 0.35,
+    stagePitch: -0.06,
+    stageScale: 0.94,
+    ringSpeedMult: 0.78,
+  },
+  master_roster: {
+    cameraZ: 28.0,
+    cameraYOffset: -0.5,
+    stageYaw: 0.58,
+    stagePitch: -0.08,
+    stageScale: 0.92,
+    ringSpeedMult: 0.75,
+  },
+  ready_lists: {
+    cameraZ: 26.8,
+    cameraYOffset: 0.25,
+    stageYaw: 0.85,
+    stagePitch: 0.1,
+    stageScale: 0.96,
+    ringSpeedMult: 0.9,
+  },
+  relationships: {
+    cameraZ: 26.2,
+    cameraYOffset: 0.3,
+    stageYaw: 1.15,
+    stagePitch: 0.14,
+    stageScale: 0.98,
+    ringSpeedMult: 1.05,
+  },
+  finance: {
+    cameraZ: 26.5,
+    cameraYOffset: -0.2,
+    stageYaw: 1.48,
+    stagePitch: -0.1,
+    stageScale: 0.95,
+    ringSpeedMult: 0.95,
+  },
+  quick_extract: {
+    cameraZ: 24.4,
+    cameraYOffset: 0.35,
+    stageYaw: 1.85,
+    stagePitch: 0.16,
+    stageScale: 1.05,
+    ringSpeedMult: 1.25,
+  },
+  data_archives: {
+    cameraZ: 27.2,
+    cameraYOffset: -0.35,
+    stageYaw: 2.15,
+    stagePitch: -0.05,
+    stageScale: 0.93,
+    ringSpeedMult: 0.8,
+  },
+  google_workspace: {
+    cameraZ: 26.0,
+    cameraYOffset: 0.2,
+    stageYaw: 2.45,
+    stagePitch: 0.08,
+    stageScale: 0.98,
+    ringSpeedMult: 1.0,
+  },
+  morrow_center: {
+    cameraZ: 23.8,
+    cameraYOffset: 0.45,
+    stageYaw: 2.8,
+    stagePitch: 0.18,
+    stageScale: 1.08,
+    ringSpeedMult: 1.35,
+  },
+  smart_models: {
+    cameraZ: 24.0,
+    cameraYOffset: 0.4,
+    stageYaw: 3.14,
+    stagePitch: 0.2,
+    stageScale: 1.06,
+    ringSpeedMult: 1.4,
+  },
+  account_security: {
+    cameraZ: 26.6,
+    cameraYOffset: -0.15,
+    stageYaw: 3.5,
+    stagePitch: -0.12,
+    stageScale: 0.96,
+    ringSpeedMult: 0.88,
+  },
+  settings: {
+    cameraZ: 27.0,
+    cameraYOffset: 0.15,
+    stageYaw: 3.85,
+    stagePitch: 0.06,
+    stageScale: 0.95,
+    ringSpeedMult: 0.92,
+  },
+};
+
+export function getSpatialViewChoreography(
+  view: AppView = 'hub'
+): SpatialViewChoreography {
+  return VIEW_CHOREOGRAPHY_TABLE[view] || VIEW_CHOREOGRAPHY_TABLE.hub;
+}
+
+export type MorrowEntityMood = 'greet' | 'excited' | 'focus';
+
+export interface MorrowEntityMoodTelemetry {
+  coreSpinSpeed: number;
+  wingFlareRad: number;
+  visorTiltRad: number;
+  eyeScaleY: number;
+  emissiveBoost: number;
+  hoverAmplitude: number;
+  haloSpeed: number;
+}
+
+/**
+ * Pure telemetry mapping for the articulated 3D Morrow Sentient Core entity.
+ */
+export function resolveMorrowEntityMoodState(
+  mood: MorrowEntityMood,
+  slideIndex = 0,
+  pulseActive = false
+): MorrowEntityMoodTelemetry {
+  const safeSlide = ((Math.trunc(slideIndex) % 3) + 3) % 3;
+  const baseSpeed = mood === 'excited' ? 2.45 : mood === 'focus' ? 1.55 : 1.05;
+  const boost = pulseActive ? 1.45 : 1;
+
+  return {
+    coreSpinSpeed: Number((baseSpeed * boost + safeSlide * 0.14).toFixed(2)),
+    wingFlareRad:
+      mood === 'excited'
+        ? 0.34
+        : mood === 'focus'
+        ? -0.16
+        : 0.12 + (pulseActive ? 0.18 : 0),
+    visorTiltRad: mood === 'focus' ? 0.1 : mood === 'excited' ? -0.07 : 0,
+    eyeScaleY: mood === 'excited' ? 1.18 : mood === 'focus' ? 0.72 : 1,
+    emissiveBoost: Number(
+      ((mood === 'excited' ? 1.7 : mood === 'focus' ? 1.45 : 1.2) * boost).toFixed(2)
+    ),
+    hoverAmplitude: mood === 'excited' ? 0.11 : mood === 'focus' ? 0.035 : 0.068,
+    haloSpeed: Number(((mood === 'excited' ? 1.55 : mood === 'focus' ? 0.85 : 0.65) * boost).toFixed(2)),
+  };
+}
+
+export function triggerGlobalSpatialPulse(intensity = 1): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent('morrow:spatial-pulse', {
+      detail: { intensity: Math.max(0.2, Math.min(2, intensity)), timestamp: performance.now() },
+    })
+  );
+}
+
+export interface FloatingParticleFieldSpec {
+  count: number;
+  basePositions: Float32Array;
+  phases: Float32Array;
+  speeds: Float32Array;
+  depthLayers: Float32Array;
+  colorMix: Float32Array;
+}
+
+/**
+ * Generates deterministic multi-depth floating particle coordinates & attributes
+ * using typed arrays for zero-GC per-frame animation in Spatial3DCanvas.
+ */
+export function createFloatingParticleFieldSpec(
+  isSoftwareGl: boolean,
+  requestedCount?: number
+): FloatingParticleFieldSpec {
+  const count = Math.max(
+    40,
+    Math.min(1400, Math.trunc(requestedCount ?? (isSoftwareGl ? 320 : 680)))
+  );
+  const basePositions = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const speeds = new Float32Array(count);
+  const depthLayers = new Float32Array(count);
+  const colorMix = new Float32Array(count);
+
+  const spreadX = 44;
+  const spreadY = 26;
+
+  for (let i = 0; i < count; i++) {
+    const h1 = Math.abs(Math.sin(i * 19.313 + 0.71) * 43758.5453) % 1;
+    const h2 = Math.abs(Math.sin(i * 73.157 + 1.37) * 29432.123) % 1;
+    const h3 = Math.abs(Math.sin(i * 41.911 + 2.13) * 19283.719) % 1;
+    const h4 = Math.abs(Math.sin(i * 97.43 + 0.41) * 31947.413) % 1;
+
+    // Three depth strata: foreground bokeh (+3..-2), mid-field (-3..-11), deep background (-12..-22)
+    const layerIdx = i % 3;
+    const depthWeight = layerIdx === 0 ? 1.0 : layerIdx === 1 ? 0.62 : 0.34;
+    const zBase =
+      layerIdx === 0
+        ? 3.2 - h3 * 5.2
+        : layerIdx === 1
+        ? -3.0 - h3 * 8.0
+        : -12.0 - h3 * 10.0;
+
+    basePositions[i * 3] = (h1 - 0.5) * spreadX;
+    basePositions[i * 3 + 1] = (h2 - 0.5) * spreadY;
+    basePositions[i * 3 + 2] = zBase;
+    phases[i] = h4 * Math.PI * 2;
+    speeds[i] = 0.28 + h3 * 0.65;
+    depthLayers[i] = depthWeight;
+    colorMix[i] = (h1 * 0.6 + h4 * 0.4) % 1;
+  }
+
+  return { count, basePositions, phases, speeds, depthLayers, colorMix };
+}
+
+export interface ParticleDisplacementResult {
+  x: number;
+  y: number;
+  z: number;
+  glowBoost: number;
+}
+
+/**
+ * Pure per-particle displacement solver combining orbital drift, mouse-velocity parallax,
+ * localized pointer swirl/repel halo, and global spatial pulse propagation.
+ */
+export function computeParticleDisplacement(params: {
+  baseX: number;
+  baseY: number;
+  baseZ: number;
+  phase: number;
+  speed: number;
+  depthWeight: number;
+  timeSec: number;
+  pointerX: number;
+  pointerY: number;
+  pointerSpeed: number;
+  pulseActive: boolean;
+  pulseProgress: number;
+  pulseIntensity: number;
+}): ParticleDisplacementResult {
+  const {
+    baseX,
+    baseY,
+    baseZ,
+    phase,
+    speed,
+    depthWeight,
+    timeSec,
+    pointerX,
+    pointerY,
+    pointerSpeed,
+    pulseActive,
+    pulseProgress,
+    pulseIntensity,
+  } = params;
+
+  const clampedPx = Math.max(-1, Math.min(1, pointerX));
+  const clampedPy = Math.max(-1, Math.min(1, pointerY));
+  const clampedSpeed = Math.max(0, Math.min(3, pointerSpeed));
+
+  // Slow organic drift
+  const driftX = Math.sin(timeSec * speed * 0.42 + phase) * (0.45 + 0.35 * depthWeight);
+  const driftY = Math.cos(timeSec * speed * 0.36 + phase * 1.17) * (0.4 + 0.3 * depthWeight);
+  const driftZ = Math.sin(timeSec * speed * 0.28 + phase * 0.73) * 0.55;
+
+  // Depth-weighted mouse parallax (foreground particles shift further than distant stars)
+  const parallaxX = clampedPx * (2.6 * depthWeight);
+  const parallaxY = clampedPy * (1.75 * depthWeight);
+
+  // World-space pointer anchor for localized swirl/aura attraction
+  const cursorWorldX = clampedPx * 18.0;
+  const cursorWorldY = clampedPy * 10.5;
+  const dx = baseX + driftX - cursorWorldX;
+  const dy = baseY + driftY - cursorWorldY;
+  const distSq = dx * dx + dy * dy;
+  const haloRadius = 7.5;
+  let swirlX = 0;
+  let swirlY = 0;
+  let swirlZ = 0;
+  let haloBoost = 0;
+
+  if (distSq < haloRadius * haloRadius && distSq > 0.0001) {
+    const dist = Math.sqrt(distSq);
+    const falloff = 1 - dist / haloRadius;
+    const strength = falloff * falloff * (0.85 + clampedSpeed * 0.45) * depthWeight;
+    // Gentle outward cushion + tangential vortex drift around pointer
+    swirlX = (dx / dist) * strength * 1.15 - (dy / dist) * strength * 0.65;
+    swirlY = (dy / dist) * strength * 1.15 + (dx / dist) * strength * 0.65;
+    swirlZ = falloff * 1.35 * depthWeight;
+    haloBoost = falloff * (0.55 + clampedSpeed * 0.25);
+  }
+
+  let pulseZ = 0;
+  let pulseGlow = 0;
+  if (pulseActive) {
+    const radial = Math.hypot(baseX, baseY);
+    const waveFront = pulseProgress * 28;
+    const delta = Math.abs(radial - waveFront);
+    if (delta < 5.0) {
+      const ripple = (1 - delta / 5.0) * (1 - pulseProgress) * pulseIntensity;
+      pulseZ = ripple * 1.6 * depthWeight;
+      pulseGlow = ripple * 0.7;
+    }
+  }
+
+  return {
+    x: baseX + driftX + parallaxX + swirlX,
+    y: baseY + driftY + parallaxY + swirlY,
+    z: baseZ + driftZ + swirlZ + pulseZ,
+    glowBoost: Math.min(1, haloBoost + pulseGlow),
+  };
+}
+
 

@@ -64,3 +64,17 @@ export function playTactileFeedback(
     }
   }
 }
+
+/**
+ * Pure cooldown guard preventing rapid focus+pointerdown double chimes on input fields.
+ */
+export function shouldFireTactileEvent(
+  nowMs: number,
+  lastFiredMs: number,
+  cooldownMs = 85
+): boolean {
+  if (!Number.isFinite(nowMs) || !Number.isFinite(lastFiredMs)) return true;
+  if (lastFiredMs <= 0) return true;
+  return nowMs - lastFiredMs >= Math.max(0, cooldownMs);
+}
+

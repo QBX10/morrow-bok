@@ -29,6 +29,10 @@ import {
   normalizeUsernameInput,
   validateAuthUsername,
 } from '../../utils/spatial3dConfig';
+import {
+  playTactileFeedback,
+  shouldFireTactileEvent,
+} from '../../utils/tactileFeedback';
 
 interface AuthModalProps {
   open: boolean;
@@ -69,6 +73,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [avatarNotice, setAvatarNotice] = useState('');
   const [error, setError] = useState('');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const lastTactileRef = useRef(0);
+
+  const triggerInputTactile = () => {
+    const now = performance.now();
+    if (!shouldFireTactileEvent(now, lastTactileRef.current, 85)) return;
+    lastTactileRef.current = now;
+    playTactileFeedback('tap', { sound: true, haptic: true });
+  };
+
+  const triggerSuccessTactile = () => {
+    playTactileFeedback('success', { sound: true, haptic: true });
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -100,6 +116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(true);
       setError('');
       const session = await signInWithFirebaseGoogle();
+      triggerSuccessTactile();
       onAuthenticated(session.user);
       onClose();
     } catch (err) {
@@ -120,6 +137,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: email.trim(),
         displayName: displayName.trim(),
       });
+      triggerSuccessTactile();
       onAuthenticated(session.user);
       onClose();
     } catch (err) {
@@ -157,6 +175,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             identifier: cleanEmail,
             password,
           });
+      triggerSuccessTactile();
       onAuthenticated(session.user);
       onClose();
     } catch (err) {
@@ -190,6 +209,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             identifier: check.normalized,
             password,
           });
+      triggerSuccessTactile();
       onAuthenticated(session.user);
       onClose();
     } catch (err) {
@@ -217,6 +237,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               identifier: phone.trim(),
               password,
             });
+        triggerSuccessTactile();
         onAuthenticated(session.user);
         onClose();
         return;
@@ -232,6 +253,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           code: otpCode.trim(),
           displayName: displayName.trim(),
         });
+        triggerSuccessTactile();
         onAuthenticated(session.user);
         onClose();
       }
@@ -378,6 +400,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="button"
                   data-testid={`modal-auth-tab-${key}`}
                   onClick={() => {
+                    triggerInputTactile();
                     setTab(key);
                     setError('');
                   }}
@@ -455,12 +478,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     dir="ltr"
                     required
                     value={email}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => {
                       setEmail(e.target.value);
                       setError('');
                     }}
                     placeholder="name@gmail.com"
-                    className="w-full rounded-lg border px-3 py-2 text-left text-sm"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -479,9 +504,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     id="auth-gmail-name"
                     type="text"
                     value={displayName}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="مثال: أحمد كريم"
-                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    placeholder="اكتب اسمك هنا"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -518,9 +545,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     id="auth-user-display"
                     type="text"
                     value={displayName}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="مثال: مدير الوكالة"
-                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    placeholder="اكتب اسمك هنا"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -542,12 +571,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   dir="ltr"
                   required
                   value={username}
+                  onPointerDown={triggerInputTactile}
+                  onFocus={triggerInputTactile}
                   onChange={(e) => {
                     setUsername(normalizeUsernameInput(e.target.value));
                     setError('');
                   }}
                   placeholder="ali_agency90"
-                  className="w-full rounded-lg border px-3 py-2 text-left text-sm"
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -571,12 +602,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type={showPass ? 'text' : 'password'}
                     required
                     value={password}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => {
                       setPassword(e.target.value);
                       setError('');
                     }}
                     placeholder="••••••"
-                    className="w-full rounded-lg border px-3 py-2 pl-9 text-sm"
+                    className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -690,12 +723,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   required
                   disabled={phoneSubMode === 'otp' && otpSent}
                   value={phone}
+                  onPointerDown={triggerInputTactile}
+                  onFocus={triggerInputTactile}
                   onChange={(e) => {
                     setPhone(e.target.value);
                     setError('');
                   }}
                   placeholder="07701234567"
-                  className="w-full rounded-lg border px-3 py-2 text-left text-sm tabular-nums"
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm tabular-nums transition-colors focus:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -733,9 +768,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           dir="ltr"
                           required
                           value={otpCode}
+                          onPointerDown={triggerInputTactile}
+                          onFocus={triggerInputTactile}
                           onChange={(e) => setOtpCode(e.target.value)}
                           placeholder="123456"
-                          className="w-full rounded-lg border px-3 py-2 text-center text-base font-bold tracking-widest tabular-nums"
+                          className="w-full rounded-xl border px-3.5 py-2.5 text-center text-base font-bold tracking-widest tabular-nums transition-colors focus:border-[var(--accent)]"
                           style={{
                             backgroundColor: 'var(--bg-main)',
                             borderColor: 'var(--border-color)',
@@ -791,8 +828,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         id="auth-phone-name"
                         type="text"
                         value={displayName}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        placeholder="اكتب اسمك هنا"
+                        className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
                         style={{
                           backgroundColor: 'var(--bg-main)',
                           borderColor: 'var(--border-color)',
@@ -812,8 +852,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="password"
                       required
                       value={password}
+                      onPointerDown={triggerInputTactile}
+                      onFocus={triggerInputTactile}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
                       style={{
                         backgroundColor: 'var(--bg-main)',
                         borderColor: 'var(--border-color)',
@@ -860,9 +902,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     id="auth-email-display"
                     type="text"
                     value={displayName}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="مثال: أحمد كريم"
-                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    placeholder="اكتب اسمك هنا"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
@@ -884,12 +928,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   dir="ltr"
                   required
                   value={email}
+                  onPointerDown={triggerInputTactile}
+                  onFocus={triggerInputTactile}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setError('');
                   }}
                   placeholder="name@example.com"
-                  className="w-full rounded-lg border px-3 py-2 text-left text-sm"
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
@@ -910,12 +956,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type={showPass ? 'text' : 'password'}
                     required
                     value={password}
+                    onPointerDown={triggerInputTactile}
+                    onFocus={triggerInputTactile}
                     onChange={(e) => {
                       setPassword(e.target.value);
                       setError('');
                     }}
                     placeholder="••••••"
-                    className="w-full rounded-lg border px-3 py-2 pl-9 text-sm"
+                    className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',

@@ -762,7 +762,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   };
 
   return (
-    <div className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-3 px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
+    <div className="no-print lg:hidden fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-3 px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
       <FloatingGlassBottomNav
         items={items}
         activeKey={resolvedActiveKey}

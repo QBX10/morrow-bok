@@ -90,7 +90,8 @@ export const TabrixSubViewTransition: React.FC<TabrixSubViewTransitionProps> = (
 };
 
 interface Tabrix3DTiltSurfaceProps {
-  as?: 'div' | 'article' | 'section';
+  as?: 'div' | 'article' | 'section' | 'button';
+  type?: 'button' | 'submit' | 'reset';
   className?: string;
   style?: React.CSSProperties;
   maxTiltX?: number;
@@ -109,6 +110,7 @@ interface Tabrix3DTiltSurfaceProps {
  */
 export const Tabrix3DTiltSurface: React.FC<Tabrix3DTiltSurfaceProps> = ({
   as = 'div',
+  type = 'button',
   className = '',
   style,
   maxTiltX = 4.6,
@@ -132,6 +134,7 @@ export const Tabrix3DTiltSurface: React.FC<Tabrix3DTiltSurfaceProps> = ({
   return (
     <Tag
       ref={tiltRef as React.RefObject<never>}
+      type={as === 'button' ? type : undefined}
       {...tiltHandlers}
       onClick={onClick}
       aria-label={ariaLabel}

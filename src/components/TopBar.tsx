@@ -927,9 +927,14 @@ export const TopBar: React.FC<TopBarProps> = ({
               <Bell className="h-3.5 w-3.5" />
               {notifications.length > 0 && (
                 <span
-                  className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                />
+                  className="absolute -top-1 -right-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 font-mono-num text-[9px] font-black tabular-nums"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--accent-fg)',
+                  }}
+                >
+                  {notifications.length}
+                </span>
               )}
             </button>
 
@@ -1058,9 +1063,8 @@ export const TopBar: React.FC<TopBarProps> = ({
                     }}
                   >
                   <div
-                    className="rounded-xl border px-3 py-2"
+                    className="border-b px-3 py-2.5"
                     style={{
-                      backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
@@ -1068,7 +1072,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       {authUser ? authUser.displayName : 'وضع العمل المحلي'}
                     </div>
                     <div
-                      className="text-[11px]"
+                      className="mt-0.5 text-[11px]"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       {authUser

@@ -472,8 +472,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   onClick={() => onChangeBrainMode(opt.id)}
                   className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 font-bold whitespace-nowrap shrink-0"
                   style={{
-                    backgroundColor: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--bg-surface)',
-                    borderColor: active ? 'var(--accent-ai, #5B4FE9)' : 'var(--border-color)',
+                    backgroundColor: active ? 'var(--accent-ai, #12E5AD)' : 'var(--bg-surface)',
+                    borderColor: active ? 'var(--accent-ai, #12E5AD)' : 'var(--border-color)',
                     color: active ? '#FFFFFF' : 'var(--text-primary)',
                   }}
                 >

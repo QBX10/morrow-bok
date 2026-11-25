@@ -187,7 +187,7 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
                   backgroundColor: sub.active
                     ? 'color-mix(in srgb, var(--accent) 18%, transparent)'
                     : 'color-mix(in srgb, var(--bg-surface) 75%, transparent)',
-                  color: sub.active ? 'var(--accent)' : '#8A8A9E',
+                  color: sub.active ? 'var(--accent)' : 'var(--text-muted)',
                 }}
                 aria-hidden="true"
               >

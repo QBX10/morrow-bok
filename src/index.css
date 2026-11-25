@@ -3,34 +3,45 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-main: #040B14;
-  --bg-surface: #0A1726;
-  --bg-header: #06101C;
-  --bg-table-header: #0E1F33;
-  --bg-nav-active: rgba(16, 185, 129, 0.16);
-  --bg-zebra: rgba(110, 231, 183, 0.025);
-  --bg-numeric: rgba(16, 185, 129, 0.075);
-  --row-hover-bg: rgba(16, 185, 129, 0.12);
-  --text-primary: #ECFDF5;
-  --text-muted: #8BB0BA;
-  --border-color: rgba(52, 211, 153, 0.24);
-  --grid-color: rgba(52, 211, 153, 0.13);
-  --accent: #10B981;
-  --accent-bright: #6EE7B7;
-  --accent-deep: #047857;
-  --accent-fg: #031510;
-  --marine-caustic-1: rgba(16, 185, 129, 0.16);
-  --marine-caustic-2: rgba(6, 182, 212, 0.11);
-  --accent-ai: #10B981;
-  --accent-ai-glow: rgba(16, 185, 129, 0.42);
-  --success: #10B981;
-  --success-fg: #04271D;
-  --success-bg: rgba(16, 185, 129, 0.16);
-  --warning: #F5B041;
-  --warning-bg: rgba(245, 176, 65, 0.16);
-  --danger: #EF4444;
+  --bg-main: #040916;
+  --bg-surface: #0A1429;
+  --bg-header: #060E1E;
+  --bg-table-header: #10203F;
+  --bg-nav-active: rgba(18, 229, 173, 0.16);
+  --bg-zebra: rgba(152, 255, 229, 0.032);
+  --bg-numeric: rgba(18, 229, 173, 0.08);
+  --row-hover-bg: rgba(18, 229, 173, 0.12);
+  --text-primary: #F4F7FB;
+  --text-muted: #A3B8D2;
+  --border-color: rgba(56, 239, 194, 0.24);
+  --grid-color: rgba(56, 239, 194, 0.13);
+  --accent: #12E5AD;
+  --accent-bright: #98FFE5;
+  --accent-deep: #059669;
+  --accent-fg: #021712;
+  --spatial-secondary: #38BDF8;
+  --spatial-aurora: #6366F1;
+  --marine-caustic-1: rgba(18, 229, 173, 0.2);
+  --marine-caustic-2: rgba(56, 189, 248, 0.15);
+  --marine-caustic-3: rgba(99, 102, 241, 0.1);
+  --accent-ai: #12E5AD;
+  --accent-ai-glow: rgba(18, 229, 173, 0.46);
+  --success: #12E5AD;
+  --success-fg: #021C15;
+  --success-bg: rgba(18, 229, 173, 0.16);
+  --warning: #F59E0B;
+  --warning-bg: rgba(245, 158, 11, 0.16);
+  --danger: #F43F5E;
   --danger-fg: #FFFFFF;
-  --danger-bg: rgba(239, 68, 68, 0.16);
+  --danger-bg: rgba(244, 63, 94, 0.16);
+
+  --morrow-soft-grad: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 22%, var(--bg-table-header)) 0%,
+    color-mix(in srgb, var(--spatial-secondary) 16%, var(--bg-surface)) 52%,
+    color-mix(in srgb, var(--spatial-aurora) 14%, var(--bg-main)) 100%
+  );
+  --morrow-soft-border: color-mix(in srgb, var(--accent) 34%, color-mix(in srgb, var(--spatial-secondary) 24%, rgba(255, 255, 255, 0.12)));
 
   --app-font-family: 'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif;
   --app-font-size: 15px;
@@ -38,14 +49,14 @@
   --table-cell-py: 10px;
   --table-line-height: 1.6;
   --table-col-scale: 1;
-  --card-radius: 22px;
+  --card-radius: 20px;
   --btn-radius: 9999px;
-  --modal-radius: 24px;
-  --world-radius: 24px;
-  --galaxy-radius: 22px;
-  --capsule-radius: 22px;
-  --glass-opacity: 0.68;
-  --card-shadow: 0 18px 42px -18px rgba(0, 0, 0, 0.72);
+  --modal-radius: 22px;
+  --world-radius: 22px;
+  --galaxy-radius: 20px;
+  --capsule-radius: 18px;
+  --glass-opacity: 0.72;
+  --card-shadow: 0 16px 36px -18px rgba(2, 8, 22, 0.72);
 
   /* Unified Cosmos Spacing & Elevation Tokens */
   --shell-topbar-h: 56px;
@@ -271,18 +282,19 @@ textarea {
   position: relative;
   border-radius: var(--card-radius);
   background: linear-gradient(
-    158deg,
-    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 82%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface) 92%, transparent) 100%
+    148deg,
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 86%, var(--accent) 4%) 0%,
+    color-mix(in srgb, var(--bg-surface) 92%, var(--spatial-secondary, #38BDF8) 4%) 58%,
+    color-mix(in srgb, var(--bg-main) 95%, transparent) 100%
   );
   border-color: var(--border-color);
   transform-style: preserve-3d;
   transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 18%, rgba(255, 255, 255, 0.1)),
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 22%, rgba(255, 255, 255, 0.12)),
     inset 0 -2px 0 rgba(2, 10, 22, 0.55),
     var(--card-shadow),
-    0 18px 34px -20px rgba(2, 10, 22, 0.8);
+    0 18px 36px -20px rgba(2, 10, 22, 0.82);
   transition:
     transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -460,58 +472,73 @@ textarea {
   background-color: var(--bg-main);
   background-image:
     radial-gradient(
-      900px circle at 85% 0%,
-      color-mix(in srgb, var(--accent) 9%, transparent),
-      transparent 65%
+      960px circle at 88% -4%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 64%
     ),
     radial-gradient(
-      760px circle at 12% 100%,
-      color-mix(in srgb, var(--accent) 6%, transparent),
+      820px circle at 10% 102%,
+      color-mix(in srgb, var(--spatial-secondary, #38BDF8) 12%, transparent),
       transparent 60%
+    ),
+    radial-gradient(
+      620px circle at 50% 48%,
+      color-mix(in srgb, var(--spatial-aurora, #6366F1) 7%, transparent),
+      transparent 68%
     );
 }
 
 .morrow-obsidian-shell {
-  --bg-main: #121212;
-  --bg-surface: #1A1A24;
-  --bg-nav-active: rgba(91, 79, 233, 0.18);
-  --text-primary: #F0F0F5;
-  --text-secondary: #C8C8D8;
-  --text-muted: #8A8A9E;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --accent: #5B4FE9;
-  --accent-fg: #FFFFFF;
-  --accent-ai: #5B4FE9;
-  --success: #10B981;
-  --success-fg: #04271D;
-  --success-bg: rgba(16, 185, 129, 0.14);
-  --warning: #F5B041;
-  --warning-bg: rgba(245, 176, 65, 0.14);
-  --danger: #EF4444;
-  --danger-fg: #FFFFFF;
-  --danger-bg: rgba(239, 68, 68, 0.14);
-
-  background-color: #121212;
-  color: #F0F0F5;
+  background-color: var(--bg-main, #040916);
+  color: var(--text-primary, #F4F7FB);
   background-image:
     radial-gradient(
-      76% 52% at 50% 104%,
-      rgba(91, 79, 233, 0.22) 0%,
-      rgba(91, 79, 233, 0.08) 44%,
-      transparent 74%
+      64% 44% at 82% 8%,
+      color-mix(in srgb, var(--spatial-secondary, #38BDF8) 14%, transparent) 0%,
+      transparent 68%
     ),
-    linear-gradient(180deg, #121212 0%, #1A1A24 100%);
+    radial-gradient(
+      76% 54% at 48% 104%,
+      color-mix(in srgb, var(--accent, #12E5AD) 20%, transparent) 0%,
+      color-mix(in srgb, var(--spatial-aurora, #6366F1) 10%, transparent) 46%,
+      transparent 76%
+    ),
+    linear-gradient(
+      165deg,
+      var(--bg-main, #040916) 0%,
+      color-mix(in srgb, var(--bg-surface, #0A1429) 92%, var(--spatial-aurora, #6366F1) 8%) 54%,
+      var(--bg-surface, #0A1429) 100%
+    );
 }
 
 .morrow-composer-pill {
-  background-color: rgba(26, 26, 36, 0.62);
-  border-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px) saturate(145%);
-  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--bg-table-header, #10203F) 80%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0A1429) 86%, transparent) 60%,
+    color-mix(in srgb, var(--bg-main, #040916) 92%, transparent) 100%
+  );
+  border-color: color-mix(in srgb, var(--accent, #12E5AD) 34%, color-mix(in srgb, var(--spatial-secondary, #38BDF8) 22%, rgba(255, 255, 255, 0.12)));
+  backdrop-filter: blur(22px) saturate(168%);
+  -webkit-backdrop-filter: blur(22px) saturate(168%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 20px 50px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(91, 79, 233, 0.18);
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 26%, rgba(255, 255, 255, 0.14)),
+    0 22px 54px rgba(2, 8, 22, 0.62),
+    0 0 36px -14px color-mix(in srgb, var(--accent, #12E5AD) 24%, transparent);
+  transition: border-color 180ms ease, box-shadow 200ms ease;
+}
+
+.morrow-composer-pill:focus-within {
+  border-color: color-mix(in srgb, var(--accent, #12E5AD) 70%, rgba(255, 255, 255, 0.25));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 38%, rgba(255, 255, 255, 0.22)),
+    0 22px 54px rgba(2, 8, 22, 0.68),
+    0 0 0 2px color-mix(in srgb, var(--accent, #12E5AD) 30%, transparent),
+    0 0 42px -10px color-mix(in srgb, var(--accent, #12E5AD) 38%, transparent);
+}
+
+.morrow-composer-pill textarea:focus-visible {
+  outline: none;
 }
 
 .morrow-studio-surface {
@@ -585,14 +612,15 @@ html[data-ui-density="compact"] {
   gap: var(--density-gap);
 }
 
-/* Calm Gold Hero Card & Assistant Orb */
+/* Soft Luminous Hero Card & Assistant Orb */
 .morrow-gold-hero {
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, #eab308 16%, var(--bg-surface)),
-    color-mix(in srgb, #f59e0b 7%, var(--bg-main))
+    color-mix(in srgb, var(--accent) 18%, var(--bg-table-header)),
+    color-mix(in srgb, var(--spatial-secondary, #38BDF8) 12%, var(--bg-surface)) 56%,
+    color-mix(in srgb, var(--spatial-aurora, #6366F1) 10%, var(--bg-main)) 100%
   );
-  border-color: color-mix(in srgb, #eab308 42%, var(--border-color));
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-color));
 }
 
 .morrow-orb-online {
@@ -845,15 +873,21 @@ html[data-glass="1"] .glass-surface {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-/* Absolute Marine Atmospheric Ocean Depth */
+/* Morrow Modern Soft Aurora Depth */
 html[data-glass="1"] body,
 html[data-app-theme] body,
 body {
   background-color: var(--bg-main);
   background-image:
-    radial-gradient(980px circle at 86% -8%, var(--marine-caustic-1, rgba(16, 185, 129, 0.14)), transparent 60%),
-    radial-gradient(760px circle at 12% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.09)), transparent 58%),
-    linear-gradient(180deg, var(--bg-main) 0%, var(--bg-surface) 100%);
+    radial-gradient(1040px circle at 88% -8%, var(--marine-caustic-1, rgba(18, 229, 173, 0.2)), transparent 62%),
+    radial-gradient(840px circle at 10% 106%, var(--marine-caustic-2, rgba(56, 189, 248, 0.14)), transparent 58%),
+    radial-gradient(660px circle at 48% 42%, var(--marine-caustic-3, rgba(99, 102, 241, 0.08)), transparent 66%),
+    linear-gradient(
+      165deg,
+      var(--bg-main) 0%,
+      color-mix(in srgb, var(--bg-surface) 90%, var(--spatial-aurora, #6366F1) 6%) 55%,
+      var(--bg-surface) 100%
+    );
   background-attachment: fixed;
 }
 
@@ -905,44 +939,61 @@ body {
   --card-ty: 0px;
   border-radius: var(--card-radius);
   background: linear-gradient(
-    158deg,
-    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.74) * 100%), transparent) 0%,
-    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.74) * 100%), transparent) 100%
+    152deg,
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.76) * 100%), var(--accent) 3%) 0%,
+    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.76) * 100%), var(--spatial-secondary, #38BDF8) 3%) 56%,
+    color-mix(in srgb, var(--bg-main) calc(var(--glass-opacity, 0.84) * 100%), transparent) 100%
   );
-  border: 1px solid var(--border-color);
-  backdrop-filter: blur(20px) saturate(165%);
-  -webkit-backdrop-filter: blur(20px) saturate(165%);
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, rgba(255, 255, 255, 0.08));
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   transform-style: preserve-3d;
   transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 24%, rgba(255, 255, 255, 0.14)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.6),
-    0 20px 42px -18px rgba(2, 10, 22, 0.82),
-    0 2px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 14%, rgba(2, 8, 18, 0.65));
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 20%, rgba(255, 255, 255, 0.12)),
+    0 18px 40px -20px rgba(2, 10, 22, 0.82);
   transition:
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nexus-squircle-interactive:hover {
-  --card-ty: -4px;
-  border-color: color-mix(in srgb, var(--accent) 54%, var(--border-color));
+  --card-ty: -3px;
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--spatial-secondary, #38BDF8) 20%);
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 34%, rgba(255, 255, 255, 0.18)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.65),
-    0 28px 52px -18px rgba(2, 10, 22, 0.88),
-    0 4px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 22%, rgba(2, 8, 18, 0.72)),
-    0 0 28px -12px color-mix(in srgb, var(--accent) 28%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 30%, rgba(255, 255, 255, 0.16)),
+    0 24px 48px -20px rgba(2, 10, 22, 0.86),
+    0 0 28px -14px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.morrow-showcase-frame {
+  position: relative;
+  border-radius: calc(var(--card-radius, 20px) + 2px);
+  background: linear-gradient(
+    144deg,
+    color-mix(in srgb, var(--accent) 11%, var(--bg-table-header)) 0%,
+    color-mix(in srgb, var(--spatial-secondary, #38BDF8) 8%, var(--bg-surface)) 50%,
+    color-mix(in srgb, var(--spatial-aurora, #6366F1) 9%, var(--bg-main)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, color-mix(in srgb, var(--spatial-secondary, #38BDF8) 24%, rgba(255, 255, 255, 0.1)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 24px 56px -24px rgba(2, 8, 22, 0.88),
+    0 0 42px -22px var(--spatial-glow, rgba(18, 229, 173, 0.28));
 }
 
 .nexus-glass-lite {
-  background-color: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-table-header) 80%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) 78%, transparent) 100%
+  );
   border-color: var(--border-color);
   backdrop-filter: blur(22px) saturate(168%);
   -webkit-backdrop-filter: blur(22px) saturate(168%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 22%, rgba(255, 255, 255, 0.14)),
+    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 22%, rgba(255, 255, 255, 0.14)),
     inset 0 -1px 0 rgba(2, 10, 22, 0.45),
     0 16px 36px -14px rgba(2, 10, 22, 0.76);
 }
@@ -1018,18 +1069,18 @@ body {
   100% {
     transform: scale(1);
     box-shadow:
-      inset -14px -18px 28px rgba(14, 10, 56, 0.72),
-      inset 10px 12px 24px rgba(175, 168, 255, 0.45),
-      0 0 36px rgba(91, 79, 233, 0.5),
-      0 0 76px rgba(91, 79, 233, 0.24);
+      inset -14px -18px 28px color-mix(in srgb, var(--accent-deep, #059669) 70%, #020814),
+      inset 10px 12px 24px color-mix(in srgb, var(--accent-bright, #86FFDE) 48%, rgba(255, 255, 255, 0.2)),
+      0 0 36px color-mix(in srgb, var(--accent, #10E0A6) 50%, transparent),
+      0 0 76px color-mix(in srgb, var(--spatial-secondary, #22D3EE) 24%, transparent);
   }
   50% {
     transform: scale(1.045);
     box-shadow:
-      inset -14px -18px 28px rgba(14, 10, 56, 0.65),
-      inset 12px 14px 28px rgba(195, 190, 255, 0.58),
-      0 0 48px rgba(91, 79, 233, 0.68),
-      0 0 96px rgba(91, 79, 233, 0.34);
+      inset -14px -18px 28px color-mix(in srgb, var(--accent-deep, #059669) 62%, #020814),
+      inset 12px 14px 28px color-mix(in srgb, var(--accent-bright, #86FFDE) 60%, rgba(255, 255, 255, 0.25)),
+      0 0 48px color-mix(in srgb, var(--accent, #10E0A6) 68%, transparent),
+      0 0 96px color-mix(in srgb, var(--spatial-secondary, #22D3EE) 34%, transparent);
   }
 }
 
@@ -1037,10 +1088,10 @@ body {
   border-radius: 9999px;
   background: radial-gradient(
     circle at 32% 28%,
-    #A59EFF 0%,
-    #5B4FE9 42%,
-    #2E249D 78%,
-    #191358 100%
+    var(--accent-bright, #86FFDE) 0%,
+    var(--accent, #10E0A6) 42%,
+    var(--accent-deep, #059669) 78%,
+    #04151a 100%
   );
   animation: nexusOrbPulse 3.6s ease-in-out infinite;
 }

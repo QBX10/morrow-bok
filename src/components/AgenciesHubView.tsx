@@ -9,11 +9,13 @@ import {
   BarChart3,
   Bell,
   Bot,
+  Box,
   Building2,
   Calculator,
   Calendar,
   Camera,
   CheckCircle2,
+  Cpu,
   Eye,
   EyeOff,
   FileSpreadsheet,
@@ -23,7 +25,9 @@ import {
   Lock,
   Package,
   Palette,
+  Pause,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   ScanLine,
@@ -82,6 +86,8 @@ import {
 import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
 import { RecessedChannelWell } from './spatial3d/SpatialPrimitives';
 import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
+import { MorrowMascot3D } from './spatial3d/MorrowMascot3D';
+import morrowWelcomePoster from '../assets/images/morrow_welcome_poster_1795554011605.jpg';
 import {
   CURATED_ACCENT_SWATCHES,
   CURATED_SECONDARY_SWATCHES,
@@ -89,6 +95,7 @@ import {
   SURFACE_TONE_PRESETS,
   resolveActiveSpatialPalette,
   resolveSpatial3DPrefs,
+  triggerGlobalSpatialPulse,
 } from '../utils/spatial3dConfig';
 import { BrainCircuit, Download } from 'lucide-react';
 
@@ -266,6 +273,23 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('🌾');
   const logoFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Morrow Welcome Video & 3D Interactive Stage State
+  const [morrowStageMode, setMorrowStageMode] = useState<'video' | '3d'>('video');
+  const [welcomeVideoPlaying, setWelcomeVideoPlaying] = useState(true);
+  const welcomeVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const toggleWelcomeVideoPlayback = () => {
+    const vid = welcomeVideoRef.current;
+    if (!vid) return;
+    if (vid.paused) {
+      void vid.play().catch(() => {});
+      setWelcomeVideoPlaying(true);
+    } else {
+      vid.pause();
+      setWelcomeVideoPlaying(false);
+    }
+  };
 
   const spatialPrefs = useMemo(
     () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
@@ -904,20 +928,23 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               محفظة الوكالات جاهزة للانطلاق
             </h3>
             <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
-              ابدأ بإضافة وكالتك الأولى الآن أو جرّب النظام ببيانات نموذجية جاهزة.
+              افتح «إدارة الواجهة الرئيسية» لإعداد وإطلاق وكالتك من مكان واحد، أو جرّب النظام ببيانات نموذجية جاهزة.
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap items-center justify-center gap-3">
-            {capabilities.canManageAgencies && (
-              <button
-                type="button"
-                onClick={() => setAddOpen(true)}
-                className="obsidian-gold-cta inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>إنشاء وكالتك الأولى</span>
-              </button>
-            )}
+            <button
+              type="button"
+              data-testid="empty-open-hub-customizer-btn"
+              onClick={() => {
+                setHubNotice('');
+                setHubTab('agencies');
+                setCustomizerOpen(true);
+              }}
+              className="obsidian-gold-cta inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm cursor-pointer"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              <span>فتح إدارة الواجهة الرئيسية</span>
+            </button>
             {onLoadStarterData && (
               <button
                 type="button"
@@ -1163,79 +1190,55 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
                     {/* Card Metrics 2x2 */}
                     <div className="grid grid-cols-2 gap-2.5 py-4">
-                      <div
-                        className="rounded-xl border p-2.5"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
+                      <div className="metric-well p-3">
                         <div
-                          className="text-[11px]"
+                          className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           العائلات النشطة
                         </div>
-                        <div className="mt-0.5 text-base font-black tabular-nums">
+                        <div className="mt-1 text-base font-black tabular-nums">
                           {metrics.activeHouseholds.toLocaleString('en-US')}
                         </div>
                       </div>
 
-                      <div
-                        className="rounded-xl border p-2.5"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
+                      <div className="metric-well p-3">
                         <div
-                          className="text-[11px]"
+                          className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           الأفراد
                         </div>
                         <div
-                          className="mt-0.5 text-base font-black tabular-nums"
+                          className="mt-1 text-base font-black tabular-nums"
                           style={{ color: 'var(--accent)' }}
                         >
                           {metrics.activeIndividuals.toLocaleString('en-US')}
                         </div>
                       </div>
 
-                      <div
-                        className="rounded-xl border p-2.5"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
+                      <div className="metric-well p-3">
                         <div
-                          className="text-[11px]"
+                          className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           الأكياس المطلوبة
                         </div>
-                        <div className="mt-0.5 text-sm font-black tabular-nums">
+                        <div className="mt-1 text-sm font-black tabular-nums">
                           {metrics.fullBags.toLocaleString('en-US')} كيس
                           {metrics.remainderKg > 0 && ` + ${metrics.remainderKg}ك`}
                         </div>
                       </div>
 
-                      <div
-                        className="rounded-xl border p-2.5"
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          borderColor: 'var(--border-color)',
-                        }}
-                      >
+                      <div className="metric-well p-3">
                         <div
-                          className="text-[11px]"
+                          className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           صافي الربح
                         </div>
                         <div
-                          className="mt-0.5 text-sm font-black tabular-nums"
+                          className="mt-1 text-sm font-black tabular-nums"
                           style={{
                             color:
                               metrics.profit >= 0
@@ -1657,7 +1660,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 color: 'var(--text-muted)',
               }}
             >
-              لا توجد وكالات للمقارنة بعد — أنشئ وكالتك الأولى لعرض مؤشرات الأداء التفاعلية.
+              لا توجد وكالات للمقارنة بعد — افتح إدارة الواجهة الرئيسية لإضافة وكالة وعرض مؤشرات الأداء.
             </div>
           ) : (
             comparisonBars.map((bar) => (
@@ -2016,7 +2019,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 pb-32 sm:px-6 lg:pb-28">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-4 pb-24 sm:px-6 lg:pb-10">
       {/* 1. Architectural 3D Hero Header Card */}
       <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-5 sm:p-6 flex flex-wrap items-center justify-between gap-5">
         <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
@@ -2035,17 +2038,21 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           >
             <Building2 className="h-6 w-6 text-[var(--accent-bright)]" />
           </div>
-          <div className="space-y-1.5 min-w-0">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="font-display-ar text-xl font-black tracking-tight sm:text-2xl gold-gradient-text">
-                الوكالات والتوزيع
-              </h1>
-              {activePeriod && (
-                <span className="inline-flex items-center rounded-xl border border-[var(--border-color)] bg-black/35 px-3 py-0.5 font-mono-num text-[11px] font-bold text-[var(--accent-bright)] whitespace-nowrap">
-                  {activePeriod.quotaName} · {activePeriod.monthName} {activePeriod.year}
+          <div className="space-y-1 min-w-0">
+            {activePeriod && (
+              <p className="editorial-eyebrow font-mono-num truncate">
+                <span className="text-[var(--accent-bright)]">{activePeriod.quotaName}</span>
+                {' · '}
+                <span>
+                  {activePeriod.monthName} {activePeriod.year}
                 </span>
-              )}
-            </div>
+                {' · '}
+                <span className="tabular-nums">{agencies.length} وكالة</span>
+              </p>
+            )}
+            <h1 className="font-display-ar text-xl font-black tracking-tight sm:text-2xl gold-gradient-text">
+              الوكالات والتوزيع
+            </h1>
             <p className="text-xs sm:text-sm text-[var(--text-muted)] leading-relaxed">
               مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
               {previousArchiveDelta && (
@@ -2070,7 +2077,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[420px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[420px]">
             <button
               type="button"
               data-testid="hero-master-roster-btn"
@@ -2103,6 +2110,186 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </div>
       </section>
+
+      {/* 2. Morrow 2D–3D Welcome Video & Interactive Spatial Stage */}
+      <Tabrix3DTiltSurface
+        as="section"
+        aria-label="الترحيب التفاعلي بشخصية Morrow"
+        className="morrow-showcase-frame overflow-hidden p-4 sm:p-6"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+          {/* Right (RTL Start): Intelligent Welcome Summary + Mode Controls */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="editorial-eyebrow flex flex-wrap items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-[var(--accent-bright)]" />
+              <span className="font-extrabold text-[var(--accent-bright)]">Morrow</span>
+              <span aria-hidden="true">·</span>
+              <span>الذكاء التفاعلي 2D ~ 3D</span>
+              <span aria-hidden="true">·</span>
+              <span>مشهد تفاعلي حي</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <h2 className="font-display-ar text-lg sm:text-xl font-black tracking-tight text-[var(--text-primary)]">
+                أهلاً بك مع{' '}
+                <span className="marine-gradient-text">Morrow</span>
+                {' '}في مساحة إدارة الوكالات
+              </h2>
+              <p className="text-xs sm:text-[13px] leading-relaxed text-[var(--text-muted)]">
+                شخصية Morrow الذكية تراقب سجلات المستفيدين، الأوزان المالية، والتنبيهات الفورية ضمن مشهد هجين ثنائي وثلاثي الأبعاد متكامل.
+              </p>
+            </div>
+
+            {/* 2D Video vs Live 3D Entity Segmented Switcher */}
+            <div
+              role="tablist"
+              aria-label="نمط عرض شخصية Morrow"
+              className="inline-flex w-full sm:w-auto items-center gap-1 rounded-2xl border p-1 recessed-well"
+              style={{ borderColor: 'var(--morrow-soft-border)' }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={morrowStageMode === 'video'}
+                data-testid="morrow-stage-mode-video"
+                onClick={() => setMorrowStageMode('video')}
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all cursor-pointer"
+                style={{
+                  backgroundColor:
+                    morrowStageMode === 'video' ? 'var(--accent)' : 'transparent',
+                  color:
+                    morrowStageMode === 'video' ? 'var(--accent-fg)' : 'var(--text-muted)',
+                }}
+              >
+                <Play className="h-3.5 w-3.5" />
+                <span>فيديو ترحيبي</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={morrowStageMode === '3d'}
+                data-testid="morrow-stage-mode-3d"
+                onClick={() => {
+                  setMorrowStageMode('3d');
+                  triggerGlobalSpatialPulse(1.25);
+                }}
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all cursor-pointer"
+                style={{
+                  backgroundColor:
+                    morrowStageMode === '3d' ? 'var(--accent)' : 'transparent',
+                  color:
+                    morrowStageMode === '3d' ? 'var(--accent-fg)' : 'var(--text-muted)',
+                }}
+              >
+                <Box className="h-3.5 w-3.5" />
+                <span>تفاعل 3D حي</span>
+              </button>
+            </div>
+
+            {/* Primary Stage Actions */}
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              {onNavigateView && (
+                <button
+                  type="button"
+                  data-testid="hub-open-morrow-center-btn"
+                  onClick={() => {
+                    triggerGlobalSpatialPulse(1.3);
+                    onNavigateView('morrow_center');
+                  }}
+                  className="obsidian-gold-cta inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black cursor-pointer"
+                >
+                  <Cpu className="h-4 w-4" />
+                  <span>فتح مركز أوامر Morrow</span>
+                </button>
+              )}
+
+              {morrowStageMode === 'video' && (
+                <button
+                  type="button"
+                  data-testid="morrow-welcome-video-toggle"
+                  onClick={toggleWelcomeVideoPlayback}
+                  aria-label={welcomeVideoPlaying ? 'إيقاف الفيديو الترحيبي مؤقتاً' : 'تشغيل الفيديو الترحيبي'}
+                  className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2.5 text-xs font-bold cursor-pointer"
+                  style={{
+                    backgroundColor: 'rgba(4, 9, 22, 0.72)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {welcomeVideoPlaying ? (
+                    <>
+                      <Pause className="h-3.5 w-3.5 text-[var(--accent)]" />
+                      <span>إيقاف مؤقت</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-3.5 w-3.5 text-[var(--accent)]" />
+                      <span>تشغيل</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Left (RTL End): 16:9 Morrow Welcome Video OR Live 3D Interactive Entity */}
+          <div className="lg:col-span-7">
+            <div
+              className="relative aspect-video w-full overflow-hidden rounded-2xl border bg-[#040916]"
+              style={{
+                borderColor: 'var(--morrow-soft-border)',
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,0.16), 0 24px 52px -18px rgba(2, 8, 22, 0.92)',
+              }}
+            >
+              {morrowStageMode === 'video' ? (
+                <>
+                  <video
+                    ref={welcomeVideoRef}
+                    data-testid="morrow-welcome-video"
+                    poster={morrowWelcomePoster}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="auto"
+                    onPlay={() => setWelcomeVideoPlaying(true)}
+                    onPause={() => setWelcomeVideoPlaying(false)}
+                    className="h-full w-full object-cover"
+                    aria-label="فيديو ترحيبي ثلاثي الأبعاد لشخصية Morrow"
+                  >
+                    <source src="/assets/morrow-welcome.webm" type="video/webm" />
+                    <source src="/assets/morrow-welcome.mp4" type="video/mp4" />
+                  </video>
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+                    style={{
+                      background:
+                        'linear-gradient(to top, rgba(4, 9, 22, 0.9) 0%, rgba(4, 9, 22, 0.35) 55%, transparent 100%)',
+                    }}
+                  />
+                  <div className="pointer-events-none absolute bottom-3 right-3.5 left-3.5 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-extrabold text-[var(--accent-bright)] whitespace-nowrap truncate">
+                      Morrow · 3D Motion
+                    </span>
+                    <span className="font-mono-num font-bold text-[var(--text-primary)]/80 whitespace-nowrap shrink-0 tabular-nums">
+                      {agencies.length} وكالة · {masterMetrics.activeIndividuals.toLocaleString('en-US')} فرد
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="h-full w-full" data-testid="hub-morrow-mascot-3d-wrap">
+                  <MorrowMascot3D
+                    spatialPrefs={spatialPrefs}
+                    onGreetClick={() => triggerGlobalSpatialPulse(1.4)}
+                    className="!min-h-full !h-full !border-0 !rounded-none"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Tabrix3DTiltSurface>
 
       {/* Create New Agency — Full-Screen Push Page */}
       {capabilities.canManageAgencies && (
@@ -2246,75 +2433,163 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             </div>
           )}
 
-          {/* TAB 1: Rename Agencies Inline + Edit Quota/Batch + Add Agency */}
+          {/* TAB 1: First-Agency Studio ("إنشاء وكالتك الأولى") + Rename Inline + Quota/Batch */}
           {hubTab === 'agencies' && (
             <div className="space-y-5">
-              {/* Module 1: Rename Agencies Inline */}
-              <div className="space-y-2.5">
-                <h3 className="text-xs font-black text-[var(--text-primary)]">
-                  تغيير أسماء الوكالات مباشرة
-                </h3>
-                <div className="space-y-2">
-                  {agencies.map((ag) => {
-                    const draftVal = agencyDraftNames[ag.id] ?? ag.name;
-                    const changed = draftVal.trim() !== '' && draftVal.trim() !== ag.name;
-                    return (
-                      <div
-                        key={ag.id}
-                        className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-black/35 p-2.5"
-                      >
-                        <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">
-                          {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
-                        </span>
-                        <input
-                          type="text"
-                          data-testid={`hub-rename-agency-${ag.id}`}
-                          aria-label={`تعديل اسم ${ag.name}`}
-                          value={draftVal}
-                          onChange={(e) =>
-                            setAgencyDraftNames((prev) => ({
-                              ...prev,
-                              [ag.id]: e.target.value,
-                            }))
-                          }
-                          className="flex-1 min-w-[160px] h-9 rounded-xl border border-white/10 bg-black/40 px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                        />
-                        <button
-                          type="button"
-                          data-testid={`hub-save-agency-${ag.id}`}
-                          disabled={!changed}
-                          onClick={() => {
-                            if (!changed) return;
-                            onUpdateAgencyDetails(ag.id, { name: draftVal.trim() });
-                            setHubNotice(`تم تحديث اسم الوكالة إلى «${draftVal.trim()}»`);
-                          }}
-                          className="h-9 px-3.5 rounded-xl text-xs font-extrabold transition cursor-pointer disabled:opacity-40"
-                          style={{
-                            backgroundColor: 'var(--accent)',
-                            color: 'var(--accent-fg)',
-                          }}
-                        >
-                          حفظ الاسم
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onUpdateAgencyDetails(ag.id, { isLocked: !ag.isLocked });
-                            setHubNotice(
-                              ag.isLocked
-                                ? `تم فتح وكالة «${ag.name}»`
-                                : `تم قفل وكالة «${ag.name}»`
-                            );
-                          }}
-                          className="h-9 px-2.5 rounded-xl border border-white/15 bg-white/5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                        >
-                          {ag.isLocked ? 'فتح' : 'قفل'}
-                        </button>
+              {/* Highlighted Studio Section: Complete "إنشاء وكالتك الأولى" Showcase & Creation inside إدارة الواجهة الرئيسية */}
+              {capabilities.canManageAgencies && (
+                <div
+                  data-testid="hub-first-agency-section"
+                  className="morrow-showcase-frame p-4 sm:p-5 space-y-4 relative overflow-hidden"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl border border-white/15 bg-black/35 flex items-center justify-center shrink-0">
+                        <GeometricGoldCube size={40} />
                       </div>
-                    );
-                  })}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <h3 className="font-display-ar text-sm sm:text-base font-black text-[var(--text-primary)]">
+                            إنشاء وكالتك الأولى
+                          </h3>
+                          <span className="editorial-eyebrow font-mono-num text-[var(--accent-bright)]">
+                            · {agencies.length === 0 ? 'نقطة الانطلاق' : `${agencies.length} وكالة حالياً`}
+                          </span>
+                        </div>
+                        <p className="text-[11px] sm:text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
+                          أطلق وكالتك الجديدة واختر أيقونتها هنا داخل إدارة الواجهة الرئيسية لفتح سجلها وحساباتها فوراً.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="hub-open-full-agency-builder-btn"
+                      onClick={() => {
+                        setCustomizerOpen(false);
+                        setAddOpen(true);
+                      }}
+                      className="nexus-pill-btn inline-flex items-center gap-1.5 border border-white/15 bg-black/40 hover:border-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-bright)] cursor-pointer"
+                    >
+                      <Building2 className="h-3.5 w-3.5" />
+                      <span>فتح المنشئ المتقدم</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <input
+                      type="text"
+                      data-testid="hub-add-agency-input"
+                      aria-label="اسم الوكالة الجديدة"
+                      value={hubNewAgencyName}
+                      onChange={(e) => setHubNewAgencyName(e.target.value)}
+                      placeholder="اكتب اسم وكالتك الأولى أو وكالة جديدة (مثال: وكالة النور التموينية)..."
+                      className="flex-1 min-w-[200px] h-10 rounded-xl border border-white/15 bg-black/45 px-3.5 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                    <div className="flex items-center gap-1">
+                      {['🌾', '🏪', '📦', '🏢'].map((ic) => (
+                        <button
+                          key={ic}
+                          type="button"
+                          onClick={() => setHubNewAgencyIcon(ic)}
+                          aria-label={`اختيار رمز ${ic}`}
+                          className={`w-9 h-9 rounded-xl border text-base cursor-pointer transition ${
+                            hubNewAgencyIcon === ic
+                              ? 'border-[var(--accent)] bg-[var(--bg-nav-active)] scale-105'
+                              : 'border-white/10 bg-black/30 hover:border-white/25'
+                          }`}
+                        >
+                          {ic}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="hub-add-agency-submit"
+                      onClick={() => {
+                        const clean = hubNewAgencyName.trim();
+                        if (!clean) return;
+                        onAddAgency(clean, hubNewAgencyIcon);
+                        setHubNewAgencyName('');
+                        setHubNotice(`تم إنشاء وإضافة «${clean}» بنجاح إلى محفظة الوكالات.`);
+                      }}
+                      className="obsidian-gold-cta h-10 px-4 rounded-xl text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>{agencies.length === 0 ? 'إنشاء وكالتك الأولى' : 'إنشاء وإضافة الوكالة'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Module 1: Rename Agencies Inline */}
+              {agencies.length > 0 && (
+                <div className="space-y-2.5">
+                  <h3 className="text-xs font-black text-[var(--text-primary)]">
+                    تغيير أسماء الوكالات مباشرة
+                  </h3>
+                  <div className="space-y-2">
+                    {agencies.map((ag) => {
+                      const draftVal = agencyDraftNames[ag.id] ?? ag.name;
+                      const changed = draftVal.trim() !== '' && draftVal.trim() !== ag.name;
+                      return (
+                        <div
+                          key={ag.id}
+                          className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-black/35 p-2.5"
+                        >
+                          <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">
+                            {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
+                          </span>
+                          <input
+                            type="text"
+                            data-testid={`hub-rename-agency-${ag.id}`}
+                            aria-label={`تعديل اسم ${ag.name}`}
+                            value={draftVal}
+                            onChange={(e) =>
+                              setAgencyDraftNames((prev) => ({
+                                ...prev,
+                                [ag.id]: e.target.value,
+                              }))
+                            }
+                            className="flex-1 min-w-[160px] h-9 rounded-xl border border-white/10 bg-black/40 px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                          />
+                          <button
+                            type="button"
+                            data-testid={`hub-save-agency-${ag.id}`}
+                            disabled={!changed}
+                            onClick={() => {
+                              if (!changed) return;
+                              onUpdateAgencyDetails(ag.id, { name: draftVal.trim() });
+                              setHubNotice(`تم تحديث اسم الوكالة إلى «${draftVal.trim()}»`);
+                            }}
+                            className="h-9 px-3.5 rounded-xl text-xs font-extrabold transition cursor-pointer disabled:opacity-40"
+                            style={{
+                              backgroundColor: 'var(--accent)',
+                              color: 'var(--accent-fg)',
+                            }}
+                          >
+                            حفظ الاسم
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateAgencyDetails(ag.id, { isLocked: !ag.isLocked });
+                              setHubNotice(
+                                ag.isLocked
+                                  ? `تم فتح وكالة «${ag.name}»`
+                                  : `تم قفل وكالة «${ag.name}»`
+                              );
+                            }}
+                            className="h-9 px-2.5 rounded-xl border border-white/15 bg-white/5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                          >
+                            {ag.isLocked ? 'فتح' : 'قفل'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Module 2: Edit Active Batch / Ration Quota */}
               <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
@@ -2388,56 +2663,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   </button>
                 </div>
               </div>
-
-              {/* Module 3: Add Agency Directly */}
-              {capabilities.canManageAgencies && (
-                <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
-                  <h3 className="text-xs font-black text-[var(--text-primary)]">
-                    إضافة وكالة جديدة مباشرة إلى المحفظة
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      data-testid="hub-add-agency-input"
-                      value={hubNewAgencyName}
-                      onChange={(e) => setHubNewAgencyName(e.target.value)}
-                      placeholder="مثال: وكالة النور التموينية"
-                      className="flex-1 min-w-[180px] h-10 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-bold text-[var(--text-primary)]"
-                    />
-                    <div className="flex items-center gap-1">
-                      {['🌾', '🏪', '📦', '🏢'].map((ic) => (
-                        <button
-                          key={ic}
-                          type="button"
-                          onClick={() => setHubNewAgencyIcon(ic)}
-                          className={`w-9 h-9 rounded-xl border text-base cursor-pointer ${
-                            hubNewAgencyIcon === ic
-                              ? 'border-[var(--accent)] bg-[var(--bg-nav-active)]'
-                              : 'border-white/10 bg-black/30'
-                          }`}
-                        >
-                          {ic}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      data-testid="hub-add-agency-submit"
-                      onClick={() => {
-                        const clean = hubNewAgencyName.trim();
-                        if (!clean) return;
-                        onAddAgency(clean, hubNewAgencyIcon);
-                        setHubNewAgencyName('');
-                        setHubNotice(`تمت إضافة «${clean}» إلى محفظة الوكالات الموحدة.`);
-                      }}
-                      className="obsidian-gold-cta h-10 px-4 rounded-xl text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>إضافة الوكالة</span>
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
