@@ -56,6 +56,7 @@ import {
   acquireMusicPauseLock,
   releaseMusicPauseLock,
 } from '../utils/backgroundMusicEngine';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
@@ -374,12 +375,20 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     }
   };
 
+  const prevMicActiveRef = useRef(false);
   useEffect(() => {
     if (isRecording) {
       acquireMusicPauseLock('assistant-widget:mic', 'mic', 80);
+      if (!prevMicActiveRef.current) {
+        playTactileFeedback('record_start', { haptic: true });
+      }
     } else {
+      if (prevMicActiveRef.current) {
+        playTactileFeedback('record_stop', { haptic: true });
+      }
       releaseMusicPauseLock('assistant-widget:mic');
     }
+    prevMicActiveRef.current = isRecording;
     return () => {
       releaseMusicPauseLock('assistant-widget:mic');
     };

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { AssistantToolCall } from '../../types/assistant';
 import type { MaskedCloudContext } from '../../utils/assistantPrivacy';
+import { getActiveBearerToken } from '../../lib/authClient';
 import {
   acquireMusicPauseLock,
   releaseMusicPauseLock,
@@ -307,8 +308,13 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
         outputCtxRef.current = outputCtx;
         nextStartTimeRef.current = outputCtx.currentTime;
 
+        const activeToken = await getActiveBearerToken();
+        if (cancelled) return;
         const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProto}//${window.location.host}/api/morrow/live`);
+        const wsUrl = activeToken
+          ? `${wsProto}//${window.location.host}/api/morrow/live?token=${encodeURIComponent(activeToken)}`
+          : `${wsProto}//${window.location.host}/api/morrow/live`;
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {

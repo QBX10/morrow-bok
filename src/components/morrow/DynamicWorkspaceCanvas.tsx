@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { authFetch } from '../../lib/authClient';
 import {
   Activity,
   AlertTriangle,
@@ -291,7 +292,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
 
     setAiAnalyzingText(true);
     try {
-      const res = await fetch('/api/morrow/analyze-text', {
+      const res = await authFetch('/api/morrow/analyze-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

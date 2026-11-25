@@ -10,8 +10,8 @@ import {
   INITIAL_DATABASE_STATE,
 } from '../data/seedData';
 import {
+  authFetch,
   deleteServerAppearanceProfile,
-  getActiveBearerToken,
   getStoredSession,
   saveServerAppearanceProfile,
 } from '../lib/authClient';
@@ -408,11 +408,9 @@ export function useAgencyStore(activeUid: string | null = null) {
         // Fresh browser/device for returning account: check server snapshot once
         let resolvedState = freshClean;
         try {
-          const token = await getActiveBearerToken();
-          if (token && !cancelled) {
-            const res = await fetch('/api/workspace', {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+          const sess = getStoredSession();
+          if (sess?.user && !cancelled) {
+            const res = await authFetch('/api/workspace');
             if (res.ok) {
               const data = await res.json();
               if (data?.exists && data.snapshot && !cancelled) {
@@ -2681,16 +2679,14 @@ export function useAgencyStore(activeUid: string | null = null) {
 
   const syncWorkspaceToServer = useCallback(async () => {
     return trackDelayedLoading(async () => {
-      const token = await getActiveBearerToken();
       const sess = getStoredSession();
-      if (!token || !sess) {
+      if (!sess?.user) {
         throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
       }
-      const res = await fetch('/api/workspace', {
+      const res = await authFetch('/api/workspace', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ snapshot: state }),
       });
@@ -2711,13 +2707,11 @@ export function useAgencyStore(activeUid: string | null = null) {
 
   const restoreWorkspaceFromServer = useCallback(async () => {
     return trackDelayedLoading(async () => {
-      const token = await getActiveBearerToken();
-      if (!token) {
+      const sess = getStoredSession();
+      if (!sess?.user) {
         throw new Error('يرجى تسجيل الدخول أولًا.');
       }
-      const res = await fetch('/api/workspace', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch('/api/workspace');
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
       if (data?.exists && data.snapshot) {

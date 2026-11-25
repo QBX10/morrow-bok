@@ -48,8 +48,13 @@ import {
   updateSqlUserProfile,
 } from './src/db/users.ts';
 import {
+  clearSessionCookie,
+  parseCookieHeader,
   requireAuth,
+  SESSION_COOKIE_NAME,
+  setSessionCookie,
   signSessionToken,
+  verifyAuthToken,
   type AuthRequest,
 } from './src/middleware/auth.ts';
 import {
@@ -101,6 +106,80 @@ const pendingPasswordResets = new Map<
   string,
   { uid: string; code: string; expiresAt: number; attempts: number }
 >();
+
+const authRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function pruneAuthTransientMaps() {
+  const now = Date.now();
+  for (const [key, val] of pendingPhoneOtps.entries()) {
+    if (now > val.expiresAt) pendingPhoneOtps.delete(key);
+  }
+  for (const [key, val] of pendingPasswordResets.entries()) {
+    if (now > val.expiresAt) pendingPasswordResets.delete(key);
+  }
+  for (const [key, val] of authRateBuckets.entries()) {
+    if (now > val.resetAt) authRateBuckets.delete(key);
+  }
+}
+
+function getClientRateKey(req: Request, bucket: string, scope = ''): string {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = xff || req.socket.remoteAddress || 'unknown';
+  return `${bucket}:${ip}:${scope}`;
+}
+
+function consumeAuthRateLimit(
+  req: Request,
+  bucket: string,
+  maxAttempts = 15,
+  windowMs = 5 * 60 * 1000,
+  scope = ''
+): boolean {
+  pruneAuthTransientMaps();
+  const key = getClientRateKey(req, bucket, scope);
+  const now = Date.now();
+  const cur = authRateBuckets.get(key);
+  if (!cur || now > cur.resetAt) {
+    authRateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (cur.count >= maxAttempts) {
+    return false;
+  }
+  cur.count += 1;
+  return true;
+}
+
+function resolveAutoIdentifierLookup(
+  mode: string | undefined,
+  rawIdentifier: string
+) {
+  const clean = rawIdentifier.trim();
+  const explicit =
+    mode === 'phone' || mode === 'google' || mode === 'username' ? mode : 'auto';
+  if (explicit === 'google' || (explicit === 'auto' && clean.includes('@'))) {
+    return {
+      resolvedMode: 'google' as const,
+      user: findUserByEmail(clean.toLowerCase()),
+    };
+  }
+  const normalizedPhone = normalizePhoneNumber(clean);
+  if (
+    explicit === 'phone' ||
+    (explicit === 'auto' &&
+      (/^\+?\d[\d\s\-]{7,15}$/.test(clean) || /^07\d{8,10}$/.test(clean)) &&
+      /^\+\d{8,15}$/.test(normalizedPhone))
+  ) {
+    return {
+      resolvedMode: 'phone' as const,
+      user: findUserByPhone(normalizedPhone),
+    };
+  }
+  return {
+    resolvedMode: 'username' as const,
+    user: findUserByUsername(clean.toLowerCase()),
+  };
+}
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -258,6 +337,10 @@ async function startServer() {
 
   app.post('/api/auth/register', (req: Request, res: Response) => {
     try {
+      if (!consumeAuthRateLimit(req, 'register', 12)) {
+        res.status(429).json({ error: 'تم إرسال طلبات كثيرة، يرجى الانتظار قليلاً.' });
+        return;
+      }
       const body = (req.body || {}) as {
         mode?: 'google' | 'username' | 'phone';
         displayName?: string;
@@ -265,24 +348,26 @@ async function startServer() {
         username?: string;
         phone?: string;
         password?: string;
+        rememberMe?: boolean;
       };
 
       const mode =
         body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
-      const displayName = String(body.displayName || '').trim();
+      const displayName = String(body.displayName || '').trim().slice(0, 80);
       const password = String(body.password || '');
+      const rememberMe = body.rememberMe !== false;
 
-      if (password.length < 4) {
+      if (password.length < 6) {
         res
           .status(400)
-          .json({ error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل.' });
+          .json({ error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.' });
         return;
       }
 
       if (mode === 'google') {
         const email = String(body.email || '').trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          res.status(400).json({ error: 'يرجى إدخال بريد Gmail / إلكتروني صالح.' });
+          res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صالح.' });
           return;
         }
         if (findUserByEmail(email)) {
@@ -303,7 +388,9 @@ async function startServer() {
           email,
           role: 'manager' as const,
         };
-        res.status(201).json({ token: signSessionToken(user), user });
+        const token = signSessionToken(user);
+        setSessionCookie(req, res, token, rememberMe);
+        res.status(201).json({ token, user });
         return;
       }
 
@@ -334,7 +421,9 @@ async function startServer() {
           username,
           role: 'manager' as const,
         };
-        res.status(201).json({ token: signSessionToken(user), user });
+        const token = signSessionToken(user);
+        setSessionCookie(req, res, token, rememberMe);
+        res.status(201).json({ token, user });
         return;
       }
 
@@ -363,93 +452,120 @@ async function startServer() {
         phone,
         role: 'manager' as const,
       };
-      res.status(201).json({ token: signSessionToken(user), user });
-    } catch (err) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'تعذر إنشاء الحساب.',
-      });
+      const token = signSessionToken(user);
+      setSessionCookie(req, res, token, rememberMe);
+      res.status(201).json({ token, user });
+    } catch {
+      res.status(500).json({ error: 'تعذر إنشاء الحساب حالياً.' });
     }
   });
 
   app.post('/api/auth/login', (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username' | 'phone';
         identifier?: string;
         password?: string;
+        rememberMe?: boolean;
       };
-      const mode: 'google' | 'username' | 'phone' =
-        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
-      const password = String(body.password || '');
+      const identifier = String(body.identifier || '').trim();
+      if (!consumeAuthRateLimit(req, 'login', 18, 5 * 60 * 1000, identifier.toLowerCase())) {
+        res.status(429).json({
+          error: 'تم تجاوز الحد المسموح من محاولات الدخول. يرجى الانتظار دقائق.',
+        });
+        return;
+      }
 
-      const found =
-        mode === 'google'
-          ? findUserByEmail(String(body.identifier || ''))
-          : mode === 'phone'
-          ? findUserByPhone(normalizePhoneNumber(body.identifier || ''))
-          : findUserByUsername(String(body.identifier || ''));
+      const password = String(body.password || '');
+      const rememberMe = body.rememberMe !== false;
+      const { resolvedMode, user: found } = resolveAutoIdentifierLookup(
+        body.mode,
+        identifier
+      );
 
       if (!found || !verifyPassword(password, found.passwordHash)) {
         res.status(401).json({
           error:
-            mode === 'google'
+            resolvedMode === 'google'
               ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
-              : mode === 'phone'
+              : resolvedMode === 'phone'
               ? 'رقم الهاتف أو كلمة المرور غير صحيحة.'
-              : 'اسم المستخدم أو كلمة المرور غير صحيحة.',
+              : 'بيانات الدخول أو كلمة المرور غير صحيحة.',
         });
         return;
       }
 
       const user = {
         uid: found.uid,
-        provider: mode,
+        provider: found.authProvider,
         displayName: found.displayName,
         email: found.email || undefined,
         username: found.username || undefined,
         phone: found.phone || undefined,
+        avatarUrl: found.avatarUrl || undefined,
         role: found.role,
       };
-      res.json({ token: signSessionToken(user), user });
-    } catch (err) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'تعذر تسجيل الدخول.',
-      });
+      const token = signSessionToken(user);
+      setSessionCookie(req, res, token, rememberMe);
+      res.json({ token, user });
+    } catch {
+      res.status(500).json({ error: 'تعذر تسجيل الدخول حالياً.' });
     }
   });
 
-  app.post('/api/auth/google-quick', (req: Request, res: Response) => {
-    const body = (req.body || {}) as { email?: string; displayName?: string };
-    const email = String(body.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      res.status(400).json({ error: 'أدخل بريد Gmail صحيحًا للمتابعة.' });
-      return;
+  app.post('/api/auth/firebase-session', async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const body = (req.body || {}) as { idToken?: string; rememberMe?: boolean };
+      const rawToken =
+        authHeader && authHeader.startsWith('Bearer ')
+          ? authHeader.slice(7).trim()
+          : String(body.idToken || '').trim();
+      if (!rawToken || rawToken.startsWith('sess.')) {
+        res.status(401).json({ error: 'رمز تحقق Google غير صالح.' });
+        return;
+      }
+      const verified = await verifyAuthToken(rawToken);
+      if (!verified || !verified.decodedFirebaseToken) {
+        res.status(401).json({ error: 'تعذر التحقق من جلسة Google.' });
+        return;
+      }
+      const principal = verified.principal;
+      const user = {
+        uid: principal.uid,
+        provider: 'google' as const,
+        displayName: principal.displayName,
+        email: principal.email,
+        avatarUrl: principal.avatarUrl,
+        role: 'manager' as const,
+      };
+      const sessionToken = signSessionToken(user);
+      setSessionCookie(req, res, sessionToken, body.rememberMe !== false);
+      res.json({ token: sessionToken, user });
+    } catch {
+      res.status(401).json({ error: 'تعذر تثبيت جلسة Google.' });
     }
+  });
 
-    let found = findUserByEmail(email);
-    if (!found) {
-      found = createUserRecord({
-        uid: `gml_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        authProvider: 'google',
-        displayName: String(body.displayName || '').trim() || email.split('@')[0],
-        email,
-        passwordHash: null,
-      });
-    }
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    clearSessionCookie(req, res);
+    res.json({ ok: true });
+  });
 
-    const user = {
-      uid: found.uid,
-      provider: 'google' as const,
-      displayName: found.displayName,
-      email: found.email || email,
-      role: found.role,
-    };
-    res.json({ token: signSessionToken(user), user });
+  app.post('/api/auth/google-quick', (_req: Request, res: Response) => {
+    res.status(403).json({
+      error:
+        'تم إيقاف الدخول السريع غير المتحقق حفاظاً على أمان الحسابات. يرجى المتابعة عبر Google أو إدخال البريد وكلمة المرور.',
+    });
   });
 
   app.post('/api/auth/phone/request-otp', (req: Request, res: Response) => {
     const body = (req.body || {}) as { phone?: string };
     const phone = normalizePhoneNumber(body.phone || '');
+    if (!consumeAuthRateLimit(req, 'otp_req', 8, 5 * 60 * 1000, phone)) {
+      res.status(429).json({ error: 'طلبات متكررة لرمز التحقق، انتظر قليلاً.' });
+      return;
+    }
     if (!/^\+\d{8,15}$/.test(phone)) {
       res
         .status(400)
@@ -465,7 +581,8 @@ async function startServer() {
     res.json({
       ok: true,
       phone,
-      demoCode: process.env.SMS_PROVIDER_API_KEY ? undefined : code,
+      demoCode:
+        !isProduction && !process.env.SMS_PROVIDER_API_KEY ? code : undefined,
     });
   });
 
@@ -474,12 +591,18 @@ async function startServer() {
       phone?: string;
       code?: string;
       displayName?: string;
+      rememberMe?: boolean;
     };
     const phone = normalizePhoneNumber(body.phone || '');
+    if (!consumeAuthRateLimit(req, 'otp_verify', 12, 5 * 60 * 1000, phone)) {
+      res.status(429).json({ error: 'تم تجاوز عدد محاولات التحقق المسموح.' });
+      return;
+    }
     const code = String(body.code || '').trim();
     const pending = pendingPhoneOtps.get(phone);
 
     if (!pending || Date.now() > pending.expiresAt) {
+      pendingPhoneOtps.delete(phone);
       res
         .status(400)
         .json({ error: 'انتهت صلاحية رمز التحقق، اطلب رمزًا جديدًا.' });
@@ -502,7 +625,7 @@ async function startServer() {
       userRec = createUserRecord({
         uid: `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
         authProvider: 'phone',
-        displayName: String(body.displayName || '').trim() || phone,
+        displayName: String(body.displayName || '').trim().slice(0, 80) || phone,
         phone,
         passwordHash: null,
       });
@@ -515,29 +638,28 @@ async function startServer() {
       phone,
       role: userRec.role,
     };
-    res.json({ token: signSessionToken(user), user });
+    const token = signSessionToken(user);
+    setSessionCookie(req, res, token, body.rememberMe !== false);
+    res.json({ token, user });
   });
 
   app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username' | 'phone';
         identifier?: string;
       };
-      const mode: 'google' | 'username' | 'phone' =
-        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
       const rawIdentifier = String(body.identifier || '').trim();
+      if (!consumeAuthRateLimit(req, 'forgot', 8, 10 * 60 * 1000, rawIdentifier.toLowerCase())) {
+        res.status(429).json({ error: 'تم إرسال طلبات استعادة كثيرة، انتظر قليلاً.' });
+        return;
+      }
       if (!rawIdentifier) {
         res.status(400).json({ error: 'يرجى إدخال معرف الحساب أولاً.' });
         return;
       }
 
-      const found =
-        mode === 'google'
-          ? findUserByEmail(rawIdentifier.toLowerCase())
-          : mode === 'phone'
-          ? findUserByPhone(normalizePhoneNumber(rawIdentifier))
-          : findUserByUsername(rawIdentifier.toLowerCase());
+      const { user: found } = resolveAutoIdentifierLookup(body.mode, rawIdentifier);
 
       if (!found) {
         res.status(404).json({ error: 'لم يتم العثور على حساب مطابق لهذه البيانات.' });
@@ -558,26 +680,28 @@ async function startServer() {
       res.json({
         ok: true,
         maskedTarget,
-        demoCode: process.env.SMS_PROVIDER_API_KEY ? undefined : code,
+        demoCode:
+          !isProduction && !process.env.SMS_PROVIDER_API_KEY ? code : undefined,
       });
-    } catch (err) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'تعذر إرسال رمز الاستعادة.',
-      });
+    } catch {
+      res.status(500).json({ error: 'تعذر إرسال رمز الاستعادة حالياً.' });
     }
   });
 
   app.post('/api/auth/reset-password', (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username' | 'phone';
         identifier?: string;
         code?: string;
         newPassword?: string;
+        rememberMe?: boolean;
       };
-      const mode: 'google' | 'username' | 'phone' =
-        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
       const rawIdentifier = String(body.identifier || '').trim();
+      if (!consumeAuthRateLimit(req, 'reset', 10, 10 * 60 * 1000, rawIdentifier.toLowerCase())) {
+        res.status(429).json({ error: 'تم تجاوز عدد محاولات إعادة التعيين المسموح.' });
+        return;
+      }
       const code = String(body.code || '').trim();
       const newPassword = String(body.newPassword || '');
 
@@ -588,12 +712,7 @@ async function startServer() {
         return;
       }
 
-      const found =
-        mode === 'google'
-          ? findUserByEmail(rawIdentifier.toLowerCase())
-          : mode === 'phone'
-          ? findUserByPhone(normalizePhoneNumber(rawIdentifier))
-          : findUserByUsername(rawIdentifier.toLowerCase());
+      const { user: found } = resolveAutoIdentifierLookup(body.mode, rawIdentifier);
 
       if (!found) {
         res.status(404).json({ error: 'لم يتم العثور على الحساب المطلوب.' });
@@ -602,6 +721,7 @@ async function startServer() {
 
       const pending = pendingPasswordResets.get(found.uid);
       if (!pending || Date.now() > pending.expiresAt) {
+        pendingPasswordResets.delete(found.uid);
         res
           .status(400)
           .json({ error: 'انتهت صلاحية رمز الاستعادة، اطلب رمزاً جديداً.' });
@@ -635,11 +755,11 @@ async function startServer() {
         avatarUrl: updated.avatarUrl || undefined,
         role: updated.role,
       };
-      res.json({ token: signSessionToken(user), user });
-    } catch (err) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'تعذر إعادة تعيين كلمة المرور.',
-      });
+      const token = signSessionToken(user);
+      setSessionCookie(req, res, token, body.rememberMe !== false);
+      res.json({ token, user });
+    } catch {
+      res.status(500).json({ error: 'تعذر إعادة تعيين كلمة المرور حالياً.' });
     }
   });
 
@@ -1006,7 +1126,7 @@ async function startServer() {
 
   // --- Quick Extract Header Metadata Inference (Vision AI) ---
 
-  app.post('/api/quick-extract/metadata-inference', async (req: Request, res: Response) => {
+  app.post('/api/quick-extract/metadata-inference', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         filename?: string;
@@ -1234,7 +1354,7 @@ async function startServer() {
 
   // --- Quick Extract ("السحب السريع") PDF & Camera Burst Extraction Endpoint ---
 
-  app.post('/api/quick-extract', async (req: Request, res: Response) => {
+  app.post('/api/quick-extract', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         mode?: 'pdf' | 'camera_burst';
@@ -1700,7 +1820,7 @@ async function startServer() {
 
   // --- UCRS: Universal Cognitive Reading & Progressive Comprehension Endpoints ---
 
-  app.post('/api/ucrs/analyze', async (req: Request, res: Response) => {
+  app.post('/api/ucrs/analyze', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         phase?: 'classify_only' | 'progressive_extract' | 'fusion_complete';
@@ -2285,7 +2405,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/ucrs/tts', async (req: Request, res: Response) => {
+  app.post('/api/ucrs/tts', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as { text?: string };
       const text = String(body.text || '').trim().slice(0, 2000);
@@ -2347,7 +2467,7 @@ async function startServer() {
   });
 
   // --- Quick Extract Live Draft Assistant Copilot ---
-  app.post('/api/quick-extract/copilot', async (req: Request, res: Response) => {
+  app.post('/api/quick-extract/copilot', requireAuth, async (req: AuthRequest, res: Response) => {
     const body = (req.body || {}) as {
       message?: string;
       documentSummary?: string;
@@ -2603,7 +2723,7 @@ async function startServer() {
     res.json(getOrchestrationStatusSnapshot());
   });
 
-  app.post('/api/assistant/test-model', async (req: Request, res: Response) => {
+  app.post('/api/assistant/test-model', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         modelId?: string;
@@ -2675,7 +2795,7 @@ async function startServer() {
       .join('\n');
   };
 
-  app.post('/api/assistant/chat', async (req: Request, res: Response) => {
+  app.post('/api/assistant/chat', requireAuth, async (req: AuthRequest, res: Response) => {
     const startedAt = Date.now();
     try {
       const body = (req.body || {}) as {
@@ -2889,7 +3009,7 @@ ${contextText}`;
 
   // --- Morrow Smart Text / Data Analyzer (data_processing: gemini-3.5-flash -> nemotron -> openrouter/free) ---
 
-  app.post('/api/morrow/analyze-text', async (req: Request, res: Response) => {
+  app.post('/api/morrow/analyze-text', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         rawText?: string;
@@ -2998,7 +3118,7 @@ ${contextText}`;
   });
 
   // --- Morrow Voice Message Transcription (Audio Pipeline: whisper-large-v3-turbo via Groq -> Gemini fallback) ---
-  app.post('/api/morrow/transcribe', async (req: Request, res: Response) => {
+  app.post('/api/morrow/transcribe', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         audioBase64?: string;
@@ -3101,7 +3221,7 @@ ${contextText}`;
   });
 
   // --- Morrow Multimodal File / Camera Analysis (heavy_extraction: gemini-3.8-flash -> nemotron -> gemini-3.5-flash) ---
-  app.post('/api/morrow/multimodal', async (req: Request, res: Response) => {
+  app.post('/api/morrow/multimodal', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
         fileName?: string;
@@ -3271,18 +3391,18 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
     }
   });
 
-  app.get('/bg-music.mp3', (_req: Request, res: Response) => {
-    const publicMusicPath = path.resolve(
+  const serveAppAmbientAudio = (_req: Request, res: Response) => {
+    const publicAudioPath = path.resolve(
       __dirname,
-      'public/assets/aistudio/bg-music_85f08a71.mp3'
+      'public/assets/aistudio/RUMI-music_0cb9de04.mp3'
     );
-    const distMusicPath = path.resolve(
+    const distAudioPath = path.resolve(
       __dirname,
-      'dist/assets/aistudio/bg-music_85f08a71.mp3'
+      'dist/assets/aistudio/RUMI-music_0cb9de04.mp3'
     );
-    const targetPath = fs.existsSync(publicMusicPath)
-      ? publicMusicPath
-      : distMusicPath;
+    const targetPath = fs.existsSync(publicAudioPath)
+      ? publicAudioPath
+      : distAudioPath;
 
     if (!fs.existsSync(targetPath)) {
       res.status(404).end();
@@ -3292,7 +3412,10 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.sendFile(targetPath);
-  });
+  };
+
+  app.get('/app-ambient.mp3', serveAppAmbientAudio);
+  app.get('/bg-music.mp3', serveAppAmbientAudio);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
@@ -3320,14 +3443,24 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
   const httpServer = http.createServer(app);
   const morrowLiveWss = new WebSocketServer({ noServer: true });
 
-  httpServer.on('upgrade', (request, socket, head) => {
+  httpServer.on('upgrade', async (request, socket, head) => {
     try {
       const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
-      if (url.pathname === '/api/morrow/live') {
-        morrowLiveWss.handleUpgrade(request, socket, head, (ws) => {
-          morrowLiveWss.emit('connection', ws, request);
-        });
+      if (url.pathname !== '/api/morrow/live') {
+        return;
       }
+      const queryToken = url.searchParams.get('token') || '';
+      const cookies = parseCookieHeader(request.headers.cookie);
+      const token = queryToken || cookies[SESSION_COOKIE_NAME] || '';
+      const verified = token ? await verifyAuthToken(token) : null;
+      if (!verified) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      morrowLiveWss.handleUpgrade(request, socket, head, (ws) => {
+        morrowLiveWss.emit('connection', ws, request);
+      });
     } catch {
       socket.destroy();
     }

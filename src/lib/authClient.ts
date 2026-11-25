@@ -6,7 +6,7 @@ import {
 } from './firebase';
 import { syncUserProfileToFirestore } from './firestoreSync';
 
-const LOCAL_AUTH_STORAGE_KEY = 'flour_agency_session_v2';
+const LEGACY_AUTH_STORAGE_KEY = 'flour_agency_session_v2';
 const REMEMBERED_ACCOUNTS_KEY = 'morrow_remembered_accounts_v1';
 
 export interface StoredSession {
@@ -25,28 +25,26 @@ export interface RememberedAccountSummary {
   lastUsedAt: string;
 }
 
-function parseSessionRaw(raw: string | null): StoredSession | null {
-  if (!raw) return null;
+// Strictly in-memory active session (never persisted in localStorage/sessionStorage)
+let inMemorySession: StoredSession | null = null;
+
+function purgeLegacyTokenStorage(): void {
   try {
-    const parsed = JSON.parse(raw) as StoredSession;
-    if (!parsed?.token || !parsed?.user?.uid) return null;
-    return parsed;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+    }
   } catch {
-    return null;
+    // ignore storage access issues
   }
 }
 
+purgeLegacyTokenStorage();
+
 export function getStoredSession(): StoredSession | null {
-  try {
-    const local = parseSessionRaw(localStorage.getItem(LOCAL_AUTH_STORAGE_KEY));
-    if (local) return local;
-    if (typeof sessionStorage !== 'undefined') {
-      return parseSessionRaw(sessionStorage.getItem(LOCAL_AUTH_STORAGE_KEY));
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return inMemorySession;
 }
 
 export function getRememberedAccounts(): RememberedAccountSummary[] {
@@ -57,7 +55,11 @@ export function getRememberedAccounts(): RememberedAccountSummary[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (item): item is RememberedAccountSummary =>
-        Boolean(item && typeof item.uid === 'string' && typeof item.displayName === 'string')
+        Boolean(
+          item &&
+            typeof item.uid === 'string' &&
+            typeof item.displayName === 'string'
+        )
     );
   } catch {
     return [];
@@ -101,42 +103,71 @@ export function saveSession(
   user: AuthUser,
   rememberMe = true
 ): void {
-  const payload = JSON.stringify({ token, user });
-  try {
-    if (rememberMe) {
-      localStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
-      }
-      saveRememberedAccount(user);
-    } else {
-      localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
-      }
-    }
-  } catch {
-    // Fallback to localStorage if sessionStorage fails
-    localStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
+  purgeLegacyTokenStorage();
+  inMemorySession = { token, user };
+  if (rememberMe) {
+    saveRememberedAccount(user);
   }
 }
 
 export function clearSession(): void {
-  try {
-    localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
-    }
-  } catch {
-    // ignore
+  inMemorySession = null;
+  purgeLegacyTokenStorage();
+  if (typeof fetch === 'function') {
+    void fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Requested-With': 'MorrowApp' },
+    }).catch(() => {});
   }
   void logoutFirebase().catch(() => {});
 }
 
 export async function getActiveBearerToken(): Promise<string | null> {
+  if (inMemorySession?.token) return inMemorySession.token;
   const firebaseToken = await getFirebaseIdToken();
   if (firebaseToken) return firebaseToken;
-  return getStoredSession()?.token || null;
+  return null;
+}
+
+export async function authFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<Response> {
+  const token = await getActiveBearerToken();
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('X-Requested-With')) {
+    headers.set('X-Requested-With', 'MorrowApp');
+  }
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return fetch(input, {
+    ...init,
+    credentials: 'include',
+    headers,
+  });
+}
+
+export async function restoreSessionFromServer(): Promise<AuthUser | null> {
+  try {
+    const token = await getActiveBearerToken();
+    const headers = new Headers({ 'X-Requested-With': 'MorrowApp' });
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    const res = await fetch('/api/auth/me', {
+      credentials: 'include',
+      headers,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { user?: AuthUser };
+    if (!data?.user?.uid) return null;
+    inMemorySession = { token: token || '', user: data.user };
+    return data.user;
+  } catch {
+    return null;
+  }
 }
 
 export async function signInWithFirebaseGoogle(options?: {
@@ -145,22 +176,33 @@ export async function signInWithFirebaseGoogle(options?: {
   rememberMe?: boolean;
 }): Promise<StoredSession> {
   const { user: fbUser, idToken } = await googleSignIn(options);
+  const rememberMe = options?.rememberMe ?? true;
 
+  let resolvedToken = idToken;
   let resolvedUser: AuthUser = {
     uid: fbUser.uid,
     provider: 'google',
-    displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم Google',
+    displayName:
+      fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم Google',
     email: fbUser.email || undefined,
     avatarUrl: fbUser.photoURL || undefined,
     role: 'manager',
   };
 
   try {
-    const res = await fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${idToken}` },
+    const res = await fetch('/api/auth/firebase-session', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'MorrowApp',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ rememberMe }),
     });
     if (res.ok) {
-      const data = await res.json();
+      const data = (await res.json()) as { token?: string; user?: AuthUser };
+      if (data?.token) resolvedToken = data.token;
       if (data?.user) {
         resolvedUser = {
           ...resolvedUser,
@@ -170,7 +212,7 @@ export async function signInWithFirebaseGoogle(options?: {
       }
     }
   } catch {
-    // Cloud SQL sync is optional if offline
+    // Cloud SQL / cookie sync is optional if offline
   }
 
   void syncUserProfileToFirestore({
@@ -181,17 +223,16 @@ export async function signInWithFirebaseGoogle(options?: {
     avatarUrl: resolvedUser.avatarUrl,
   }).catch(() => {});
 
-  saveSession(idToken, resolvedUser, options?.rememberMe ?? true);
-  return { token: idToken, user: resolvedUser };
+  saveSession(resolvedToken, resolvedUser, rememberMe);
+  return { token: resolvedToken, user: resolvedUser };
 }
 
 export async function updateUserProfileApi(patch: {
   displayName?: string;
   avatarUrl?: string;
 }): Promise<AuthUser> {
-  const token = await getActiveBearerToken();
   const current = getStoredSession();
-  if (!token || !current) {
+  if (!current) {
     throw new Error('يرجى تسجيل الدخول أولاً لتحديث الملف الشخصي.');
   }
 
@@ -202,27 +243,19 @@ export async function updateUserProfileApi(patch: {
       patch.avatarUrl !== undefined ? patch.avatarUrl : current.user.avatarUrl,
   };
 
-  try {
-    const res = await fetch('/api/user/profile', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(patch),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data?.error || 'تعذر حفظ بيانات الملف الشخصي.');
-    }
-    if (data?.user) {
-      Object.assign(nextUser, data.user);
-    }
-  } catch (err) {
-    if (token !== 'firebase') {
-      saveSession(token, nextUser);
-    }
-    throw err;
+  const res = await authFetch('/api/user/profile', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || 'تعذر حفظ بيانات الملف الشخصي.');
+  }
+  if (data?.user) {
+    Object.assign(nextUser, data.user);
   }
 
   void syncUserProfileToFirestore({
@@ -233,63 +266,84 @@ export async function updateUserProfileApi(patch: {
     avatarUrl: nextUser.avatarUrl,
   }).catch(() => {});
 
-  saveSession(token, nextUser);
+  saveSession(current.token, nextUser);
   return nextUser;
 }
 
-export async function fetchServerAppearanceProfiles(): Promise<AppearanceProfile[]> {
-  const token = await getActiveBearerToken();
-  if (!token) return [];
-  const res = await fetch('/api/appearance-profiles', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function fetchServerAppearanceProfiles(): Promise<
+  AppearanceProfile[]
+> {
+  const res = await authFetch('/api/appearance-profiles');
   if (!res.ok) return [];
-  const data = await res.json();
-  return Array.isArray(data?.profiles) ? data.profiles : [];
+  const data = (await res.json()) as {
+    profiles?: Array<{
+      profileKey?: string;
+      name?: string;
+      configJson?: string;
+    }>;
+  };
+  if (!Array.isArray(data?.profiles)) return [];
+  const parsed: AppearanceProfile[] = [];
+  for (const row of data.profiles) {
+    if (!row?.configJson) continue;
+    try {
+      const cfg = JSON.parse(row.configJson) as AppearanceProfile;
+      if (cfg && typeof cfg.id === 'string') {
+        parsed.push(cfg);
+      }
+    } catch {
+      // skip malformed profile JSON
+    }
+  }
+  return parsed;
 }
 
 export async function saveServerAppearanceProfile(
   profile: AppearanceProfile
 ): Promise<void> {
-  const token = await getActiveBearerToken();
-  if (!token) return;
-  await fetch('/api/appearance-profiles', {
+  await authFetch('/api/appearance-profiles', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ profile }),
+    body: JSON.stringify({
+      profileKey: profile.id,
+      name: profile.name,
+      configJson: JSON.stringify(profile),
+    }),
   });
 }
 
 export async function deleteServerAppearanceProfile(id: string): Promise<void> {
-  const token = await getActiveBearerToken();
-  if (!token) return;
-  await fetch(`/api/appearance-profiles/${encodeURIComponent(id)}`, {
+  await authFetch(`/api/appearance-profiles/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export async function loginWithPasswordApi(params: {
-  mode: 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username' | 'phone';
   identifier: string;
   password: string;
   rememberMe?: boolean;
 }): Promise<StoredSession> {
+  const rememberMe = params.rememberMe ?? true;
   const res = await fetch('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify({
       mode: params.mode,
       identifier: params.identifier,
       password: params.password,
+      rememberMe,
     }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر تسجيل الدخول.');
-  saveSession(data.token, data.user, params.rememberMe ?? true);
+  saveSession(data.token, data.user, rememberMe);
   return data;
 }
 
@@ -302,9 +356,14 @@ export async function registerWithPasswordApi(params: {
   password: string;
   rememberMe?: boolean;
 }): Promise<StoredSession> {
+  const rememberMe = params.rememberMe ?? true;
   const res = await fetch('/api/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify({
       mode: params.mode,
       displayName: params.displayName,
@@ -312,30 +371,12 @@ export async function registerWithPasswordApi(params: {
       username: params.username,
       phone: params.phone,
       password: params.password,
+      rememberMe,
     }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر إنشاء الحساب.');
-  saveSession(data.token, data.user, params.rememberMe ?? true);
-  return data;
-}
-
-export async function googleQuickSignInApi(params: {
-  email: string;
-  displayName?: string;
-  rememberMe?: boolean;
-}): Promise<StoredSession> {
-  const res = await fetch('/api/auth/google-quick', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: params.email,
-      displayName: params.displayName,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'تعذر تسجيل الدخول بحساب Gmail.');
-  saveSession(data.token, data.user, params.rememberMe ?? true);
+  saveSession(data.token, data.user, rememberMe);
   return data;
 }
 
@@ -346,7 +387,11 @@ export async function requestPhoneOtpApi(phone: string): Promise<{
 }> {
   const res = await fetch('/api/auth/phone/request-otp', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify({ phone }),
   });
   const data = await res.json();
@@ -360,28 +405,38 @@ export async function verifyPhoneOtpApi(params: {
   displayName?: string;
   rememberMe?: boolean;
 }): Promise<StoredSession> {
+  const rememberMe = params.rememberMe ?? true;
   const res = await fetch('/api/auth/phone/verify-otp', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify({
       phone: params.phone,
       code: params.code,
       displayName: params.displayName,
+      rememberMe,
     }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر التحقق من رمز الهاتف.');
-  saveSession(data.token, data.user, params.rememberMe ?? true);
+  saveSession(data.token, data.user, rememberMe);
   return data;
 }
 
 export async function requestPasswordResetApi(params: {
-  mode: 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username' | 'phone';
   identifier: string;
 }): Promise<{ ok: boolean; maskedTarget?: string; demoCode?: string }> {
   const res = await fetch('/api/auth/forgot-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify(params),
   });
   const data = await res.json();
@@ -390,24 +445,31 @@ export async function requestPasswordResetApi(params: {
 }
 
 export async function confirmPasswordResetApi(params: {
-  mode: 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username' | 'phone';
   identifier: string;
   code: string;
   newPassword: string;
   rememberMe?: boolean;
 }): Promise<StoredSession> {
+  const rememberMe = params.rememberMe ?? true;
   const res = await fetch('/api/auth/reset-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+    },
     body: JSON.stringify({
       mode: params.mode,
       identifier: params.identifier,
       code: params.code,
       newPassword: params.newPassword,
+      rememberMe,
     }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر إعادة تعيين كلمة المرور.');
-  saveSession(data.token, data.user, params.rememberMe ?? true);
+  saveSession(data.token, data.user, rememberMe);
   return data;
 }
+

@@ -24,15 +24,15 @@ interface InteractiveLampProps {
 }
 
 const PULL_TRIGGER_THRESHOLD = 22;
-const MAX_PULL_DISTANCE = 50;
-const CORD_BASE_LENGTH = 90;
+const MAX_PULL_DISTANCE = 48;
+const CORD_BASE_LENGTH = 86;
 const CORD_NOTCH_PX = 9;
 
-// Left-mounted cantilever studio lamp proportions (viewBox 320 x 380)
-const VIEWBOX_W = 320;
-const VIEWBOX_H = 380;
-const PIVOT_X = 178;
-const PIVOT_Y = 74;
+// Left-mounted cantilever studio lamp proportions (viewBox 300 x 360)
+const VIEWBOX_W = 300;
+const VIEWBOX_H = 360;
+const PIVOT_X = 166;
+const PIVOT_Y = 52;
 const MOUTH_LOCAL_Y = 76;
 
 function useIsDesktopViewport(): boolean {
@@ -94,10 +94,11 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
   });
 
   const [pullYState, setPullYState] = useState(0);
+  const livePullYRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Left-mounted lamp swivels counter-clockwise (-44deg) on desktop to aim down-right at the login panel
-  const targetHeadAngle = isOn ? (isDesktop ? -44 : 0) : isDesktop ? -14 : 0;
+  // Left-mounted lamp swivels counter-clockwise (-52deg) on desktop to aim squarely across the login card
+  const targetHeadAngle = isOn ? (isDesktop ? -52 : 0) : isDesktop ? -16 : 0;
 
   // Multi-stage Framer Motion physical spring system
   const rawHeadAngle = useMotionValue(targetHeadAngle);
@@ -183,17 +184,17 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
     }
   );
 
-  // Live dome center for synced clickable hit target
+  // Live dome center for synced clickable hit target (kept high in dome above pull-cord socket)
   const domeLeftPct = useTransform(combinedHeadAngle, (deg) => {
     const rad = (deg * Math.PI) / 180;
-    const x = PIVOT_X - 42 * Math.sin(rad);
+    const x = PIVOT_X - 36 * Math.sin(rad);
     return `${(x / VIEWBOX_W) * 100}%`;
   });
   const domeTopPct = useTransform(
     [combinedHeadAngle, springArmDipY],
     ([deg, dip]: number[]) => {
       const rad = (deg * Math.PI) / 180;
-      const y = PIVOT_Y + dip + 42 * Math.cos(rad);
+      const y = PIVOT_Y + dip + 36 * Math.cos(rad);
       return `${(y / VIEWBOX_H) * 100}%`;
     }
   );
@@ -233,7 +234,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
   // Upper boom flex path synced to springArmDipY
   const upperBoomD = useTransform(
     springArmDipY,
-    (dip) => `M 76 198 L ${PIVOT_X} ${(PIVOT_Y + dip).toFixed(2)}`
+    (dip) => `M 70 184 L ${PIVOT_X} ${(PIVOT_Y + dip).toFixed(2)}`
   );
   const pivotCircleY = useTransform(springArmDipY, (dip) => PIVOT_Y + dip);
   const headGroupTransformY = useTransform(springArmDipY, (dip) => dip);
@@ -272,78 +273,76 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
       if (!audioCtx || isMuted) return;
 
       const now = audioCtx.currentTime;
+      const autoDisconnect = (osc: OscillatorNode, gain: GainNode) => {
+        osc.onended = () => {
+          try {
+            osc.disconnect();
+            gain.disconnect();
+          } catch {
+            // ignore disconnect errors
+          }
+        };
+      };
 
       if (turningOn) {
         const snap = audioCtx.createOscillator();
         const snapGain = audioCtx.createGain();
         snap.type = 'triangle';
-        snap.frequency.setValueAtTime(285, now);
-        snap.frequency.exponentialRampToValueAtTime(780, now + 0.026);
-        snapGain.gain.setValueAtTime(0.001, now);
-        snapGain.gain.linearRampToValueAtTime(0.045, now + 0.005);
-        snapGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.036);
+        snap.frequency.setValueAtTime(290, now);
+        snap.frequency.exponentialRampToValueAtTime(720, now + 0.024);
+        snapGain.gain.setValueAtTime(0.0005, now);
+        snapGain.gain.linearRampToValueAtTime(0.026, now + 0.004);
+        snapGain.gain.exponentialRampToValueAtTime(0.0004, now + 0.032);
         snap.connect(snapGain);
         snapGain.connect(audioCtx.destination);
+        autoDisconnect(snap, snapGain);
         snap.start(now);
-        snap.stop(now + 0.042);
+        snap.stop(now + 0.038);
 
         const hum = audioCtx.createOscillator();
         const humGain = audioCtx.createGain();
         hum.type = 'sine';
-        hum.frequency.setValueAtTime(68, now + 0.02);
-        hum.frequency.exponentialRampToValueAtTime(148, now + 0.16);
-        hum.frequency.exponentialRampToValueAtTime(120, now + 0.36);
+        hum.frequency.setValueAtTime(92, now + 0.018);
+        hum.frequency.exponentialRampToValueAtTime(144, now + 0.14);
+        hum.frequency.exponentialRampToValueAtTime(118, now + 0.30);
 
-        humGain.gain.setValueAtTime(0.001, now);
-        humGain.gain.linearRampToValueAtTime(0.065, now + 0.08);
-        humGain.gain.exponentialRampToValueAtTime(0.001, now + 0.39);
+        humGain.gain.setValueAtTime(0.0005, now);
+        humGain.gain.linearRampToValueAtTime(0.026, now + 0.07);
+        humGain.gain.exponentialRampToValueAtTime(0.0004, now + 0.32);
 
         hum.connect(humGain);
         humGain.connect(audioCtx.destination);
-        hum.start(now + 0.02);
-        hum.stop(now + 0.42);
-
-        const shimmer = audioCtx.createOscillator();
-        const shimmerGain = audioCtx.createGain();
-        shimmer.type = 'sine';
-        shimmer.frequency.setValueAtTime(136, now + 0.02);
-        shimmer.frequency.exponentialRampToValueAtTime(296, now + 0.16);
-        shimmer.frequency.exponentialRampToValueAtTime(240, now + 0.34);
-
-        shimmerGain.gain.setValueAtTime(0.0005, now + 0.02);
-        shimmerGain.gain.linearRampToValueAtTime(0.016, now + 0.09);
-        shimmerGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.36);
-
-        shimmer.connect(shimmerGain);
-        shimmerGain.connect(audioCtx.destination);
-        shimmer.start(now + 0.02);
-        shimmer.stop(now + 0.38);
+        autoDisconnect(hum, humGain);
+        hum.start(now + 0.018);
+        hum.stop(now + 0.34);
       } else {
         const releaseSnap = audioCtx.createOscillator();
         const releaseGain = audioCtx.createGain();
         releaseSnap.type = 'triangle';
-        releaseSnap.frequency.setValueAtTime(520, now);
-        releaseSnap.frequency.exponentialRampToValueAtTime(205, now + 0.028);
-        releaseGain.gain.setValueAtTime(0.001, now);
-        releaseGain.gain.linearRampToValueAtTime(0.036, now + 0.004);
-        releaseGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.036);
+        releaseSnap.frequency.setValueAtTime(480, now);
+        releaseSnap.frequency.exponentialRampToValueAtTime(210, now + 0.026);
+        releaseGain.gain.setValueAtTime(0.0005, now);
+        releaseGain.gain.linearRampToValueAtTime(0.022, now + 0.004);
+        releaseGain.gain.exponentialRampToValueAtTime(0.0004, now + 0.034);
         releaseSnap.connect(releaseGain);
         releaseGain.connect(audioCtx.destination);
+        autoDisconnect(releaseSnap, releaseGain);
         releaseSnap.start(now);
-        releaseSnap.stop(now + 0.042);
+        releaseSnap.stop(now + 0.038);
 
         const powerDown = audioCtx.createOscillator();
         const powerDownGain = audioCtx.createGain();
         powerDown.type = 'sine';
-        powerDown.frequency.setValueAtTime(138, now + 0.015);
-        powerDown.frequency.exponentialRampToValueAtTime(56, now + 0.19);
-        powerDownGain.gain.setValueAtTime(0.001, now + 0.015);
-        powerDownGain.gain.linearRampToValueAtTime(0.038, now + 0.04);
-        powerDownGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.21);
+        powerDown.frequency.setValueAtTime(132, now + 0.012);
+        powerDown.frequency.exponentialRampToValueAtTime(62, now + 0.16);
+        powerDownGain.gain.setValueAtTime(0.0005, now + 0.012);
+        powerDownGain.gain.linearRampToValueAtTime(0.020, now + 0.035);
+        powerDownGain.gain.exponentialRampToValueAtTime(0.0004, now + 0.18);
         powerDown.connect(powerDownGain);
         powerDownGain.connect(audioCtx.destination);
-        powerDown.start(now + 0.015);
-        powerDown.stop(now + 0.23);
+        autoDisconnect(powerDown, powerDownGain);
+        powerDown.start(now + 0.012);
+        powerDown.stop(now + 0.20);
       }
     },
     [ensureAudioContext, isMuted]
@@ -401,6 +400,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
       const defaultImpulse = turningOn ? (isDesktop ? -18 : 12) : isDesktop ? 15 : -11;
 
       if (withDipAnimation && !reducedMotion) {
+        livePullYRef.current = 24;
         setPullYState(24);
         onPullProgress?.(0.5);
         animate(rawPullY, 24, {
@@ -411,12 +411,14 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
         pulseHeadRecoil(turningOn ? -4.2 : 3.0, 3.8);
         pulseCordSway(releaseImpulsePx ?? defaultImpulse);
         dipTimeoutRef.current = window.setTimeout(() => {
+          livePullYRef.current = 0;
           setPullYState(0);
           rawPullY.set(0);
           onPullProgress?.(0);
           dipTimeoutRef.current = null;
         }, 125);
       } else {
+        livePullYRef.current = 0;
         setPullYState(0);
         rawPullY.set(0);
         onPullProgress?.(0);
@@ -458,6 +460,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
       lastNotch: 0,
       armedSoundPlayed: false,
     };
+    livePullYRef.current = 0;
     setIsDragging(true);
   };
 
@@ -503,6 +506,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
       drag.armedSoundPlayed = false;
     }
 
+    livePullYRef.current = dampedY;
     rawPullY.set(dampedY);
     rawSwayX.set(dampedX);
     if (!reducedMotion) {
@@ -530,7 +534,8 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
     }
 
     const elapsed = performance.now() - drag.startTime;
-    const pulledEnough = pullYState >= PULL_TRIGGER_THRESHOLD;
+    const pulledEnough =
+      Math.max(livePullYRef.current, drag.maxDelta) >= PULL_TRIGGER_THRESHOLD;
     const wasTap = drag.maxDelta < 7 && elapsed < 360;
     const currentSway = rawSwayX.get();
     const momentumKick = Math.max(-18, Math.min(18, drag.velocityX * 1.15));
@@ -548,6 +553,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
     } else if (wasTap) {
       triggerLampToggle(true);
     } else {
+      livePullYRef.current = 0;
       setPullYState(0);
       rawPullY.set(0);
       rawHeadRecoil.set(0);
@@ -571,7 +577,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
   return (
     <div className="relative flex flex-col items-center justify-center select-none">
       {/* Precision Left-Side Cantilever Studio Lamp + Multi-Stage Physical Pull-Chain */}
-      <div className="relative z-10 w-[232px] sm:w-[264px] lg:w-[308px]">
+      <div className="relative z-10 w-[210px] sm:w-[244px] lg:w-[364px]">
         <svg
           viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}
           className="w-full h-auto overflow-visible"
@@ -603,43 +609,43 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
             </linearGradient>
 
             <radialGradient id="shadeInnerLit" cx="50%" cy="32%" r="68%">
-              <stop offset="0%" stopColor="#FFFDF7" stopOpacity="1" />
-              <stop offset="36%" stopColor="#FFE99B" stopOpacity="0.88" />
-              <stop offset="74%" stopColor="#D4AF37" stopOpacity="0.34" />
-              <stop offset="100%" stopColor="#9B7218" stopOpacity="0.08" />
+              <stop offset="0%" stopColor="#F8EBC7" stopOpacity="0.68" />
+              <stop offset="38%" stopColor="#E4C16B" stopOpacity="0.38" />
+              <stop offset="74%" stopColor="#B88B2E" stopOpacity="0.14" />
+              <stop offset="100%" stopColor="#7C5A14" stopOpacity="0.03" />
             </radialGradient>
 
             <radialGradient id="bulbBlackbodyGlow" cx="50%" cy="46%" r="54%">
-              <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="42%" stopColor="#FFF5CC" />
-              <stop offset="82%" stopColor="#F4C95D" />
-              <stop offset="100%" stopColor="#C99422" />
+              <stop offset="0%" stopColor="#FFF6DF" />
+              <stop offset="44%" stopColor="#F2D17E" />
+              <stop offset="82%" stopColor="#CA9735" />
+              <stop offset="100%" stopColor="#8F6518" />
             </radialGradient>
 
             <filter id="lampBeamBlurSoft" x="-40%" y="-20%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="16" />
+              <feGaussianBlur stdDeviation="18" />
             </filter>
             <filter id="lampBeamBlurCore" x="-30%" y="-20%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="9" />
+              <feGaussianBlur stdDeviation="11" />
             </filter>
 
             <linearGradient id="beamSoftSpread" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#FFF7D8" stopOpacity="0.38" />
-              <stop offset="35%" stopColor="#EAC667" stopOpacity="0.14" />
-              <stop offset="72%" stopColor="#C89B3C" stopOpacity="0.03" />
+              <stop offset="0%" stopColor="#F7E4B2" stopOpacity="0.14" />
+              <stop offset="36%" stopColor="#DCB458" stopOpacity="0.055" />
+              <stop offset="72%" stopColor="#AD8329" stopOpacity="0.014" />
               <stop offset="100%" stopColor="#D4AF37" stopOpacity="0" />
             </linearGradient>
 
             <linearGradient id="beamFocusedCore" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#FFFDF5" stopOpacity="0.54" />
-              <stop offset="42%" stopColor="#F5DA82" stopOpacity="0.16" />
-              <stop offset="82%" stopColor="#D4AF37" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="#FAF0D4" stopOpacity="0.19" />
+              <stop offset="42%" stopColor="#E2BE68" stopOpacity="0.068" />
+              <stop offset="82%" stopColor="#B88E30" stopOpacity="0.012" />
               <stop offset="100%" stopColor="#D4AF37" stopOpacity="0" />
             </linearGradient>
 
             <radialGradient id="deskPool" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#F5DA82" stopOpacity="0.42" />
-              <stop offset="52%" stopColor="#D4AF37" stopOpacity="0.12" />
+              <stop offset="0%" stopColor="#E6C36B" stopOpacity="0.21" />
+              <stop offset="52%" stopColor="#C49836" stopOpacity="0.065" />
               <stop offset="100%" stopColor="#D4AF37" stopOpacity="0" />
             </radialGradient>
 
@@ -652,42 +658,42 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
 
           {/* Soft Desk Bounce Pool & Feathered Contact Shadow beneath Left Base */}
           <ellipse
-            cx="148"
-            cy="356"
-            rx="148"
-            ry="22"
+            cx="146"
+            cy="338"
+            rx="142"
+            ry="20"
             fill="url(#deskPool)"
             style={{
-              opacity: isOn ? 0.92 : 0.1 + pullProgress * 0.22,
+              opacity: isOn ? 0.68 : 0.08 + pullProgress * 0.16,
               transform: isOn ? 'scale3d(1, 1, 1)' : 'scale3d(0.62, 0.78, 1)',
-              transformOrigin: '148px 356px',
+              transformOrigin: '146px 338px',
               transition: reducedMotion
                 ? 'opacity 140ms ease'
                 : 'opacity 420ms ease, transform 460ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           />
-          <ellipse cx="104" cy="357" rx="78" ry="13" fill="url(#baseGroundShadow)" />
+          <ellipse cx="98" cy="339" rx="74" ry="12" fill="url(#baseGroundShadow)" />
 
-          {/* Heavy Turned Architectural Base (anchored cleanly on left at cx=104, cy=350) */}
+          {/* Heavy Turned Architectural Base (anchored cleanly on left at cx=98, cy=334) */}
           <ellipse
-            cx="104"
-            cy="352"
-            rx="60"
-            ry="10.5"
+            cx="98"
+            cy="334"
+            rx="58"
+            ry="10"
             fill="#0A0A0D"
             stroke="url(#studioBrass)"
             strokeOpacity={isOn ? 0.8 : 0.34}
             strokeWidth="1.25"
           />
           <path
-            d="M52 349 C52 337, 156 337, 156 349 L146 339 C146 332, 62 332, 62 339 Z"
+            d="M48 331 C48 319, 148 319, 148 331 L138 321 C138 314, 58 314, 58 321 Z"
             fill="url(#studioStem)"
           />
           <ellipse
-            cx="104"
-            cy="338"
-            rx="42"
-            ry="6.2"
+            cx="98"
+            cy="320"
+            rx="40"
+            ry="5.8"
             fill="#1D1A14"
             stroke="url(#studioBrass)"
             strokeOpacity={isOn ? 0.62 : 0.26}
@@ -695,8 +701,8 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
           />
           {/* Machined Brass Base Collar */}
           <rect
-            x="93"
-            y="326"
+            x="87"
+            y="308"
             width="22"
             height="10"
             rx="3.4"
@@ -706,14 +712,14 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
 
           {/* Lower Articulated Counterweight Post + Secondary Parallel Tension Rod */}
           <path
-            d="M 104 328 L 76 198"
+            d="M 98 310 L 70 184"
             fill="none"
             stroke="url(#studioStem)"
             strokeWidth="10"
             strokeLinecap="round"
           />
           <path
-            d="M 104 328 L 76 198"
+            d="M 98 310 L 70 184"
             fill="none"
             stroke="url(#studioBrass)"
             strokeOpacity={isOn ? 0.65 : 0.28}
@@ -721,7 +727,7 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
             strokeLinecap="round"
           />
           <path
-            d="M 111 324 L 84 202"
+            d="M 105 306 L 78 188"
             fill="none"
             stroke="url(#studioBrass)"
             strokeOpacity={isOn ? 0.42 : 0.16}
@@ -748,35 +754,33 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
 
           {/* Machined Brass Elbow Knuckle & Tension Screw */}
           <circle
-            cx="76"
-            cy="198"
+            cx="70"
+            cy="184"
             r="8.2"
             fill="#181510"
             stroke="url(#studioBrass)"
             strokeWidth="1.7"
           />
-          <circle cx="76" cy="198" r="3.1" fill="url(#studioBrass)" />
+          <circle cx="70" cy="184" r="3.1" fill="url(#studioBrass)" />
 
-          {/* Swiveling Parabolic Studio Head (pivoting at upper-right yoke 178, 74) */}
-          <motion.g
-            transform={`translate(${PIVOT_X}, ${PIVOT_Y})`}
-            style={{ y: headGroupTransformY }}
-          >
-            <motion.g
-              style={{
-                rotate: combinedHeadAngle,
-                transformOrigin: '0px 0px',
-              }}
-            >
+          {/* Swiveling Parabolic Studio Head (static SVG pivot separated from Framer Motion CSS transforms) */}
+          <g transform={`translate(${PIVOT_X}, ${PIVOT_Y})`}>
+            <motion.g style={{ y: headGroupTransformY }}>
+              <motion.g
+                style={{
+                  rotate: combinedHeadAngle,
+                  transformOrigin: '0px 0px',
+                }}
+              >
               {/* Feathered Local Aperture Beam (bridges seamlessly into GPU GLSL Raymarching Shader) */}
               <motion.g
                 initial={false}
                 animate={{
                   opacity: isOn
                     ? focusBoost
-                      ? 0.88
-                      : 0.8
-                    : pullProgress * 0.24,
+                      ? 0.56
+                      : 0.48
+                    : pullProgress * 0.14,
                   scale: isOn ? 1 : 0.84,
                 }}
                 transition={{
@@ -850,16 +854,16 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
               <ellipse
                 cx="0"
                 cy="72"
-                rx="14"
-                ry="12.5"
+                rx="13.5"
+                ry="12"
                 fill={isOn ? 'url(#bulbBlackbodyGlow)' : '#1E1C18'}
-                stroke={isOn ? '#FFF4CC' : '#4C4330'}
-                strokeWidth="1.1"
+                stroke={isOn ? '#F3DFAA' : '#4C4330'}
+                strokeWidth="1.05"
                 style={{
                   filter: isOn
-                    ? 'drop-shadow(0 0 20px rgba(255, 224, 130, 0.98))'
+                    ? 'drop-shadow(0 0 9px rgba(232, 194, 102, 0.48))'
                     : pullProgress > 0.1
-                    ? 'drop-shadow(0 0 11px rgba(244, 214, 118, 0.52))'
+                    ? 'drop-shadow(0 0 6px rgba(224, 186, 94, 0.32))'
                     : 'none',
                   transition: 'filter 240ms ease',
                 }}
@@ -884,8 +888,9 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
                 stroke="#1A140A"
                 strokeWidth="0.9"
               />
+              </motion.g>
             </motion.g>
-          </motion.g>
+          </g>
 
           {/* Top Yoke Pivot Pin tracking elastic boom dip */}
           <motion.circle
@@ -974,6 +979,21 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
           }}
         />
 
+        {/* Shade Click Shortcut tracked geometrically to live swiveling dome center (below pull-cord in z-order) */}
+        <motion.button
+          type="button"
+          data-testid="lamp-interactive-hitarea"
+          aria-label={isOn ? 'إطفاء المصباح' : 'تشغيل المصباح'}
+          onClick={() => triggerLampToggle(true)}
+          className="absolute z-10 -translate-x-1/2 -translate-y-1/2 w-[114px] sm:w-[126px] lg:w-[152px] h-[44px] sm:h-[48px] lg:h-[58px] rounded-[36px] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          style={{
+            left: domeLeftPct,
+            top: domeTopPct,
+            rotate: combinedHeadAngle,
+            background: 'transparent',
+          }}
+        />
+
         {/* Interactive Hit Target Synced Directly Over the Live Center-Mouth Pull-Chain */}
         <motion.button
           type="button"
@@ -989,31 +1009,20 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
           onPointerUp={finishCordPointer}
           onPointerCancel={finishCordPointer}
           onKeyDown={handleKeyDown}
-          className="absolute -translate-x-1/2 w-[82px] h-[146px] rounded-full cursor-grab active:cursor-grabbing touch-none focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          className="absolute z-20 -translate-x-1/2 -mt-1 w-[58px] sm:w-[64px] lg:w-[74px] h-[82px] sm:h-[94px] lg:h-[132px] rounded-full cursor-grab active:cursor-grabbing touch-none focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
           style={{
             left: hitLeftPct,
             top: hitTopPct,
             background: 'transparent',
           }}
         />
-
-        {/* Shade Click Shortcut tracked geometrically to live swiveling dome center */}
-        <motion.button
-          type="button"
-          data-testid="lamp-interactive-hitarea"
-          aria-label={isOn ? 'إطفاء المصباح' : 'تشغيل المصباح'}
-          onClick={() => triggerLampToggle(true)}
-          className="absolute -translate-x-1/2 -translate-y-1/2 w-[138px] h-[74px] rounded-[40px] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-          style={{
-            left: domeLeftPct,
-            top: domeTopPct,
-            background: 'transparent',
-          }}
-        />
       </div>
 
-      {/* Minimal Quiet Pull Instruction Text */}
-      <div className="mt-1 text-center space-y-1" dir="rtl">
+      {/* Minimal Quiet Pull Instruction Text (flows below on mobile, anchors beneath desk plane on desktop) */}
+      <div
+        className="mt-1 lg:mt-0 lg:absolute lg:top-full lg:left-0 lg:right-0 lg:pt-2.5 text-center space-y-1 pointer-events-none"
+        dir="rtl"
+      >
         <p
           className="text-xs sm:text-sm font-bold tracking-tight transition-colors duration-300"
           style={{
@@ -1027,13 +1036,13 @@ export const InteractiveLamp: React.FC<InteractiveLampProps> = ({
           {cordArmed
             ? 'أفلت السلسلة الآن...'
             : isOn
-            ? 'المصباح مضاء · اسحب السلسلة للإطفاء'
-            : 'اسحب السلسلة للأسفل لتشغيل الإضاءة'}
+            ? 'المصباح مضاء · اسحب الخيط للإطفاء'
+            : '↓ اسحب لتشغيل الإضاءة · Pull to turn me on'}
         </p>
         <p className="text-[11px] text-[var(--text-muted)]">
           {isOn
             ? 'لوحة تسجيل الدخول مضاءة وجاهزة'
-            : 'اسحب السلسلة المتدلية لإنارة لوحة تسجيل الدخول بجانبه'}
+            : 'اسحب الخيط المتدلي لإنارة مساحتك والبدء'}
         </p>
       </div>
     </div>

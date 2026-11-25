@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   ArrowRight,
@@ -65,6 +65,7 @@ import {
   type SelectablePersonRecord,
 } from './SelectionActionBar';
 import { useDelayedLoading } from '../utils/delayedLoader';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 
 interface DataArchivesViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -107,6 +108,18 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [syncingCloud, setSyncingCloud] = useState(false);
   useDelayedLoading(syncingCloud, 'جاري مزامنة وحفظ الأرشيف...');
+
+  useEffect(() => {
+    if (errorMsg) {
+      playTactileFeedback('error', { haptic: true });
+    }
+  }, [errorMsg]);
+
+  useEffect(() => {
+    if (notice) {
+      playTactileFeedback('success', { haptic: true });
+    }
+  }, [notice]);
 
   // Archive browser filters
   const [archiveSearch, setArchiveSearch] = useState('');

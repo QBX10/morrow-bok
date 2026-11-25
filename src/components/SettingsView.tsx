@@ -65,6 +65,7 @@ import {
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
 import { getAppThemeById } from '../utils/themes';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 import type {
   AccessibilityAndExperiencePrefs,
   AppDatabaseState,
@@ -514,10 +515,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const notifySuccess = (msg: string) => {
     setErrorFeedback('');
     setFeedback(msg);
+    playTactileFeedback('success', { haptic: true });
   };
   const notifyError = (msg: string) => {
     setFeedback('');
     setErrorFeedback(msg);
+    playTactileFeedback('error', { haptic: true });
   };
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { authFetch } from '../lib/authClient';
 import type { AppView, SettingsSectionId } from '../types/agency.ts';
 import type {
   AssistantApprovalDraft,
@@ -36,6 +37,7 @@ import {
   getProactiveHealthNotice,
   runAppDiagnostics,
 } from '../utils/assistantDiagnostics.ts';
+import { playTactileFeedback } from '../utils/tactileFeedback.ts';
 import {
   executeApprovedToolMutation,
   resolveToolExecution,
@@ -661,6 +663,11 @@ export function useAssistantEngine(params: {
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev.slice(-40), entry]);
+      if (entry.role === 'user') {
+        playTactileFeedback('message_send');
+      } else if (entry.role === 'assistant' && !entry.id.startsWith('welcome_msg_')) {
+        playTactileFeedback('message_receive');
+      }
       return entry;
     },
     []
@@ -1455,7 +1462,7 @@ export function useAssistantEngine(params: {
           },
           executor: async (candidateModelId, signal, attemptIndex) => {
             const remainingChain = fallbackChain.slice(attemptIndex);
-            const res = await fetch('/api/assistant/chat', {
+            const res = await authFetch('/api/assistant/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               signal,

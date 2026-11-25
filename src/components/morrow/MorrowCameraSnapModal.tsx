@@ -5,6 +5,7 @@ import {
   acquireMusicPauseLock,
   releaseMusicPauseLock,
 } from '../../utils/backgroundMusicEngine';
+import { playTactileFeedback } from '../../utils/tactileFeedback';
 import {
   buildPermissionRecoveryGuide,
   requestCameraStreamSafe,
@@ -97,6 +98,7 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
   const handleSnap = async () => {
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
+    playTactileFeedback('camera_shutter', { haptic: true });
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;

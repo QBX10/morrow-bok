@@ -35,7 +35,6 @@ import type {
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
-import { BackgroundMusicControl } from './audio/BackgroundMusicControl';
 import { MotionActionButton } from './ui/TabrixMotionPrimitives';
 import {
   TABRIX_BUTTON_HOVER,
@@ -46,6 +45,7 @@ import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 
 interface TopBarProps {
   capabilities: ModeCapabilities;
@@ -325,6 +325,18 @@ export const TopBar: React.FC<TopBarProps> = ({
     onOpenMorrowStudio,
     onNavigateView,
   ]);
+
+  const prevNotifCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevNotifCountRef.current === null) {
+      prevNotifCountRef.current = notifications.length;
+      return;
+    }
+    if (notifications.length > prevNotifCountRef.current && authUser) {
+      playTactileFeedback('notify');
+    }
+    prevNotifCountRef.current = notifications.length;
+  }, [notifications.length, authUser]);
 
   const searchPlaceholder = useMemo(() => {
     switch (activeView) {
@@ -865,15 +877,20 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             )}
 
-          {/* Background Music Smart Control */}
-          <BackgroundMusicControl variant="topbar" />
-
           {/* Operational Alerts Bell */}
           <div ref={notifWrapRef} className="relative">
             <MotionActionButton
               type="button"
               onClick={() => {
-                setNotifOpen((p) => !p);
+                const nextOpen = !notifOpen;
+                playTactileFeedback(
+                  nextOpen
+                    ? notifications.length > 0
+                      ? 'notify'
+                      : 'menu_open'
+                    : 'menu_close'
+                );
+                setNotifOpen(nextOpen);
                 setAccountMenuOpen(false);
               }}
               aria-label="تنبيهات الوكالات"
@@ -975,7 +992,9 @@ export const TopBar: React.FC<TopBarProps> = ({
               <MotionActionButton
                 type="button"
                 onClick={() => {
-                  setAccountMenuOpen((p) => !p);
+                  const nextOpen = !accountMenuOpen;
+                  playTactileFeedback(nextOpen ? 'menu_open' : 'menu_close');
+                  setAccountMenuOpen(nextOpen);
                   setNotifOpen(false);
                 }}
                 className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-2.5 text-xs font-bold whitespace-nowrap cursor-pointer"

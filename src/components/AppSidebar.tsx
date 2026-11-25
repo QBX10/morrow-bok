@@ -44,6 +44,7 @@ import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 
 interface AppSidebarProps {
   activeView: AppView;
@@ -194,7 +195,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             ) : (
               <motion.button
                 type="button"
-                onClick={onToggleCollapse}
+                onClick={() => {
+                  playTactileFeedback(collapsed ? 'menu_open' : 'menu_close');
+                  onToggleCollapse();
+                }}
                 title={collapsed ? 'تثبيت التوسيع' : 'طي القائمة الجانبية'}
                 aria-label={collapsed ? 'توسيع القائمة الجانبية' : 'طي القائمة الجانبية'}
                 whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
@@ -256,7 +260,13 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               <div className="pt-1">
                 <button
                   type="button"
-                  onClick={() => setAgenciesExpanded((p) => !p)}
+                  onClick={() =>
+                    setAgenciesExpanded((p) => {
+                      const next = !p;
+                      playTactileFeedback(next ? 'menu_open' : 'menu_close');
+                      return next;
+                    })
+                  }
                   className="flex w-full items-center justify-between px-2 py-1 text-[11px] font-bold text-[var(--text-muted)] transition-colors hover:text-[var(--accent-bright)] cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5">
@@ -454,7 +464,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 if (compact || !onNavigateMorrowTab) {
                   navAndClose('morrow_center');
                 } else {
-                  setMorrowExpanded((p) => !p);
+                  setMorrowExpanded((p) => {
+                    const next = !p;
+                    playTactileFeedback(next ? 'menu_open' : 'menu_close');
+                    return next;
+                  });
                 }
               }}
               className={itemClass(activeView === 'morrow_center')}

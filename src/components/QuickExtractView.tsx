@@ -27,6 +27,7 @@ import {
   Volume2,
   Zap,
 } from 'lucide-react';
+import { authFetch } from '../lib/authClient';
 import type {
   Agency,
   AppView,
@@ -65,6 +66,7 @@ import {
   stopWatchingSpeechSynthesisForMusic,
   watchSpeechSynthesisForMusic,
 } from '../utils/backgroundMusicEngine';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 import { normalizeArabic } from '../utils/agencyLogic';
 import type { BurstFusionSummary } from '../utils/ledgerImageProcessor';
 import {
@@ -298,6 +300,25 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const [ttsStatus, setTtsStatus] = useState('');
   const [analysis, setAnalysis] =
     useState<QuickExtractAnalysisResult | null>(null);
+  const lastAnalysisRef = useRef<QuickExtractAnalysisResult | null>(null);
+
+  useEffect(() => {
+    if (uploadError) {
+      playTactileFeedback('error', { haptic: true });
+    }
+  }, [uploadError]);
+
+  useEffect(() => {
+    if (!analysis || analysis === lastAnalysisRef.current) return;
+    lastAnalysisRef.current = analysis;
+    if (analysis.status === 'rejected') {
+      playTactileFeedback('error', { haptic: true });
+    } else if (analysis.status === 'needs_review') {
+      playTactileFeedback('warn', { haptic: true });
+    } else {
+      playTactileFeedback('success', { haptic: true });
+    }
+  }, [analysis]);
   const [activeSession, setActiveSession] = useState<UcrsSession | null>(null);
   const [allParsedRowsBackup, setAllParsedRowsBackup] = useState<
     QuickExtractEvaluatedRow[] | null
@@ -709,7 +730,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     if (!clean) return;
     setTtsStatus('جارٍ تحضير القراءة الصوتية...');
     try {
-      const res = await fetch('/api/ucrs/tts', {
+      const res = await authFetch('/api/ucrs/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: clean }),
@@ -822,7 +843,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
     for (let attempt = 0; attempt <= backoffDelays.length; attempt += 1) {
       try {
-        const res = await fetch('/api/ucrs/analyze', {
+        const res = await authFetch('/api/ucrs/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: bodyJson,
@@ -2071,6 +2092,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     }
     setCommitSummary(summary);
     setShowConfirmUpdates(false);
+    playTactileFeedback('save_complete', { haptic: true });
   };
 
   const resetAll = () => {

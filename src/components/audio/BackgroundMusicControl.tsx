@@ -32,7 +32,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
   );
 
   const [open, setOpen] = useState(false);
-  const lastNonZeroVolumeRef = useRef(snapshot.volume > 0.04 ? snapshot.volume : 0.34);
+  const lastNonZeroVolumeRef = useRef(snapshot.volume > 0.04 ? snapshot.volume : 0.27);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useTabrixReducedMotion();
 
@@ -97,7 +97,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
             lastNonZeroVolumeRef.current = snapshot.volume;
             return 0;
           })()
-        : lastNonZeroVolumeRef.current || 0.34;
+        : lastNonZeroVolumeRef.current || 0.27;
     setBackgroundMusicVolume(nextVol);
     void updateServerSoundSetting(!snapshot.userPaused && nextVol > 0, nextVol);
   };
@@ -109,7 +109,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
       ref={wrapRef}
       className={
         isFloating
-          ? `no-print fixed bottom-4 left-4 z-40 ${className}`
+          ? `no-print fixed bottom-4 left-4 z-[160] ${className}`
           : `relative ${className}`
       }
     >
@@ -129,7 +129,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
         data-testid="bg-music-trigger"
         className={
           isFloating
-            ? 'smoked-glass-elevated nexus-pill-btn inline-flex h-10 items-center gap-2 border px-3 text-xs font-bold shadow-lg cursor-pointer'
+            ? 'smoked-glass-elevated nexus-pill-btn inline-flex h-10 items-center gap-2 border px-3.5 text-xs font-bold shadow-xl cursor-pointer'
             : 'nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-bold whitespace-nowrap cursor-pointer'
         }
         style={{

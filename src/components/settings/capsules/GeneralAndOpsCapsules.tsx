@@ -20,6 +20,7 @@ import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
 import { ALL_QUICK_EXTRACT_FIELDS } from '../../../utils/quickExtractEngine';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
+import { SoundCustomizationPanel } from '../SoundCustomizationPanel';
 
 /* ─── GENERAL APP SETTINGS CAPSULES (Level 3 -> Level 4) ──────────────────── */
 
@@ -397,6 +398,8 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
               </div>
             </label>
           </div>
+
+          <SoundCustomizationPanel onNotify={onNotifySuccess} />
         </section>
       </NodeView>
     );

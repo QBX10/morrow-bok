@@ -153,14 +153,11 @@ export async function googleSignIn(options?: {
     }
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('تعذر الحصول على رمز الوصول من Google Auth.');
-    }
-    cachedAccessToken = credential.accessToken;
+    cachedAccessToken = credential?.accessToken ?? null;
     const idToken = await result.user.getIdToken();
     return {
       user: result.user,
-      accessToken: cachedAccessToken,
+      accessToken: cachedAccessToken || '',
       idToken,
     };
   } finally {

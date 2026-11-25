@@ -22,6 +22,7 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 import { useDelayedLoading } from '../../utils/delayedLoader';
+import { authFetch } from '../../lib/authClient';
 
 export interface CopilotOperation {
   type:
@@ -200,7 +201,7 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
     setLoading(true);
 
     try {
-      const resp = await fetch('/api/quick-extract/copilot', {
+      const resp = await authFetch('/api/quick-extract/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

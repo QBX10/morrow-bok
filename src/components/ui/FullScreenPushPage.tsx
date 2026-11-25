@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
@@ -7,6 +7,7 @@ import {
   TABRIX_REDUCED_VARIANTS,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
+import { playTactileFeedback } from '../../utils/tactileFeedback';
 
 interface FullScreenPushPageProps {
   open: boolean;
@@ -48,6 +49,17 @@ export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
 }) => {
   const handleBack = onBack ?? onClose ?? (() => {});
   const reducedMotion = useTabrixReducedMotion();
+  const prevOpenRef = useRef(open);
+
+  useEffect(() => {
+    if (prevOpenRef.current !== open) {
+      prevOpenRef.current = open;
+      playTactileFeedback(open ? 'sheet_open' : 'sheet_close', {
+        haptic: open,
+        reduceMotion: reducedMotion,
+      });
+    }
+  }, [open, reducedMotion]);
 
   useEffect(() => {
     if (!open || hideBack) return;

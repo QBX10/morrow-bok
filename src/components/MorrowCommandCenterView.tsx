@@ -34,6 +34,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { authFetch } from '../lib/authClient';
 import type {
   Agency,
   AgencyExpense,
@@ -79,6 +80,7 @@ import {
   stopWatchingSpeechSynthesisForMusic,
   watchSpeechSynthesisForMusic,
 } from '../utils/backgroundMusicEngine.ts';
+import { playTactileFeedback } from '../utils/tactileFeedback.ts';
 import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
@@ -108,7 +110,6 @@ import { MorrowHistoryPage } from './morrow/MorrowHistoryPage';
 import { MorrowModelsPage } from './morrow/MorrowModelsPage';
 import { MorrowAssistantsPage } from './morrow/MorrowAssistantsPage';
 import { MorrowVoiceSettingsPage } from './morrow/MorrowVoiceSettingsPage';
-import { BackgroundMusicControl } from './audio/BackgroundMusicControl';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   TABRIX_EASE,
@@ -695,12 +696,21 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [sideDrawerOpen, appDrawerOpen, plusMenuOpen]);
 
+  const prevRecordingMusicRef = useRef(false);
   useEffect(() => {
-    if (isRecordingVoiceMsg || isNoteRecording) {
+    const active = isRecordingVoiceMsg || isNoteRecording;
+    if (active) {
       acquireMusicPauseLock('morrow-center:mic', 'mic', 80);
+      if (!prevRecordingMusicRef.current) {
+        playTactileFeedback('record_start', { haptic: true });
+      }
     } else {
+      if (prevRecordingMusicRef.current) {
+        playTactileFeedback('record_stop', { haptic: true });
+      }
       releaseMusicPauseLock('morrow-center:mic');
     }
+    prevRecordingMusicRef.current = active;
     return () => {
       releaseMusicPauseLock('morrow-center:mic');
     };
@@ -861,7 +871,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     acquireMusicPauseLock('morrow-center:tts', 'tts', 100);
 
     try {
-      const res = await fetch('/api/ucrs/tts', {
+      const res = await authFetch('/api/ucrs/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: cleanText }),
@@ -1014,7 +1024,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     setTranscribingVoice(true);
     try {
       const audioBase64 = await blobToBase64(audioBlob);
-      const res = await fetch('/api/morrow/transcribe', {
+      const res = await authFetch('/api/morrow/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1284,7 +1294,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         setTranscribingNoteVoice(true);
         try {
           const audioBase64 = await blobToBase64(audioBlob);
-          const res = await fetch('/api/morrow/transcribe', {
+          const res = await authFetch('/api/morrow/transcribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1430,7 +1440,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     try {
       if (isAudio) {
         const audioUrl = URL.createObjectURL(target.file);
-        const res = await fetch('/api/morrow/transcribe', {
+        const res = await authFetch('/api/morrow/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1496,7 +1506,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         return;
       }
 
-      const res = await fetch('/api/morrow/multimodal', {
+      const res = await authFetch('/api/morrow/multimodal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1829,9 +1839,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </motion.button>
           </div>
 
-          {/* Left Side (RTL End): Music Control + New Chat + Morrow AI & Models Hamburger Menu */}
+          {/* Left Side (RTL End): New Chat + Morrow AI & Models Hamburger Menu */}
           <div className="flex items-center justify-end gap-1.5 min-w-0">
-            <BackgroundMusicControl variant="topbar" />
             {isMainConversationView && onClearMessages && messages.length > 1 && (
               <button
                 type="button"

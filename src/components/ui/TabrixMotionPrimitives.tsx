@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import {
   TABRIX_BUTTON_HOVER,
@@ -8,6 +8,10 @@ import {
   useSurfaceSheen2D,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
+import {
+  playTactileFeedback,
+  shouldFireTactileEvent,
+} from '../../utils/tactileFeedback';
 
 interface TabrixPageTransitionProps {
   viewKey: string;
@@ -59,6 +63,17 @@ export const TabrixSubViewTransition: React.FC<TabrixSubViewTransitionProps> = (
   children,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
+  const prevKeyRef = useRef<string>(viewKey);
+  const lastSoundRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (prevKeyRef.current === viewKey) return;
+    prevKeyRef.current = viewKey;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (!shouldFireTactileEvent(now, lastSoundRef.current, 110)) return;
+    lastSoundRef.current = now;
+    playTactileFeedback('transition_slide', { reduceMotion: reducedMotion });
+  }, [viewKey, reducedMotion]);
 
   return (
     <div className="tabrix-2d-stage w-full">

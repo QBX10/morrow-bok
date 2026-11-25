@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Camera,
   Check,
@@ -19,7 +19,6 @@ import {
   clearSession,
   confirmPasswordResetApi,
   getRememberedAccounts,
-  googleQuickSignInApi,
   loginWithPasswordApi,
   registerWithPasswordApi,
   removeRememberedAccount,
@@ -96,6 +95,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const lastTactileRef = useRef(0);
 
+  useEffect(() => {
+    if (error) {
+      playTactileFeedback('error', { sound: true, haptic: true });
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (otpSent || resetCodeSent) {
+      playTactileFeedback('notify', { sound: true, haptic: true });
+    }
+  }, [otpSent, resetCodeSent]);
+
+  useEffect(() => {
+    if (avatarNotice) {
+      playTactileFeedback('success', { sound: true, haptic: true });
+    }
+  }, [avatarNotice]);
+
   const triggerInputTactile = () => {
     const now = performance.now();
     if (!shouldFireTactileEvent(now, lastTactileRef.current, 85)) return;
@@ -143,28 +160,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'تعذر إتمام تسجيل الدخول بحساب Google.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      setError('');
-      const session = await googleQuickSignInApi({
-        email: email.trim(),
-        displayName: displayName.trim(),
-        rememberMe,
-      });
-      triggerSuccessTactile();
-      onAuthenticated(session.user);
-      onClose();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'تعذر تسجيل الدخول بحساب Google.'
       );
     } finally {
       setLoading(false);
@@ -739,17 +734,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                     <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-                    <span>أو الدخول السريع ببريد Gmail</span>
+                    <span>أو الدخول بالبريد وكلمة المرور</span>
                     <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
                   </div>
 
-                  <form onSubmit={handleGoogleSubmit} className="space-y-3">
+                  <form onSubmit={handleEmailPasswordSubmit} className="space-y-3">
                     <div>
                       <label
                         htmlFor="auth-gmail-email"
                         className="mb-1 block text-xs font-medium"
                       >
-                        حساب Gmail
+                        البريد الإلكتروني
                       </label>
                       <input
                         id="auth-gmail-email"
@@ -774,20 +769,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     <div>
                       <label
-                        htmlFor="auth-gmail-name"
+                        htmlFor="auth-gmail-password"
                         className="mb-1 block text-xs font-medium"
                       >
-                        الاسم الظاهر (اختياري)
+                        كلمة المرور
                       </label>
                       <input
-                        id="auth-gmail-name"
-                        type="text"
-                        value={displayName}
+                        id="auth-gmail-password"
+                        type={showPass ? 'text' : 'password'}
+                        dir="ltr"
+                        required
+                        value={password}
                         onPointerDown={triggerInputTactile}
                         onFocus={triggerInputTactile}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="اكتب اسمك هنا"
-                        className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="••••••••"
+                        className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
                         style={{
                           backgroundColor: 'var(--bg-main)',
                           borderColor: 'var(--border-color)',
@@ -804,7 +804,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         color: 'var(--accent-fg)',
                       }}
                     >
-                      {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Google'}
+                      {loading ? 'جارٍ المتابعة...' : 'تسجيل الدخول بالبريد'}
                     </button>
                   </form>
                 </div>

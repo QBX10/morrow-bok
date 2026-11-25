@@ -30,7 +30,11 @@ import { TabrixPageTransition } from './components/ui/TabrixMotionPrimitives';
 import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
-import { clearSession, getStoredSession } from './lib/authClient';
+import {
+  clearSession,
+  getStoredSession,
+  restoreSessionFromServer,
+} from './lib/authClient';
 import { FlipAuthGuard } from './components/auth/FlipAuthGuard';
 import { Backdrop2DCanvas } from './components/motion2d/Backdrop2DCanvas';
 import { SmartModelsWorkspaceView } from './components/SmartModelsWorkspaceView';
@@ -87,11 +91,9 @@ import {
 import {
   initBackgroundMusicEngine,
   setBackgroundMusicAuthReady,
-  setBackgroundMusicPaused,
-  setBackgroundMusicVolume,
+  syncBackgroundMusicInitialContext,
 } from './utils/backgroundMusicEngine';
 import { fetchServerSpaceContext } from './utils/intelligentAmbience';
-import { BackgroundMusicControl } from './components/audio/BackgroundMusicControl';
 import { computeTopBarScrollHidden } from './utils/scrollAutoHide';
 import {
   buildNextCheckpoint,
@@ -122,7 +124,27 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(
     () => getStoredSession()?.user || null
   );
+  const [authBootChecked, setAuthBootChecked] = useState<boolean>(
+    () => Boolean(getStoredSession()?.user)
+  );
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void restoreSessionFromServer()
+      .then((restored) => {
+        if (!active) return;
+        if (restored) {
+          setAuthUser(restored);
+        }
+      })
+      .finally(() => {
+        if (active) setAuthBootChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const {
     state,
@@ -277,7 +299,7 @@ export default function App() {
   }, [state.agencies, selectedAgencyId]);
 
   const handleAuthenticated = (user: AuthUser) => {
-    playTactileFeedback('success', { haptic: true, sound: true });
+    playTactileFeedback('auth_welcome', { haptic: true, sound: true });
     setAuthUser(user);
     setAuthModalOpen(false);
     setActiveView('hub');
@@ -583,6 +605,9 @@ export default function App() {
   };
 
   const executeDeleteTarget = (target: DeleteTarget) => {
+    playTactileFeedback('delete_item', {
+      haptic: workspaceCosmos.accessibility.hapticFeedback,
+    });
     if (target.kind === 'person') {
       deletePersonConfirmed(target.item.id);
     } else if (target.kind === 'expense') {
@@ -608,10 +633,16 @@ export default function App() {
     e.preventDefault();
     const expected = (securityPrefs.privacyPin || '').trim();
     if (!expected || unlockPinInput.trim() === expected) {
+      playTactileFeedback('success', {
+        haptic: workspaceCosmos.accessibility.hapticFeedback,
+      });
       setSecurityPrefs({ privacyLocked: false });
       setUnlockPinInput('');
       setUnlockPinError('');
     } else {
+      playTactileFeedback('error', {
+        haptic: workspaceCosmos.accessibility.hapticFeedback,
+      });
       setUnlockPinError('رمز القفل غير صحيح، يرجى المحاولة مجدداً.');
     }
   };
@@ -629,6 +660,11 @@ export default function App() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    if (!silentAuto) {
+      playTactileFeedback('save_complete', {
+        haptic: workspaceCosmos.accessibility.hapticFeedback,
+      });
+    }
   };
 
   const focusedPersonName = useMemo(
@@ -712,10 +748,7 @@ export default function App() {
     const cleanupMusic = initBackgroundMusicEngine();
     void fetchServerSpaceContext().then((ctx) => {
       setGlobalAppSoundEnabled(ctx.sound_enabled);
-      setBackgroundMusicVolume(ctx.volume);
-      if (!ctx.sound_enabled) {
-        setBackgroundMusicPaused(true);
-      }
+      syncBackgroundMusicInitialContext(ctx.volume, ctx.sound_enabled);
     });
     return () => {
       cleanupSound();
@@ -724,7 +757,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setBackgroundMusicAuthReady(Boolean(authUser));
+    setBackgroundMusicAuthReady(true);
   }, [authUser]);
 
   useEffect(() => {
@@ -740,7 +773,11 @@ export default function App() {
     const onGlobalKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen((prev) => !prev);
+        setCommandPaletteOpen((prev) => {
+          const next = !prev;
+          if (next) playTactileFeedback('search_tick');
+          return next;
+        });
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
         e.preventDefault();
         setWorldSwitcherOpen((prev) => !prev);
@@ -884,13 +921,17 @@ export default function App() {
   ]);
 
   const navSoundReadyRef = useRef(false);
+  const prevNavViewRef = useRef(activeView);
   useEffect(() => {
     if (!navSoundReadyRef.current) {
       navSoundReadyRef.current = true;
+      prevNavViewRef.current = activeView;
       return;
     }
     if (!authUser) return;
-    playTactileFeedback('nav', {
+    const isRouteShift = prevNavViewRef.current !== activeView;
+    prevNavViewRef.current = activeView;
+    playTactileFeedback(isRouteShift ? 'transition_slide' : 'nav', {
       haptic: workspaceCosmos.accessibility.hapticFeedback,
     });
   }, [
@@ -1105,6 +1146,19 @@ export default function App() {
     () => resolveSurface2DPrefs(generalPrefs?.surface2dPrefs),
     [generalPrefs?.surface2dPrefs]
   );
+
+  if (!authBootChecked && !authUser) {
+    return (
+      <div
+        className="ambient-obsidian-canvas flex min-h-screen items-center justify-center"
+        style={{ backgroundColor: '#050507', color: '#E4E4E7' }}
+      >
+        <div className="text-xs font-medium tracking-wider opacity-70">
+          جارٍ التحقق من الجلسة...
+        </div>
+      </div>
+    );
+  }
 
   if (!authUser) {
     return (
@@ -1985,14 +2039,6 @@ export default function App() {
           onToggleHiddenWorld={toggleHiddenCosmosWorld}
         />
       )}
-
-      {/* Floating Music Control when TopBar & Morrow Studio Header are hidden */}
-      {!isAuthGateLocked &&
-        !securityPrefs.privacyLocked &&
-        isDedicatedFullScreenView &&
-        activeView !== 'morrow_center' && (
-          <BackgroundMusicControl variant="floating" />
-        )}
 
       {/* Floating Smoked-Glass Navigation Dock (hidden in dedicated Full-Screen views) */}
       {!isAuthGateLocked && !securityPrefs.privacyLocked && !isDedicatedFullScreenView && (

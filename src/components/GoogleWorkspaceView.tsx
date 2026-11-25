@@ -47,6 +47,7 @@ import {
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
 import { useDelayedLoading } from '../utils/delayedLoader';
+import { playTactileFeedback } from '../utils/tactileFeedback';
 
 interface GoogleWorkspaceViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -125,6 +126,18 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
   useDelayedLoading(loading || authLoading, 'جاري المزامنة مع مساحة عمل Google...');
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+
+  useEffect(() => {
+    if (error) {
+      playTactileFeedback('error', { haptic: true });
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (statusMessage) {
+      playTactileFeedback('success', { haptic: true });
+    }
+  }, [statusMessage]);
 
   // Calendar state
   const [calendars, setCalendars] = useState<GoogleCalendarSummary[]>([]);

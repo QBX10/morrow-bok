@@ -58,7 +58,7 @@ function readDb(): LocalDbFile {
               volume:
                 typeof parsed.soundSettings.volume === 'number'
                   ? Math.max(0, Math.min(1, parsed.soundSettings.volume))
-                  : 0.34,
+                  : 0.27,
               updatedAt:
                 parsed.soundSettings.updatedAt || new Date().toISOString(),
             }
@@ -214,7 +214,7 @@ export function getSoundSettings(): SoundSettingsRecord {
   if (existing) return existing;
   return {
     soundEnabled: true,
-    volume: 0.34,
+    volume: 0.27,
     updatedAt: new Date().toISOString(),
   };
 }

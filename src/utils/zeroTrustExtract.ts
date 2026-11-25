@@ -8,6 +8,7 @@ import type {
 } from '../types/agency.ts';
 import type { AiTaskRoutingMap } from '../types/assistant.ts';
 import { normalizeArabic } from './agencyLogic.ts';
+import { authFetch } from '../lib/authClient';
 
 export const ZERO_TRUST_CONFIDENCE_THRESHOLD = 0.99;
 
@@ -684,7 +685,7 @@ export async function performMetadataInference(
         ? setTimeout(() => controller.abort(), 9000)
         : null;
 
-    const res = await fetch('/api/quick-extract/metadata-inference', {
+    const res = await authFetch('/api/quick-extract/metadata-inference', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller?.signal,

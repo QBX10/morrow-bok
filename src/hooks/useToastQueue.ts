@@ -76,12 +76,19 @@ export function useToastQueue() {
         createdAt: Date.now(),
       };
       if (item.tone === 'success') {
-        playTactileFeedback('success', { haptic: true });
-      } else if (item.tone === 'error' || item.tone === 'warning') {
-        pauseBackgroundMusicForAlert(item.tone === 'error' ? 1550 : 1100);
+        const isSaveOrExport =
+          /حفظ|تصدير|نسخ|أرش|ترحيل|مزامن|export|save|backup/i.test(item.title);
+        playTactileFeedback(isSaveOrExport ? 'save_complete' : 'success', {
+          haptic: true,
+        });
+      } else if (item.tone === 'error') {
+        pauseBackgroundMusicForAlert(1550);
+        playTactileFeedback('error', { haptic: true });
+      } else if (item.tone === 'warning') {
+        pauseBackgroundMusicForAlert(1100);
         playTactileFeedback('warn', { haptic: true });
       } else {
-        playTactileFeedback('nav');
+        playTactileFeedback('notify');
       }
       setToasts((prev) => [...prev.slice(-3), item]);
       window.setTimeout(() => {

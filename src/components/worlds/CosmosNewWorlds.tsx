@@ -50,11 +50,13 @@ import {
 } from '../../utils/themes';
 import {
   playTactileFeedback,
+  resetAppSoundPrefs,
   setGlobalAppSoundEnabled,
 } from '../../utils/tactileFeedback';
 import {
   getBackgroundMusicSnapshot,
   setBackgroundMusicPaused,
+  setBackgroundMusicSmartMode,
   setBackgroundMusicVolume,
   subscribeBackgroundMusic,
 } from '../../utils/backgroundMusicEngine';
@@ -71,6 +73,7 @@ import { LiveStage } from '../cosmos/LiveStage';
 import { RegistryInspector } from '../cosmos/RegistryInspector';
 import { ResultCard } from '../cosmos/ResultCard';
 import { SettingRow } from '../cosmos/SettingRow';
+import { SoundCustomizationPanel } from '../settings/SoundCustomizationPanel';
 
 /* ─── 1. Calm 2D Identity Themes Panel ─── */
 interface CustomThemeStudioPanelProps {
@@ -316,19 +319,41 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
 
       <SettingRow
         id="acc_tactile"
-        title="الصوت والإشعارات · صوت المصباح والموسيقى الخلفية"
-        description="التحكم الحصري في صوت المصباح والموسيقى الخلفية الهادئة والأصوات التفاعلية"
+        title="منظومة الصوت والوضع الذكي · صوت التطبيق الخلفي"
+        description="صوت نظام مدمج بالخلفية (وليس مشغل موسيقى) مع منظومة أصوات تفاعلية متكاملة تتوقف تلقائياً عند الخروج أو الكاميرا أو الاتصال أو التسجيل وتعود فور الانتهاء"
         icon="bell"
-        isModified={!accessibility.soundFeedback || musicSnap.userPaused}
+        isModified={!accessibility.soundFeedback || musicSnap.userPaused || !musicSnap.smartModeEnabled}
         onResetSingle={() => {
           onUpdateAccessibility({ hapticFeedback: true, soundFeedback: true });
           setGlobalAppSoundEnabled(true);
+          setBackgroundMusicSmartMode(true);
           setBackgroundMusicPaused(false);
-          setBackgroundMusicVolume(0.34);
-          void updateServerSoundSetting(true, 0.34);
+          setBackgroundMusicVolume(0.27);
+          resetAppSoundPrefs();
+          void updateServerSoundSetting(true, 0.27);
         }}
       >
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const nextSmart = !musicSnap.smartModeEnabled;
+              setBackgroundMusicSmartMode(nextSmart);
+              onNotify(
+                nextSmart
+                  ? 'تم تفعيل الوضع الذكي لصوت التطبيق (يتوقف تلقائياً عند الخروج والكاميرا والاتصال والتسجيل).'
+                  : 'تم إيقاف الوضع الذكي المؤقت لصوت التطبيق.'
+              );
+            }}
+            className="cosmos-touch-target rounded-xl border px-2.5 text-[11px] font-bold"
+            style={
+              musicSnap.smartModeEnabled
+                ? { backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', borderColor: 'var(--accent)' }
+                : { backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }
+            }
+          >
+            {musicSnap.smartModeEnabled ? 'الوضع الذكي مفعّل' : 'الوضع الذكي متوقف'}
+          </button>
           <button
             type="button"
             onClick={() =>
@@ -352,12 +377,12 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
               setBackgroundMusicPaused(!next);
               void updateServerSoundSetting(next, musicSnap.volume);
               if (next) {
-                playTactileFeedback('success', { sound: true, haptic: false });
+                playTactileFeedback('save_complete', { sound: true, haptic: false });
               }
               onNotify(
                 next
-                  ? 'تم تفعيل صوت المصباح والموسيقى الخلفية والأصوات التفاعلية.'
-                  : 'تم كتم الأصوات والموسيقى الخلفية بنجاح.'
+                  ? 'تم تفعيل صوت التطبيق الخلفي ومنظومة الأصوات التفاعلية.'
+                  : 'تم كتم أصوات التطبيق بنجاح.'
               );
             }}
             className="cosmos-touch-target inline-flex items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold"
@@ -382,7 +407,7 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
                 setBackgroundMusicVolume(nextVol);
                 void updateServerSoundSetting(accessibility.soundFeedback, nextVol);
               }}
-              aria-label="مستوى صوت الموسيقى الخلفية"
+              aria-label="مستوى صوت التطبيق الخلفي"
               className="h-1.5 w-20 cursor-pointer accent-[var(--accent)]"
             />
             <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
@@ -391,6 +416,8 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
           </div>
         </div>
       </SettingRow>
+
+      <SoundCustomizationPanel onNotify={onNotify} />
 
       <div className="flex flex-wrap justify-end gap-2 pt-1">
         <button

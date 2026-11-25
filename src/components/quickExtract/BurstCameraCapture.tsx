@@ -19,6 +19,7 @@ import {
   acquireMusicPauseLock,
   releaseMusicPauseLock,
 } from '../../utils/backgroundMusicEngine';
+import { playTactileFeedback } from '../../utils/tactileFeedback';
 import {
   buildPermissionRecoveryGuide,
   requestCameraStreamSafe,
@@ -92,6 +93,7 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
   const startCamera = async () => {
     setCameraError('');
     setCheckingPermission(true);
+    acquireMusicPauseLock('quick-extract:burst-camera-request', 'camera', 70);
     try {
       stopCamera();
       const res = await requestCameraStreamSafe();
@@ -119,6 +121,7 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
       });
     } finally {
       setCheckingPermission(false);
+      releaseMusicPauseLock('quick-extract:burst-camera-request');
     }
   };
 
@@ -145,6 +148,7 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
       for (let i = 0; i < totalShots; i++) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         capturedUrls.push(canvas.toDataURL('image/jpeg', 0.94));
+        playTactileFeedback('camera_shutter', { haptic: true });
         setBurstProgress(i + 1);
         if (i < totalShots - 1) {
           await new Promise((r) => setTimeout(r, 150));

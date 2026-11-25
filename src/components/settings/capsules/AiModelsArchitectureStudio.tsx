@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { authFetch } from '../../../lib/authClient';
 import {
   Activity,
   Bot,
@@ -263,7 +264,7 @@ export const AiModelsArchitectureStudio: React.FC<
         [opts.probeKey]: { loading: true },
       }));
       try {
-        const res = await fetch('/api/assistant/test-model', {
+        const res = await authFetch('/api/assistant/test-model', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -185,30 +185,36 @@ const FRAGMENT_SHADER_SRC = `
       glassSurfaceWash = inCard * facingFactor * panelSweep * (0.28 + 0.72 * coreCone) * u_cardVisible;
     }
 
-    // Studio desk ground bounce pool along bottom plane connecting lamp base & panel lower edge
-    float groundBand = exp(-pow((uv.y - 0.115) * 7.2, 2.0)) * smoothstep(1.08, 0.08, abs(pa.x - (la.x + 0.18)));
+    // Studio desk ground bounce pool anchored to live bottom desk plane connecting lamp base & panel lower edge
+    float deskY = u_cardRect.z > 0.01
+      ? clamp(u_cardRect.y - u_cardRect.w + 0.008, 0.04, 0.44)
+      : clamp(u_lampPos.y - 0.34, 0.04, 0.38);
+    float poolCenterX = u_cardRect.z > 0.01
+      ? mix(la.x, cardCenter.x, 0.38)
+      : la.x + 0.14;
+    float groundBand = exp(-pow((uv.y - deskY) * 8.4, 2.0)) * smoothstep(1.12, 0.10, abs(pa.x - poolCenterX));
     float groundBounce = groundBand * (0.35 + 0.65 * wideCone) * reachEnvelope * transmittance;
 
-    // Color grading: warm 2850K tungsten ivory core -> rich studio gold -> amber obsidian tail
-    vec3 colIvoryCore = vec3(1.0, 0.96, 0.84);
-    vec3 colGoldMid = vec3(0.94, 0.80, 0.42);
-    vec3 colAmberTail = vec3(0.68, 0.48, 0.16);
+    // Color grading: soft warm champagne ivory -> brushed brass gold -> amber obsidian tail
+    vec3 colIvoryCore = vec3(0.95, 0.88, 0.70);
+    vec3 colGoldMid = vec3(0.84, 0.68, 0.34);
+    vec3 colAmberTail = vec3(0.50, 0.34, 0.11);
 
-    float activeEnergy = max(u_lightIntensity, u_cordPull * 0.28);
-    float radialFade = exp(-dist * 1.38);
+    float activeEnergy = max(u_lightIntensity * 0.84, u_cordPull * 0.20);
+    float radialFade = exp(-dist * 1.52);
 
-    vec3 lightColor = mix(colAmberTail, colGoldMid, smoothstep(0.0, 0.55, radialFade + coreCone * 0.35));
-    lightColor = mix(lightColor, colIvoryCore, clamp(bulbCore * 1.2 + coreCone * radialFade * 0.55, 0.0, 1.0));
+    vec3 lightColor = mix(colAmberTail, colGoldMid, smoothstep(0.0, 0.55, radialFade + coreCone * 0.32));
+    lightColor = mix(lightColor, colIvoryCore, clamp(bulbCore * 0.85 + coreCone * radialFade * 0.45, 0.0, 1.0));
 
     float volumetricLum = (
-      accumScatter * 1.62 * causticRibs * reachEnvelope +
-      apertureScatter * 0.28 * max(reachEnvelope, preWarmReach * 1.8) +
-      bulbCore * 0.44 * max(u_lightIntensity, u_cordPull * 0.48) +
-      groundBounce * 0.18 +
-      cityGlassSpec * 0.20 +
-      glassRim * 0.46 +
-      glassSurfaceWash * 0.15
-    ) * activeEnergy + prePullEdgeCatch * 0.28;
+      accumScatter * 0.84 * causticRibs * reachEnvelope +
+      apertureScatter * 0.13 * max(reachEnvelope, preWarmReach * 1.4) +
+      bulbCore * 0.14 * max(u_lightIntensity, u_cordPull * 0.36) +
+      groundBounce * 0.12 +
+      cityGlassSpec * 0.09 +
+      glassRim * 0.22 +
+      glassSurfaceWash * 0.075
+    ) * activeEnergy + prePullEdgeCatch * 0.18;
 
     // Directional cast shadow darkening behind the login panel (deepened by cord angle)
     float castShadowMask = 0.0;
@@ -217,13 +223,13 @@ const FRAGMENT_SHADER_SRC = `
     }
 
     vec3 finalRgb = lightColor * volumetricLum;
-    finalRgb = mix(finalRgb, vec3(0.01, 0.01, 0.015), clamp(castShadowMask * 0.48, 0.0, 0.48));
+    finalRgb = mix(finalRgb, vec3(0.01, 0.01, 0.015), clamp(castShadowMask * 0.46, 0.0, 0.46));
 
     // Triangular dither prevents 8-bit gradient banding on dark obsidian monitors
     float dither = (hash12(gl_FragCoord.xy + fract(u_time) * 19.0) - 0.5) / 255.0;
     finalRgb = max(vec3(0.0), finalRgb + dither);
 
-    float alpha = clamp(volumetricLum * 1.28 + castShadowMask * 0.34, 0.0, 0.92);
+    float alpha = clamp(volumetricLum * 0.76 + castShadowMask * 0.30, 0.0, 0.56);
     gl_FragColor = vec4(finalRgb, alpha);
   }
 `;
@@ -352,6 +358,7 @@ export const LampRaymarchShader: React.FC<LampRaymarchShaderProps> = ({
     let smoothCardVis = stateRef.current.isOn ? 1 : 0;
     let smoothLampX = 0.28;
     let smoothLampY = 0.62;
+    let hasInitLampPos = false;
 
     const renderFrame = (now: number) => {
       const dt = Math.min(0.05, Math.max(0.001, (now - lastTs) / 1000));
@@ -385,8 +392,14 @@ export const LampRaymarchShader: React.FC<LampRaymarchShaderProps> = ({
         if (r.width > 0 && r.height > 0) {
           const lx = (r.left + r.width * 0.5) / vw;
           const ly = 1.0 - (r.top + r.height * 0.5) / vh;
-          smoothLampX += (lx - smoothLampX) * (1 - Math.exp(-22.0 * dt));
-          smoothLampY += (ly - smoothLampY) * (1 - Math.exp(-22.0 * dt));
+          if (!hasInitLampPos) {
+            smoothLampX = lx;
+            smoothLampY = ly;
+            hasInitLampPos = true;
+          } else {
+            smoothLampX += (lx - smoothLampX) * (1 - Math.exp(-24.0 * dt));
+            smoothLampY += (ly - smoothLampY) * (1 - Math.exp(-24.0 * dt));
+          }
         }
       }
 
@@ -456,9 +469,9 @@ export const LampRaymarchShader: React.FC<LampRaymarchShaderProps> = ({
         data-testid="lamp-shader-fallback"
         className="pointer-events-none fixed inset-0 z-[2] transition-opacity duration-500"
         style={{
-          opacity: isOn ? (isFocused ? 0.95 : 0.85) : pullProgress * 0.28,
+          opacity: isOn ? (isFocused ? 0.64 : 0.54) : pullProgress * 0.18,
           background:
-            'radial-gradient(ellipse 64% 52% at 32% 38%, rgba(255, 240, 185, 0.22) 0%, rgba(212, 175, 55, 0.10) 42%, transparent 78%)',
+            'radial-gradient(ellipse 64% 52% at 32% 38%, rgba(235, 202, 122, 0.12) 0%, rgba(196, 154, 48, 0.055) 42%, transparent 78%)',
         }}
       />
     );

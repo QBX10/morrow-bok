@@ -42,7 +42,6 @@ import {
 } from 'lucide-react';
 import {
   clearSession,
-  googleQuickSignInApi,
   loginWithPasswordApi,
   registerWithPasswordApi,
   requestPhoneOtpApi,
@@ -389,19 +388,37 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
     }
   };
 
-  const handleQuickGmailSubmit = async (e: React.FormEvent) => {
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = emailInput.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAuthError('يرجى إدخال بريد إلكتروني صحيح.');
+      return;
+    }
+    if (passwordInput.length < 6) {
+      setAuthError('يرجى إدخال كلمة مرور لا تقل عن 6 أحرف.');
+      return;
+    }
     try {
       setAuthBusy(true);
       setAuthError('');
-      const session = await googleQuickSignInApi({
-        email: emailInput.trim(),
-        displayName: displayNameInput.trim(),
-      });
+      const session = isRegister
+        ? await registerWithPasswordApi({
+            mode: 'google',
+            displayName: displayNameInput.trim() || cleanEmail.split('@')[0],
+            email: cleanEmail,
+            password: passwordInput,
+          })
+        : await loginWithPasswordApi({
+            mode: 'google',
+            identifier: cleanEmail,
+            password: passwordInput,
+          });
       onAuthenticated(session.user);
       setEmailInput('');
       setDisplayNameInput('');
-      onNotifySuccess(`مرحباً ${session.user.displayName}، تم ربط حسابك بنجاح.`);
+      setPasswordInput('');
+      onNotifySuccess(`مرحباً ${session.user.displayName}، تم تسجيل الدخول بنجاح.`);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'تعذر تسجيل الدخول.');
     } finally {
@@ -1260,13 +1277,13 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-                  <span>أو الدخول السريع بالبريد</span>
+                  <span>أو الدخول بالبريد وكلمة المرور</span>
                   <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
                 </div>
 
-                <form onSubmit={handleQuickGmailSubmit} className="space-y-3">
+                <form onSubmit={handleEmailPasswordSubmit} className="space-y-3">
                   <div>
-                    <label className="mb-1 block font-bold">البريد الإلكتروني / Gmail</label>
+                    <label className="mb-1 block font-bold">البريد الإلكتروني</label>
                     <input
                       type="email"
                       dir="ltr"
@@ -1281,14 +1298,32 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                       }}
                     />
                   </div>
+                  {isRegister && (
+                    <div>
+                      <label className="mb-1 block font-bold">الاسم الظاهر (اختياري)</label>
+                      <input
+                        type="text"
+                        value={displayNameInput}
+                        onChange={(e) => setDisplayNameInput(e.target.value)}
+                        placeholder="مثال: إدارة الوكالة"
+                        className="w-full rounded-xl border px-3 py-2 text-sm"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                    </div>
+                  )}
                   <div>
-                    <label className="mb-1 block font-bold">الاسم الظاهر (اختياري)</label>
+                    <label className="mb-1 block font-bold">كلمة المرور</label>
                     <input
-                      type="text"
-                      value={displayNameInput}
-                      onChange={(e) => setDisplayNameInput(e.target.value)}
-                      placeholder="مثال: إدارة الوكالة"
-                      className="w-full rounded-xl border px-3 py-2 text-sm"
+                      type="password"
+                      dir="ltr"
+                      required
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full rounded-xl border px-3 py-2 text-left text-sm"
                       style={{
                         backgroundColor: 'var(--bg-main)',
                         borderColor: 'var(--border-color)',
@@ -1301,7 +1336,11 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                     className="w-full rounded-xl px-4 py-2.5 font-extrabold"
                     style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
                   >
-                    {authBusy ? 'يرجى الانتظار...' : 'تسجيل الدخول بالبريد'}
+                    {authBusy
+                      ? 'يرجى الانتظار...'
+                      : isRegister
+                      ? 'إنشاء حساب بالبريد'
+                      : 'تسجيل الدخول بالبريد'}
                   </button>
                 </form>
               </div>

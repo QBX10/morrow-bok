@@ -1,4 +1,4 @@
-import { getActiveBearerToken } from '../lib/authClient';
+import { authFetch, getStoredSession } from '../lib/authClient';
 
 export type AmbiencePeriod = 'morning' | 'afternoon' | 'night';
 
@@ -56,7 +56,7 @@ export async function fetchServerSpaceContext(): Promise<SpaceContextPayload> {
     if (!res.ok) {
       return {
         sound_enabled: true,
-        volume: 0.34,
+        volume: 0.27,
         ambience: fallbackAmbience,
       };
     }
@@ -75,7 +75,7 @@ export async function fetchServerSpaceContext(): Promise<SpaceContextPayload> {
       volume:
         typeof json.volume === 'number' && Number.isFinite(json.volume)
           ? Math.max(0, Math.min(1, json.volume))
-          : 0.34,
+          : 0.27,
       ambience: {
         period:
           amb?.period === 'morning' ||
@@ -100,7 +100,7 @@ export async function fetchServerSpaceContext(): Promise<SpaceContextPayload> {
   } catch {
     return {
       sound_enabled: true,
-      volume: 0.34,
+      volume: 0.27,
       ambience: fallbackAmbience,
     };
   }
@@ -111,13 +111,12 @@ export async function updateServerSoundSetting(
   volume?: number
 ): Promise<{ ok: boolean; sound_enabled?: boolean; volume?: number }> {
   try {
-    const token = await getActiveBearerToken();
-    if (!token) return { ok: false };
-    const res = await fetch('/api/settings/sound', {
+    const sess = getStoredSession();
+    if (!sess?.user) return { ok: false };
+    const res = await authFetch('/api/settings/sound', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         sound_enabled: soundEnabled,
