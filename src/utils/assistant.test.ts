@@ -40,10 +40,12 @@ import {
 } from './assistantOfflineBrain';
 import {
   buildCloudContextPayload,
+  buildLiveWorkspaceContext,
   enforceSafeArabicTerminology,
   normalizeIraqiDialect,
   redactPotentialPiiText,
 } from './assistantPrivacy';
+import { findKnowledgeEntry } from './assistantKnowledgeBase';
 import {
   createInitialQuotaStats,
   DEFAULT_ASSISTANT_SETTINGS,
@@ -1284,4 +1286,72 @@ test('normalizeAssistantSettings preserves valid responseStyle and defaults inva
     normalizeAssistantSettings({ responseStyle: 'unknown_style' as never }).responseStyle,
     'balanced'
   );
+});
+
+test('findKnowledgeEntry resolves morrow_command_center, smart_models_hub, and account_and_device_autosave', () => {
+  const morrowEntry = findKnowledgeEntry('شرح مركز morrow وقواعد الذاكرة الدائمة');
+  assert.ok(morrowEntry);
+  assert.equal(morrowEntry.id, 'morrow_command_center');
+
+  const smartModelsEntry = findKnowledgeEntry('مساحة النماذج الذكية والتدقيق الآلي');
+  assert.ok(smartModelsEntry);
+  assert.equal(smartModelsEntry.id, 'smart_models_hub');
+
+  const autosaveEntry = findKnowledgeEntry('الحفظ التلقائي على الجهاز وحالة حسابي');
+  assert.ok(autosaveEntry);
+  assert.equal(autosaveEntry.id, 'account_and_device_autosave');
+});
+
+test('buildLiveWorkspaceContext includes extended counts for relations, ready lists, notes, recycle bin, expenses, and UCRS', () => {
+  const state = makeSeedState();
+  state.workspaceNotes = [
+    {
+      id: 'note-1',
+      title: 'ملاحظة حفظ',
+      content: 'اختبار',
+      category: 'quick',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+  state.ucrsSessions = [
+    {
+      id: 'ucrs-1',
+      title: 'جلسة سحب 1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sources: [],
+      rows: [],
+      summary: {
+        totalRows: 0,
+        matchedRows: 0,
+        unmatchedRows: 0,
+        doubtRows: 0,
+        totalIndividuals: 0,
+      },
+    } as never,
+  ];
+  state.ucrsLearningRules = [
+    {
+      id: 'rule-1',
+      pattern: 'test',
+      targetAgencyId: state.agencies[0]?.id || 1,
+      createdAt: new Date().toISOString(),
+    } as never,
+  ];
+
+  const live = buildLiveWorkspaceContext(state, {
+    quickNotesCount: 3,
+    pendingDraftsCount: 2,
+  });
+
+  assert.equal(live.quickNotesCount, 3);
+  assert.equal(live.pendingDraftsCount, 2);
+  assert.equal(live.relationsCount, state.relations.length);
+  assert.equal(live.readyListsCount, state.readyLists.length);
+  assert.equal(live.workspaceNotesCount, 1);
+  assert.equal(live.recycleBinCount, (state.recycleBin || []).length);
+  assert.equal(live.totalExpensesCount, state.expenses.length);
+  assert.equal(live.ucrsSessionsCount, 1);
+  assert.equal(live.ucrsLearningRulesCount, 1);
 });

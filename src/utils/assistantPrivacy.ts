@@ -195,6 +195,13 @@ export function buildLiveWorkspaceContext(
     latestArchiveName: archives[0]?.periodMeta?.quotaName || null,
     quickNotesCount: extras?.quickNotesCount ?? 0,
     pendingDraftsCount: extras?.pendingDraftsCount ?? 0,
+    relationsCount: (state.relations || []).length,
+    readyListsCount: (state.readyLists || []).length,
+    workspaceNotesCount: (state.workspaceNotes || []).length,
+    recycleBinCount: (state.recycleBin || []).length,
+    totalExpensesCount: (state.expenses || []).length,
+    ucrsSessionsCount: (state.ucrsSessions || []).length,
+    ucrsLearningRulesCount: (state.ucrsLearningRules || []).length,
     agenciesBreakdown,
   };
 }
@@ -247,7 +254,7 @@ export function buildCloudContextPayload(
       name: l.name,
       agencyId: l.agencyId,
     })),
-    preferences: uiContext.preferences.slice(0, 8).map((p) => ({
+    preferences: uiContext.preferences.slice(0, 25).map((p) => ({
       key: p.key,
       label: p.label,
       value: p.value,

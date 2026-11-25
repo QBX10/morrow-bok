@@ -473,3 +473,139 @@ export async function confirmPasswordResetApi(params: {
   return data;
 }
 
+export async function linkUsernameApi(params: {
+  username: string;
+  password?: string;
+}): Promise<StoredSession> {
+  const res = await authFetch('/api/auth/link-username', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذر ربط اسم المستخدم.');
+  saveSession(data.token, data.user, true);
+  return data;
+}
+
+export async function fetchStorageStatusApi(): Promise<{
+  cloudSqlConfigured: boolean;
+  cloudSqlReachable: boolean;
+  smsProviderConfigured: boolean;
+  firebaseAuthConfigured: boolean;
+  storageMode: 'cloud_sql' | 'local_fallback';
+}> {
+  const res = await fetch('/api/system/storage-status', {
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'MorrowApp' },
+  });
+  if (!res.ok) {
+    return {
+      cloudSqlConfigured: false,
+      cloudSqlReachable: false,
+      smsProviderConfigured: false,
+      firebaseAuthConfigured: true,
+      storageMode: 'local_fallback',
+    };
+  }
+  return res.json();
+}
+
+export async function pushWorkspaceLwwApi(params: {
+  snapshot: unknown;
+  clientUpdatedAt: string;
+  deviceId: string;
+  force?: boolean;
+}): Promise<{
+  ok: boolean;
+  conflictResolved?: boolean;
+  winner?: 'client' | 'server';
+  snapshot?: unknown;
+  updatedAt?: string;
+  version?: number;
+  storageMode?: 'cloud_sql' | 'local_fallback';
+}> {
+  const res = await authFetch('/api/workspace', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذرت المزامنة مع السحابة.');
+  return data;
+}
+
+export async function fetchWorkspaceSnapshotApi(): Promise<{
+  exists: boolean;
+  snapshot: unknown;
+  updatedAt?: string;
+  version?: number;
+  storageMode?: 'cloud_sql' | 'local_fallback';
+}> {
+  const res = await authFetch('/api/workspace');
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذر جلب النسخة السحابية.');
+  return data;
+}
+
+export async function pushSyncQueueOpsApi(params: {
+  operations: Array<{
+    id: string;
+    type: string;
+    entity: string;
+    summary: string;
+    updatedAt: string;
+    deviceId: string;
+  }>;
+  auditEvents?: Array<{
+    id: string;
+    actionType: string;
+    title: string;
+    summary: string;
+    deviceId: string;
+    timestamp: string;
+  }>;
+}): Promise<{ ok: boolean; syncedIds: string[]; syncedAt: string }> {
+  const res = await authFetch('/api/workspace/sync-ops', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذر إرسال عمليات المزامنة.');
+  return data;
+}
+
+export async function exchangeFirebaseIdTokenApi(params: {
+  idToken: string;
+  rememberMe?: boolean;
+  displayName?: string;
+}): Promise<StoredSession> {
+  const rememberMe = params.rememberMe ?? true;
+  const res = await fetch('/api/auth/firebase-session', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MorrowApp',
+      Authorization: `Bearer ${params.idToken}`,
+    },
+    body: JSON.stringify({
+      rememberMe,
+      displayName: params.displayName,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || 'تعذر توثيق جلسة Firebase.');
+  }
+  saveSession(data.token, data.user, rememberMe);
+  return data;
+}
+

@@ -447,7 +447,9 @@ interface HealthAndKpiPanelProps {
   rootCosmos: CosmosNode;
   featureFlags: FeatureFlagsMap;
   onUpdateFeatureFlags: (patch: Partial<FeatureFlagsMap>) => void;
-  onRunAutoFix: () => { fixedCount: number; summaryLines: string[] };
+  onRunAutoFix: () =>
+    | { fixedCount: number; summaryLines: string[] }
+    | Promise<{ fixedCount: number; summaryLines: string[] }>;
   onOpenNode: (node: CosmosNode) => void;
   onNotify: (msg: string) => void;
 }
@@ -534,8 +536,8 @@ export const HealthAndKpiPanel: React.FC<HealthAndKpiPanelProps> = ({
                     id: 'fix_now',
                     label: 'تطبيق الإصلاح التلقائي الآمن',
                     primary: true,
-                    onClick: () => {
-                      const res = onRunAutoFix();
+                    onClick: async () => {
+                      const res = await onRunAutoFix();
                       onNotify(
                         res.fixedCount > 0
                           ? `تم إصلاح ${res.fixedCount} حالة تلقائياً بنجاح.`
@@ -597,7 +599,7 @@ interface LegacyArchivePanelProps {
   workspaceCosmos: WorkspaceCosmosState;
   migrationSnapshot?: MigrationSnapshotRecord;
   onToggleHiddenWorld: (worldId: string) => void;
-  onRestoreMigrationSnapshot: () => boolean;
+  onRestoreMigrationSnapshot: () => boolean | Promise<boolean>;
   onNavigateToLegacyEntry: (nodeId: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -647,8 +649,8 @@ export const LegacyArchivePanel: React.FC<LegacyArchivePanelProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => {
-              const ok = onRestoreMigrationSnapshot();
+            onClick={async () => {
+              const ok = await onRestoreMigrationSnapshot();
               onNotify(
                 ok
                   ? 'تم استرجاع إعدادات الحاسبة والمظهر من لقطة ما قبل الترحيل.'

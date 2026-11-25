@@ -130,13 +130,17 @@ interface AgenciesHubViewProps {
   }) => void;
   onOpenMasterRoster: () => void;
   onOpenAgencyRoster: (agencyId: number) => void;
-  onAddAgency: (name: string, icon: string) => void;
+  onAddAgency: (name: string, icon: string) => void | Promise<void>;
   onUpdateAgencyDetails: (
     agencyId: number,
     patch: Partial<Pick<Agency, 'name' | 'icon' | 'logoDataUrl' | 'isLocked'>>
   ) => void;
+  onTransferAgencyRecords?: (
+    fromAgencyId: number,
+    toAgencyId: number
+  ) => void | Promise<void>;
+  onDeleteAgency?: (agencyId: number) => void | Promise<void>;
   onNavigateView?: (view: AppView, settingsSection?: SettingsSectionId) => void;
-  onLoadStarterData?: () => void;
 }
 
 const AGENCY_ICON_PRESETS = ['🌾', '🏪', '📦', '🏛️', '🚚', '⚖️', '🧾', '🏢'];
@@ -240,8 +244,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   onOpenAgencyRoster,
   onAddAgency,
   onUpdateAgencyDetails,
+  onTransferAgencyRecords,
+  onDeleteAgency,
   onNavigateView,
-  onLoadStarterData,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<AgencyFilterTab>('all');
@@ -283,6 +288,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editingAgencyId, setEditingAgencyId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('🌾');
+  const [transferTargetMap, setTransferTargetMap] = useState<Record<number, number>>({});
+  const [confirmDeleteAgencyId, setConfirmDeleteAgencyId] = useState<number | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   const surfacePrefs = useMemo(
@@ -603,15 +610,15 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
       }));
   }, [miniLookupQuery, persons, agencies]);
 
-  const handleCreateAgency = (e: React.FormEvent) => {
+  const handleCreateAgency = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = newAgencyName.trim();
     if (!clean) return;
     const nextId = agencies.reduce((m, a) => Math.max(m, a.id), 0) + 1;
-    onAddAgency(clean, newAgencyIcon || '🏢');
+    setAddOpen(false);
+    await onAddAgency(clean, newAgencyIcon || '🏢');
     setNewAgencyName('');
     setNewAgencyIcon('🏢');
-    setAddOpen(false);
     onOpenAgencyRoster(nextId);
   };
 
@@ -922,7 +929,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               محفظة الوكالات جاهزة للانطلاق
             </h3>
             <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
-              افتح «إدارة الواجهة الرئيسية» لإعداد وإطلاق وكالتك من مكان واحد، أو جرّب النظام ببيانات نموذجية جاهزة.
+              افتح «إدارة الواجهة الرئيسية» لإعداد وإطلاق وكالتك من مكان واحد.
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap items-center justify-center gap-3">
@@ -939,16 +946,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               <SlidersHorizontal className="h-4 w-4" />
               <span>فتح إدارة الواجهة الرئيسية</span>
             </button>
-            {onLoadStarterData && (
-              <button
-                type="button"
-                onClick={onLoadStarterData}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] hover:bg-[var(--bg-nav-active)] px-5 py-2.5 text-xs sm:text-sm font-bold text-[var(--accent-bright)] transition-all cursor-pointer"
-              >
-                <Sparkles className="h-4 w-4 text-[var(--accent)]" />
-                <span>تحميل بيانات تجريبية جاهزة</span>
-              </button>
-            )}
           </div>
         </div>
       ) : filteredAgencies.length === 0 ? (
@@ -2411,11 +2408,11 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                     <button
                       type="button"
                       data-testid="hub-add-agency-submit"
-                      onClick={() => {
+                      onClick={async () => {
                         const clean = hubNewAgencyName.trim();
                         if (!clean) return;
-                        onAddAgency(clean, hubNewAgencyIcon);
                         setHubNewAgencyName('');
+                        await onAddAgency(clean, hubNewAgencyIcon);
                         setHubNotice(`تم إنشاء وإضافة «${clean}» بنجاح إلى محفظة الوكالات.`);
                       }}
                       className="obsidian-gold-cta h-10 px-4 rounded-xl text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
@@ -2427,68 +2424,186 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 </div>
               )}
 
-              {/* Module 1: Rename Agencies Inline */}
+              {/* Module 1: Rename Agencies Inline + Transfer & Delete Lifecycle */}
               {agencies.length > 0 && (
                 <div className="space-y-2.5">
                   <h3 className="text-xs font-black text-[var(--text-primary)]">
-                    تغيير أسماء الوكالات مباشرة
+                    إدارة الوكالات (تعديل الاسم، القفل، النقل، والحذف الآمن)
                   </h3>
                   <div className="space-y-2">
                     {agencies.map((ag) => {
                       const draftVal = agencyDraftNames[ag.id] ?? ag.name;
                       const changed = draftVal.trim() !== '' && draftVal.trim() !== ag.name;
+                      const otherAgencies = agencies.filter((other) => other.id !== ag.id);
+                      const targetTransferId =
+                        transferTargetMap[ag.id] ?? otherAgencies[0]?.id ?? 0;
+                      const agencyPersonsCount = persons.filter(
+                        (p) => p.agencyId === ag.id
+                      ).length;
+                      const isConfirmingDelete = confirmDeleteAgencyId === ag.id;
+
                       return (
                         <div
                           key={ag.id}
-                          className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-2.5"
+                          className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-2.5"
                         >
-                          <span className="w-9 h-9 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center justify-center text-lg shrink-0">
-                            {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
-                          </span>
-                          <input
-                            type="text"
-                            data-testid={`hub-rename-agency-${ag.id}`}
-                            aria-label={`تعديل اسم ${ag.name}`}
-                            value={draftVal}
-                            onChange={(e) =>
-                              setAgencyDraftNames((prev) => ({
-                                ...prev,
-                                [ag.id]: e.target.value,
-                              }))
-                            }
-                            className="flex-1 min-w-[160px] h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                          />
-                          <button
-                            type="button"
-                            data-testid={`hub-save-agency-${ag.id}`}
-                            disabled={!changed}
-                            onClick={() => {
-                              if (!changed) return;
-                              onUpdateAgencyDetails(ag.id, { name: draftVal.trim() });
-                              setHubNotice(`تم تحديث اسم الوكالة إلى «${draftVal.trim()}»`);
-                            }}
-                            className="h-9 px-3.5 rounded-xl text-xs font-extrabold transition cursor-pointer disabled:opacity-40"
-                            style={{
-                              backgroundColor: 'var(--accent)',
-                              color: 'var(--accent-fg)',
-                            }}
-                          >
-                            حفظ الاسم
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateAgencyDetails(ag.id, { isLocked: !ag.isLocked });
-                              setHubNotice(
-                                ag.isLocked
-                                  ? `تم فتح وكالة «${ag.name}»`
-                                  : `تم قفل وكالة «${ag.name}»`
-                              );
-                            }}
-                            className="h-9 px-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                          >
-                            {ag.isLocked ? 'فتح' : 'قفل'}
-                          </button>
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                            <span className="w-9 h-9 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center justify-center text-lg shrink-0">
+                              {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
+                            </span>
+                            <input
+                              type="text"
+                              data-testid={`hub-rename-agency-${ag.id}`}
+                              aria-label={`تعديل اسم ${ag.name}`}
+                              value={draftVal}
+                              onChange={(e) =>
+                                setAgencyDraftNames((prev) => ({
+                                  ...prev,
+                                  [ag.id]: e.target.value,
+                                }))
+                              }
+                              className="flex-1 min-w-[160px] h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                            />
+                            <button
+                              type="button"
+                              data-testid={`hub-save-agency-${ag.id}`}
+                              disabled={!changed}
+                              onClick={() => {
+                                if (!changed) return;
+                                onUpdateAgencyDetails(ag.id, { name: draftVal.trim() });
+                                setHubNotice(`تم تحديث اسم الوكالة إلى «${draftVal.trim()}»`);
+                              }}
+                              className="h-9 px-3.5 rounded-xl text-xs font-extrabold transition cursor-pointer disabled:opacity-40"
+                              style={{
+                                backgroundColor: 'var(--accent)',
+                                color: 'var(--accent-fg)',
+                              }}
+                            >
+                              حفظ الاسم
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateAgencyDetails(ag.id, { isLocked: !ag.isLocked });
+                                setHubNotice(
+                                  ag.isLocked
+                                    ? `تم فتح وكالة «${ag.name}»`
+                                    : `تم قفل وكالة «${ag.name}»`
+                                );
+                              }}
+                              className="h-9 px-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                            >
+                              {ag.isLocked ? 'فتح' : 'قفل'}
+                            </button>
+                            {capabilities.canManageAgencies && onDeleteAgency && (
+                              <button
+                                type="button"
+                                data-testid={`hub-delete-agency-trigger-${ag.id}`}
+                                onClick={() =>
+                                  setConfirmDeleteAgencyId(
+                                    isConfirmingDelete ? null : ag.id
+                                  )
+                                }
+                                className="h-9 px-2.5 rounded-xl border text-[11px] font-bold cursor-pointer"
+                                style={{
+                                  borderColor: 'color-mix(in srgb, var(--danger) 45%, var(--border-color))',
+                                  color: 'var(--danger)',
+                                  backgroundColor: 'var(--bg-surface)',
+                                }}
+                              >
+                                حذف
+                              </button>
+                            )}
+                          </div>
+
+                          {capabilities.canManageAgencies &&
+                            onTransferAgencyRecords &&
+                            otherAgencies.length > 0 && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-color)] pt-2 text-[11px]">
+                                <span style={{ color: 'var(--text-muted)' }}>
+                                  نقل كافة سجلات هذه الوكالة ({agencyPersonsCount} سجل) إلى:
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <select
+                                    value={targetTransferId}
+                                    onChange={(e) =>
+                                      setTransferTargetMap((prev) => ({
+                                        ...prev,
+                                        [ag.id]: Number(e.target.value),
+                                      }))
+                                    }
+                                    className="h-8 rounded-lg border border-[var(--border-color)] bg-[var(--bg-surface)] px-2 text-[11px] font-bold"
+                                  >
+                                    {otherAgencies.map((other) => (
+                                      <option key={other.id} value={other.id}>
+                                        {other.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    data-testid={`hub-transfer-agency-${ag.id}`}
+                                    disabled={!targetTransferId}
+                                    onClick={async () => {
+                                      if (!targetTransferId) return;
+                                      const destName =
+                                        otherAgencies.find((o) => o.id === targetTransferId)?.name ||
+                                        'الوكالة المستهدفة';
+                                      await onTransferAgencyRecords(ag.id, targetTransferId);
+                                      setHubNotice(
+                                        `تم نقل سجلات «${ag.name}» إلى «${destName}» بنجاح.`
+                                      );
+                                    }}
+                                    className="h-8 rounded-lg border px-2.5 text-[11px] font-bold cursor-pointer"
+                                    style={{
+                                      borderColor: 'var(--accent)',
+                                      color: 'var(--accent)',
+                                      backgroundColor: 'var(--bg-nav-active)',
+                                    }}
+                                  >
+                                    نقل السجلات
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                          {isConfirmingDelete && onDeleteAgency && (
+                            <div
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-2.5 text-[11px]"
+                              style={{
+                                borderColor: 'color-mix(in srgb, var(--danger) 50%, transparent)',
+                                backgroundColor: 'color-mix(in srgb, var(--danger) 8%, var(--bg-surface))',
+                              }}
+                            >
+                              <span className="font-bold" style={{ color: 'var(--danger)' }}>
+                                سيتم نقل جميع سجلات «{ag.name}» إلى سلة المهملات القابلة للاستعادة قبل حذفها.
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteAgencyId(null)}
+                                  className="h-7 rounded-lg border border-[var(--border-color)] bg-[var(--bg-surface)] px-2.5 font-bold cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`hub-confirm-delete-agency-${ag.id}`}
+                                  onClick={async () => {
+                                    setConfirmDeleteAgencyId(null);
+                                    await onDeleteAgency(ag.id);
+                                    setHubNotice(
+                                      `تم حذف وكالة «${ag.name}» وحفظ بياناتها في سلة الأمان.`
+                                    );
+                                  }}
+                                  className="h-7 rounded-lg px-2.5 font-extrabold text-white cursor-pointer"
+                                  style={{ backgroundColor: 'var(--danger)' }}
+                                >
+                                  تأكيد الحذف
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

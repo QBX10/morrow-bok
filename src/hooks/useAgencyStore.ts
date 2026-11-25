@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { trackDelayedLoading } from '../utils/delayedLoader.ts';
+import { runWithSignatureLoader } from '../utils/delayedLoader.ts';
 import {
   DEFAULT_EXPERT_TABLE_CONFIG,
   DEFAULT_GENERAL_PREFS,
@@ -7,12 +7,14 @@ import {
   DEFAULT_RELATIONS_PREFS,
   DEFAULT_SECURITY_PREFS,
   DEFAULT_WORKSPACE_COSMOS,
-  INITIAL_DATABASE_STATE,
 } from '../data/seedData';
 import {
-  authFetch,
   deleteServerAppearanceProfile,
+  fetchStorageStatusApi,
+  fetchWorkspaceSnapshotApi,
   getStoredSession,
+  pushSyncQueueOpsApi,
+  pushWorkspaceLwwApi,
   saveServerAppearanceProfile,
 } from '../lib/authClient';
 import {
@@ -22,9 +24,24 @@ import {
 } from '../lib/firestoreSync';
 import type { CompressionStats } from '../services/compression/compressionEngine';
 import {
+  appendAuditCheckpointEvents,
+  createAuditCheckpointEvent,
+  createMemoryVaultExport,
+  parseMemoryVaultImport,
+} from '../services/storage/memoryVault';
+import {
+  enqueueSyncOperation,
+  getOrCreateDeviceId,
+  loadSyncQueue,
+  markSyncQueueStatus,
+  pruneSyncedQueueOperations,
+  reconcileWorkspaceLww,
+} from '../services/storage/syncEngine';
+import {
   getCleanTenantInitialState,
   loadTenantWorkspace,
   saveTenantWorkspace,
+  saveTenantWorkspaceSync,
 } from '../services/storage/tenantStorage';
 import type {
   AccessibilityAndExperiencePrefs,
@@ -33,6 +50,7 @@ import type {
   AppearanceProfile,
   AppDatabaseState,
   AppModeTier,
+  AuditCheckpointEvent,
   BlockScope,
   CalculationSettings,
   CustomThemePreset,
@@ -59,13 +77,17 @@ import type {
   RelationsReadyListsPrefs,
   SectionTableHeaderMeta,
   SecurityPrefs,
+  SmartPreferencesMemory,
   SmartSyncCheckpoint,
+  StorageSystemStatus,
   Surface2DPrefs,
   Surface2DThemeId,
+  SyncQueueOperation,
   ThemePreferences,
   TopBarConfig,
   UcrsLearningRule,
   UcrsSession,
+  WorkspaceSyncStatus,
   WorldChangeLogEntry,
   WorkspaceCosmosState,
   WorkspaceNoteCategory,
@@ -256,10 +278,26 @@ function normalizeLoadedWorkspaceState(
       : [],
   };
 
+  const resolvedAppTheme = resolveAppThemeId(parsed.themePrefs?.appTheme);
+  const effectiveThemeObj = getEffectiveAppTheme(resolvedAppTheme);
+  const resolvedColorMode =
+    resolvedAppTheme === 'auto'
+      ? 'auto'
+      : effectiveThemeObj.isDark
+      ? 'dark'
+      : 'light';
+  const resolvedDarkTheme =
+    resolvedAppTheme === 'auto' && typeof parsed.darkTheme === 'boolean'
+      ? parsed.darkTheme
+      : effectiveThemeObj.isDark;
+
   return {
     ...cleanBase,
     ...parsed,
     stateVersion: CURRENT_STATE_VERSION,
+    updatedAt: typeof parsed.updatedAt === 'string' && parsed.updatedAt ? parsed.updatedAt : cleanBase.updatedAt,
+    lastSyncedAt: typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : undefined,
+    deviceId: typeof parsed.deviceId === 'string' ? parsed.deviceId : getOrCreateDeviceId(),
     migrationSnapshot,
     workspaceCosmos: mergeWorkspaceCosmos(parsed.workspaceCosmos),
     agencies,
@@ -282,8 +320,11 @@ function normalizeLoadedWorkspaceState(
         : cleanBase.topBarConfig,
     modeTier: 'expert',
     editorEnabled: true,
-    darkTheme: true,
-    requireLoginOnStart: true,
+    darkTheme: resolvedDarkTheme,
+    requireLoginOnStart:
+      typeof parsed.requireLoginOnStart === 'boolean'
+        ? parsed.requireLoginOnStart
+        : cleanBase.requireLoginOnStart,
     calculationSettings: {
       ...DEFAULT_CALCULATION_SETTINGS,
       ...(parsed.calculationSettings || {}),
@@ -291,8 +332,8 @@ function normalizeLoadedWorkspaceState(
     themePrefs: {
       ...DEFAULT_THEME_PREFERENCES,
       ...(parsed.themePrefs || {}),
-      appTheme: resolveAppThemeId(parsed.themePrefs?.appTheme),
-      themeColorMode: 'dark',
+      appTheme: resolvedAppTheme,
+      themeColorMode: resolvedColorMode,
       customBgColor: '',
       customSurfaceColor: '',
       customTextColor: '',
@@ -339,6 +380,15 @@ function normalizeLoadedWorkspaceState(
         ...(parsed.securityPrefs?.smartSync || {}),
       },
     },
+    smartPreferences: {
+      ...(cleanBase.smartPreferences || {}),
+      ...(parsed.smartPreferences || {}),
+      rosterFilters: {
+        ...(cleanBase.smartPreferences?.rosterFilters || {}),
+        ...(parsed.smartPreferences?.rosterFilters || {}),
+      },
+    },
+    auditLog: Array.isArray(parsed.auditLog) ? parsed.auditLog : [],
     recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
     workspaceNotes: Array.isArray(parsed.workspaceNotes)
       ? parsed.workspaceNotes
@@ -366,20 +416,55 @@ export function useAgencyStore(activeUid: string | null = null) {
   const [storageReady, setStorageReady] = useState<boolean>(!activeUid);
   const [compressionStats, setCompressionStats] =
     useState<CompressionStats | null>(null);
-  const loadedUidRef = useRef<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<WorkspaceSyncStatus>('local_only');
+  const [storageStatus, setStorageStatus] = useState<StorageSystemStatus | null>(null);
+  const [syncQueue, setSyncQueue] = useState<SyncQueueOperation[]>([]);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine !== false : true
+  );
+  const [lastConflictNotice, setLastConflictNotice] = useState<string | null>(null);
 
-  // Strict per-uid hydration & isolation whenever activeUid changes
+  const loadedUidRef = useRef<string | null>(null);
+  const latestStateRef = useRef<AppDatabaseState>(state);
+  latestStateRef.current = state;
+  const syncInFlightRef = useRef<boolean>(false);
+  const lastCloudSyncedUpdatedAtRef = useRef<string>('');
+  const suppressNextAutoQueueRef = useRef<boolean>(false);
+
+  // Track online/offline network status dynamically
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncStatus((prev) =>
+        prev === 'syncing' || prev === 'cloud_synced' ? 'pending_offline' : prev
+      );
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Strict per-uid Local-First hydration + Initial Cloud Pull across devices
   useEffect(() => {
     let cancelled = false;
     loadedUidRef.current = null;
+    lastCloudSyncedUpdatedAtRef.current = '';
     setPast([]);
     setFuture([]);
     setCompressionStats(null);
+    setLastConflictNotice(null);
 
     const freshClean = getCleanTenantInitialState(activeUid);
     setState(freshClean);
 
     if (!activeUid) {
+      setSyncQueue([]);
+      setSyncStatus('local_only');
       setStorageReady(true);
       return () => {
         cancelled = true;
@@ -387,72 +472,172 @@ export function useAgencyStore(activeUid: string | null = null) {
     }
 
     setStorageReady(false);
+    setSyncQueue(loadSyncQueue(activeUid));
 
     (async () => {
       try {
+        void fetchStorageStatusApi()
+          .then((st) => {
+            if (!cancelled) setStorageStatus(st);
+          })
+          .catch(() => {});
+
         const localLoaded = await loadTenantWorkspace(activeUid);
         if (cancelled) return;
 
+        let workingState = freshClean;
         if (localLoaded) {
-          const normalized = normalizeLoadedWorkspaceState(
-            localLoaded.state,
-            activeUid
-          );
+          workingState = normalizeLoadedWorkspaceState(localLoaded.state, activeUid);
+          suppressNextAutoQueueRef.current = true;
           loadedUidRef.current = activeUid;
-          setState(normalized);
+          setState(workingState);
           setCompressionStats(localLoaded.stats);
           setStorageReady(true);
-          return;
         }
 
-        // Fresh browser/device for returning account: check server snapshot once
-        let resolvedState = freshClean;
-        try {
-          const sess = getStoredSession();
-          if (sess?.user && !cancelled) {
-            const res = await authFetch('/api/workspace');
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.exists && data.snapshot && !cancelled) {
-                resolvedState = normalizeLoadedWorkspaceState(
-                  data.snapshot,
-                  activeUid
-                );
+        // Initial Cloud Pull / Cross-Device Hydration
+        const sess = getStoredSession();
+        const pendingOps = loadSyncQueue(activeUid).filter(
+          (q) => q.status === 'pending' || q.status === 'failed'
+        );
+
+        if (sess?.user && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+          try {
+            setSyncStatus('syncing');
+            const remoteRes = await fetchWorkspaceSnapshotApi();
+            if (cancelled) return;
+
+            if (remoteRes?.exists && remoteRes.snapshot) {
+              const normalizedRemote = normalizeLoadedWorkspaceState(
+                remoteRes.snapshot as Partial<AppDatabaseState>,
+                activeUid
+              );
+              const lww = reconcileWorkspaceLww({
+                localState: workingState,
+                localUpdatedAt: workingState.updatedAt,
+                remoteState: normalizedRemote,
+                remoteUpdatedAt: remoteRes.updatedAt || normalizedRemote.updatedAt,
+                hasPendingLocalOps: pendingOps.length > 0,
+              });
+
+              if (lww.winner === 'remote') {
+                let hydrated = lww.state;
+                if (lww.conflictDetected) {
+                  setLastConflictNotice(lww.summary);
+                  const conflictAudit = createAuditCheckpointEvent({
+                    actionType: 'conflict_lww',
+                    title: 'حل تعارض المزامنة (الأحدث زمنياً)',
+                    summary: lww.summary,
+                    conflictResolved: true,
+                    restorableState: workingState,
+                  });
+                  hydrated = {
+                    ...hydrated,
+                    auditLog: appendAuditCheckpointEvents(hydrated.auditLog, conflictAudit),
+                  };
+                }
+                const hydratedStats = await saveTenantWorkspace(activeUid, hydrated);
+                if (cancelled) return;
+                suppressNextAutoQueueRef.current = true;
+                loadedUidRef.current = activeUid;
+                lastCloudSyncedUpdatedAtRef.current = hydrated.updatedAt || '';
+                setState(hydrated);
+                setCompressionStats(hydratedStats);
+                setStorageReady(true);
+                setSyncStatus('cloud_synced');
+                return;
               }
+
+              if (lww.winner === 'local') {
+                // Local has newer changes or offline pending edits -> push up to unify cloud
+                const pushRes = await pushWorkspaceLwwApi({
+                  snapshot: workingState,
+                  clientUpdatedAt: workingState.updatedAt || new Date().toISOString(),
+                  deviceId: getOrCreateDeviceId(),
+                });
+                if (!cancelled && pushRes.ok) {
+                  lastCloudSyncedUpdatedAtRef.current = workingState.updatedAt || '';
+                  if (pendingOps.length > 0) {
+                    const updatedQ = markSyncQueueStatus(
+                      activeUid,
+                      pendingOps.map((o) => o.id),
+                      'synced'
+                    );
+                    setSyncQueue(updatedQ);
+                  }
+                  setSyncStatus('cloud_synced');
+                }
+              } else {
+                lastCloudSyncedUpdatedAtRef.current = workingState.updatedAt || '';
+                setSyncStatus('cloud_synced');
+              }
+            } else if (
+              workingState.agencies.length > 0 ||
+              workingState.persons.length > 0 ||
+              pendingOps.length > 0
+            ) {
+              // First cloud seed from existing local device
+              await pushWorkspaceLwwApi({
+                snapshot: workingState,
+                clientUpdatedAt: workingState.updatedAt || new Date().toISOString(),
+                deviceId: getOrCreateDeviceId(),
+                force: true,
+              });
+              if (!cancelled) {
+                lastCloudSyncedUpdatedAtRef.current = workingState.updatedAt || '';
+                setSyncStatus('cloud_synced');
+              }
+            } else {
+              setSyncStatus('cloud_synced');
+            }
+          } catch {
+            if (!cancelled) {
+              setSyncStatus(
+                typeof navigator !== 'undefined' && navigator.onLine === false
+                  ? 'pending_offline'
+                  : 'local_only'
+              );
             }
           }
-        } catch {
-          // Offline / local mode fallback cleanly uses empty clean state
+        } else if (!cancelled) {
+          setSyncStatus(pendingOps.length > 0 ? 'pending_offline' : 'local_only');
         }
 
-        if (cancelled) return;
-        const initialStats = await saveTenantWorkspace(activeUid, resolvedState);
-        if (cancelled) return;
-        loadedUidRef.current = activeUid;
-        setState(resolvedState);
-        setCompressionStats(initialStats);
-        setStorageReady(true);
+        if (!cancelled && !localLoaded) {
+          const initialStats = await saveTenantWorkspace(activeUid, workingState);
+          if (cancelled) return;
+          suppressNextAutoQueueRef.current = true;
+          loadedUidRef.current = activeUid;
+          setState(workingState);
+          setCompressionStats(initialStats);
+          setStorageReady(true);
+        }
       } catch {
         if (!cancelled) {
           loadedUidRef.current = activeUid;
           setState(freshClean);
           setStorageReady(true);
+          setSyncStatus('local_only');
         }
       }
     })();
 
     return () => {
       cancelled = true;
+      if (activeUid && loadedUidRef.current === activeUid) {
+        saveTenantWorkspaceSync(activeUid, latestStateRef.current);
+      }
     };
   }, [activeUid]);
 
-  // Pre-save compression -> per-uid IndexedDB vault
+  // Always-on automatic on-device persistence -> per-uid IndexedDB vault + syncQueue enqueue
   useEffect(() => {
     if (!activeUid || loadedUidRef.current !== activeUid) return;
-    const offlineEnabled = state.securityPrefs?.offlineCacheEnabled !== false;
-    if (!offlineEnabled) return;
 
     let cancelled = false;
+    const isSuppressed = suppressNextAutoQueueRef.current;
+    suppressNextAutoQueueRef.current = false;
+
     const timer = window.setTimeout(() => {
       void saveTenantWorkspace(activeUid, state)
         .then((stats) => {
@@ -461,13 +646,52 @@ export function useAgencyStore(activeUid: string | null = null) {
           }
         })
         .catch(() => {});
+
+      if (!isSuppressed && state.updatedAt && state.updatedAt !== lastCloudSyncedUpdatedAtRef.current) {
+        const nextQ = enqueueSyncOperation(activeUid, {
+          type: 'workspace_snapshot',
+          entity: 'مساحة العمل',
+          summary: `تحديث تلقائي (${state.agencies.length} وكالة، ${state.persons.length} مستفيد)`,
+          updatedAt: state.updatedAt,
+          deviceId: state.deviceId || getOrCreateDeviceId(),
+        });
+        if (!cancelled) {
+          setSyncQueue(nextQ);
+          if (!isOnline) {
+            setSyncStatus('pending_offline');
+          }
+        }
+      }
     }, 120);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeUid, state]);
+  }, [activeUid, state, isOnline]);
+
+  // Synchronous unload/hide flush so no edit, setting, or customization is ever lost on refresh/close
+  useEffect(() => {
+    if (!activeUid || typeof window === 'undefined') return;
+    const flushSync = () => {
+      if (loadedUidRef.current === activeUid) {
+        saveTenantWorkspaceSync(activeUid, latestStateRef.current);
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushSync();
+      }
+    };
+    window.addEventListener('pagehide', flushSync);
+    window.addEventListener('beforeunload', flushSync);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flushSync);
+      window.removeEventListener('beforeunload', flushSync);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [activeUid]);
 
   const resolvedAppShape = resolveAppShapeId(
     state.themePrefs?.appShape ?? state.generalPrefs?.appShape
@@ -580,14 +804,36 @@ export function useAgencyStore(activeUid: string | null = null) {
   );
 
   const commitDataMutation = useCallback(
-    (mutator: (prev: AppDatabaseState) => AppDatabaseState) => {
+    (
+      mutator: (prev: AppDatabaseState) => AppDatabaseState,
+      auditMeta?: { title?: string; summary?: string }
+    ) => {
       setState((prev) => {
         const snapshot = pickDataSnapshot(prev);
-        const next = mutator(prev);
-        if (next === prev) return prev;
+        const mutated = mutator(prev);
+        if (mutated === prev) return prev;
+        const nowIso = new Date().toISOString();
+        const deviceId = getOrCreateDeviceId();
+        const agenciesDelta = mutated.agencies.length - prev.agencies.length;
+        const personsDelta = mutated.persons.length - prev.persons.length;
+        const autoSummary =
+          auditMeta?.summary ||
+          `الوكالات: ${mutated.agencies.length}${agenciesDelta ? ` (${agenciesDelta > 0 ? `+${agenciesDelta}` : agenciesDelta})` : ''} · المستفيدون: ${mutated.persons.length}${personsDelta ? ` (${personsDelta > 0 ? `+${personsDelta}` : personsDelta})` : ''}`;
+        const auditEv = createAuditCheckpointEvent({
+          actionType: 'data_mutation',
+          title: auditMeta?.title || 'تحديث بيانات السجلات',
+          summary: autoSummary,
+          deviceId,
+          restorableState: prev,
+        });
         setPast((p) => [...p.slice(-(maxUndo - 1)), snapshot]);
         setFuture([]);
-        return next;
+        return {
+          ...mutated,
+          updatedAt: nowIso,
+          deviceId,
+          auditLog: appendAuditCheckpointEvents(mutated.auditLog, auditEv),
+        };
       });
     },
     [maxUndo]
@@ -600,9 +846,17 @@ export function useAgencyStore(activeUid: string | null = null) {
       setState((curr) => {
         const currentSnap = pickDataSnapshot(curr);
         setFuture((f) => [currentSnap, ...f.slice(0, maxUndo - 1)]);
+        const auditEv = createAuditCheckpointEvent({
+          actionType: 'undo_action',
+          title: 'تراجع عن آخر تعديل',
+          summary: `تمت استعادة الحالة السابقة (${previous.persons.length} مستفيد)`,
+          restorableState: curr,
+        });
         return {
           ...curr,
           ...previous,
+          updatedAt: new Date().toISOString(),
+          auditLog: appendAuditCheckpointEvents(curr.auditLog, auditEv),
         };
       });
       return prevPast.slice(0, -1);
@@ -619,6 +873,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         return {
           ...curr,
           ...nextSnap,
+          updatedAt: new Date().toISOString(),
         };
       });
       return restFuture;
@@ -640,18 +895,25 @@ export function useAgencyStore(activeUid: string | null = null) {
     }));
   }, []);
 
-  const setDarkTheme = useCallback((_darkTheme: boolean) => {
-    // Deep Absolute Marine dark surface preserved across all 5 marine themes
-    setState((prev) => ({
-      ...prev,
-      darkTheme: true,
-      themePrefs: {
-        ...DEFAULT_THEME_PREFERENCES,
-        ...(prev.themePrefs || {}),
-        appTheme: resolveAppThemeId(prev.themePrefs?.appTheme),
-        themeColorMode: 'dark',
-      },
-    }));
+  const setDarkTheme = useCallback((nextDarkTheme: boolean) => {
+    setState((prev) => {
+      const currentTheme = resolveAppThemeId(prev.themePrefs?.appTheme);
+      const nextAppTheme = nextDarkTheme
+        ? currentTheme === 'daylight-alabaster' || currentTheme === 'auto'
+          ? 'abyssal-emerald'
+          : currentTheme
+        : 'daylight-alabaster';
+      return {
+        ...prev,
+        darkTheme: nextDarkTheme,
+        themePrefs: {
+          ...DEFAULT_THEME_PREFERENCES,
+          ...(prev.themePrefs || {}),
+          appTheme: nextAppTheme,
+          themeColorMode: nextDarkTheme ? 'dark' : 'light',
+        },
+      };
+    });
   }, []);
 
   const setThemePrefs = useCallback((patch: Partial<ThemePreferences>) => {
@@ -1421,29 +1683,99 @@ export function useAgencyStore(activeUid: string | null = null) {
   }, []);
 
   const importWorkspaceJson = useCallback((rawJson: string) => {
-    const parsed = JSON.parse(rawJson) as Partial<AppDatabaseState>;
-    if (!Array.isArray(parsed.agencies) || !Array.isArray(parsed.persons)) {
-      throw new Error('ملف النسخة الاحتياطية غير صالح أو ينقصه سجل الوكالات والأفراد.');
-    }
-    setState((prev) => ({
-      ...prev,
-      ...parsed,
-      agencies: parsed.agencies!,
-      persons: parsed.persons!,
-      expenses: Array.isArray(parsed.expenses) ? parsed.expenses : prev.expenses,
-      readyLists: Array.isArray(parsed.readyLists)
-        ? normalizeReadyLists(parsed.readyLists, parsed.agencies!)
-        : prev.readyLists,
-      readyListItems: Array.isArray(parsed.readyListItems)
-        ? parsed.readyListItems
-        : prev.readyListItems,
-      relations: Array.isArray(parsed.relations)
-        ? parsed.relations
-        : prev.relations,
-    }));
+    const imported = parseMemoryVaultImport(rawJson);
+    const parsed = imported.state;
+    const nowIso = new Date().toISOString();
+    setState((prev) => {
+      const normalized = normalizeLoadedWorkspaceState(
+        {
+          ...prev,
+          ...parsed,
+          agencies: parsed.agencies!,
+          persons: parsed.persons!,
+          expenses: Array.isArray(parsed.expenses) ? parsed.expenses : prev.expenses,
+          readyLists: Array.isArray(parsed.readyLists)
+            ? normalizeReadyLists(parsed.readyLists, parsed.agencies!)
+            : prev.readyLists,
+          readyListItems: Array.isArray(parsed.readyListItems)
+            ? parsed.readyListItems
+            : prev.readyListItems,
+          relations: Array.isArray(parsed.relations)
+            ? parsed.relations
+            : prev.relations,
+        },
+        activeUid ?? null
+      );
+      const importAudit = createAuditCheckpointEvent({
+        actionType: 'vault_import',
+        title:
+          imported.sourceKind === 'memory_vault_v1'
+            ? 'استيراد لقطة الذاكرة الكاملة (Memory Vault)'
+            : 'استيراد نسخة احتياطية JSON',
+        summary: `تمت استعادة ${normalized.agencies.length} وكالة و${normalized.persons.length} مستفيد بنجاح.`,
+        restorableState: prev,
+      });
+      return {
+        ...normalized,
+        updatedAt: nowIso,
+        auditLog: appendAuditCheckpointEvents(normalized.auditLog, importAudit),
+      };
+    });
     setPast([]);
     setFuture([]);
+  }, [activeUid]);
+
+  const exportMemoryVaultJson = useCallback(() => {
+    return createMemoryVaultExport(latestStateRef.current);
   }, []);
+
+  const restoreAuditCheckpoint = useCallback((eventId: string): boolean => {
+    let restored = false;
+    setState((prev) => {
+      const target = (prev.auditLog || []).find((ev) => ev.id === eventId);
+      if (!target || !target.restorableData) return prev;
+      restored = true;
+      const currentSnap = pickDataSnapshot(prev);
+      setPast((p) => [...p.slice(-(maxUndo - 1)), currentSnap]);
+      setFuture([]);
+      const restoreAudit = createAuditCheckpointEvent({
+        actionType: 'checkpoint_restore',
+        title: `استرجاع نقطة: ${target.title}`,
+        summary: `تمت الاستعادة من سجل التدقيق المؤرخ في ${new Date(target.timestamp).toLocaleString('ar-IQ')}`,
+        restorableState: prev,
+      });
+      return {
+        ...prev,
+        ...target.restorableData,
+        updatedAt: new Date().toISOString(),
+        auditLog: appendAuditCheckpointEvents(prev.auditLog, restoreAudit),
+      };
+    });
+    return restored;
+  }, [maxUndo]);
+
+  const updateSmartPreferences = useCallback(
+    (patch: Partial<SmartPreferencesMemory>) => {
+      setState((prev) => {
+        const nowIso = new Date().toISOString();
+        const prevPrefs = prev.smartPreferences || {};
+        const nextPrefs: SmartPreferencesMemory = {
+          ...prevPrefs,
+          ...patch,
+          rosterFilters: patch.rosterFilters
+            ? { ...(prevPrefs.rosterFilters || {}), ...patch.rosterFilters }
+            : prevPrefs.rosterFilters,
+          updatedAt: nowIso,
+        };
+        return {
+          ...prev,
+          smartPreferences: nextPrefs,
+          updatedAt: nowIso,
+        };
+      });
+    },
+    []
+  );
 
   // Add Person — Direct without confirmation per Editor rules
   const addPersonDirect = useCallback(
@@ -2659,71 +2991,277 @@ export function useAgencyStore(activeUid: string | null = null) {
     [commitDataMutation]
   );
 
-  const loadStarterDemoData = useCallback(() => {
-    commitDataMutation((prev) => ({
-      ...prev,
-      agencies: INITIAL_DATABASE_STATE.agencies.map((a) => ({ ...a })),
-      persons: INITIAL_DATABASE_STATE.persons.map((p) => ({ ...p })),
-      expenses: INITIAL_DATABASE_STATE.expenses.map((e) => ({ ...e })),
-      readyLists: INITIAL_DATABASE_STATE.readyLists.map((l) => ({ ...l })),
-      readyListItems: INITIAL_DATABASE_STATE.readyListItems.map((i) => ({ ...i })),
-      relations: INITIAL_DATABASE_STATE.relations.map((r) => ({ ...r })),
-      monthlyArchives: (INITIAL_DATABASE_STATE.monthlyArchives || []).map((m) => ({
-        ...m,
-      })),
-      workspaceNotes: (INITIAL_DATABASE_STATE.workspaceNotes || []).map((n) => ({
-        ...n,
-      })),
-    }));
-  }, [commitDataMutation]);
+  const transferAgencyRecordsConfirmed = useCallback(
+    (fromAgencyId: number, toAgencyId: number) => {
+      if (fromAgencyId === toAgencyId) return;
+      const today = new Date().toISOString().slice(0, 10);
+      commitDataMutation((prev) => ({
+        ...prev,
+        persons: prev.persons.map((p) =>
+          p.agencyId === fromAgencyId ? { ...p, agencyId: toAgencyId, updatedAt: today } : p
+        ),
+        relations: prev.relations.map((r) =>
+          r.agencyId === fromAgencyId ? { ...r, agencyId: toAgencyId, updatedAt: today } : r
+        ),
+        expenses: prev.expenses.map((ex) =>
+          ex.agencyId === fromAgencyId ? { ...ex, agencyId: toAgencyId } : ex
+        ),
+        readyLists: prev.readyLists.map((l) =>
+          l.agencyId === fromAgencyId ? { ...l, agencyId: toAgencyId } : l
+        ),
+      }));
+    },
+    [commitDataMutation]
+  );
+
+  const deleteAgencyConfirmed = useCallback(
+    (agencyId: number) => {
+      commitDataMutation((prev) => {
+        const targetAgency = prev.agencies.find((a) => a.id === agencyId);
+        if (!targetAgency) return prev;
+        let nextBin = prev.recycleBin;
+        const removedPersons = prev.persons.filter((p) => p.agencyId === agencyId);
+        for (const p of removedPersons) {
+          nextBin = pushRecycleBinEntry(nextBin, {
+            kind: 'person',
+            label: `${p.name} (${targetAgency.name})`,
+            payload: { kind: 'person', person: p },
+          });
+        }
+        const removedLists = prev.readyLists.filter((l) => l.agencyId === agencyId);
+        const removedListIds = new Set(removedLists.map((l) => l.id));
+        for (const list of removedLists) {
+          nextBin = pushRecycleBinEntry(nextBin, {
+            kind: 'ready_list',
+            label: `${list.name} (${targetAgency.name})`,
+            payload: {
+              kind: 'ready_list',
+              list,
+              items: prev.readyListItems.filter((it) => it.listId === list.id),
+            },
+          });
+        }
+        const removedExpenses = prev.expenses.filter((ex) => ex.agencyId === agencyId);
+        for (const ex of removedExpenses) {
+          nextBin = pushRecycleBinEntry(nextBin, {
+            kind: 'expense',
+            label: ex.description,
+            payload: { kind: 'expense', expense: ex },
+          });
+        }
+        const removedRelations = prev.relations.filter((r) => r.agencyId === agencyId);
+        for (const rel of removedRelations) {
+          nextBin = pushRecycleBinEntry(nextBin, {
+            kind: 'relation',
+            label: rel.personName,
+            payload: { kind: 'relation', relation: rel },
+          });
+        }
+        return {
+          ...prev,
+          agencies: prev.agencies.filter((a) => a.id !== agencyId),
+          persons: prev.persons.filter((p) => p.agencyId !== agencyId),
+          expenses: prev.expenses.filter((ex) => ex.agencyId !== agencyId),
+          relations: prev.relations.filter((r) => r.agencyId !== agencyId),
+          readyLists: prev.readyLists.filter((l) => l.agencyId !== agencyId),
+          readyListItems: prev.readyListItems.filter((it) => !removedListIds.has(it.listId)),
+          recycleBin: nextBin,
+        };
+      });
+    },
+    [commitDataMutation]
+  );
+
+  const forceSyncNow = useCallback(
+    async (options?: { silent?: boolean; force?: boolean }) => {
+      const sess = getStoredSession();
+      if (!sess?.user || !activeUid) {
+        if (!options?.silent) {
+          throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
+        }
+        return null;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setSyncStatus('pending_offline');
+        if (!options?.silent) {
+          throw new Error('لا يوجد اتصال بالإنترنت حالياً؛ تم حفظ تغييراتك في طابور المزامنة.');
+        }
+        return null;
+      }
+      if (syncInFlightRef.current) return null;
+
+      syncInFlightRef.current = true;
+      setSyncStatus('syncing');
+
+      try {
+        const currentSnapshot = latestStateRef.current;
+        const deviceId = currentSnapshot.deviceId || getOrCreateDeviceId();
+        const clientUpdatedAt = currentSnapshot.updatedAt || new Date().toISOString();
+
+        const data = await pushWorkspaceLwwApi({
+          snapshot: currentSnapshot,
+          clientUpdatedAt,
+          deviceId,
+          force: options?.force,
+        });
+
+        if (data.conflictResolved && data.winner === 'server' && data.snapshot) {
+          const remoteNormalized = normalizeLoadedWorkspaceState(
+            data.snapshot as Partial<AppDatabaseState>,
+            activeUid
+          );
+          const conflictAudit = createAuditCheckpointEvent({
+            actionType: 'conflict_lww',
+            title: 'مزامنة تعارض LWW',
+            summary: 'تم اعتماد نسخة الخادم الأحدث وتحديث هذا الجهاز دون فقدان السجل السابق.',
+            conflictResolved: true,
+            restorableState: currentSnapshot,
+          });
+          const hydrated: AppDatabaseState = {
+            ...remoteNormalized,
+            lastSyncedAt: new Date().toISOString(),
+            auditLog: appendAuditCheckpointEvents(remoteNormalized.auditLog, conflictAudit),
+          };
+          suppressNextAutoQueueRef.current = true;
+          setState(hydrated);
+          setLastConflictNotice('تم حل تعارض زمني تلقائياً واعتماد النسخة الأحدث من السحابة.');
+        } else {
+          lastCloudSyncedUpdatedAtRef.current = clientUpdatedAt;
+          const syncedAt = new Date().toISOString();
+          suppressNextAutoQueueRef.current = true;
+          setState((prev) => ({
+            ...prev,
+            lastSyncedAt: syncedAt,
+          }));
+        }
+
+        const queue = loadSyncQueue(activeUid);
+        const pendingOps = queue.filter((q) => q.status === 'pending' || q.status === 'failed');
+        if (pendingOps.length > 0 || (currentSnapshot.auditLog || []).length > 0) {
+          try {
+            await pushSyncQueueOpsApi({
+              operations: pendingOps.map((o) => ({
+                id: o.id,
+                type: o.type,
+                entity: o.entity,
+                summary: o.summary,
+                updatedAt: o.updatedAt,
+                deviceId: o.deviceId,
+              })),
+              auditEvents: (currentSnapshot.auditLog || []).slice(0, 10).map((ev) => ({
+                id: ev.id,
+                actionType: ev.actionType,
+                title: ev.title,
+                summary: ev.summary,
+                deviceId: ev.deviceId,
+                timestamp: ev.timestamp,
+              })),
+            });
+            if (pendingOps.length > 0) {
+              markSyncQueueStatus(
+                activeUid,
+                pendingOps.map((o) => o.id),
+                'synced'
+              );
+            }
+          } catch {
+            // Audit log push is non-fatal when main snapshot succeeded
+          }
+        }
+
+        setSyncQueue(pruneSyncedQueueOperations(activeUid, 12));
+        setSyncStatus('cloud_synced');
+
+        void syncWorkspaceSummaryToFirestore({
+          uid: sess.user.uid,
+          title: currentSnapshot.activePeriod?.quotaName || 'مساحة عمل Morrow',
+          agencyCount: currentSnapshot.agencies.length,
+          recordCount: currentSnapshot.persons.length,
+          themePrefs: currentSnapshot.themePrefs,
+        }).catch(() => {});
+
+        return data;
+      } catch (err) {
+        const queue = loadSyncQueue(activeUid);
+        const pendingOps = queue.filter((q) => q.status === 'pending');
+        if (pendingOps.length > 0) {
+          setSyncQueue(
+            markSyncQueueStatus(
+              activeUid,
+              pendingOps.map((o) => o.id),
+              'failed',
+              err instanceof Error ? err.message : 'sync_error'
+            )
+          );
+        }
+        setSyncStatus(
+          typeof navigator !== 'undefined' && navigator.onLine === false
+            ? 'pending_offline'
+            : 'error'
+        );
+        if (!options?.silent) throw err;
+        return null;
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    },
+    [activeUid]
+  );
+
+  // Automatic background cloud sync flush (debounced + online reconnect)
+  useEffect(() => {
+    if (!activeUid || loadedUidRef.current !== activeUid || !isOnline) return;
+    const sess = getStoredSession();
+    if (!sess?.user) return;
+    const hasPending = syncQueue.some(
+      (q) => q.status === 'pending' || q.status === 'failed'
+    );
+    if (!hasPending) return;
+
+    const timer = window.setTimeout(() => {
+      void forceSyncNow({ silent: true });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [activeUid, isOnline, syncQueue, forceSyncNow]);
 
   const syncWorkspaceToServer = useCallback(async () => {
-    return trackDelayedLoading(async () => {
-      const sess = getStoredSession();
-      if (!sess?.user) {
-        throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
-      }
-      const res = await authFetch('/api/workspace', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ snapshot: state }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'تعذرت المزامنة.');
-
-      void syncWorkspaceSummaryToFirestore({
-        uid: sess.user.uid,
-        title: state.activePeriod?.quotaName || 'مساحة عمل Morrow',
-        agencyCount: state.agencies.length,
-        recordCount: state.persons.length,
-        themePrefs: state.themePrefs,
-      }).catch(() => {});
-
-      return data;
-    }, 'جاري مزامنة البيانات وحفظها سحابياً...');
-  }, [state]);
+    return runWithSignatureLoader(
+      {
+        label: 'جاري نشر ومزامنة البيانات مع الخادم...',
+        subtitle: 'يتم رفع أحدث نسخة وتأمين السجل السحابي لحسابك...',
+      },
+      async () => forceSyncNow({ silent: false, force: false })
+    );
+  }, [forceSyncNow]);
 
   const restoreWorkspaceFromServer = useCallback(async () => {
-    return trackDelayedLoading(async () => {
-      const sess = getStoredSession();
-      if (!sess?.user) {
-        throw new Error('يرجى تسجيل الدخول أولًا.');
+    return runWithSignatureLoader(
+      {
+        label: 'جاري استيراد واسترجاع مساحة العمل...',
+        subtitle: 'يتم سحب أحدث نسخة محفوظة وتحديث السجلات على جهازك...',
+      },
+      async () => {
+        const sess = getStoredSession();
+        if (!sess?.user) {
+          throw new Error('يرجى تسجيل الدخول أولًا.');
+        }
+        const data = await fetchWorkspaceSnapshotApi();
+        if (data?.exists && data.snapshot) {
+          const normalized = normalizeLoadedWorkspaceState(
+            data.snapshot as Partial<AppDatabaseState>,
+            activeUid ?? null
+          );
+          lastCloudSyncedUpdatedAtRef.current = normalized.updatedAt || '';
+          suppressNextAutoQueueRef.current = true;
+          setState(normalized);
+          setPast([]);
+          setFuture([]);
+          setSyncStatus('cloud_synced');
+          return true;
+        }
+        return false;
       }
-      const res = await authFetch('/api/workspace');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
-      if (data?.exists && data.snapshot) {
-        setState(() =>
-          normalizeLoadedWorkspaceState(data.snapshot, activeUid ?? null)
-        );
-        setPast([]);
-        setFuture([]);
-        return true;
-      }
-      return false;
-    }, 'جاري سحب واسترجاع مساحة العمل...');
+    );
   }, [activeUid]);
 
   // --- Monthly Archives & Active Period Management ---
@@ -3093,11 +3631,24 @@ export function useAgencyStore(activeUid: string | null = null) {
     removeRelationEntryConfirmed,
     addAgencyDirect,
     updateAgencyDetails,
+    transferAgencyRecordsConfirmed,
+    deleteAgencyConfirmed,
     applyAssistantAutoFixes,
     syncWorkspaceToServer,
+    forceSyncNow,
     restoreWorkspaceFromServer,
+    exportMemoryVaultJson,
+    restoreAuditCheckpoint,
+    updateSmartPreferences,
+    smartPreferences: state.smartPreferences || {},
+    auditLog: state.auditLog || [],
+    syncStatus,
+    storageStatus,
+    syncQueue,
+    isOnline,
+    lastConflictNotice,
+    dismissConflictNotice: () => setLastConflictNotice(null),
     compressionStats,
     storageReady,
-    loadStarterDemoData,
   };
 }

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { resolveOrCreateLocalCanonicalUser } from '../db/localStore.ts';
 import { getOrCreateUser, isSqlDatabaseConfigured } from '../db/users.ts';
 import { adminAuth } from '../lib/firebase-admin.ts';
 import type { AuthProviderType } from '../types/agency.ts';
@@ -161,11 +162,21 @@ export async function verifyAuthToken(token: string): Promise<{
 
   try {
     const decodedToken = await adminAuth.verifyIdToken(trimmed);
-    const email = (
-      decodedToken.email || `${decodedToken.uid}@firebase.local`
-    ).toLowerCase();
+    const phone =
+      typeof decodedToken.phone_number === 'string' && decodedToken.phone_number
+        ? decodedToken.phone_number
+        : undefined;
+    const provider: AuthProviderType = phone && !decodedToken.email ? 'phone' : 'google';
+    const email = decodedToken.email
+      ? decodedToken.email.toLowerCase()
+      : phone
+      ? undefined
+      : `${decodedToken.uid}@firebase.local`;
     const displayName =
-      decodedToken.name || email.split('@')[0] || 'مستخدم Google';
+      decodedToken.name ||
+      (email ? email.split('@')[0] : undefined) ||
+      phone ||
+      'مستخدم Google';
     const avatarUrl =
       typeof decodedToken.picture === 'string'
         ? decodedToken.picture
@@ -174,9 +185,10 @@ export async function verifyAuthToken(token: string): Promise<{
     return {
       principal: {
         uid: decodedToken.uid,
-        provider: 'google',
+        provider,
         displayName,
         email,
+        phone,
         avatarUrl,
       },
       decodedFirebaseToken: decodedToken,
@@ -184,6 +196,57 @@ export async function verifyAuthToken(token: string): Promise<{
   } catch {
     return null;
   }
+}
+
+export async function resolveCanonicalPrincipal(
+  principal: AuthenticatedPrincipal
+): Promise<AuthenticatedPrincipal> {
+  if (isSqlDatabaseConfigured()) {
+    try {
+      const canonical = await getOrCreateUser({
+        uid: principal.uid,
+        email: principal.email || `${principal.uid}@tabrex.local`,
+        username: principal.username ?? null,
+        phone: principal.phone ?? null,
+        displayName: principal.displayName,
+        avatarUrl: principal.avatarUrl ?? null,
+        authProvider: principal.provider,
+      });
+      return {
+        uid: canonical.uid,
+        provider: (canonical.authProvider as AuthProviderType) || principal.provider,
+        displayName: canonical.displayName || principal.displayName,
+        email:
+          canonical.email && !canonical.email.endsWith('.local')
+            ? canonical.email
+            : principal.email,
+        username: canonical.username || principal.username,
+        phone: canonical.phone || principal.phone,
+        avatarUrl: canonical.avatarUrl || principal.avatarUrl,
+      };
+    } catch (err) {
+      console.error('Failed to sync authenticated user to Cloud SQL:', err);
+    }
+  }
+
+  const localCanonical = resolveOrCreateLocalCanonicalUser({
+    uid: principal.uid,
+    authProvider: principal.provider,
+    displayName: principal.displayName,
+    email: principal.email ?? null,
+    phone: principal.phone ?? null,
+    username: principal.username ?? null,
+    avatarUrl: principal.avatarUrl ?? null,
+  });
+  return {
+    uid: localCanonical.uid,
+    provider: localCanonical.authProvider,
+    displayName: localCanonical.displayName,
+    email: localCanonical.email || principal.email,
+    username: localCanonical.username || principal.username,
+    phone: localCanonical.phone || principal.phone,
+    avatarUrl: localCanonical.avatarUrl || principal.avatarUrl,
+  };
 }
 
 function isSameOriginMutationAllowed(req: Request): boolean {
@@ -248,26 +311,10 @@ export const requireAuth = async (
     return;
   }
 
-  req.principal = verified.principal;
+  req.principal = await resolveCanonicalPrincipal(verified.principal);
   if (verified.decodedFirebaseToken) {
     req.user = verified.decodedFirebaseToken;
   }
 
-  if (isSqlDatabaseConfigured()) {
-    try {
-      await getOrCreateUser({
-        uid: verified.principal.uid,
-        email:
-          verified.principal.email || `${verified.principal.uid}@tabrex.local`,
-        displayName: verified.principal.displayName,
-        avatarUrl: verified.principal.avatarUrl ?? null,
-        authProvider: verified.principal.provider,
-      });
-    } catch (err) {
-      console.error('Failed to sync authenticated user to Cloud SQL:', err);
-    }
-  }
-
   next();
 };
-

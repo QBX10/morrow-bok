@@ -56,6 +56,7 @@ import type {
   AssistantChatThread,
   AssistantChoiceChip,
   AssistantConnectivityState,
+  AssistantConversationMemory,
   AssistantMessage,
   AssistantQuickNote,
   AssistantResponseStyle,
@@ -226,6 +227,9 @@ interface MorrowCommandCenterViewProps {
   canViewFinance?: boolean;
   canUseQuickExtract?: boolean;
   surfacePrefs?: Surface2DPrefs;
+  activeUid?: string | null;
+  conversationMemory?: AssistantConversationMemory;
+  onClearConversationMemory?: () => void;
 }
 
 interface AttachedDocumentItem {
@@ -489,7 +493,15 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   canViewFinance = true,
   canUseQuickExtract = true,
   surfacePrefs,
+  activeUid = null,
+  conversationMemory,
+  onClearConversationMemory,
 }) => {
+  const scopeUid = (activeUid || 'guest').replace(/[^a-zA-Z0-9._:@-]/g, '_');
+  const activeAssistantStorageKey = `morrow_active_assistant_v1::${scopeUid}`;
+  const workspacePageStorageKey = `morrow_workspace_page_v1::${scopeUid}`;
+  const canvasModeStorageKey = `morrow_canvas_mode_v1::${scopeUid}`;
+
   const [commandHeroMode, setCommandHeroMode] = useState<'orb' | 'entity'>('orb');
   const resolvedSurfacePrefs = useMemo(
     () => resolveSurface2DPrefs(surfacePrefs),
@@ -501,22 +513,71 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const [sideDrawerOpen, setSideDrawerOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [activePage, setActivePage] = useState<MorrowWorkspacePage>(() =>
-    activeTab === 'chat' ? 'chat' : activeTab
-  );
+  const [activePage, setActivePage] = useState<MorrowWorkspacePage>(() => {
+    if (activeTab !== 'chat') return activeTab;
+    if (initialCanvasMode) return 'canvas';
+    try {
+      const saved = localStorage.getItem(workspacePageStorageKey) as MorrowWorkspacePage | null;
+      if (saved && saved !== 'camera' && saved !== 'live') return saved;
+    } catch {
+      // ignore
+    }
+    return 'chat';
+  });
   const [activeAssistantId, setActiveAssistantId] = useState<string>(() => {
     try {
-      return localStorage.getItem('morrow_active_assistant_v1') || 'general_morrow';
+      return (
+        localStorage.getItem(activeAssistantStorageKey) ||
+        localStorage.getItem('morrow_active_assistant_v1') ||
+        'general_morrow'
+      );
     } catch {
       return 'general_morrow';
     }
   });
-  const [canvasMode, setCanvasMode] = useState<MorrowCanvasMode>(
-    initialCanvasMode?.mode || 'overview_charts'
-  );
+  const [canvasMode, setCanvasMode] = useState<MorrowCanvasMode>(() => {
+    if (initialCanvasMode?.mode) return initialCanvasMode.mode;
+    try {
+      const saved = localStorage.getItem(canvasModeStorageKey) as MorrowCanvasMode | null;
+      if (saved) return saved;
+    } catch {
+      // ignore
+    }
+    return 'overview_charts';
+  });
   const [macros, setMacros] = useState<MorrowMacroDefinition[]>(() => loadUserMacros());
   const [lastMacroResult, setLastMacroResult] = useState<MorrowMacroExecutionResult | null>(null);
   const [summonNotice, setSummonNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const savedAssistant =
+        localStorage.getItem(activeAssistantStorageKey) ||
+        localStorage.getItem('morrow_active_assistant_v1') ||
+        'general_morrow';
+      setActiveAssistantId(savedAssistant);
+    } catch {
+      setActiveAssistantId('general_morrow');
+    }
+  }, [activeAssistantStorageKey]);
+
+  useEffect(() => {
+    try {
+      if (activePage !== 'camera' && activePage !== 'live') {
+        localStorage.setItem(workspacePageStorageKey, activePage);
+      }
+    } catch {
+      // ignore
+    }
+  }, [activePage, workspacePageStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(canvasModeStorageKey, canvasMode);
+    } catch {
+      // ignore
+    }
+  }, [canvasMode, canvasModeStorageKey]);
 
   // Core Triad States: (1) Chat + Voice Messages, (2) Live Page, (3) Files + Camera Page
   const [chatInput, setChatInput] = useState('');
@@ -606,6 +667,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   ) => {
     setActiveAssistantId(profile.id);
     try {
+      localStorage.setItem(activeAssistantStorageKey, profile.id);
       localStorage.setItem('morrow_active_assistant_v1', profile.id);
     } catch {
       // ignore
@@ -3459,6 +3521,51 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 ))
               )}
             </div>
+
+            {conversationMemory &&
+              (conversationMemory.lastPersonName ||
+                conversationMemory.lastAgencyId ||
+                conversationMemory.lastQuery) && (
+                <div
+                  className="rounded-2xl border p-3.5 text-xs space-y-2"
+                  style={{
+                    backgroundColor: 'rgba(19, 20, 26, 0.72)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold">ذاكرة السياق القريبة المحفوظة على الجهاز</span>
+                    {onClearConversationMemory && (
+                      <button
+                        type="button"
+                        onClick={onClearConversationMemory}
+                        className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                        style={{
+                          borderColor: 'var(--border-color)',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        تصفير السياق المؤقت
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {conversationMemory.lastPersonName && (
+                      <span>آخر مستفيد: {conversationMemory.lastPersonName}</span>
+                    )}
+                    {conversationMemory.lastAgencyId ? (
+                      <span>
+                        · آخر وكالة:{' '}
+                        {agencies.find((a) => a.id === conversationMemory.lastAgencyId)?.name ||
+                          `#${conversationMemory.lastAgencyId}`}
+                      </span>
+                    ) : null}
+                    {conversationMemory.lastQuery && (
+                      <span>· آخر استعلام: «{conversationMemory.lastQuery}»</span>
+                    )}
+                  </div>
+                </div>
+              )}
           </div>
         </main>
       )}

@@ -21,8 +21,10 @@ import type {
   Surface2DPrefs,
   Surface2DThemeId,
 } from '../../types/agency';
+import type { ConfirmationResult } from 'firebase/auth';
 import {
   confirmPasswordResetApi,
+  exchangeFirebaseIdTokenApi,
   getRememberedAccounts,
   loginWithPasswordApi,
   registerWithPasswordApi,
@@ -33,6 +35,11 @@ import {
   verifyPhoneOtpApi,
   type RememberedAccountSummary,
 } from '../../lib/authClient';
+import {
+  confirmFirebasePhoneSignIn,
+  isFirebasePhoneAuthConfigured,
+  startFirebasePhoneSignIn,
+} from '../../lib/firebase';
 import { getTenantLocalFallbackKey } from '../../services/storage/tenantStorage';
 import { GeometricRavenCrest } from '../brand/VectorMotifs';
 import { Backdrop2DCanvas } from '../motion2d/Backdrop2DCanvas';
@@ -129,6 +136,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [demoOtpHint, setDemoOtpHint] = useState('');
+  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
 
   // Register State
   const [regName, setRegName] = useState('');
@@ -149,7 +157,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [showResetPass, setShowResetPass] = useState(false);
 
   const [busy, setBusy] = useState(false);
-  useDelayedLoading(busy, 'جاري التحقق وتسجيل الدخول...');
+  useDelayedLoading(busy, 'جاري التحقق وتسجيل الدخول...', {
+    immediate: true,
+    subtitle: 'يتم توثيق الحساب وتأمين الجلسة قبل فتح مساحة العمل...',
+  });
   const [errorMsg, setErrorMsg] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
 
@@ -364,10 +375,38 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         }
 
         if (!otpSent) {
+          fbPhoneConfirmationRef.current = null;
+          if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
+            try {
+              const conf = await startFirebasePhoneSignIn(
+                cleanPhone,
+                'flip-firebase-phone-recaptcha'
+              );
+              fbPhoneConfirmationRef.current = conf;
+              setOtpSent(true);
+              setDemoOtpHint('');
+              return;
+            } catch {
+              fbPhoneConfirmationRef.current = null;
+            }
+          }
           const res = await requestPhoneOtpApi(cleanPhone);
           setOtpSent(true);
           if (res.demoCode) setDemoOtpHint(res.demoCode);
         } else {
+          if (fbPhoneConfirmationRef.current) {
+            const { idToken } = await confirmFirebasePhoneSignIn(
+              fbPhoneConfirmationRef.current,
+              otpCode.trim()
+            );
+            const session = await exchangeFirebaseIdTokenApi({
+              idToken,
+              rememberMe,
+            });
+            fbPhoneConfirmationRef.current = null;
+            onAuthenticated(session.user);
+            return;
+          }
           const session = await verifyPhoneOtpApi({
             phone: cleanPhone,
             code: otpCode.trim(),
@@ -522,10 +561,39 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         }
 
         if (!otpSent) {
+          fbPhoneConfirmationRef.current = null;
+          if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
+            try {
+              const conf = await startFirebasePhoneSignIn(
+                cleanPhone,
+                'flip-firebase-phone-recaptcha'
+              );
+              fbPhoneConfirmationRef.current = conf;
+              setOtpSent(true);
+              setDemoOtpHint('');
+              return;
+            } catch {
+              fbPhoneConfirmationRef.current = null;
+            }
+          }
           const res = await requestPhoneOtpApi(cleanPhone);
           setOtpSent(true);
           if (res.demoCode) setDemoOtpHint(res.demoCode);
         } else {
+          if (fbPhoneConfirmationRef.current) {
+            const { idToken } = await confirmFirebasePhoneSignIn(
+              fbPhoneConfirmationRef.current,
+              otpCode.trim()
+            );
+            const session = await exchangeFirebaseIdTokenApi({
+              idToken,
+              rememberMe,
+              displayName: cleanName || undefined,
+            });
+            fbPhoneConfirmationRef.current = null;
+            onAuthenticated(session.user);
+            return;
+          }
           const session = await verifyPhoneOtpApi({
             phone: cleanPhone,
             code: otpCode.trim(),
@@ -934,6 +1002,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[135] flex min-h-[100dvh] flex-col p-4 sm:p-6 overflow-y-auto"
     >
+      <div id="flip-firebase-phone-recaptcha" className="hidden" />
       <Backdrop2DCanvas
         themeId={themeId}
         surfacePrefs={surfacePrefs}

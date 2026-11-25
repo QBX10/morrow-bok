@@ -35,7 +35,10 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
-import { useDelayedLoading } from '../../utils/delayedLoader';
+import {
+  runWithSignatureLoader,
+  useDelayedLoading,
+} from '../../utils/delayedLoader';
 
 interface SnippetExportModalProps {
   open: boolean;
@@ -59,7 +62,10 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
   onClose,
 }) => {
   const [busy, setBusy] = useState(false);
-  useDelayedLoading(busy, 'جاري تجهيز وتصدير القصاصة...');
+  useDelayedLoading(busy, 'جاري تجهيز وتصدير القصاصة...', {
+    immediate: true,
+    subtitle: 'يتم رسم القصاصة بدقة عالية وتجهيزها للمشاركة أو الحفظ...',
+  });
   const [notice, setNotice] = useState('');
   const [cachedRecords, setCachedRecords] = useState<SnippetRecordInput[]>(records);
   const reducedMotion = useTabrixReducedMotion();
@@ -232,14 +238,21 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
               whileTap={reducedMotion ? undefined : { scale: 0.96 }}
               transition={TABRIX_TACTILE_SPRING}
               onClick={() =>
-                printSmartSnippetPdf({
-                  tableTitle,
-                  tableSubtitle,
-                  periodMeta: resolvedPeriod,
-                  freeformHeader,
-                  records: activeRecords,
-                  settings,
-                })
+                void runWithSignatureLoader(
+                  {
+                    label: 'جاري تجهيز القصاصة للطباعة (PDF)...',
+                    subtitle: 'يتم تنسيق البطاقة الرسمية للطباعة أو الحفظ بصيغة PDF...',
+                  },
+                  () =>
+                    printSmartSnippetPdf({
+                      tableTitle,
+                      tableSubtitle,
+                      periodMeta: resolvedPeriod,
+                      freeformHeader,
+                      records: activeRecords,
+                      settings,
+                    })
+                )
               }
               className="nexus-pill-btn inline-flex items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
               style={{

@@ -44,7 +44,9 @@ import { formatIqd } from '../utils/agencyLogic';
 interface SmartModelsWorkspaceViewProps {
   state: AppDatabaseState;
   reduceMotion?: boolean;
-  onApplyAutoFixes?: () => { fixedCount: number; summaryLines: string[] };
+  onApplyAutoFixes?: () =>
+    | { fixedCount: number; summaryLines: string[] }
+    | Promise<{ fixedCount: number; summaryLines: string[] }>;
   onOpenAgencyRoster?: (agencyId: number) => void;
   onNavigateView?: (view: AppView) => void;
   onShowToast?: (message: string, tone?: 'success' | 'info' | 'warning' | 'danger') => void;
@@ -150,9 +152,9 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
     onShowToast?.('تم تصدير مصفوفة التحليل بصيغة CSV.', 'success');
   };
 
-  const handleApplyFixesToRoster = () => {
+  const handleApplyFixesToRoster = async () => {
     if (!onApplyAutoFixes) return;
-    const summary = onApplyAutoFixes();
+    const summary = await onApplyAutoFixes();
     if (summary.fixedCount > 0) {
       onShowToast?.(
         `تم تطبيق ${summary.fixedCount} إصلاحاً تلقائياً على السجل بنجاح.`,
@@ -601,7 +603,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                       colSpan={7}
                       className="py-5 px-3 text-center text-xs font-semibold text-[var(--text-muted)]"
                     >
-                      لا توجد وكالات مضافة بعد — أضف وكالة أو حمّل البيانات التجريبية لعرض المقارنة التفصيلية.
+                      لا توجد وكالات مضافة بعد — أضف وكالة لعرض المقارنة التفصيلية.
                     </td>
                   </tr>
                 ) : (

@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
+  AlertTriangle,
   Archive,
+  AtSign,
   Bell,
   CalendarClock,
   Camera,
   CheckCircle2,
   Cloud,
   CloudUpload,
+  Database,
   Download,
   ExternalLink,
   Eye,
@@ -15,6 +18,7 @@ import {
   FileJson,
   FolderOpen,
   HardDrive,
+  History,
   Info,
   KeyRound,
   Lightbulb,
@@ -39,9 +43,12 @@ import {
   Trash2,
   Upload,
   User,
+  WifiOff,
 } from 'lucide-react';
+import type { ConfirmationResult } from 'firebase/auth';
 import {
-  clearSession,
+  exchangeFirebaseIdTokenApi,
+  linkUsernameApi,
   loginWithPasswordApi,
   registerWithPasswordApi,
   requestPhoneOtpApi,
@@ -49,7 +56,14 @@ import {
   updateUserProfileApi,
   verifyPhoneOtpApi,
 } from '../lib/authClient';
-import { getAccessToken, googleSignIn, initWorkspaceAuth } from '../lib/firebase';
+import {
+  confirmFirebasePhoneSignIn,
+  getAccessToken,
+  googleSignIn,
+  initWorkspaceAuth,
+  isFirebasePhoneAuthConfigured,
+  startFirebasePhoneSignIn,
+} from '../lib/firebase';
 import {
   deleteDriveBackupFile,
   downloadDriveBackupFile,
@@ -58,6 +72,10 @@ import {
   type GoogleDriveBackupFile,
 } from '../lib/googleWorkspace';
 import { compressImageFileToDataUrl } from '../lib/imageUpload';
+import {
+  createMemoryVaultExport,
+  type MorrowMemoryVaultEnvelope,
+} from '../services/storage/memoryVault';
 import { TabrixSubViewTransition } from './ui/TabrixMotionPrimitives';
 import {
   TABRIX_SPRING,
@@ -66,15 +84,23 @@ import {
 } from '../utils/tabrixMotion';
 import type {
   AppDatabaseState,
+  AuditCheckpointEvent,
   AuthUser,
   BackupCloudProvider,
   RecycleBinEntry,
   SecurityPrefs,
   SmartSyncCheckpoint,
+  StorageSystemStatus,
+  SyncQueueOperation,
   WorkspaceNoteCategory,
   WorkspaceNoteItem,
+  WorkspaceSyncStatus,
 } from '../types/agency';
 import { normalizeArabic } from '../utils/agencyLogic';
+import {
+  normalizeUsernameInput,
+  validateAuthUsername,
+} from '../utils/surface2dConfig';
 import {
   buildNextCheckpoint,
   compressAndVerifyWorkspacePayload,
@@ -95,7 +121,10 @@ import {
 import { StructuredExportModal } from './StructuredExportModal';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
-import { useDelayedLoading } from '../utils/delayedLoader';
+import {
+  runWithSignatureLoader,
+  useDelayedLoading,
+} from '../utils/delayedLoader';
 
 const GoogleGsiSvg: React.FC = () => (
   <svg
@@ -152,12 +181,23 @@ interface AccountSecurityHubViewProps {
   onRestoreRecycleBinItem: (entryId: string) => void;
   onPurgeRecycleBinItem: (entryId: string) => void;
   onClearRecycleBin: () => void;
-  onImportWorkspaceJson: (rawJson: string) => void;
+  onImportWorkspaceJson: (rawJson: string) => void | Promise<void>;
   onSyncServer: () => Promise<void>;
   onRestoreServer: () => Promise<boolean>;
   onNotifySuccess: (msg: string) => void;
   onNotifyError: (msg: string) => void;
   initialTab?: AccountHubTab;
+  syncStatus?: WorkspaceSyncStatus;
+  storageStatus?: StorageSystemStatus | null;
+  syncQueue?: SyncQueueOperation[];
+  isOnline?: boolean;
+  auditLog?: AuditCheckpointEvent[];
+  onForceSyncNow?: () => Promise<void>;
+  onExportMemoryVaultJson?: () => {
+    envelope: MorrowMemoryVaultEnvelope;
+    jsonText: string;
+  };
+  onRestoreAuditCheckpoint?: (eventId: string) => boolean;
 }
 
 const NOTE_CATEGORIES: Array<{
@@ -209,6 +249,14 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   onNotifySuccess,
   onNotifyError,
   initialTab = 'overview',
+  syncStatus = 'local_only',
+  storageStatus = null,
+  syncQueue = [],
+  isOnline = true,
+  auditLog = [],
+  onForceSyncNow,
+  onExportMemoryVaultJson,
+  onRestoreAuditCheckpoint,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
   const [activeTab, setActiveTab] = useState<AccountHubTab>(initialTab);
@@ -232,9 +280,14 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [demoOtpHint, setDemoOtpHint] = useState('');
+  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [linkUsernameDraft, setLinkUsernameDraft] = useState(authUser?.username || '');
+  const [linkUsernamePassDraft, setLinkUsernamePassDraft] = useState('');
+  const [linkUsernameBusy, setLinkUsernameBusy] = useState(false);
+  const [forceSyncBusy, setForceSyncBusy] = useState(false);
 
   // Cloud preferences drafts
   const [driveEmailDraft, setDriveEmailDraft] = useState(
@@ -248,9 +301,14 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   const [driveFiles, setDriveFiles] = useState<GoogleDriveBackupFile[]>([]);
   const [driveBusy, setDriveBusy] = useState(false);
   useDelayedLoading(
-    authBusy || avatarBusy || driveBusy,
-    'جاري مزامنة الحساب وحفظ البيانات...'
+    authBusy || avatarBusy,
+    'جاري توثيق وتحديث الحساب...',
+    {
+      immediate: true,
+      subtitle: 'يتم تأمين بيانات الحساب وتجهيز مساحة العمل المرتبطة...',
+    }
   );
+  useDelayedLoading(driveBusy, 'جاري المزامنة مع Google Drive...');
   const [pendingDriveConfirm, setPendingDriveConfirm] = useState<
     | { kind: 'delete'; file: GoogleDriveBackupFile }
     | { kind: 'overwrite'; file: GoogleDriveBackupFile }
@@ -296,6 +354,10 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   useEffect(() => {
     setPinDraft(securityPrefs.privacyPin || '');
   }, [securityPrefs.privacyPin]);
+
+  useEffect(() => {
+    setLinkUsernameDraft(authUser?.username || '');
+  }, [authUser?.username]);
 
   useEffect(() => {
     setDriveEmailDraft(securityPrefs.driveAccountMeta?.dedicatedEmail || '');
@@ -478,10 +540,43 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
       }
 
       if (!otpSent) {
-        const res = await requestPhoneOtpApi(phoneInput.trim());
+        const cleanPhone = phoneInput.trim();
+        fbPhoneConfirmationRef.current = null;
+        if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
+          try {
+            const conf = await startFirebasePhoneSignIn(
+              cleanPhone,
+              'hub-firebase-phone-recaptcha'
+            );
+            fbPhoneConfirmationRef.current = conf;
+            setOtpSent(true);
+            setDemoOtpHint('');
+            return;
+          } catch {
+            fbPhoneConfirmationRef.current = null;
+          }
+        }
+        const res = await requestPhoneOtpApi(cleanPhone);
         setOtpSent(true);
         if (res.demoCode) setDemoOtpHint(res.demoCode);
       } else {
+        if (fbPhoneConfirmationRef.current) {
+          const { idToken } = await confirmFirebasePhoneSignIn(
+            fbPhoneConfirmationRef.current,
+            otpCode.trim()
+          );
+          const session = await exchangeFirebaseIdTokenApi({
+            idToken,
+            displayName: displayNameInput.trim() || undefined,
+          });
+          fbPhoneConfirmationRef.current = null;
+          onAuthenticated(session.user);
+          setOtpSent(false);
+          setOtpCode('');
+          setDemoOtpHint('');
+          onNotifySuccess('تم التحقق من رقم الهاتف عبر Firebase وتسجيل الدخول.');
+          return;
+        }
         const session = await verifyPhoneOtpApi({
           phone: phoneInput.trim(),
           code: otpCode.trim(),
@@ -497,6 +592,52 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
       setAuthError(err instanceof Error ? err.message : 'تعذر التحقق من رقم الهاتف.');
     } finally {
       setAuthBusy(false);
+    }
+  };
+
+  const handleLinkUsernameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUser) return;
+    const check = validateAuthUsername(linkUsernameDraft);
+    if (!check.valid) {
+      onNotifyError(check.error || 'يرجى إدخال اسم مستخدم صالح.');
+      return;
+    }
+    if (linkUsernamePassDraft && linkUsernamePassDraft.length < 6) {
+      onNotifyError('كلمة المرور الاختيارية يجب أن لا تقل عن 6 أحرف.');
+      return;
+    }
+    try {
+      setLinkUsernameBusy(true);
+      const session = await linkUsernameApi({
+        username: check.normalized,
+        password: linkUsernamePassDraft || undefined,
+      });
+      onAuthenticated(session.user);
+      setLinkUsernamePassDraft('');
+      onNotifySuccess(`تم ربط المعرّف الفريد (@${session.user.username}) بحسابك الموحّد.`);
+    } catch (err) {
+      onNotifyError(err instanceof Error ? err.message : 'تعذر ربط اسم المستخدم.');
+    } finally {
+      setLinkUsernameBusy(false);
+    }
+  };
+
+  const handleManualForceSync = async () => {
+    try {
+      setForceSyncBusy(true);
+      if (onForceSyncNow) {
+        await onForceSyncNow();
+      } else {
+        await onSyncServer();
+      }
+      onNotifySuccess('تمت المزامنة الفورية مع السحابة وتأمين التغييرات بنجاح.');
+    } catch (err) {
+      onNotifyError(
+        err instanceof Error ? err.message : 'تعذرت المزامنة الفورية حالياً.'
+      );
+    } finally {
+      setForceSyncBusy(false);
     }
   };
 
@@ -557,58 +698,53 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
     overwriteFile?: GoogleDriveBackupFile
   ) => {
     setPendingDriveConfirm(null);
-    setSyncOverlayTitle(
-      overwriteFile
-        ? 'تحديث النسخة المحفوظة على Google Drive'
-        : 'رفع النسخة المنظّمة إلى Google Drive'
-    );
-    setSyncStage(0);
-    setSyncOverlayOpen(true);
-
     try {
-      await waitCalmStep(200);
-      setSyncStage(1);
-      const summary = await generateStructuredWorkspaceZip({
-        state,
-        authUser,
-        appName: 'Morrow',
-      });
-      setSyncStage(2);
-      const uploaded = await uploadDriveBackupFile({
-        blob: summary.blob,
-        fileName: overwriteFile ? overwriteFile.name : summary.zipFilename,
-        folderName: driveFolderDraft.trim() || 'Morrow_Drive_Backups',
-        description: `نسخة Morrow المنظّمة (${summary.rootFolder}) — ${state.agencies.length} وكالة و${state.persons.length} مستفيد`,
-        existingFileId: overwriteFile?.id,
-      });
-
-      const diff = computeWorkspaceDiff(state, checkpoint);
-      onUpdateSmartSyncCheckpoint(
-        buildNextCheckpoint({
-          prevCheckpoint: checkpoint,
-          diff,
-          mode: 'cloud',
-          checksum: summary.crc32Hex,
-          compressedBytes: summary.compressedBytes,
-          isStructuredExport: true,
-        })
-      );
-      onUpdateSecurityPrefs({
-        driveAccountMeta: {
-          ...(securityPrefs.driveAccountMeta || {}),
-          dedicatedEmail: driveConnectedEmail || driveEmailDraft.trim(),
-          folderLabel: driveFolderDraft.trim() || 'Morrow_Drive_Backups',
-          lastExportedAt: new Date().toISOString(),
+      const uploaded = await runWithSignatureLoader(
+        {
+          label: overwriteFile
+            ? 'جاري تحديث ونشر النسخة على Google Drive...'
+            : 'جاري تجهيز ونشر الحزمة إلى Google Drive...',
+          subtitle: 'يتم ضغط البيانات والملفات والتحقق من سلامتها قبل الرفع السحابي...',
         },
-      });
-      await refreshDriveFiles(driveFolderDraft.trim() || 'Morrow_Drive_Backups');
+        async () => {
+          const summary = await generateStructuredWorkspaceZip({
+            state,
+            authUser,
+            appName: 'Morrow',
+          });
+          const res = await uploadDriveBackupFile({
+            blob: summary.blob,
+            fileName: overwriteFile ? overwriteFile.name : summary.zipFilename,
+            folderName: driveFolderDraft.trim() || 'Morrow_Drive_Backups',
+            description: `نسخة Morrow المنظّمة (${summary.rootFolder}) — ${state.agencies.length} وكالة و${state.persons.length} مستفيد`,
+            existingFileId: overwriteFile?.id,
+          });
 
-      setSyncStage(3);
-      await waitCalmStep(280);
-      setSyncOverlayOpen(false);
+          const diff = computeWorkspaceDiff(state, checkpoint);
+          onUpdateSmartSyncCheckpoint(
+            buildNextCheckpoint({
+              prevCheckpoint: checkpoint,
+              diff,
+              mode: 'cloud',
+              checksum: summary.crc32Hex,
+              compressedBytes: summary.compressedBytes,
+              isStructuredExport: true,
+            })
+          );
+          onUpdateSecurityPrefs({
+            driveAccountMeta: {
+              ...(securityPrefs.driveAccountMeta || {}),
+              dedicatedEmail: driveConnectedEmail || driveEmailDraft.trim(),
+              folderLabel: driveFolderDraft.trim() || 'Morrow_Drive_Backups',
+              lastExportedAt: new Date().toISOString(),
+            },
+          });
+          await refreshDriveFiles(driveFolderDraft.trim() || 'Morrow_Drive_Backups');
+          return res;
+        }
+      );
       onNotifySuccess(`تم رفع النسخة إلى Google Drive بنجاح (${uploaded.name}).`);
     } catch (err) {
-      setSyncOverlayOpen(false);
       onNotifyError(
         err instanceof Error ? err.message : 'تعذر رفع النسخة إلى Google Drive.'
       );
@@ -617,32 +753,42 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
 
   const handleDownloadDriveBackup = async (file: GoogleDriveBackupFile) => {
     try {
-      setDriveBusy(true);
-      const blob = await downloadDriveBackupFile(file.id);
-      triggerBlobDownload(blob, file.name);
+      await runWithSignatureLoader(
+        {
+          label: `جاري تنزيل واستيراد «${file.name}» من Drive...`,
+          subtitle: 'يتم جلب النسخة السحابية الآمنة وتجهيزها للتنزيل...',
+        },
+        async () => {
+          const blob = await downloadDriveBackupFile(file.id);
+          triggerBlobDownload(blob, file.name);
+        }
+      );
       onNotifySuccess(`تم تنزيل الملف (${file.name}) من Google Drive.`);
     } catch (err) {
       onNotifyError(
         err instanceof Error ? err.message : 'تعذر تنزيل الملف من Google Drive.'
       );
-    } finally {
-      setDriveBusy(false);
     }
   };
 
   const handleConfirmDeleteDriveBackup = async (file: GoogleDriveBackupFile) => {
     try {
       setPendingDriveConfirm(null);
-      setDriveBusy(true);
-      await deleteDriveBackupFile(file.id);
-      await refreshDriveFiles(driveFolderDraft.trim() || 'Morrow_Drive_Backups');
+      await runWithSignatureLoader(
+        {
+          label: `جاري حذف النسخة السحابية «${file.name}»...`,
+          subtitle: 'يتم تحديث سجل النسخ المحفوظة على Google Drive...',
+        },
+        async () => {
+          await deleteDriveBackupFile(file.id);
+          await refreshDriveFiles(driveFolderDraft.trim() || 'Morrow_Drive_Backups');
+        }
+      );
       onNotifySuccess(`تم حذف النسخة (${file.name}) من Google Drive.`);
     } catch (err) {
       onNotifyError(
         err instanceof Error ? err.message : 'تعذر حذف الملف من Google Drive.'
       );
-    } finally {
-      setDriveBusy(false);
     }
   };
 
@@ -778,71 +924,88 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
 
   const handleRunStructuredExport = async (shareDirectly: boolean) => {
     setExportModalOpen(false);
-    setSyncOverlayTitle(
-      shareDirectly ? 'تجهيز الحزمة للمشاركة المباشرة' : 'تجهيز المجلد المنظّم المضغوط'
-    );
-    setSyncStage(0);
-    setSyncOverlayOpen(true);
-
     try {
-      await waitCalmStep(200);
-      setSyncStage(1);
-      const summary = await generateStructuredWorkspaceZip({
-        state,
-        authUser,
-        appName: 'Morrow',
-      });
-      setSyncStage(2);
-      await waitCalmStep(220);
+      const result = await runWithSignatureLoader(
+        {
+          label: shareDirectly
+            ? 'جاري تجهيز الحزمة للمشاركة المباشرة...'
+            : 'جاري تجهيز وتصدير المجلد المنظّم المضغوط...',
+          subtitle: 'يتم تجميع السجلات والمرفقات والتحقق من التوقيع الرقمي للحزمة...',
+        },
+        async () => {
+          const summary = await generateStructuredWorkspaceZip({
+            state,
+            authUser,
+            appName: 'Morrow',
+          });
+
+          let outcome: 'shared' | 'downloaded' = 'downloaded';
+          if (shareDirectly) {
+            const shareSummaryText = `حزمة بيانات Morrow المنظمة (${summary.rootFolder}) — ${state.agencies.length} وكالة و${state.persons.length} مستفيد.`;
+            outcome = await directShareStructuredExport(summary, shareSummaryText);
+          } else {
+            triggerBlobDownload(summary.blob, summary.zipFilename);
+          }
+
+          const diff = computeWorkspaceDiff(state, checkpoint);
+          onUpdateSmartSyncCheckpoint(
+            buildNextCheckpoint({
+              prevCheckpoint: checkpoint,
+              diff,
+              mode: 'manual',
+              checksum: summary.crc32Hex,
+              compressedBytes: summary.compressedBytes,
+              isStructuredExport: true,
+            })
+          );
+          onUpdateSecurityPrefs({
+            driveAccountMeta: {
+              ...(securityPrefs.driveAccountMeta || {}),
+              lastExportedAt: new Date().toISOString(),
+            },
+          });
+
+          return { summary, outcome };
+        }
+      );
 
       if (shareDirectly) {
-        const shareSummaryText = `حزمة بيانات Morrow المنظمة (${summary.rootFolder}) — ${state.agencies.length} وكالة و${state.persons.length} مستفيد.`;
-        const outcome = await directShareStructuredExport(summary, shareSummaryText);
         onNotifySuccess(
-          outcome === 'shared'
+          result.outcome === 'shared'
             ? 'تم فتح نافذة المشاركة المباشرة لحزمة البيانات المنظمة.'
-            : `تم تنزيل الحزمة المنظمة (${summary.zipFilename}) بنجاح.`
+            : `تم تنزيل الحزمة المنظمة (${result.summary.zipFilename}) بنجاح.`
         );
       } else {
-        triggerBlobDownload(summary.blob, summary.zipFilename);
-        onNotifySuccess(`تم إنشاء وتنزيل المجلد المنظّم: ${summary.zipFilename}`);
+        onNotifySuccess(`تم إنشاء وتنزيل المجلد المنظّم: ${result.summary.zipFilename}`);
       }
-
-      const diff = computeWorkspaceDiff(state, checkpoint);
-      onUpdateSmartSyncCheckpoint(
-        buildNextCheckpoint({
-          prevCheckpoint: checkpoint,
-          diff,
-          mode: 'manual',
-          checksum: summary.crc32Hex,
-          compressedBytes: summary.compressedBytes,
-          isStructuredExport: true,
-        })
-      );
-      onUpdateSecurityPrefs({
-        driveAccountMeta: {
-          ...(securityPrefs.driveAccountMeta || {}),
-          lastExportedAt: new Date().toISOString(),
-        },
-      });
-
-      setSyncStage(3);
-      await waitCalmStep(280);
-      setSyncOverlayOpen(false);
     } catch (err) {
-      setSyncOverlayOpen(false);
       onNotifyError(
         err instanceof Error ? err.message : 'تعذر إنشاء حزمة التصدير المنظم.'
       );
     }
   };
 
-  // --- Backup JSON Local Handlers ---
-  const handleExportJsonBackup = () => {
-    const payload = JSON.stringify(state, null, 2);
-    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-    triggerBlobDownload(blob, `morrow-backup-${new Date().toISOString().slice(0, 10)}.json`);
-    onNotifySuccess('تم تنزيل نسخة احتياطية كاملة بصيغة JSON.');
+  // --- Backup JSON / Memory Vault Local Handlers ---
+  const handleExportJsonBackup = async () => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تجهيز وتصدير لقطة الذاكرة الكاملة (Memory Vault)...',
+        subtitle: 'يتم تجميع جميع الوكالات والسجلات والتفضيلات وسجل التدقيق مع بصمة التحقق...',
+      },
+      () => {
+        const exported = onExportMemoryVaultJson
+          ? onExportMemoryVaultJson()
+          : createMemoryVaultExport(state);
+        const blob = new Blob([exported.jsonText], {
+          type: 'application/json;charset=utf-8',
+        });
+        triggerBlobDownload(
+          blob,
+          `morrow-memory-vault-${new Date().toISOString().slice(0, 10)}.json`
+        );
+      }
+    );
+    onNotifySuccess('تم تنزيل لقطة الذاكرة الكاملة (Memory Vault JSON) بنجاح.');
   };
 
   const handleImportJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -851,7 +1014,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
     if (!file) return;
     try {
       const text = await file.text();
-      onImportWorkspaceJson(text);
+      await onImportWorkspaceJson(text);
       onNotifySuccess('تم استيراد النسخة الاحتياطية بنجاح واستعادة كافة البيانات.');
     } catch (err) {
       onNotifyError(err instanceof Error ? err.message : 'تعذر قراءة ملف النسخة الاحتياطية.');
@@ -939,6 +1102,32 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {authUser && (
+              <button
+                type="button"
+                disabled={forceSyncBusy || syncStatus === 'syncing' || !isOnline}
+                onClick={() => void handleManualForceSync()}
+                className="nexus-pill-btn inline-flex min-h-[42px] items-center gap-2 border px-4 py-2 text-xs font-extrabold disabled:opacity-50"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${
+                    forceSyncBusy || syncStatus === 'syncing' ? 'animate-spin' : ''
+                  }`}
+                  style={{ color: 'var(--accent)' }}
+                />
+                <span>
+                  {forceSyncBusy || syncStatus === 'syncing'
+                    ? 'جاري المزامنة...'
+                    : 'مزامنة فورية'}
+                </span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => void runSmartSaveEngine('manual')}
@@ -978,6 +1167,31 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
         >
           <div className="flex flex-wrap items-center gap-4">
             <span className="flex items-center gap-1.5 font-bold">
+              {!isOnline || syncStatus === 'pending_offline' ? (
+                <WifiOff className="h-4 w-4 shrink-0" style={{ color: 'var(--warning)' }} />
+              ) : syncStatus === 'cloud_synced' ? (
+                <Cloud className="h-4 w-4 shrink-0" style={{ color: 'var(--success)' }} />
+              ) : (
+                <CheckCircle2
+                  className="h-4 w-4 shrink-0"
+                  style={{
+                    color: checkpoint?.lastSavedAt ? 'var(--success)' : 'var(--text-muted)',
+                  }}
+                />
+              )}
+              <span>حالة المزامنة:</span>
+              <span style={{ color: 'var(--accent)' }}>
+                {!isOnline || syncStatus === 'pending_offline'
+                  ? `معلق دون إنترنت (${syncQueue.filter((q) => q.status !== 'synced').length})`
+                  : syncStatus === 'syncing'
+                  ? 'جاري المزامنة السحابية...'
+                  : syncStatus === 'cloud_synced'
+                  ? 'متزامن سحابياً عبر الأجهزة'
+                  : 'محفوظ محلياً'}
+              </span>
+            </span>
+
+            <span className="flex items-center gap-1.5 font-bold">
               <CheckCircle2
                 className="h-4 w-4 shrink-0"
                 style={{
@@ -986,7 +1200,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               />
               <span>آخر حفظ ناجح:</span>
               <span style={{ color: 'var(--accent)' }}>
-                {formatDateTimeArabic(checkpoint?.lastSavedAt)}
+                {formatDateTimeArabic(checkpoint?.lastSavedAt || state.lastSyncedAt)}
               </span>
             </span>
 
@@ -1005,6 +1219,31 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               : currentDiff.summaryArabic}
           </span>
         </div>
+
+        {/* Cloud SQL Fallback Warning Banner */}
+        {storageStatus?.storageMode === 'local_fallback' && (
+          <div
+            role="status"
+            className="flex flex-wrap items-start gap-3 rounded-2xl border px-4 py-3 text-xs"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--warning) 10%, var(--bg-main))',
+              borderColor: 'color-mix(in srgb, var(--warning) 45%, var(--border-color))',
+            }}
+          >
+            <Database
+              className="h-4 w-4 shrink-0 mt-0.5"
+              style={{ color: 'var(--warning)' }}
+            />
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="font-black" style={{ color: 'var(--warning)' }}>
+                وضع التخزين السحابي المؤقت (قاعدة البيانات السحابية غير مهيأة بعد)
+              </div>
+              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                تُحفظ التعديلات تلقائياً بأمان داخل المتصفح (IndexedDB) وفي سجل الخادم المحلي؛ وعند ضبط متغيرات Cloud SQL في بيئة النشر ستنتقل المزامنة تلقائياً عبر جميع الأجهزة دون فقدان أي بيانات.
+              </p>
+            </div>
+          </div>
+        )}
 
         {calmBannerMsg && (
           <div
@@ -1164,9 +1403,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    clearSession();
                     onLoggedOut();
-                    onNotifySuccess('تم تسجيل الخروج بأمان.');
                   }}
                   className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-bold"
                   style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
@@ -1178,43 +1415,124 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
             </div>
 
             {authUser && (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 text-xs"
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  borderColor: 'color-mix(in srgb, var(--success) 45%, var(--border-color))',
-                }}
-              >
-                <div className="min-w-0">
-                  <div className="font-black truncate">{authUser.displayName}</div>
-                  <div className="truncate" style={{ color: 'var(--text-muted)' }}>
-                    {authUser.email || authUser.phone || authUser.username}
+              <div className="space-y-3">
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'color-mix(in srgb, var(--success) 45%, var(--border-color))',
+                  }}
+                >
+                  <div className="min-w-0">
+                    <div className="font-black truncate">{authUser.displayName}</div>
+                    <div className="truncate" style={{ color: 'var(--text-muted)' }}>
+                      {authUser.email || authUser.phone || authUser.username}
+                      {authUser.username && (authUser.email || authUser.phone)
+                        ? ` · @${authUser.username}`
+                        : ''}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      المعرّف الموحّد: {authUser.uid}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={avatarBusy}
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <Camera className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                      <span>{avatarBusy ? 'جارٍ الرفع...' : 'تغيير الصورة'}</span>
+                    </button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* Username Linking Card for Unified Cross-Provider Login */}
+                <form
+                  onSubmit={handleLinkUsernameSubmit}
+                  className="rounded-2xl border p-3.5 space-y-2.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-black">
+                      <AtSign className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                      <span>ربط اسم المستخدم الفريد بالحساب الموحّد</span>
+                    </div>
+                    {authUser.username && (
+                      <span
+                        className="text-[11px] font-bold"
+                        style={{ color: 'var(--success)' }}
+                        dir="ltr"
+                      >
+                        @{authUser.username}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    اربط اسم مستخدم فريد (مثل ali_90) لتتمكن من الدخول إلى نفس البيانات من أي جهاز حتى بدون Google أو الهاتف.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={linkUsernameDraft}
+                      onChange={(e) =>
+                        setLinkUsernameDraft(normalizeUsernameInput(e.target.value))
+                      }
+                      placeholder="ali_agency90"
+                      className="w-full rounded-xl border px-3 py-2 text-left text-xs"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <input
+                      type="password"
+                      dir="ltr"
+                      value={linkUsernamePassDraft}
+                      onChange={(e) => setLinkUsernamePassDraft(e.target.value)}
+                      placeholder="كلمة مرور اختيارية (6+ أحرف)"
+                      className="w-full rounded-xl border px-3 py-2 text-left text-xs"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
                   <button
-                    type="button"
-                    disabled={avatarBusy}
-                    onClick={() => avatarInputRef.current?.click()}
-                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
+                    type="submit"
+                    disabled={linkUsernameBusy || !linkUsernameDraft.trim()}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-3.5 py-1.5 font-extrabold disabled:opacity-50"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
                   >
-                    <Camera className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                    <span>{avatarBusy ? 'جارٍ الرفع...' : 'تغيير الصورة'}</span>
+                    <AtSign className="h-3.5 w-3.5" />
+                    <span>
+                      {linkUsernameBusy
+                        ? 'جاري الربط...'
+                        : authUser.username
+                        ? 'تحديث اسم المستخدم'
+                        : 'ربط اسم المستخدم الآن'}
+                    </span>
                   </button>
-                  <input
-                    ref={avatarInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                  />
-                </div>
+                </form>
               </div>
             )}
+            <div id="hub-firebase-phone-recaptcha" className="hidden" />
 
             {/* Login / Switch Tabs */}
             <div
@@ -1961,6 +2279,29 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               <div className="flex flex-wrap gap-2.5 text-xs">
                 <button
                   type="button"
+                  disabled={forceSyncBusy || syncStatus === 'syncing' || !isOnline}
+                  onClick={() => void handleManualForceSync()}
+                  className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border px-4 py-2 font-extrabold disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--accent)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${
+                      forceSyncBusy || syncStatus === 'syncing' ? 'animate-spin' : ''
+                    }`}
+                  />
+                  <span>
+                    {forceSyncBusy || syncStatus === 'syncing'
+                      ? 'جاري المزامنة الفورية...'
+                      : 'مزامنة فورية الآن (Force Sync)'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => void runSmartSaveEngine('manual')}
                   className="inline-flex min-h-[42px] items-center gap-2 rounded-xl px-4 py-2 font-extrabold"
                   style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
@@ -1982,6 +2323,36 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   <span>تشغيل الفحص الأسبوعي الآن</span>
                 </button>
               </div>
+
+              {/* Sync Queue Metrics */}
+              {syncQueue.length > 0 && (
+                <div
+                  className="grid grid-cols-3 gap-2 rounded-2xl border p-3 text-center text-[11px]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div>
+                    <div className="font-black tabular-nums" style={{ color: 'var(--warning)' }}>
+                      {syncQueue.filter((q) => q.status === 'pending').length}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>قيد الانتظار</div>
+                  </div>
+                  <div>
+                    <div className="font-black tabular-nums" style={{ color: 'var(--success)' }}>
+                      {syncQueue.filter((q) => q.status === 'synced').length}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>متزامنة</div>
+                  </div>
+                  <div>
+                    <div className="font-black tabular-nums" style={{ color: 'var(--danger)' }}>
+                      {syncQueue.filter((q) => q.status === 'failed').length}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>تحتاج إعادة</div>
+                  </div>
+                </div>
+              )}
 
               <label
                 className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-xs font-bold"
@@ -2062,8 +2433,11 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               >
                 <div className="flex items-center gap-2 text-xs font-extrabold">
                   <FileJson className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                  <span>النسخة الاحتياطية السريعة الكاملة (JSON)</span>
+                  <span>خزنة الذاكرة الكاملة (Memory Vault · JSON)</span>
                 </div>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  تصدير أو استيراد لقطة الذاكرة الشاملة متضمنة جميع السجلات والتفضيلات الذكية وسجل التدقيق مع بصمة فحص السلامة.
+                </p>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <button
                     type="button"
@@ -2075,7 +2449,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                     }}
                   >
                     <Download className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-                    <span>تصدير JSON</span>
+                    <span>تصدير لقطة الذاكرة JSON</span>
                   </button>
                   <button
                     type="button"
@@ -2087,7 +2461,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                     }}
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    <span>استيراد ملف JSON</span>
+                    <span>استيراد لقطة الذاكرة</span>
                   </button>
                   <input
                     ref={jsonImportRef}
@@ -2484,7 +2858,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <span>تفعيل الحفظ المحلي للعمل دون إنترنت (Offline Cache)</span>
+                <span>تفعيل الكاش المحلي الإضافي للعمل دون إنترنت (الحفظ التلقائي الشامل مفعّل دائماً)</span>
                 <input
                   type="checkbox"
                   checked={securityPrefs.offlineCacheEnabled}
@@ -2621,6 +2995,99 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                         حذف نهائي
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Smart Audit & Recovery Log */}
+          <section className="nexus-squircle p-5 space-y-4 lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <NexusDuotoneIcon tone="ai" size="sm">
+                  <History className="h-4 w-4" />
+                </NexusDuotoneIcon>
+                <div>
+                  <h2 className="text-sm font-black">
+                    سجل التدقيق والاسترجاع الذكي ({auditLog.length})
+                  </h2>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    توثيق تلقائي للتغييرات والمزامنة وحل تعارضات الأجهزة مع نقاط استرجاع فورية
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {auditLog.length === 0 ? (
+              <div
+                className="rounded-2xl border p-6 text-center text-xs"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                لا توجد أحداث مسجلة بعد في سجل التدقيق؛ ستظهر هنا تلقائياً عند إجراء أي تعديل أو مزامنة.
+              </div>
+            ) : (
+              <div className="max-h-[320px] space-y-2 overflow-y-auto text-xs">
+                {auditLog.slice(0, 30).map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: ev.conflictResolved
+                        ? 'color-mix(in srgb, var(--warning) 45%, var(--border-color))'
+                        : 'var(--border-color)',
+                    }}
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-extrabold">{ev.title}</span>
+                        {ev.conflictResolved && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold"
+                            style={{
+                              backgroundColor: 'var(--bg-nav-active)',
+                              color: 'var(--warning)',
+                            }}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            <span>حل تعارض LWW</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {ev.summary}
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {formatDateTimeArabic(ev.timestamp)} · الجهاز: {ev.deviceId}
+                      </div>
+                    </div>
+
+                    {ev.restorableData && onRestoreAuditCheckpoint && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ok = onRestoreAuditCheckpoint(ev.id);
+                          if (ok) {
+                            onNotifySuccess(`تم استرجاع نقطة الذاكرة: ${ev.title}`);
+                          } else {
+                            onNotifyError('تعذر استرجاع هذه النقطة.');
+                          }
+                        }}
+                        className="inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl border px-3 py-1 font-extrabold"
+                        style={{
+                          borderColor: 'var(--accent)',
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>استرجاع هذه النقطة</span>
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

@@ -7,6 +7,7 @@ import {
   getTenantLocalFallbackKey,
   getTenantOnboardingKey,
   getTenantWorkspaceKey,
+  saveTenantWorkspaceSync,
 } from './tenantStorage.ts';
 
 test('tenantStorage isolates workspace records strictly per uid with pre-save compression', async () => {
@@ -82,4 +83,80 @@ test('tenantStorage isolates workspace records strictly per uid with pre-save co
   const betaAfterAlphaDelete = await driver.loadTenantWorkspace(uidBeta);
   assert.ok(betaAfterAlphaDelete);
   assert.equal(betaAfterAlphaDelete.state.agencies[0].id, 999);
+});
+
+test('saveTenantWorkspaceSync writes fallback envelope and loadTenantWorkspace prefers newest updatedAt', async () => {
+  const storeMap = new Map<string, string>();
+  const mockLocalStorage = {
+    getItem(key: string) {
+      return storeMap.has(key) ? storeMap.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      storeMap.set(key, String(value));
+    },
+    removeItem(key: string) {
+      storeMap.delete(key);
+    },
+    clear() {
+      storeMap.clear();
+    },
+    key(index: number) {
+      return Array.from(storeMap.keys())[index] ?? null;
+    },
+    get length() {
+      return storeMap.size;
+    },
+  };
+
+  const prevDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: mockLocalStorage,
+    configurable: true,
+    writable: true,
+  });
+
+  try {
+    const kvStore = createMemoryKeyValueStore();
+    const driver = createTenantStorageDriver(kvStore);
+    const uid = 'uid_sync_resolution_001';
+
+    const stateOlder = getCleanTenantInitialState(uid);
+    stateOlder.agencies = [{ id: 1, name: 'الوكالة القديمة', icon: '📦', isLocked: false }];
+    await driver.saveTenantWorkspace(uid, stateOlder);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const stateSyncNewer = getCleanTenantInitialState(uid);
+    stateSyncNewer.agencies = [
+      { id: 1, name: 'الوكالة القديمة', icon: '📦', isLocked: false },
+      { id: 2, name: 'وكالة الإغلاق الفوري', icon: '⚡', isLocked: false },
+    ];
+    stateSyncNewer.requireLoginOnStart = true;
+
+    const ok = saveTenantWorkspaceSync(uid, stateSyncNewer);
+    assert.equal(ok, true);
+
+    const loadedNewest = await driver.loadTenantWorkspace(uid);
+    assert.ok(loadedNewest);
+    assert.equal(loadedNewest.state.agencies.length, 2);
+    assert.equal(loadedNewest.state.agencies[1].name, 'وكالة الإغلاق الفوري');
+    assert.equal(loadedNewest.state.requireLoginOnStart, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const stateIdbNewest = getCleanTenantInitialState(uid);
+    stateIdbNewest.agencies = [{ id: 3, name: 'الأحدث في القاعدة الرئيسية', icon: '🏆', isLocked: false }];
+    await driver.saveTenantWorkspace(uid, stateIdbNewest);
+
+    const loadedIdbNewest = await driver.loadTenantWorkspace(uid);
+    assert.ok(loadedIdbNewest);
+    assert.equal(loadedIdbNewest.state.agencies.length, 1);
+    assert.equal(loadedIdbNewest.state.agencies[0].name, 'الأحدث في القاعدة الرئيسية');
+  } finally {
+    if (prevDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', prevDescriptor);
+    } else {
+      delete (globalThis as Record<string, unknown>).localStorage;
+    }
+  }
 });

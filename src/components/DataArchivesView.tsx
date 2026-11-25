@@ -64,7 +64,10 @@ import {
   SelectionActionBar,
   type SelectablePersonRecord,
 } from './SelectionActionBar';
-import { useDelayedLoading } from '../utils/delayedLoader';
+import {
+  runWithSignatureLoader,
+  useDelayedLoading,
+} from '../utils/delayedLoader';
 import { playTactileFeedback } from '../utils/tactileFeedback';
 
 interface DataArchivesViewProps {
@@ -77,14 +80,14 @@ interface DataArchivesViewProps {
     label?: string;
     isClosed: boolean;
     archiveSource: 'manual' | 'auto';
-  }) => MonthlyArchiveRecord;
+  }) => MonthlyArchiveRecord | Promise<MonthlyArchiveRecord>;
   onStartNextMonthRollover: (options: {
     nextQuotaName?: string;
     nextQuotaNumber?: string;
     nextDate?: string;
     autoArchiveCurrent: boolean;
     resetNotesAndChanges: boolean;
-  }) => void;
+  }) => void | Promise<void>;
   onMarkArchiveCloudSynced: (archiveId: string) => void;
   onDeleteArchive: (archiveId: string) => void;
   onSyncServer: () => Promise<unknown>;
@@ -260,28 +263,28 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
     setOpenedArchivedListId(arch.readyLists[0]?.id ?? null);
   };
 
-  const handleCreateManualArchive = (e: React.FormEvent) => {
+  const handleCreateManualArchive = async (e: React.FormEvent) => {
     e.preventDefault();
-    const saved = onArchiveCurrentPeriod({
+    setArchiveModalOpen(false);
+    const saved = await onArchiveCurrentPeriod({
       label: archiveLabelDraft.trim() || undefined,
       isClosed: archiveCloseDraft,
       archiveSource: 'manual',
     });
-    setArchiveModalOpen(false);
     setArchiveLabelDraft('');
     setNotice(`تم حفظ وأرشفة «${saved.label}» بنجاح.`);
   };
 
-  const handleConfirmRollover = (e: React.FormEvent) => {
+  const handleConfirmRollover = async (e: React.FormEvent) => {
     e.preventDefault();
-    onStartNextMonthRollover({
+    setRolloverOpen(false);
+    await onStartNextMonthRollover({
       nextQuotaName,
       nextQuotaNumber,
       nextDate: nextQuotaDate,
       autoArchiveCurrent: autoArchiveBeforeNext,
       resetNotesAndChanges: resetMonthlyChanges,
     });
-    setRolloverOpen(false);
     setNotice(
       `تم الانتقال إلى الفترة الجديدة بنجاح مع تأمين السجلات السابقة في الأرشيف.`
     );
@@ -361,7 +364,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => printArchiveRecordPdf(openedArchive)}
+              onClick={() =>
+                void runWithSignatureLoader(
+                  {
+                    label: 'جاري تجهيز ملف الطباعة للأرشيف (PDF)...',
+                    subtitle: 'يتم تنسيق جداول السجل المؤرشف للطباعة أو الحفظ...',
+                  },
+                  () => printArchiveRecordPdf(openedArchive)
+                )
+              }
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
                 backgroundColor: 'var(--bg-surface)',
@@ -375,12 +386,19 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             <button
               type="button"
               onClick={() =>
-                exportRosterToExcel({
-                  filename: openedArchive.label,
-                  persons: filteredArchivePersons,
-                  agencies: openedArchive.agencies,
-                  settings: openedArchive.calculationSettings,
-                })
+                void runWithSignatureLoader(
+                  {
+                    label: 'جاري تصدير السجل المؤرشف إلى Excel...',
+                    subtitle: 'يتم إعداد الأعمدة والإحصائيات داخل ملف الجدول...',
+                  },
+                  () =>
+                    exportRosterToExcel({
+                      filename: openedArchive.label,
+                      persons: filteredArchivePersons,
+                      agencies: openedArchive.agencies,
+                      settings: openedArchive.calculationSettings,
+                    })
+                )
               }
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
@@ -395,8 +413,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                exportArchiveToCloudJson(openedArchive);
-                setNotice('تم تنزيل النسخة السحابية بصيغة JSON.');
+                void runWithSignatureLoader(
+                  {
+                    label: 'جاري تجهيز النسخة السحابية للأرشيف...',
+                    subtitle: 'يتم تجميع بيانات الأرشيف في ملف JSON منظم...',
+                  },
+                  () => exportArchiveToCloudJson(openedArchive)
+                ).then(() => {
+                  setNotice('تم تنزيل النسخة السحابية بصيغة JSON.');
+                });
               }}
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
               style={{
@@ -850,12 +875,19 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        exportReadyListToExcel({
-                          list: activeArchivedList,
-                          items: archivedListItems,
-                          persons: openedArchive.persons,
-                          settings: openedArchive.calculationSettings,
-                        })
+                        void runWithSignatureLoader(
+                          {
+                            label: 'جاري تصدير القائمة المؤرشفة إلى Excel...',
+                            subtitle: 'يتم تنسيق صفوف وحصص القائمة في ملف جاهز...',
+                          },
+                          () =>
+                            exportReadyListToExcel({
+                              list: activeArchivedList,
+                              items: archivedListItems,
+                              persons: openedArchive.persons,
+                              settings: openedArchive.calculationSettings,
+                            })
+                        )
                       }
                       className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold"
                       style={{
@@ -940,12 +972,19 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               <button
                 type="button"
                 onClick={() =>
-                  exportFinancialReportToExcel({
-                    agencyName: openedArchive.label,
-                    persons: openedArchive.persons,
-                    expenses: openedArchive.expenses,
-                    settings: openedArchive.calculationSettings,
-                  })
+                  void runWithSignatureLoader(
+                    {
+                      label: 'جاري تصدير التقرير المالي المؤرشف...',
+                      subtitle: 'يتم تجميع الإيرادات والمصروفات في جدول Excel...',
+                    },
+                    () =>
+                      exportFinancialReportToExcel({
+                        agencyName: openedArchive.label,
+                        persons: openedArchive.persons,
+                        expenses: openedArchive.expenses,
+                        settings: openedArchive.calculationSettings,
+                      })
+                  )
                 }
                 className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold"
                 style={{
@@ -1340,7 +1379,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => printArchiveRecordPdf(arch)}
+                    onClick={() =>
+                      void runWithSignatureLoader(
+                        {
+                          label: 'جاري تجهيز ملف الأرشيف للطباعة (PDF)...',
+                          subtitle: 'يتم تنسيق الأرشيف الشهري للطباعة...',
+                        },
+                        () => printArchiveRecordPdf(arch)
+                      )
+                    }
                     className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap"
                     style={{
                       backgroundColor: 'var(--bg-main)',
@@ -1353,7 +1400,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => exportArchiveToCloudJson(arch)}
+                    onClick={() =>
+                      void runWithSignatureLoader(
+                        {
+                          label: 'جاري تجهيز النسخة السحابية للأرشيف...',
+                          subtitle: 'يتم تجميع بيانات الأرشيف في ملف JSON آمن...',
+                        },
+                        () => exportArchiveToCloudJson(arch)
+                      )
+                    }
                     className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap"
                     style={{
                       backgroundColor: 'var(--bg-main)',

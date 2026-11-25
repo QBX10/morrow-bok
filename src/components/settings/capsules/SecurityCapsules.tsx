@@ -38,6 +38,7 @@ import {
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 import { AiModelsArchitectureStudio } from './AiModelsArchitectureStudio';
+import { runWithSignatureLoader } from '../../../utils/delayedLoader';
 
 interface SecurityCapsulesProps {
   sectionNode: HierarchyNode;
@@ -57,7 +58,7 @@ interface SecurityCapsulesProps {
   onRestoreRecycleBinItem: (entryId: string) => void;
   onPurgeRecycleBinItem: (entryId: string) => void;
   onClearRecycleBin: () => void;
-  onImportWorkspaceJson: (rawJson: string) => void;
+  onImportWorkspaceJson: (rawJson: string) => void | Promise<void>;
   onSyncServer: () => Promise<void>;
   onRestoreServer: () => Promise<boolean>;
   onOpenAuth: () => void;
@@ -106,17 +107,25 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
     setPinDraft(securityPrefs.privacyPin || '');
   }, [securityPrefs.privacyPin]);
 
-  const handleExportJsonBackup = () => {
-    const payload = JSON.stringify(state, null, 2);
-    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `morrow-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const handleExportJsonBackup = async () => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تجهيز وتصدير النسخة الاحتياطية (JSON)...',
+        subtitle: 'يتم تجميع كافة الوكالات والسجلات والإعدادات في ملف آمن...',
+      },
+      () => {
+        const payload = JSON.stringify(state, null, 2);
+        const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `morrow-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+    );
     onNotifySuccess('تم تنزيل نسخة احتياطية كاملة بصيغة JSON.');
   };
 
@@ -126,7 +135,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
     if (!file) return;
     try {
       const text = await file.text();
-      onImportWorkspaceJson(text);
+      await onImportWorkspaceJson(text);
       onNotifySuccess('تم استيراد النسخة الاحتياطية بنجاح واستعادة كافة البيانات.');
     } catch (err) {
       onNotifyError(
@@ -174,11 +183,11 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
             } else if (child.id === 'sec_backup_json_cap') {
               preview = (
                 <div className="flex items-center justify-between font-bold">
-                  <span>JSON Export / Import</span>
+                  <span>حفظ تلقائي دائم + JSON</span>
                   <span style={{ color: 'var(--accent)' }}>
                     {securityPrefs.offlineCacheEnabled
-                      ? 'Offline Cache نشط'
-                      : 'متوقف'}
+                      ? 'Cache + حفظ تلقائي'
+                      : 'حفظ تلقائي أساسي'}
                   </span>
                 </div>
               );
@@ -397,7 +406,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
                 onUpdateSecurityPrefs({ offlineCacheEnabled: e.target.checked })
               }
             />
-            <span>تفعيل الحفظ المحلي التلقائي للعمل دون انترنت (Offline Cache)</span>
+            <span>تفعيل التخزين المؤقت الإضافي دون إنترنت (الحفظ التلقائي الشامل على الجهاز يعمل دائماً)</span>
           </label>
 
           <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-xs font-bold">

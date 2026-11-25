@@ -153,6 +153,18 @@ export function getCleanTenantInitialState(_uid?: string | null): AppDatabaseSta
         history: [],
       },
     },
+    smartPreferences: {
+      activeView: 'hub',
+      selectedAgencyId: 0,
+      tableViewingMode: false,
+      sidebarCollapsed: false,
+      currencyUnit: 'IQD',
+      weightUnit: 'kg',
+      rosterFilters: {},
+      updatedAt: new Date().toISOString(),
+    },
+    auditLog: [],
+    updatedAt: new Date().toISOString(),
     themePrefs: {
       ...DEFAULT_THEME_PREFERENCES,
       appTheme: 'abyssal-emerald',
@@ -254,6 +266,72 @@ function createBrowserIndexedDbStore(): TenantKeyValueStore {
   };
 }
 
+function parseEnvelopeTimestampMs(env: CompressedEnvelope | null | undefined): number {
+  if (!env || typeof env.updatedAt !== 'string') return 0;
+  const parsed = Date.parse(env.updatedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isValidEnvelope(candidate: unknown): candidate is CompressedEnvelope {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const env = candidate as Partial<CompressedEnvelope>;
+  return typeof env.payloadText === 'string' && env.payloadText.length > 0;
+}
+
+function buildCompactFallbackState(state: AppDatabaseState): AppDatabaseState {
+  if (!Array.isArray(state.ucrsSessions) || state.ucrsSessions.length === 0) {
+    return state;
+  }
+  return {
+    ...state,
+    ucrsSessions: state.ucrsSessions.slice(0, 12).map((session) => ({
+      ...session,
+      sources: Array.isArray(session.sources)
+        ? session.sources.map((src) => ({
+            ...src,
+            previewDataUrl: undefined,
+          }))
+        : [],
+    })),
+  };
+}
+
+export function saveTenantWorkspaceSync(
+  uid: string,
+  state: AppDatabaseState
+): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  const fallbackKey = getTenantLocalFallbackKey(uid);
+  const nowIso = new Date().toISOString();
+
+  const tryWrite = (targetState: AppDatabaseState): boolean => {
+    const payloadText = JSON.stringify(targetState);
+    const rawBytes = new TextEncoder().encode(payloadText).byteLength;
+    const envelope: CompressedEnvelope = {
+      v: 2,
+      alg: 'raw-json',
+      rawBytes,
+      compressedBytes: rawBytes,
+      savedBytes: 0,
+      savingsPct: 0,
+      payloadText,
+      updatedAt: nowIso,
+    };
+    localStorage.setItem(fallbackKey, JSON.stringify(envelope));
+    return true;
+  };
+
+  try {
+    return tryWrite(state);
+  } catch {
+    try {
+      return tryWrite(buildCompactFallbackState(state));
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function createTenantStorageDriver(backingStore?: TenantKeyValueStore) {
   const store = backingStore || createBrowserIndexedDbStore();
 
@@ -285,7 +363,8 @@ export function createTenantStorageDriver(backingStore?: TenantKeyValueStore) {
           JSON.stringify(lsEnvelope)
         );
       } catch {
-        // Quota exceeded is harmless because IndexedDB holds primary record
+        // Fallback sync write strips bulky previews if localStorage quota is tight
+        saveTenantWorkspaceSync(uid, state);
       }
     }
 
@@ -296,31 +375,47 @@ export function createTenantStorageDriver(backingStore?: TenantKeyValueStore) {
     uid: string
   ): Promise<TenantWorkspaceLoadResult | null> {
     const key = getTenantWorkspaceKey(uid);
-    let envelope = (await store.get(key)) as CompressedEnvelope | null;
+    const idbRaw = await store.get(key);
+    let lsRaw: unknown = null;
 
-    if (!envelope && typeof localStorage !== 'undefined') {
+    if (typeof localStorage !== 'undefined') {
       try {
         const raw = localStorage.getItem(getTenantLocalFallbackKey(uid));
         if (raw) {
-          envelope = JSON.parse(raw) as CompressedEnvelope;
+          lsRaw = JSON.parse(raw);
         }
       } catch {
-        envelope = null;
+        lsRaw = null;
       }
     }
 
-    if (!envelope) return null;
+    const candidates: CompressedEnvelope[] = [];
+    if (isValidEnvelope(idbRaw)) candidates.push(idbRaw);
+    if (isValidEnvelope(lsRaw)) candidates.push(lsRaw);
 
-    const state = await decompressJsonPayload<AppDatabaseState>(envelope);
-    const stats = extractCompressionStats({
-      rawBytes: envelope.rawBytes || 0,
-      compressedBytes: envelope.compressedBytes || 0,
-      savedBytes: envelope.savedBytes || 0,
-      savingsPct: envelope.savingsPct || 0,
-      alg: envelope.alg || 'raw-json',
-      updatedAt: envelope.updatedAt || new Date().toISOString(),
-    });
-    return { state, stats };
+    if (candidates.length === 0) return null;
+
+    // Prefer whichever record has the newer updatedAt timestamp (so sync beforeunload writes are never shadowed)
+    candidates.sort((a, b) => parseEnvelopeTimestampMs(b) - parseEnvelopeTimestampMs(a));
+
+    for (const envelope of candidates) {
+      try {
+        const state = await decompressJsonPayload<AppDatabaseState>(envelope);
+        const stats = extractCompressionStats({
+          rawBytes: envelope.rawBytes || 0,
+          compressedBytes: envelope.compressedBytes || 0,
+          savedBytes: envelope.savedBytes || 0,
+          savingsPct: envelope.savingsPct || 0,
+          alg: envelope.alg || 'raw-json',
+          updatedAt: envelope.updatedAt || new Date().toISOString(),
+        });
+        return { state, stats };
+      } catch {
+        // Fall through to older valid candidate if primary record failed to decompress
+      }
+    }
+
+    return null;
   }
 
   async function clearTenantWorkspace(uid: string): Promise<void> {
@@ -336,6 +431,7 @@ export function createTenantStorageDriver(backingStore?: TenantKeyValueStore) {
 
   return {
     saveTenantWorkspace,
+    saveTenantWorkspaceSync,
     loadTenantWorkspace,
     clearTenantWorkspace,
   };

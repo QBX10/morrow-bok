@@ -8,7 +8,7 @@ import {
 } from '../../utils/tabrixMotion';
 
 export const DelayedTruckLoaderOverlay: React.FC = () => {
-  const { visible, label } = useDelayedLoadingState();
+  const { visible, label, subtitle } = useDelayedLoadingState();
   const reducedMotion = useTabrixReducedMotion();
 
   return (
@@ -20,11 +20,11 @@ export const DelayedTruckLoaderOverlay: React.FC = () => {
           role="status"
           aria-live="polite"
           aria-label={label}
-          initial={reducedMotion ? { opacity: 0 } : { opacity: 0 }}
+          initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.24, ease: TABRIX_EASE }}
-          className="no-print fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/55 backdrop-blur-md"
+          className="no-print fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
         >
           <motion.div
             initial={
@@ -361,7 +361,7 @@ export const DelayedTruckLoaderOverlay: React.FC = () => {
               {label}
             </h3>
             <p className="mt-1.5 text-xs leading-relaxed text-[#A79E8D]">
-              تستغرق هذه العملية وقتاً أطول من المعتاد — يرجى الانتظار قليلاً حتى تكتمل بأمان
+              {subtitle}
             </p>
           </motion.div>
         </motion.div>

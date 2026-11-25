@@ -87,7 +87,7 @@ interface SelectionActionBarProps {
   onUndo?: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
-  onMoveToAgency: (personIds: number[], targetAgencyId: number) => void;
+  onMoveToAgency: (personIds: number[], targetAgencyId: number) => void | Promise<void>;
   onAddToReadyList: (listId: number, personIds: number[]) => number;
   onUpsertRelation: (input: {
     personId: number;
@@ -1146,19 +1146,21 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   <button
                     type="button"
                     disabled={moveMode === 'ready_list' && readyLists.length === 0}
-                    onClick={() => {
+                    onClick={async () => {
                       if (moveMode === 'ready_list') {
                         const added = onAddToReadyList(
                           targetListId || readyLists[0]?.id,
                           linkedPersonIds
                         );
+                        setMoveModalOpen(false);
                         showNoticeMsg(
                           added > 0
                             ? `تمت إضافة ${added} اسم للقائمة الجاهزة.`
                             : 'الأسماء المحددة مضافة مسبقًا في تلك القائمة.'
                         );
                       } else {
-                        onMoveToAgency(linkedPersonIds, targetAgencyId);
+                        setMoveModalOpen(false);
+                        await onMoveToAgency(linkedPersonIds, targetAgencyId);
                         const agName =
                           agencies.find((a) => a.id === targetAgencyId)?.name ||
                           '';
@@ -1166,7 +1168,6 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                           `تم نقل ${linkedPersonIds.length} سجل إلى ${agName}.`
                         );
                       }
-                      setMoveModalOpen(false);
                     }}
                     className="nexus-pill-btn inline-flex items-center gap-1 px-5 py-2 font-bold disabled:opacity-45"
                     style={{

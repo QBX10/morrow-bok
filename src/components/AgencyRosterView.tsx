@@ -30,6 +30,7 @@ import type {
   ReadyList,
   RelationCategory,
   RelationEntry,
+  RosterFilterPreset,
   SectionTableHeaderMeta,
   ThemePreferences,
 } from '../types/agency';
@@ -124,6 +125,8 @@ interface AgencyRosterViewProps {
   onFocusedPersonChange?: (personId: number | null) => void;
   viewingMode?: boolean;
   onViewingModeChange?: (active: boolean) => void;
+  savedFilterPreset?: RosterFilterPreset;
+  onSaveFilterPreset?: (preset: RosterFilterPreset) => void;
 }
 
 const CORE_COLUMN_DEFS: Array<{ id: string; defaultLabel: string }> = [
@@ -181,6 +184,8 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
   onFocusedPersonChange,
   viewingMode,
   onViewingModeChange,
+  savedFilterPreset,
+  onSaveFilterPreset,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [normalSearchOpen, setNormalSearchOpen] = useState(false);
@@ -225,11 +230,50 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
 
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
+  const hydratedFilterKeyRef = useRef<string>('');
 
   useEffect(() => {
     setSelectedPersonIds([]);
     setFocusedRowId(null);
   }, [agencyId]);
+
+  useEffect(() => {
+    const scopeKey = `${agencyId ?? 'master'}::${savedFilterPreset?.updatedAt || ''}`;
+    if (hydratedFilterKeyRef.current === scopeKey) return;
+    hydratedFilterKeyRef.current = scopeKey;
+    if (savedFilterPreset) {
+      setSearchQuery(savedFilterPreset.searchQuery || '');
+      setStatusFilter(savedFilterPreset.statusFilter || 'all');
+      setCategoryFilter(savedFilterPreset.categoryFilter || 'all');
+      setSortBy(savedFilterPreset.sortBy || 'default');
+      if (savedFilterPreset.searchQuery) setNormalSearchOpen(true);
+    } else {
+      setSearchQuery('');
+      setStatusFilter('all');
+      setCategoryFilter('all');
+      setSortBy('default');
+    }
+  }, [agencyId, savedFilterPreset]);
+
+  useEffect(() => {
+    if (!onSaveFilterPreset) return;
+    const sameAsSaved =
+      (savedFilterPreset?.searchQuery || '') === searchQuery &&
+      (savedFilterPreset?.statusFilter || 'all') === statusFilter &&
+      (savedFilterPreset?.categoryFilter || 'all') === categoryFilter &&
+      (savedFilterPreset?.sortBy || 'default') === sortBy;
+    if (sameAsSaved) return;
+    const timer = window.setTimeout(() => {
+      onSaveFilterPreset({
+        searchQuery,
+        statusFilter,
+        categoryFilter,
+        sortBy,
+        updatedAt: new Date().toISOString(),
+      });
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, statusFilter, categoryFilter, sortBy, savedFilterPreset, onSaveFilterPreset]);
 
   useEffect(() => {
     if (normalSearchOpen) {

@@ -3,7 +3,10 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
   signInWithPopup,
+  type ConfirmationResult,
   type User,
 } from 'firebase/auth';
 import {
@@ -182,3 +185,31 @@ export async function logoutFirebase(): Promise<void> {
   cachedAccessToken = null;
   await auth.signOut();
 }
+
+export function isFirebasePhoneAuthConfigured(): boolean {
+  const cfg = firebaseConfig as { recaptchaSiteKey?: string; apiKey?: string };
+  return Boolean(cfg.apiKey && cfg.recaptchaSiteKey && cfg.recaptchaSiteKey.trim());
+}
+
+export async function startFirebasePhoneSignIn(
+  phoneE164: string,
+  containerId: string
+): Promise<ConfirmationResult> {
+  if (typeof window === 'undefined' || !isFirebasePhoneAuthConfigured()) {
+    throw new Error('FIREBASE_PHONE_FALLBACK');
+  }
+  const verifier = new RecaptchaVerifier(auth, containerId, {
+    size: 'invisible',
+  });
+  return signInWithPhoneNumber(auth, phoneE164, verifier);
+}
+
+export async function confirmFirebasePhoneSignIn(
+  confirmation: ConfirmationResult,
+  code: string
+): Promise<{ user: User; idToken: string }> {
+  const cred = await confirmation.confirm(code);
+  const idToken = await cred.user.getIdToken();
+  return { user: cred.user, idToken };
+}
+

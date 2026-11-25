@@ -1040,10 +1040,10 @@ body {
   transition-duration: 90ms;
 }
 
-/* Signature 70px Floating Bottom Navigation Bar Shell */
+/* Signature 42px Geometric Compact Floating Bottom Navigation Bar Shell */
 .cosmos-bottom-nav-shell {
-  height: 70px;
-  border-radius: 18px;
+  height: 42px;
+  border-radius: 14px;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 86%, transparent) 0%,
@@ -1118,7 +1118,7 @@ html[data-color-scheme="light"] .cosmos-bottom-nav-shell {
 }
 
 .bottom-nav-tab[data-active="0"]:hover .bottom-nav-tab-icon {
-  transform: translate3d(0, -6px, 0) scale(1.07) !important;
+  transform: translate3d(0, -7.5px, 0) scale(1.06) !important;
   color: var(--accent, #D4AF37);
 }
 

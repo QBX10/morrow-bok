@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppToastItem } from '../types/assistant.ts';
-import { trackDelayedLoading } from '../utils/delayedLoader.ts';
+import { runWithSignatureLoader } from '../utils/delayedLoader.ts';
 import { pauseBackgroundMusicForAlert } from '../utils/backgroundMusicEngine.ts';
 import { playTactileFeedback } from '../utils/tactileFeedback.ts';
 
@@ -24,20 +24,25 @@ export function emitAppToast(input: {
 }
 
 /**
- * Runs an export or heavy task asynchronously on the next animation/macro task
- * so the UI never freezes, emitting start & completion Toasts.
+ * Runs an export or heavy task asynchronously with the signature truck loader
+ * so the UI never freezes and the export result is confirmed after completion.
  */
 export function runAsyncExportTask(
   startLabel: string,
   successLabel: string,
   task: () => void | Promise<void>
 ): void {
-  emitAppToast({ title: startLabel, tone: 'info' });
   const run = async () => {
     try {
-      await trackDelayedLoading(async () => {
-        await task();
-      }, startLabel);
+      await runWithSignatureLoader(
+        {
+          label: startLabel,
+          subtitle: 'يتم تجهيز وتنسيق الملف بدقة قبل إتمام التصدير...',
+        },
+        async () => {
+          await task();
+        }
+      );
       emitAppToast({ title: successLabel, tone: 'success' });
     } catch (err) {
       emitAppToast({

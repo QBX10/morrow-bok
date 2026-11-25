@@ -73,7 +73,10 @@ import {
   SelectionActionBar,
   type SelectablePersonRecord,
 } from './SelectionActionBar';
-import { useDelayedLoading } from '../utils/delayedLoader';
+import {
+  runWithSignatureLoader,
+  useDelayedLoading,
+} from '../utils/delayedLoader';
 
 interface ReadyListsViewProps {
   agencies: Agency[];
@@ -212,7 +215,10 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   const [sharePreviewText, setSharePreviewText] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState('');
   const [exportingImage, setExportingImage] = useState(false);
-  useDelayedLoading(exportingImage, 'جاري تجهيز وتصدير القائمة...');
+  useDelayedLoading(exportingImage, 'جاري تجهيز وتصدير القائمة...', {
+    immediate: true,
+    subtitle: 'يتم رسم القائمة بجودة عالية وتنسيقها للتصدير والمشاركة...',
+  });
 
   // Edit List Meta Modal (with confirmation per Editor rules)
   const [editingMetaOpen, setEditingMetaOpen] = useState(false);
@@ -507,33 +513,41 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
 
   const handleShareListText = async () => {
     if (!activeList) return;
-    const text = buildReadyListShareText({
-      list: activeList,
-      items: visibleRows.map((r) => r.item),
-      persons,
-      settings: calculationSettings,
-    });
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: activeList.name,
-          text,
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تجهيز ومشاركة القائمة...',
+        subtitle: 'يتم تنسيق الأسماء والحصص وإعداد رسالة المشاركة الرسمية...',
+      },
+      async () => {
+        const text = buildReadyListShareText({
+          list: activeList,
+          items: visibleRows.map((r) => r.item),
+          persons,
+          settings: calculationSettings,
         });
-        setExportNotice('تمت مشاركة القائمة بنجاح.');
-        return;
+        try {
+          if (navigator.share) {
+            await navigator.share({
+              title: activeList.name,
+              text,
+            });
+            setExportNotice('تمت مشاركة القائمة بنجاح.');
+            return;
+          }
+        } catch {
+          // Fallback to share modal + clipboard copy
+        }
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            setExportNotice('تم نسخ نص القائمة للحافظة ومجهز للمشاركة.');
+          }
+        } catch {
+          // Clipboard blocked in non-HTTPS contexts; modal lets user copy manually
+        }
+        setSharePreviewText(text);
       }
-    } catch {
-      // Fallback to share modal + clipboard copy
-    }
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        setExportNotice('تم نسخ نص القائمة للحافظة ومجهز للمشاركة.');
-      }
-    } catch {
-      // Clipboard blocked in non-HTTPS contexts; modal lets user copy manually
-    }
-    setSharePreviewText(text);
+    );
   };
 
   const handleExportPng = async () => {

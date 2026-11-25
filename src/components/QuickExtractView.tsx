@@ -124,7 +124,11 @@ import {
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
-import { useDelayedLoading } from '../utils/delayedLoader';
+import {
+  resolveDefaultSignatureMinMs,
+  runWithSignatureLoader,
+  useDelayedLoading,
+} from '../utils/delayedLoader';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -165,6 +169,7 @@ interface QuickExtractViewProps {
   initialQueuedFiles?: { files: File[]; nonce: number } | null;
   taskRouting?: AiTaskRoutingMap;
   onOpenAiModelsStudio?: () => void;
+  activeUid?: string | null;
 }
 
 type IntakeTabMode = 'pdf' | 'camera_burst' | 'universal_files';
@@ -270,15 +275,43 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   initialQueuedFiles,
   taskRouting,
   onOpenAiModelsStudio,
+  activeUid = null,
 }) => {
   const fallbackAgencyId = agencies[0]?.id ?? 1;
   const initialAgencyId = agencies.some((a) => a.id === defaultAgencyId)
     ? defaultAgencyId
     : fallbackAgencyId;
 
-  const [captureMode, setCaptureMode] = useState<IntakeTabMode>('pdf');
-  const [ucrsTab, setUcrsTab] = useState<UcrsWorkspaceTab>('pipeline');
-  const [intentMode, setIntentMode] = useState<UcrsIntentMode>('extract_all');
+  const extractScopeSuffix = (activeUid || 'guest').replace(/[^a-zA-Z0-9._:@-]/g, '_');
+  const extractUiKey = `morrow_quick_extract_ui_v1::${extractScopeSuffix}`;
+
+  const readExtractUiPref = <K extends 'captureMode' | 'ucrsTab' | 'intentMode'>(
+    field: K,
+    fallback: K extends 'captureMode'
+      ? IntakeTabMode
+      : K extends 'ucrsTab'
+      ? UcrsWorkspaceTab
+      : UcrsIntentMode
+  ) => {
+    try {
+      const raw = localStorage.getItem(extractUiKey);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return (parsed[field] as typeof fallback) || fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const [captureMode, setCaptureMode] = useState<IntakeTabMode>(() =>
+    readExtractUiPref('captureMode', 'pdf')
+  );
+  const [ucrsTab, setUcrsTab] = useState<UcrsWorkspaceTab>(() =>
+    readExtractUiPref('ucrsTab', 'pipeline')
+  );
+  const [intentMode, setIntentMode] = useState<UcrsIntentMode>(() =>
+    readExtractUiPref('intentMode', 'extract_all')
+  );
   const [customCommand, setCustomCommand] = useState('');
   const [pastedText, setPastedText] = useState('');
 
@@ -291,9 +324,40 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
+  useEffect(() => {
+    if (quickExtractPrefs.defaultScanMode) {
+      setScanMode(quickExtractPrefs.defaultScanMode);
+    }
+  }, [quickExtractPrefs.defaultScanMode]);
+
+  useEffect(() => {
+    setFocusedFields(resolveFocusedFields(quickExtractPrefs.focusedFields));
+  }, [quickExtractPrefs.focusedFields]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        extractUiKey,
+        JSON.stringify({ captureMode, ucrsTab, intentMode })
+      );
+    } catch {
+      // ignore
+    }
+  }, [extractUiKey, captureMode, ucrsTab, intentMode]);
+
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
-  useDelayedLoading(loading, 'جاري سحب ومعالجة البيانات والكشف...');
+  useDelayedLoading(loading, 'جاري سحب ومعالجة البيانات والكشف...', {
+    immediate: true,
+    subtitle: 'يتم تحليل المستند واستخراج الصفوف والتحقق من الأسماء بدقة...',
+  });
+  const waitSignatureReveal = async (startedAt: number) => {
+    const minMs = resolveDefaultSignatureMinMs();
+    const remaining = minMs - (Date.now() - startedAt);
+    if (remaining > 0) {
+      await sleepMs(remaining);
+    }
+  };
   const [uploadError, setUploadError] = useState('');
   const [resilienceStatus, setResilienceStatus] = useState('');
   const [selectionToast, setSelectionToast] = useState('');
@@ -932,6 +996,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     }
 
     setFileName(file.name);
+    const startedAt = Date.now();
     setLoading(true);
     const pdfBlobUrl = replacePdfBlobUrl(file);
 
@@ -973,6 +1038,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         data.inferredMetadata = preInferredMeta;
       }
 
+      await waitSignatureReveal(startedAt);
+
       buildAnalysisWithLearning({
         rawResult: data,
         sourceRecord: {
@@ -997,6 +1064,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     setCommitSummary(null);
     const label = `لقطة الدفتر اليدوي (${summary.acceptedFrames.length} إطارات)`;
     setFileName(label);
+    const startedAt = Date.now();
     setLoading(true);
 
     try {
@@ -1045,6 +1113,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         data.inferredMetadata = preInferredMeta;
       }
 
+      await waitSignatureReveal(startedAt);
+
       buildAnalysisWithLearning({
         rawResult: data,
         sourceRecord: {
@@ -1074,6 +1144,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
     setUploadError('');
     if (mode === 'new') setCommitSummary(null);
+    const startedAt = Date.now();
     setLoading(true);
 
     try {
@@ -1102,6 +1173,8 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           filename: first.name,
           rawText: parsed.rawText,
         };
+
+        await waitSignatureReveal(startedAt);
 
         if (mode === 'append_fusion' && activeSession) {
           const { updatedSession } = mergeSupplementaryExtraction({
@@ -1402,6 +1475,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     if (!pastedText.trim()) return;
     setUploadError('');
     setCommitSummary(null);
+    const startedAt = Date.now();
     setLoading(true);
     try {
       replacePdfBlobUrl(undefined);
@@ -1425,6 +1499,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         filename: 'نص مباشر',
         rawText: parsed.rawText,
       };
+      await waitSignatureReveal(startedAt);
       setFileName('محتوى نصي مباشر');
       const plan = buildDefaultReadingPlan(intentMode, customCommand);
       buildAnalysisWithLearning({
@@ -1469,6 +1544,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   ) => {
     if (!activeSession) return;
     setUploadError('');
+    const startedAt = Date.now();
     setLoading(true);
     try {
       const cleanB64 = croppedDataUrl.replace(
@@ -1513,6 +1589,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         learningRules: ucrsLearningRules,
         focusedFields,
       });
+      await waitSignatureReveal(startedAt);
       setAnalysis((prev) =>
         prev ? { ...prev, rows: updatedSession.rows } : prev
       );
@@ -1562,6 +1639,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       lastPayloadRef.current &&
       lastPayloadRef.current.kind !== 'text'
     ) {
+      const startedAt = Date.now();
       setLoading(true);
       try {
         const p = lastPayloadRef.current;
@@ -1573,6 +1651,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           base64Pdf: p.base64Pdf,
           frames: p.frames,
         });
+        await waitSignatureReveal(startedAt);
         buildAnalysisWithLearning({
           rawResult: data,
           sourceRecord: activeSession.sources[0],
@@ -2074,24 +2153,32 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   const canProceedToCommit =
     gateUnlocked && rowsChosenForCommit.length > 0 && activeCommitCount > 0;
 
-  const executeCommit = () => {
-    const summary = onCommitQuickExtractPlan({
-      rows: rowsChosenForCommit,
-      routing: routingConfig,
-    });
-    if (activeSession) {
-      persistSession({
-        ...activeSession,
-        status: 'committed',
-        committedAt: new Date().toISOString(),
-        coverageOverrideNote:
-          belowMinCoverage && coverageOverrideConfirmed
-            ? `تم الترحيل بتجاوز المستخدم لحد التغطية (${activeSession.coverage.overallPercent}% < ${activeSession.plan.minCoverageThreshold}%)`
-            : undefined,
-      });
-    }
-    setCommitSummary(summary);
+  const executeCommit = async () => {
     setShowConfirmUpdates(false);
+    await runWithSignatureLoader(
+      {
+        label: 'جاري ترحيل واعتماد الصفوف المستخرجة...',
+        subtitle: 'يتم دمج الأسماء في جداول الوكالات وتحديث الأرصدة والجلسة...',
+      },
+      () => {
+        const summary = onCommitQuickExtractPlan({
+          rows: rowsChosenForCommit,
+          routing: routingConfig,
+        });
+        if (activeSession) {
+          persistSession({
+            ...activeSession,
+            status: 'committed',
+            committedAt: new Date().toISOString(),
+            coverageOverrideNote:
+              belowMinCoverage && coverageOverrideConfirmed
+                ? `تم الترحيل بتجاوز المستخدم لحد التغطية (${activeSession.coverage.overallPercent}% < ${activeSession.plan.minCoverageThreshold}%)`
+                : undefined,
+          });
+        }
+        setCommitSummary(summary);
+      }
+    );
     playTactileFeedback('save_complete', { haptic: true });
   };
 

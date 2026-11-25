@@ -594,6 +594,13 @@ export interface MorrowLiveWorkspaceContext {
   latestArchiveName: string | null;
   quickNotesCount: number;
   pendingDraftsCount: number;
+  relationsCount?: number;
+  readyListsCount?: number;
+  workspaceNotesCount?: number;
+  recycleBinCount?: number;
+  totalExpensesCount?: number;
+  ucrsSessionsCount?: number;
+  ucrsLearningRulesCount?: number;
   agenciesBreakdown: MorrowLiveAgencyDigest[];
 }
 

@@ -25,10 +25,10 @@ export interface FloatingGlassBottomNavProps {
   className?: string;
 }
 
-const BADGE_DIAMETER = 52;
-const BADGE_REST_TOP = -21; // Elevated cleanly above the 70px floating bar
-const NOTCH_WIDTH = 84;
-const NOTCH_HEIGHT = 26;
+const BADGE_DIAMETER = 36;
+const BADGE_REST_TOP = -15; // Elevated cleanly above the 42px geometric floating bar
+const NOTCH_WIDTH = 60;
+const NOTCH_HEIGHT = 17;
 const SMOOTH_CUBIC = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 /**
@@ -63,7 +63,7 @@ export function computeBottomNavCarrierStyle(params: {
 }
 
 /**
- * Reusable 70px floating bottom navigation bar with exact mathematical Liquid/Curved Notch,
+ * Reusable 42px geometric floating bottom navigation bar with exact mathematical Liquid/Curved Notch,
  * elevated glowing gold orb, active Arabic label + underline bar, and pure GPU transform+opacity motion.
  */
 export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
@@ -164,9 +164,9 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
         ref={containerRef}
         role="tablist"
         onKeyDown={handleKeyDown}
-        className="pointer-events-auto relative h-[70px] w-[min(calc(100vw-88px),392px)] overflow-visible select-none"
+        className="pointer-events-auto relative h-[42px] w-[min(calc(100vw-74px),368px)] overflow-visible select-none"
       >
-        {/* Clipped 70px floating bar glass layer + Gliding Liquid Curved Notch */}
+        {/* Clipped 42px geometric floating bar glass layer + Gliding Liquid Curved Notch */}
         <div
           aria-hidden="true"
           className="cosmos-bottom-nav-shell pointer-events-none absolute inset-0 overflow-hidden"
@@ -185,7 +185,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
             <div style={carrierStyle} className="pointer-events-none">
               {/* Soft pooled gold glow centered inside the active slot */}
               <div
-                className="pointer-events-none absolute top-[-2px] left-1/2 h-[58px] w-[92px]"
+                className="pointer-events-none absolute top-[-2px] left-1/2 h-[36px] w-[66px]"
                 style={{
                   transform: 'translate3d(-50%, 0, 0)',
                   background:
@@ -210,13 +210,13 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   xmlns="http://www.w3.org/2000/svg"
                 >
                   <path
-                    d="M0,0 L84,0 C71,0 66,23.5 42,23.5 C18,23.5 13,0 0,0 Z"
+                    d="M0,0 L60,0 C50,0 46.5,15 30,15 C13.5,15 10,0 0,0 Z"
                     fill="var(--bg-main, #070708)"
                   />
                   <path
-                    d="M2,1 C14.5,1 18.5,23.5 42,23.5 C65.5,23.5 69.5,1 82,1"
+                    d="M1.5,0.8 C10.5,0.8 14,15 30,15 C46,15 49.5,0.8 58.5,0.8"
                     stroke="color-mix(in srgb, var(--accent-bright, #EED278) 56%, var(--border-color))"
-                    strokeWidth="1.35"
+                    strokeWidth="1.25"
                     strokeLinecap="round"
                   />
                 </svg>
@@ -246,7 +246,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   border:
                     '2px solid color-mix(in srgb, var(--accent-bright, #F4DC8A) 65%, transparent)',
                   boxShadow:
-                    '0 0 0 4px color-mix(in srgb, var(--bg-main, #070708) 78%, transparent), 0 0 22px -2px color-mix(in srgb, var(--accent, #D4AF37) 55%, transparent), 0 10px 22px -6px color-mix(in srgb, var(--accent, #D4AF37) 42%, transparent), var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.35))',
+                    '0 0 0 3px color-mix(in srgb, var(--bg-main, #070708) 78%, transparent), 0 0 18px -2px color-mix(in srgb, var(--accent, #D4AF37) 55%, transparent), 0 8px 18px -5px color-mix(in srgb, var(--accent, #D4AF37) 42%, transparent), var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.35))',
                   color: 'var(--accent-fg, #090806)',
                 }}
               >
@@ -266,7 +266,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   }`}
                 >
                   {activeItem.icon({
-                    className: 'h-[21px] w-[21px]',
+                    className: 'h-[16px] w-[16px]',
                     strokeWidth: 2.15,
                   })}
                 </span>
@@ -328,7 +328,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                 onTouchStart={startHold}
                 onTouchEnd={clearHoldTimer}
                 onTouchCancel={clearHoldTimer}
-                className="bottom-nav-tab relative flex h-full min-h-[44px] w-full flex-col items-center justify-center rounded-[14px] focus-visible:outline-none cursor-pointer"
+                className="bottom-nav-tab relative flex h-full min-h-[42px] w-full flex-col items-center justify-center rounded-[14px] focus-visible:outline-none cursor-pointer"
                 data-active={isActive ? '1' : '0'}
               >
                 {/* Base icon transitions strictly via GPU transform & opacity */}
@@ -338,26 +338,26 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   style={{
                     opacity: isActive ? 0 : 1,
                     transform: isActive
-                      ? 'translate3d(0, -14px, 0) scale(0.76)'
+                      ? 'translate3d(0, -10px, 0) scale(0.75)'
                       : showLabels
-                      ? 'translate3d(0, -4px, 0) scale(1)'
+                      ? 'translate3d(0, -5.5px, 0) scale(1)'
                       : 'translate3d(0, 0, 0) scale(1)',
                   }}
                 >
                   {item.icon({
-                    className: 'h-[21px] w-[21px]',
-                    strokeWidth: 1.85,
+                    className: 'h-[15px] w-[15px]',
+                    strokeWidth: 1.9,
                   })}
                 </span>
 
                 {showLabels && (
                   <span
-                    className="bottom-nav-tab-label pointer-events-none absolute bottom-[12px] inset-x-1 truncate text-center text-[11px] leading-none tracking-tight"
+                    className="bottom-nav-tab-label pointer-events-none absolute bottom-[6px] inset-x-1 truncate text-center text-[9.5px] leading-none tracking-tight"
                     style={{
                       transform: isActive
-                        ? 'translate3d(0, -3px, 0) scale(1.02)'
-                        : 'translate3d(0, 2px, 0) scale(0.96)',
-                      opacity: isActive ? 1 : 0.76,
+                        ? 'translate3d(0, -1.5px, 0) scale(1.02)'
+                        : 'translate3d(0, 0.5px, 0) scale(0.96)',
+                      opacity: isActive ? 1 : 0.78,
                       color: isActive
                         ? 'var(--accent-bright, var(--accent))'
                         : 'var(--text-primary)',
@@ -372,7 +372,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                 {showLabels && (
                   <span
                     aria-hidden="true"
-                    className="bottom-nav-tab-bar pointer-events-none absolute bottom-[5px] h-[2.5px] w-4 rounded-full"
+                    className="bottom-nav-tab-bar pointer-events-none absolute bottom-[2.5px] h-[2px] w-3 rounded-full"
                     style={{
                       opacity: isActive ? 1 : 0,
                       transform: isActive
@@ -387,7 +387,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
 
                 {typeof item.badge === 'number' && item.badge > 0 && (
                   <span
-                    className="absolute top-2 right-3 z-30 min-w-[16px] rounded-full px-1 text-center font-mono-num text-[9px] font-black leading-[15px]"
+                    className="absolute top-1 right-2.5 z-30 min-w-[14px] rounded-full px-1 text-center font-mono-num text-[8.5px] font-black leading-[13px]"
                     style={{
                       backgroundColor: 'var(--accent, #D4AF37)',
                       color: 'var(--accent-fg, #090806)',
@@ -407,7 +407,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
       {showHomeIndicator && (
         <div
           aria-hidden="true"
-          className="mt-1.5 h-[4px] w-[108px] rounded-full pointer-events-none md:hidden opacity-40"
+          className="mt-[3px] h-[2.5px] w-[76px] rounded-full pointer-events-none md:hidden opacity-30"
           style={{ backgroundColor: 'var(--text-muted)' }}
         />
       )}
@@ -549,7 +549,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   };
 
   return (
-    <div className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-2.5 px-2.5 pb-[max(0.55rem,env(safe-area-inset-bottom))] lg:inset-x-auto lg:left-6 lg:bottom-6 lg:px-0 lg:pb-0">
+    <div className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-2 px-2.5 pb-[max(0.3rem,env(safe-area-inset-bottom))] lg:inset-x-auto lg:left-6 lg:bottom-6 lg:px-0 lg:pb-0">
       {/* 4-Section Floating Glass Navigation Bar (mobile/tablet) */}
       <FloatingGlassBottomNav
         items={items}
@@ -576,7 +576,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
           });
           onOpenAssistant();
         }}
-        className="cosmos-bottom-orb pointer-events-auto relative flex mb-2 md:mb-0 h-[58px] w-[58px] shrink-0 items-center justify-center rounded-[20px] border cursor-pointer overflow-visible"
+        className="cosmos-bottom-orb pointer-events-auto relative flex mb-[5px] md:mb-0 h-[42px] w-[42px] lg:h-[46px] lg:w-[46px] shrink-0 items-center justify-center rounded-[14px] lg:rounded-[15px] border cursor-pointer overflow-visible"
         style={{
           transform: hiddenByScroll
             ? 'translate3d(0, 96px, 0)'
@@ -602,19 +602,19 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
         {/* Calm Ambient Neural Pulse outer aura */}
         <span
           aria-hidden="true"
-          className="ambient-neural-pulse-ring pointer-events-none absolute -inset-[5px] rounded-[24px]"
+          className="ambient-neural-pulse-ring pointer-events-none absolute -inset-[3.5px] rounded-[17.5px] lg:rounded-[18.5px]"
           style={{
             border:
               '1px solid color-mix(in srgb, var(--accent-bright, #F4DC8A) 45%, transparent)',
             boxShadow:
-              '0 0 18px color-mix(in srgb, var(--accent, #D4AF37) 26%, transparent)',
+              '0 0 16px color-mix(in srgb, var(--accent, #D4AF37) 26%, transparent)',
           }}
         />
 
         {/* Luxury inner gold glass sheen */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-[20px]"
+          className="pointer-events-none absolute inset-0 rounded-[14px] lg:rounded-[15px]"
           style={{
             background:
               'radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--accent-bright, #F4DC8A) 20%, transparent) 0%, transparent 62%)',
@@ -623,7 +623,7 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
 
         {/* Bespoke Geometric Glowing-Gold Neural Brain Icon */}
         <GeometricNeuralBrain
-          size={31}
+          size={22}
           active={isMorrowBrainActive}
           className="relative z-10"
         />

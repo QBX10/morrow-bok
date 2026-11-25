@@ -25,32 +25,52 @@ import {
   type ApprovedCloudModelId,
 } from './src/aiConfig.ts';
 import {
+  appendLocalAuditEvents,
   createUserRecord,
   findUserByEmail,
   findUserByPhone,
   findUserByUid,
   findUserByUsername,
+  getLocalUserPreferences,
   getSoundSettings,
   getWorkspaceSnapshot,
+  linkLocalUsername,
+  listLocalAuditEvents,
+  resolveOrCreateLocalCanonicalUser,
+  saveLocalUserPreferences,
   saveSoundSettings,
   saveWorkspaceSnapshot,
+  syncLocalWorkspaceWithLww,
   updateUserPasswordHash,
   upsertLocalProfile,
 } from './src/db/localStore.ts';
 import {
+  appendSqlAuditEvents,
+  createSqlPasswordUser,
   deleteAppearanceProfileByUid,
+  findSqlUserByEmail,
+  findSqlUserByPhone,
+  findSqlUserByUsername,
   getSqlUserByUid,
+  getSqlUserPreferences,
   getWorkspaceByUid,
   isSqlDatabaseConfigured,
+  linkSqlUsernameToUid,
   listAppearanceProfilesByUid,
+  listSqlAuditEvents,
+  pingSqlDatabase,
   saveAppearanceProfileByUid,
+  saveSqlUserPreferences,
   saveWorkspaceByUid,
+  syncSqlWorkspaceWithLww,
+  updateSqlUserPasswordHash,
   updateSqlUserProfile,
 } from './src/db/users.ts';
 import {
   clearSessionCookie,
   parseCookieHeader,
   requireAuth,
+  resolveCanonicalPrincipal,
   SESSION_COOKIE_NAME,
   setSessionCookie,
   signSessionToken,
@@ -150,17 +170,20 @@ function consumeAuthRateLimit(
   return true;
 }
 
-function resolveAutoIdentifierLookup(
+async function resolveAutoIdentifierLookup(
   mode: string | undefined,
   rawIdentifier: string
 ) {
   const clean = rawIdentifier.trim();
   const explicit =
     mode === 'phone' || mode === 'google' || mode === 'username' ? mode : 'auto';
+  const useSql = isSqlDatabaseConfigured();
+
   if (explicit === 'google' || (explicit === 'auto' && clean.includes('@'))) {
+    const email = clean.toLowerCase();
     return {
       resolvedMode: 'google' as const,
-      user: findUserByEmail(clean.toLowerCase()),
+      user: useSql ? await findSqlUserByEmail(email) : findUserByEmail(email),
     };
   }
   const normalizedPhone = normalizePhoneNumber(clean);
@@ -172,13 +195,43 @@ function resolveAutoIdentifierLookup(
   ) {
     return {
       resolvedMode: 'phone' as const,
-      user: findUserByPhone(normalizedPhone),
+      user: useSql
+        ? await findSqlUserByPhone(normalizedPhone)
+        : findUserByPhone(normalizedPhone),
     };
   }
+  const uname = clean.toLowerCase();
   return {
     resolvedMode: 'username' as const,
-    user: findUserByUsername(clean.toLowerCase()),
+    user: useSql ? await findSqlUserByUsername(uname) : findUserByUsername(uname),
   };
+}
+
+async function dispatchSmsOtpIfConfigured(phone: string, code: string): Promise<boolean> {
+  const apiKey = process.env.SMS_PROVIDER_API_KEY?.trim();
+  const endpoint = process.env.SMS_PROVIDER_URL?.trim();
+  if (!apiKey || !endpoint) return false;
+  try {
+    const parsedUrl = new URL(endpoint);
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      return false;
+    }
+    const resp = await fetch(parsedUrl.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        to: phone,
+        message: `رمز التحقق الخاص بك لتسجيل الدخول: ${code}`,
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
 
 function hashPassword(password: string): string {
@@ -333,9 +386,25 @@ async function startServer() {
     });
   });
 
+  app.get('/api/system/storage-status', async (_req: Request, res: Response) => {
+    const cloudSqlConfigured = isSqlDatabaseConfigured();
+    const cloudSqlReachable = cloudSqlConfigured ? await pingSqlDatabase() : false;
+    const smsProviderConfigured = Boolean(
+      process.env.SMS_PROVIDER_API_KEY?.trim() && process.env.SMS_PROVIDER_URL?.trim()
+    );
+    const firebaseAuthConfigured = true;
+    res.json({
+      cloudSqlConfigured,
+      cloudSqlReachable,
+      smsProviderConfigured,
+      firebaseAuthConfigured,
+      storageMode: cloudSqlConfigured && cloudSqlReachable ? 'cloud_sql' : 'local_fallback',
+    });
+  });
+
   // --- Multi-Auth Endpoints: Gmail/Google, Username, Phone (OTP & Password) ---
 
-  app.post('/api/auth/register', (req: Request, res: Response) => {
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
       if (!consumeAuthRateLimit(req, 'register', 12)) {
         res.status(429).json({ error: 'تم إرسال طلبات كثيرة، يرجى الانتظار قليلاً.' });
@@ -356,6 +425,7 @@ async function startServer() {
       const displayName = String(body.displayName || '').trim().slice(0, 80);
       const password = String(body.password || '');
       const rememberMe = body.rememberMe !== false;
+      const useSql = isSqlDatabaseConfigured();
 
       if (password.length < 6) {
         res
@@ -370,17 +440,27 @@ async function startServer() {
           res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صالح.' });
           return;
         }
-        if (findUserByEmail(email)) {
+        const existing = useSql ? await findSqlUserByEmail(email) : findUserByEmail(email);
+        if (existing) {
           res.status(409).json({ error: 'هذا البريد الإلكتروني مسجل مسبقًا.' });
           return;
         }
-        const created = createUserRecord({
-          uid: `gml_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-          authProvider: 'google',
-          displayName: displayName || email.split('@')[0],
-          email,
-          passwordHash: hashPassword(password),
-        });
+        const uid = `gml_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        const created = useSql
+          ? await createSqlPasswordUser({
+              uid,
+              authProvider: 'google',
+              displayName: displayName || email.split('@')[0],
+              email,
+              passwordHash: hashPassword(password),
+            })
+          : createUserRecord({
+              uid,
+              authProvider: 'google',
+              displayName: displayName || email.split('@')[0],
+              email,
+              passwordHash: hashPassword(password),
+            });
         const user = {
           uid: created.uid,
           provider: 'google' as const,
@@ -403,17 +483,29 @@ async function startServer() {
           });
           return;
         }
-        if (findUserByUsername(username)) {
+        const existing = useSql
+          ? await findSqlUserByUsername(username)
+          : findUserByUsername(username);
+        if (existing) {
           res.status(409).json({ error: 'اسم المستخدم مسجل مسبقًا.' });
           return;
         }
-        const created = createUserRecord({
-          uid: `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-          authProvider: 'username',
-          displayName: displayName || username,
-          username,
-          passwordHash: hashPassword(password),
-        });
+        const uid = `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        const created = useSql
+          ? await createSqlPasswordUser({
+              uid,
+              authProvider: 'username',
+              displayName: displayName || username,
+              username,
+              passwordHash: hashPassword(password),
+            })
+          : createUserRecord({
+              uid,
+              authProvider: 'username',
+              displayName: displayName || username,
+              username,
+              passwordHash: hashPassword(password),
+            });
         const user = {
           uid: created.uid,
           provider: 'username' as const,
@@ -434,17 +526,27 @@ async function startServer() {
           .json({ error: 'أدخل رقم هاتف صالحًا (مثال: 07701234567).' });
         return;
       }
-      if (findUserByPhone(phone)) {
+      const existingPhone = useSql ? await findSqlUserByPhone(phone) : findUserByPhone(phone);
+      if (existingPhone) {
         res.status(409).json({ error: 'رقم الهاتف مسجل مسبقًا.' });
         return;
       }
-      const created = createUserRecord({
-        uid: `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        authProvider: 'phone',
-        displayName: displayName || phone,
-        phone,
-        passwordHash: hashPassword(password),
-      });
+      const uid = `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+      const created = useSql
+        ? await createSqlPasswordUser({
+            uid,
+            authProvider: 'phone',
+            displayName: displayName || phone,
+            phone,
+            passwordHash: hashPassword(password),
+          })
+        : createUserRecord({
+            uid,
+            authProvider: 'phone',
+            displayName: displayName || phone,
+            phone,
+            passwordHash: hashPassword(password),
+          });
       const user = {
         uid: created.uid,
         provider: 'phone' as const,
@@ -460,7 +562,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
         mode?: 'auto' | 'google' | 'username' | 'phone';
@@ -478,12 +580,12 @@ async function startServer() {
 
       const password = String(body.password || '');
       const rememberMe = body.rememberMe !== false;
-      const { resolvedMode, user: found } = resolveAutoIdentifierLookup(
+      const { resolvedMode, user: found } = await resolveAutoIdentifierLookup(
         body.mode,
         identifier
       );
 
-      if (!found || !verifyPassword(password, found.passwordHash)) {
+      if (!found || !verifyPassword(password, found.passwordHash ?? null)) {
         res.status(401).json({
           error:
             resolvedMode === 'google'
@@ -495,15 +597,17 @@ async function startServer() {
         return;
       }
 
+      const cleanEmail =
+        found.email && !found.email.endsWith('.local') ? found.email : undefined;
       const user = {
         uid: found.uid,
-        provider: found.authProvider,
+        provider: found.authProvider as 'google' | 'username' | 'phone',
         displayName: found.displayName,
-        email: found.email || undefined,
+        email: cleanEmail,
         username: found.username || undefined,
         phone: found.phone || undefined,
         avatarUrl: found.avatarUrl || undefined,
-        role: found.role,
+        role: (found.role as 'manager' | 'viewer') || 'manager',
       };
       const token = signSessionToken(user);
       setSessionCookie(req, res, token, rememberMe);
@@ -522,28 +626,99 @@ async function startServer() {
           ? authHeader.slice(7).trim()
           : String(body.idToken || '').trim();
       if (!rawToken || rawToken.startsWith('sess.')) {
-        res.status(401).json({ error: 'رمز تحقق Google غير صالح.' });
+        res.status(401).json({ error: 'رمز تحقق Google أو الهاتف غير صالح.' });
         return;
       }
       const verified = await verifyAuthToken(rawToken);
       if (!verified || !verified.decodedFirebaseToken) {
-        res.status(401).json({ error: 'تعذر التحقق من جلسة Google.' });
+        res.status(401).json({ error: 'تعذر التحقق من جلسة المصادقة.' });
         return;
       }
-      const principal = verified.principal;
+      const canonical = await resolveCanonicalPrincipal(verified.principal);
       const user = {
-        uid: principal.uid,
-        provider: 'google' as const,
-        displayName: principal.displayName,
-        email: principal.email,
-        avatarUrl: principal.avatarUrl,
+        uid: canonical.uid,
+        provider: canonical.provider,
+        displayName: canonical.displayName,
+        email: canonical.email,
+        username: canonical.username,
+        phone: canonical.phone,
+        avatarUrl: canonical.avatarUrl,
         role: 'manager' as const,
       };
       const sessionToken = signSessionToken(user);
       setSessionCookie(req, res, sessionToken, body.rememberMe !== false);
       res.json({ token: sessionToken, user });
     } catch {
-      res.status(401).json({ error: 'تعذر تثبيت جلسة Google.' });
+      res.status(401).json({ error: 'تعذر تثبيت الجلسة السحابية.' });
+    }
+  });
+
+  app.post('/api/auth/link-username', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const body = (req.body || {}) as { username?: string; password?: string };
+      const username = String(body.username || '').trim().toLowerCase();
+      if (!/^[a-zA-Z0-9_.\-]{3,32}$/.test(username)) {
+        res.status(400).json({
+          error: 'اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا إنجليزيًا أو أرقامًا.',
+        });
+        return;
+      }
+      const passwordHash =
+        typeof body.password === 'string' && body.password.length >= 6
+          ? hashPassword(body.password)
+          : undefined;
+
+      if (isSqlDatabaseConfigured()) {
+        const result = await linkSqlUsernameToUid({
+          uid: principal.uid,
+          username,
+          passwordHash,
+        });
+        if (!result.ok) {
+          res.status(result.status).json({ error: result.error });
+          return;
+        }
+        const updatedUser = {
+          uid: result.user.uid,
+          provider: (result.user.authProvider as 'google' | 'username' | 'phone') || principal.provider,
+          displayName: result.user.displayName,
+          email: result.user.email && !result.user.email.endsWith('.local') ? result.user.email : undefined,
+          username: result.user.username || undefined,
+          phone: result.user.phone || undefined,
+          avatarUrl: result.user.avatarUrl || undefined,
+          role: (result.user.role as 'manager' | 'viewer') || 'manager',
+        };
+        const token = signSessionToken(updatedUser);
+        setSessionCookie(req, res, token, true);
+        res.json({ token, user: updatedUser });
+        return;
+      }
+
+      const localResult = linkLocalUsername({
+        uid: principal.uid,
+        username,
+        passwordHash,
+      });
+      if (!localResult.ok) {
+        res.status(localResult.status).json({ error: localResult.error });
+        return;
+      }
+      const updatedUser = {
+        uid: localResult.user.uid,
+        provider: localResult.user.authProvider,
+        displayName: localResult.user.displayName,
+        email: localResult.user.email || undefined,
+        username: localResult.user.username || undefined,
+        phone: localResult.user.phone || undefined,
+        avatarUrl: localResult.user.avatarUrl || undefined,
+        role: localResult.user.role,
+      };
+      const token = signSessionToken(updatedUser);
+      setSessionCookie(req, res, token, true);
+      res.json({ token, user: updatedUser });
+    } catch {
+      res.status(500).json({ error: 'تعذر ربط اسم المستخدم حالياً.' });
     }
   });
 
@@ -559,7 +734,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/phone/request-otp', (req: Request, res: Response) => {
+  app.post('/api/auth/phone/request-otp', async (req: Request, res: Response) => {
     const body = (req.body || {}) as { phone?: string };
     const phone = normalizePhoneNumber(body.phone || '');
     if (!consumeAuthRateLimit(req, 'otp_req', 8, 5 * 60 * 1000, phone)) {
@@ -578,72 +753,78 @@ async function startServer() {
       expiresAt: Date.now() + 5 * 60 * 1000,
       attempts: 0,
     });
+    const smsDispatched = await dispatchSmsOtpIfConfigured(phone, code);
     res.json({
       ok: true,
       phone,
+      smsDispatched,
       demoCode:
-        !isProduction && !process.env.SMS_PROVIDER_API_KEY ? code : undefined,
+        !smsDispatched && !isProduction ? code : undefined,
     });
   });
 
-  app.post('/api/auth/phone/verify-otp', (req: Request, res: Response) => {
-    const body = (req.body || {}) as {
-      phone?: string;
-      code?: string;
-      displayName?: string;
-      rememberMe?: boolean;
-    };
-    const phone = normalizePhoneNumber(body.phone || '');
-    if (!consumeAuthRateLimit(req, 'otp_verify', 12, 5 * 60 * 1000, phone)) {
-      res.status(429).json({ error: 'تم تجاوز عدد محاولات التحقق المسموح.' });
-      return;
-    }
-    const code = String(body.code || '').trim();
-    const pending = pendingPhoneOtps.get(phone);
+  app.post('/api/auth/phone/verify-otp', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        phone?: string;
+        code?: string;
+        displayName?: string;
+        rememberMe?: boolean;
+      };
+      const phone = normalizePhoneNumber(body.phone || '');
+      if (!consumeAuthRateLimit(req, 'otp_verify', 12, 5 * 60 * 1000, phone)) {
+        res.status(429).json({ error: 'تم تجاوز عدد محاولات التحقق المسموح.' });
+        return;
+      }
+      const code = String(body.code || '').trim();
+      const pending = pendingPhoneOtps.get(phone);
 
-    if (!pending || Date.now() > pending.expiresAt) {
-      pendingPhoneOtps.delete(phone);
-      res
-        .status(400)
-        .json({ error: 'انتهت صلاحية رمز التحقق، اطلب رمزًا جديدًا.' });
-      return;
-    }
-    if (pending.attempts >= 5) {
-      pendingPhoneOtps.delete(phone);
-      res.status(429).json({ error: 'تم تجاوز عدد المحاولات المسموح.' });
-      return;
-    }
-    if (pending.code !== code) {
-      pending.attempts += 1;
-      res.status(401).json({ error: 'رمز التحقق غير صحيح.' });
-      return;
-    }
+      if (!pending || Date.now() > pending.expiresAt) {
+        pendingPhoneOtps.delete(phone);
+        res
+          .status(400)
+          .json({ error: 'انتهت صلاحية رمز التحقق، اطلب رمزًا جديدًا.' });
+        return;
+      }
+      if (pending.attempts >= 5) {
+        pendingPhoneOtps.delete(phone);
+        res.status(429).json({ error: 'تم تجاوز عدد المحاولات المسموح.' });
+        return;
+      }
+      if (pending.code !== code) {
+        pending.attempts += 1;
+        res.status(401).json({ error: 'رمز التحقق غير صحيح.' });
+        return;
+      }
 
-    pendingPhoneOtps.delete(phone);
-    let userRec = findUserByPhone(phone);
-    if (!userRec) {
-      userRec = createUserRecord({
+      pendingPhoneOtps.delete(phone);
+      const displayName = String(body.displayName || '').trim().slice(0, 80) || phone;
+      const canonical = await resolveCanonicalPrincipal({
         uid: `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        authProvider: 'phone',
-        displayName: String(body.displayName || '').trim().slice(0, 80) || phone,
+        provider: 'phone',
+        displayName,
         phone,
-        passwordHash: null,
       });
-    }
 
-    const user = {
-      uid: userRec.uid,
-      provider: 'phone' as const,
-      displayName: userRec.displayName,
-      phone,
-      role: userRec.role,
-    };
-    const token = signSessionToken(user);
-    setSessionCookie(req, res, token, body.rememberMe !== false);
-    res.json({ token, user });
+      const user = {
+        uid: canonical.uid,
+        provider: canonical.provider,
+        displayName: canonical.displayName,
+        email: canonical.email,
+        username: canonical.username,
+        phone: canonical.phone || phone,
+        avatarUrl: canonical.avatarUrl,
+        role: 'manager' as const,
+      };
+      const token = signSessionToken(user);
+      setSessionCookie(req, res, token, body.rememberMe !== false);
+      res.json({ token, user });
+    } catch {
+      res.status(500).json({ error: 'تعذر التحقق من رمز الهاتف حالياً.' });
+    }
   });
 
-  app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+  app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
         mode?: 'auto' | 'google' | 'username' | 'phone';
@@ -659,7 +840,7 @@ async function startServer() {
         return;
       }
 
-      const { user: found } = resolveAutoIdentifierLookup(body.mode, rawIdentifier);
+      const { user: found } = await resolveAutoIdentifierLookup(body.mode, rawIdentifier);
 
       if (!found) {
         res.status(404).json({ error: 'لم يتم العثور على حساب مطابق لهذه البيانات.' });
@@ -674,8 +855,13 @@ async function startServer() {
         attempts: 0,
       });
 
+      const cleanEmail =
+        found.email && !found.email.endsWith('.local') ? found.email : null;
+      if (found.phone) {
+        await dispatchSmsOtpIfConfigured(found.phone, code);
+      }
       const maskedTarget =
-        found.email || found.phone || found.username || found.displayName;
+        cleanEmail || found.phone || found.username || found.displayName;
 
       res.json({
         ok: true,
@@ -688,7 +874,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+  app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
         mode?: 'auto' | 'google' | 'username' | 'phone';
@@ -712,7 +898,7 @@ async function startServer() {
         return;
       }
 
-      const { user: found } = resolveAutoIdentifierLookup(body.mode, rawIdentifier);
+      const { user: found } = await resolveAutoIdentifierLookup(body.mode, rawIdentifier);
 
       if (!found) {
         res.status(404).json({ error: 'لم يتم العثور على الحساب المطلوب.' });
@@ -739,21 +925,26 @@ async function startServer() {
       }
 
       pendingPasswordResets.delete(found.uid);
-      const updated = updateUserPasswordHash(found.uid, hashPassword(newPassword));
+      const nextHash = hashPassword(newPassword);
+      const updated = isSqlDatabaseConfigured()
+        ? await updateSqlUserPasswordHash(found.uid, nextHash)
+        : updateUserPasswordHash(found.uid, nextHash);
       if (!updated) {
         res.status(500).json({ error: 'تعذر تحديث كلمة المرور.' });
         return;
       }
 
+      const cleanEmail =
+        updated.email && !updated.email.endsWith('.local') ? updated.email : undefined;
       const user = {
         uid: updated.uid,
-        provider: updated.authProvider,
+        provider: updated.authProvider as 'google' | 'username' | 'phone',
         displayName: updated.displayName,
-        email: updated.email || undefined,
+        email: cleanEmail,
         username: updated.username || undefined,
         phone: updated.phone || undefined,
         avatarUrl: updated.avatarUrl || undefined,
-        role: updated.role,
+        role: (updated.role as 'manager' | 'viewer') || 'manager',
       };
       const token = signSessionToken(user);
       setSessionCookie(req, res, token, body.rememberMe !== false);
@@ -768,14 +959,18 @@ async function startServer() {
       const principal = req.principal!;
       if (isSqlDatabaseConfigured()) {
         const sqlUser = await getSqlUserByUid(principal.uid);
+        const cleanEmail =
+          sqlUser?.email && !sqlUser.email.endsWith('.local')
+            ? sqlUser.email
+            : principal.email;
         res.json({
           user: {
             uid: principal.uid,
             provider: (sqlUser?.authProvider as 'google' | 'username' | 'phone') || principal.provider,
             displayName: sqlUser?.displayName || principal.displayName,
-            email: sqlUser?.email || principal.email,
-            username: principal.username,
-            phone: principal.phone,
+            email: cleanEmail,
+            username: sqlUser?.username || principal.username,
+            phone: sqlUser?.phone || principal.phone,
             avatarUrl: sqlUser?.avatarUrl || principal.avatarUrl,
             role: (sqlUser?.role as 'manager' | 'viewer') || 'manager',
           },
@@ -951,32 +1146,60 @@ async function startServer() {
       const principal = req.principal!;
       if (isSqlDatabaseConfigured()) {
         const snap = await getWorkspaceByUid(principal.uid);
+        const prefsRow = await getSqlUserPreferences(principal.uid);
         if (!snap) {
-          res.json({ exists: false, snapshot: null });
+          res.json({ exists: false, snapshot: null, storageMode: 'cloud_sql' });
           return;
+        }
+        const parsedSnap = JSON.parse(snap.snapshotJson);
+        if (prefsRow?.preferencesJson) {
+          try {
+            parsedSnap.smartPreferences = {
+              ...(parsedSnap.smartPreferences || {}),
+              ...JSON.parse(prefsRow.preferencesJson),
+            };
+          } catch {
+            // ignore malformed stored prefs
+          }
         }
         res.json({
           exists: true,
-          snapshot: JSON.parse(snap.snapshotJson),
-          updatedAt: snap.updatedAt,
+          snapshot: parsedSnap,
+          updatedAt: snap.clientUpdatedAt || snap.updatedAt,
+          version: snap.version || 1,
+          storageMode: 'cloud_sql',
         });
         return;
       }
 
       const userRec = findUserByUid(principal.uid);
       if (!userRec) {
-        res.json({ exists: false, snapshot: null });
+        res.json({ exists: false, snapshot: null, storageMode: 'local_fallback' });
         return;
       }
       const snap = getWorkspaceSnapshot(userRec.id);
+      const prefsRow = getLocalUserPreferences(userRec.id);
       if (!snap) {
-        res.json({ exists: false, snapshot: null });
+        res.json({ exists: false, snapshot: null, storageMode: 'local_fallback' });
         return;
+      }
+      const parsedSnap = JSON.parse(snap.snapshotJson);
+      if (prefsRow?.preferencesJson) {
+        try {
+          parsedSnap.smartPreferences = {
+            ...(parsedSnap.smartPreferences || {}),
+            ...JSON.parse(prefsRow.preferencesJson),
+          };
+        } catch {
+          // ignore malformed stored prefs
+        }
       }
       res.json({
         exists: true,
-        snapshot: JSON.parse(snap.snapshotJson),
-        updatedAt: snap.updatedAt,
+        snapshot: parsedSnap,
+        updatedAt: snap.clientUpdatedAt || snap.updatedAt,
+        version: snap.version || 1,
+        storageMode: 'local_fallback',
       });
     } catch (err) {
       console.error('Failed to fetch workspace snapshot:', err);
@@ -988,7 +1211,16 @@ async function startServer() {
     try {
       const principal = req.principal!;
       const body = (req.body || {}) as {
-        snapshot?: { agencies?: unknown[]; persons?: unknown[] };
+        snapshot?: {
+          agencies?: unknown[];
+          persons?: unknown[];
+          updatedAt?: string;
+          deviceId?: string;
+          smartPreferences?: unknown;
+        };
+        clientUpdatedAt?: string;
+        deviceId?: string;
+        force?: boolean;
       };
       if (
         !body.snapshot ||
@@ -999,40 +1231,178 @@ async function startServer() {
         return;
       }
 
+      const clientUpdatedAt =
+        String(body.clientUpdatedAt || body.snapshot.updatedAt || '').trim() ||
+        new Date().toISOString();
+      const deviceId = String(body.deviceId || body.snapshot.deviceId || 'web').slice(0, 64);
+      const snapshotJson = JSON.stringify(body.snapshot);
+
       if (isSqlDatabaseConfigured()) {
-        const saved = await saveWorkspaceByUid({
+        const outcome = await syncSqlWorkspaceWithLww({
           uid: principal.uid,
           email: principal.email || `${principal.uid}@tabrex.local`,
           displayName: principal.displayName,
           authProvider: principal.provider,
-          snapshotJson: JSON.stringify(body.snapshot),
+          snapshotJson,
           recordCount: body.snapshot.persons.length,
           agencyCount: body.snapshot.agencies.length,
+          clientUpdatedAt,
+          deviceId,
+          force: Boolean(body.force),
         });
-        res.json({ ok: true, updatedAt: saved.updatedAt });
+        if (body.snapshot.smartPreferences && !outcome.conflictResolved) {
+          await saveSqlUserPreferences(
+            principal.uid,
+            principal.email || `${principal.uid}@tabrex.local`,
+            JSON.stringify(body.snapshot.smartPreferences)
+          );
+        }
+        res.json({
+          ok: true,
+          conflictResolved: outcome.conflictResolved,
+          winner: outcome.winner,
+          snapshot:
+            outcome.conflictResolved && outcome.winner === 'server'
+              ? JSON.parse(outcome.snapshot.snapshotJson)
+              : undefined,
+          updatedAt: outcome.snapshot.clientUpdatedAt || outcome.snapshot.updatedAt,
+          version: outcome.snapshot.version,
+          storageMode: 'cloud_sql',
+        });
         return;
       }
 
       let userRec = findUserByUid(principal.uid);
       if (!userRec) {
-        userRec = upsertLocalProfile({
+        userRec = resolveOrCreateLocalCanonicalUser({
           uid: principal.uid,
           authProvider: principal.provider,
           displayName: principal.displayName,
           email: principal.email ?? null,
+          phone: principal.phone ?? null,
+          username: principal.username ?? null,
           avatarUrl: principal.avatarUrl ?? null,
         });
       }
-      const saved = saveWorkspaceSnapshot({
+      const outcome = syncLocalWorkspaceWithLww({
         userId: userRec.id,
-        snapshotJson: JSON.stringify(body.snapshot),
+        snapshotJson,
         recordCount: body.snapshot.persons.length,
         agencyCount: body.snapshot.agencies.length,
+        clientUpdatedAt,
+        deviceId,
+        force: Boolean(body.force),
       });
-      res.json({ ok: true, updatedAt: saved.updatedAt });
+      if (body.snapshot.smartPreferences && !outcome.conflictResolved) {
+        saveLocalUserPreferences(
+          userRec.id,
+          JSON.stringify(body.snapshot.smartPreferences)
+        );
+      }
+      res.json({
+        ok: true,
+        conflictResolved: outcome.conflictResolved,
+        winner: outcome.winner,
+        snapshot:
+          outcome.conflictResolved && outcome.winner === 'server'
+            ? JSON.parse(outcome.snapshot.snapshotJson)
+            : undefined,
+        updatedAt: outcome.snapshot.clientUpdatedAt || outcome.snapshot.updatedAt,
+        version: outcome.snapshot.version,
+        storageMode: 'local_fallback',
+      });
     } catch (err) {
       console.error('Failed to save workspace snapshot:', err);
       res.status(500).json({ error: 'تعذر حفظ نسخة مساحة العمل.' });
+    }
+  });
+
+  app.post('/api/workspace/sync-ops', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const body = (req.body || {}) as {
+        operations?: Array<{
+          id?: string;
+          type?: string;
+          entity?: string;
+          summary?: string;
+          updatedAt?: string;
+          deviceId?: string;
+        }>;
+        auditEvents?: Array<{
+          id?: string;
+          actionType?: string;
+          title?: string;
+          summary?: string;
+          deviceId?: string;
+          timestamp?: string;
+        }>;
+      };
+      const ops = Array.isArray(body.operations) ? body.operations.slice(0, 60) : [];
+      const audits = Array.isArray(body.auditEvents) ? body.auditEvents.slice(0, 60) : [];
+      const mergedEvents = [
+        ...audits.map((ev) => ({
+          eventId: String(ev.id || crypto.randomUUID()),
+          actionType: String(ev.actionType || 'data_mutation'),
+          title: String(ev.title || 'تحديث سجل'),
+          summary: String(ev.summary || ''),
+          deviceId: String(ev.deviceId || 'web'),
+          createdAt: ev.timestamp,
+        })),
+        ...ops.map((op) => ({
+          eventId: `op_${String(op.id || crypto.randomUUID())}`,
+          actionType: String(op.type || 'sync_op'),
+          title: String(op.entity || 'مزامنة'),
+          summary: String(op.summary || ''),
+          deviceId: String(op.deviceId || 'web'),
+          createdAt: op.updatedAt,
+        })),
+      ];
+
+      if (isSqlDatabaseConfigured()) {
+        await appendSqlAuditEvents(
+          principal.uid,
+          principal.email || `${principal.uid}@tabrex.local`,
+          mergedEvents
+        );
+      } else {
+        const userRec =
+          findUserByUid(principal.uid) ||
+          resolveOrCreateLocalCanonicalUser({
+            uid: principal.uid,
+            authProvider: principal.provider,
+            displayName: principal.displayName,
+            email: principal.email ?? null,
+          });
+        appendLocalAuditEvents(userRec.id, mergedEvents);
+      }
+
+      res.json({
+        ok: true,
+        syncedIds: ops.map((o) => o.id).filter(Boolean),
+        syncedAt: new Date().toISOString(),
+      });
+    } catch {
+      res.status(500).json({ error: 'تعذر معالجة قائمة انتظار المزامنة.' });
+    }
+  });
+
+  app.get('/api/workspace/audit-log', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      if (isSqlDatabaseConfigured()) {
+        const events = await listSqlAuditEvents(principal.uid, 60);
+        res.json({ events });
+        return;
+      }
+      const userRec = findUserByUid(principal.uid);
+      if (!userRec) {
+        res.json({ events: [] });
+        return;
+      }
+      res.json({ events: listLocalAuditEvents(userRec.id, 60) });
+    } catch {
+      res.status(500).json({ error: 'تعذر جلب سجل التدقيق.' });
     }
   });
 
@@ -2780,14 +3150,29 @@ async function startServer() {
             .join('، ')}`
         : '';
 
+    const prefsArr = Array.isArray(cloudContext.preferences)
+      ? (cloudContext.preferences as Array<Record<string, unknown>>)
+      : [];
+    const prefsLine =
+      prefsArr.length > 0
+        ? `قواعد الذاكرة الدائمة (${prefsArr.length}): ${prefsArr
+            .slice(0, 15)
+            .map((p) => String(p.label || p.key || ''))
+            .filter(Boolean)
+            .join(' | ')}`
+        : '';
+
     return [
+      `الشاشة الحالية للمستخدم: ${String(cloudContext.activeView || 'hub')} | النمط: ${String(cloudContext.modeTier || 'expert')}`,
       `الحصة الحالية: ${String(lw.periodName || 'الحصة الحالية')}`,
       `الإعدادات: رسم الفرد ${Number(lw.feePerIndividualIqd || 0)} د.ع | رسم البطاقة الثابت ${Number(lw.fixedCardFeeIqd || 0)} د.ع | كغم/فرد ${Number(lw.kgPerIndividual || 0)} | وزن الكيس ${Number(lw.kgPerBag || 50)} كغم | خصم ${Number(lw.discountPercent || 0)}%`,
-      `الإجمالي الكلي: ${Number(lw.totalActiveHouseholds || 0)} عائلة نشطة (من أصل ${Number(lw.totalRegisteredHouseholds || 0)}) | ${Number(lw.totalActiveIndividuals || 0)} أفراد نشطين | محجوب ${Number(lw.totalBlockedCount || 0)} | ${Number(lw.totalFullBags || 0)} كيس | إيراد ${Number(lw.totalRevenueIqd || 0)} د.ع | مصروفات ${Number(lw.totalExpensesIqd || 0)} د.ع | صافي الربح ${Number(lw.totalProfitIqd || 0)} د.ع`,
+      `الإجمالي الكلي: ${Number(lw.totalActiveHouseholds || 0)} عائلة نشطة (من أصل ${Number(lw.totalRegisteredHouseholds || 0)}) | ${Number(lw.totalActiveIndividuals || 0)} أفراد نشطين | محجوب ${Number(lw.totalBlockedCount || 0)} | ${Number(lw.totalFullBags || 0)} كيس | إيراد ${Number(lw.totalRevenueIqd || 0)} د.ع | مصروفات ${Number(lw.totalExpensesIqd || 0)} د.ع (${Number(lw.totalExpensesCount || 0)} قيود) | صافي الربح ${Number(lw.totalProfitIqd || 0)} د.ع`,
       topByIndividuals
         ? `أكبر وكالة بالأفراد حالياً: ${String(topByIndividuals.name || '')} (${Number(topByIndividuals.activeIndividuals || 0)} أفراد · صافي ${Number(topByIndividuals.profitIqd || 0)} د.ع)`
         : '',
+      `بيانات مساندة: علاقات ${Number(lw.relationsCount || 0)} | قوائم جاهزة ${Number(lw.readyListsCount || 0)} | ملاحظات مساحة العمل ${Number(lw.workspaceNotesCount || 0)} | سلة المحذوفات ${Number(lw.recycleBinCount || 0)} | جلسات السحب ${Number(lw.ucrsSessionsCount || 0)} (قواعد تعلم: ${Number(lw.ucrsLearningRulesCount || 0)})`,
       `الأرشيفات: ${Number(lw.archivesCount || 0)}${lw.latestArchiveName ? ` (آخر أرشيف: ${String(lw.latestArchiveName)})` : ''} | ملاحظات سريعة: ${Number(lw.quickNotesCount || 0)} | مسودات معلقة: ${Number(lw.pendingDraftsCount || 0)}`,
+      prefsLine,
       readyListsLine,
       agenciesList ? `تفصيل الوكالات:\n${agenciesList}` : '',
     ]
@@ -2891,7 +3276,8 @@ ${styleDirective}
    - للبحث، التصفية، الإحصائيات، المصاريف، التصدير أو فحص التطبيق: استخدم أدواتها المخصصة مباشرة.
 4. أي عملية تعديل أو إضافة أو أرشفة أو مصروف أو إعدادات يجب أن تُجهَّز كمسودة للموافقة فقط عبر الأداة دون تخمين بيانات ناقصة.
 5. لا تقترح حذفاً نهائياً أبداً (استخدم archive_person فقط للأرشفة الآمنة).
-6. استند حصرياً إلى الأرقام الحية من «ملخص البيانات الحي» المرفق أدناه ولا تخترع أي رقم.
+6. استند حصرياً إلى الأرقام الحية من «ملخص البيانات الحي» المرفق أدناه ولا تخترع أي رقم أو بيانات تجريبية.
+7. أقسام التطبيق الفعلية التي تعرفها وتديرها: الشاشة الرئيسية (hub)، جدول الوكالة (agency_roster)، السجل الشامل (master_roster)، القوائم الجاهزة (ready_lists)، العلاقات (relationships)، الحسابات والمالية (finance)، السحب السريع UCRS (quick_extract)، الأرشفة الشهرية (data_archives)، Google Workspace (google_workspace)، النماذج الذكية (smart_models)، مركز Morrow والذاكرة والملاحظات السريعة (morrow_center)، الحساب والبيانات والأمان (account_security)، والإعدادات والتخصيص (settings). جميع تغييرات المستخدم وإعداداته وتخصيصاته وذاكرته محفوظة تلقائياً على جهازه أولاً بأول.
 ${liveSummaryBlock ? `\nملخص البيانات الحي للتطبيق الآن:\n${liveSummaryBlock}\n` : ''}
 سياق التطبيق الكامل (${String(body.cloudContext?.privacyMode || 'masked_no_beneficiaries')}):
 ${contextText}`;

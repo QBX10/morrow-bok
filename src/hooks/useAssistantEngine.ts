@@ -92,10 +92,73 @@ const QUOTA_STORAGE_KEY = 'morrow_assistant_quota_v1';
 const DRAFTS_STORAGE_KEY = 'morrow_assistant_drafts_v1';
 const QUICK_NOTES_STORAGE_KEY = 'morrow_quick_notes_v1';
 const THREADS_STORAGE_KEY = 'morrow_assistant_threads_v1';
+const BRAIN_MODE_STORAGE_KEY = 'morrow_assistant_brain_mode_v1';
+const MEMORY_CONTEXT_STORAGE_KEY = 'morrow_assistant_context_memory_v1';
+const ACTIVE_THREAD_STORAGE_KEY = 'morrow_assistant_active_thread_v1';
+const RESPONSE_CACHE_STORAGE_KEY = 'morrow_assistant_cache_v1';
+const CENTER_TAB_STORAGE_KEY = 'morrow_assistant_center_tab_v1';
 
-function readStoredArray<T>(key: string): T[] {
+const VALID_BRAIN_MODES: AssistantBrainMode[] = [
+  'auto',
+  'local',
+  'gemini_3_8_flash',
+  'gemini_3_5_flash',
+  'gemini_3_5_flash_lite',
+  'nemotron_free',
+  'openrouter_free',
+];
+
+const VALID_CENTER_TABS: MorrowCenterTab[] = [
+  'chat',
+  'approvals',
+  'memory',
+  'quick_notes',
+];
+
+function sanitizeScopeUid(activeUid?: string | null): string {
+  const trimmed = String(activeUid || '').trim();
+  if (!trimmed) return 'guest';
+  return trimmed.replace(/[^a-zA-Z0-9._:@-]/g, '_');
+}
+
+function scopedAssistantKey(baseKey: string, activeUid?: string | null): string {
+  return `${baseKey}::${sanitizeScopeUid(activeUid)}`;
+}
+
+function getRawScopedItem(baseKey: string, activeUid?: string | null): string | null {
   try {
-    const raw = localStorage.getItem(key);
+    const scopedKey = scopedAssistantKey(baseKey, activeUid);
+    const existing = localStorage.getItem(scopedKey);
+    if (existing !== null) return existing;
+    if (activeUid) {
+      const legacy = localStorage.getItem(baseKey);
+      if (legacy !== null) {
+        try {
+          localStorage.setItem(scopedKey, legacy);
+          localStorage.removeItem(baseKey);
+        } catch {
+          // ignore storage quota failure during migration
+        }
+        return legacy;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRawScopedItem(baseKey: string, activeUid: string | null | undefined, value: string): void {
+  try {
+    localStorage.setItem(scopedAssistantKey(baseKey, activeUid), value);
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function readStoredArray<T>(baseKey: string, activeUid?: string | null): T[] {
+  try {
+    const raw = getRawScopedItem(baseKey, activeUid);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as T[]) : [];
@@ -104,15 +167,37 @@ function readStoredArray<T>(key: string): T[] {
   }
 }
 
-function readStoredObject<T>(key: string, fallback: T): T {
+function readStoredObject<T>(baseKey: string, fallback: T, activeUid?: string | null): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = getRawScopedItem(baseKey, activeUid);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? { ...fallback, ...parsed } : fallback;
   } catch {
     return fallback;
   }
+}
+
+function readStoredBrainMode(activeUid?: string | null): AssistantBrainMode {
+  const raw = getRawScopedItem(BRAIN_MODE_STORAGE_KEY, activeUid);
+  if (raw && VALID_BRAIN_MODES.includes(raw as AssistantBrainMode)) {
+    return raw as AssistantBrainMode;
+  }
+  return 'auto';
+}
+
+function readStoredCenterTab(activeUid?: string | null): MorrowCenterTab {
+  const raw = getRawScopedItem(CENTER_TAB_STORAGE_KEY, activeUid);
+  if (raw && VALID_CENTER_TABS.includes(raw as MorrowCenterTab)) {
+    return raw as MorrowCenterTab;
+  }
+  return 'chat';
+}
+
+function readStoredActiveThreadId(activeUid?: string | null): string {
+  const raw = getRawScopedItem(ACTIVE_THREAD_STORAGE_KEY, activeUid);
+  if (raw && raw.trim()) return raw.trim();
+  return `thread_${Date.now().toString(36)}`;
 }
 
 export function useAssistantEngine(params: {
@@ -123,13 +208,24 @@ export function useAssistantEngine(params: {
   onExportBackupFile: (silentAuto?: boolean) => void;
   canUndoApp?: boolean;
   onUndoAppAction?: () => void;
+  activeUid?: string | null;
 }) {
-  const { runtime, onExportBackupFile, canUndoApp = false, onUndoAppAction } = params;
+  const {
+    runtime,
+    onExportBackupFile,
+    canUndoApp = false,
+    onUndoAppAction,
+    activeUid = null,
+  } = params;
+  const scopeId = sanitizeScopeUid(activeUid);
+  const hydratedScopeRef = useRef<string>(scopeId);
 
   const [isOpen, setIsOpen] = useState(false);
-  const [brainMode, setBrainMode] = useState<AssistantBrainMode>('auto');
+  const [brainMode, setBrainMode] = useState<AssistantBrainMode>(() =>
+    readStoredBrainMode(activeUid)
+  );
   const [activeCommandCenterTab, setActiveCommandCenterTab] =
-    useState<MorrowCenterTab>('chat');
+    useState<MorrowCenterTab>(() => readStoredCenterTab(activeUid));
   const [requestedCanvasHandoff, setRequestedCanvasHandoff] = useState<{
     mode: MorrowCanvasMode;
     agencyId?: number | null;
@@ -144,42 +240,42 @@ export function useAssistantEngine(params: {
   const [slotSession, setSlotSession] = useState<AssistantSlotSession | null>(null);
   const [spotlight, setSpotlight] = useState<AssistantSpotlightState | null>(null);
   const [conversationMemory, setConversationMemory] =
-    useState<AssistantConversationMemory>({});
+    useState<AssistantConversationMemory>(() =>
+      readStoredObject<AssistantConversationMemory>(MEMORY_CONTEXT_STORAGE_KEY, {}, activeUid)
+    );
   const [pendingCompoundQueue, setPendingCompoundQueue] = useState<string[]>([]);
-  const [responseCache, setResponseCache] = useState<AssistantCacheEntry[]>([]);
+  const [responseCache, setResponseCache] = useState<AssistantCacheEntry[]>(() =>
+    readStoredArray<AssistantCacheEntry>(RESPONSE_CACHE_STORAGE_KEY, activeUid).slice(0, 60)
+  );
   const [healthTick, setHealthTick] = useState(0);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const lastUserPromptRef = useRef<string>('');
 
   const [assistantSettings, setAssistantSettingsState] = useState<AssistantSettingsConfig>(
     () => {
-      const loaded = readStoredObject(SETTINGS_STORAGE_KEY, DEFAULT_ASSISTANT_SETTINGS);
+      const loaded = readStoredObject(SETTINGS_STORAGE_KEY, DEFAULT_ASSISTANT_SETTINGS, activeUid);
       return normalizeAssistantSettings(loaded);
     }
   );
   const [quotaStats, setQuotaStats] = useState<AssistantQuotaStats>(() =>
-    readStoredObject(QUOTA_STORAGE_KEY, createInitialQuotaStats())
+    readStoredObject(QUOTA_STORAGE_KEY, createInitialQuotaStats(), activeUid)
   );
 
   const [preferences, setPreferences] = useState<AssistantUserPref[]>(() =>
-    readStoredArray<AssistantUserPref>(PREFS_STORAGE_KEY)
+    readStoredArray<AssistantUserPref>(PREFS_STORAGE_KEY, activeUid)
   );
   const [queuedTasks, setQueuedTasks] = useState<AssistantQueuedTask[]>(() =>
-    readStoredArray<AssistantQueuedTask>(QUEUE_STORAGE_KEY)
+    readStoredArray<AssistantQueuedTask>(QUEUE_STORAGE_KEY, activeUid)
   );
   const [approvalDrafts, setApprovalDrafts] = useState<AssistantApprovalDraft[]>(() =>
-    readStoredArray<AssistantApprovalDraft>(DRAFTS_STORAGE_KEY)
+    readStoredArray<AssistantApprovalDraft>(DRAFTS_STORAGE_KEY, activeUid)
   );
   const [quickNotes, setQuickNotes] = useState<AssistantQuickNote[]>(() =>
-    readStoredArray<AssistantQuickNote>(QUICK_NOTES_STORAGE_KEY)
+    readStoredArray<AssistantQuickNote>(QUICK_NOTES_STORAGE_KEY, activeUid)
   );
-  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(LAST_BACKUP_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  });
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() =>
+    getRawScopedItem(LAST_BACKUP_STORAGE_KEY, activeUid)
+  );
 
   const proactiveTip = useMemo(
     () => getProactiveHealthNotice(runtime.state, lastBackupAt),
@@ -213,25 +309,83 @@ export function useAssistantEngine(params: {
     };
   }, []);
 
-  const [chatThreads, setChatThreads] = useState<AssistantChatThread[]>(() =>
-    readStoredArray<AssistantChatThread>(THREADS_STORAGE_KEY).slice(0, 15)
+  const initialThreads = useMemo(
+    () => readStoredArray<AssistantChatThread>(THREADS_STORAGE_KEY, activeUid).slice(0, 15),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
-  const [activeThreadId, setActiveThreadId] = useState<string>(
-    () => `thread_${Date.now().toString(36)}`
+  const [chatThreads, setChatThreads] = useState<AssistantChatThread[]>(initialThreads);
+  const [activeThreadId, setActiveThreadId] = useState<string>(() =>
+    readStoredActiveThreadId(activeUid)
   );
 
-  const [messages, setMessages] = useState<AssistantMessage[]>(() => [
-    createWelcomeMessage(),
-  ]);
+  const [messages, setMessages] = useState<AssistantMessage[]>(() => {
+    const storedThreadId = readStoredActiveThreadId(activeUid);
+    const matched = initialThreads.find((t) => t.id === storedThreadId);
+    if (matched && Array.isArray(matched.messages) && matched.messages.length > 0) {
+      return matched.messages;
+    }
+    return [createWelcomeMessage()];
+  });
+
+  const prevScopeIdRef = useRef<string>(scopeId);
+  useEffect(() => {
+    if (prevScopeIdRef.current === scopeId) {
+      hydratedScopeRef.current = scopeId;
+      return;
+    }
+    prevScopeIdRef.current = scopeId;
+    hydratedScopeRef.current = scopeId;
+
+    activeRequestControllerRef.current?.abort();
+    activeRequestControllerRef.current = null;
+    setIsThinking(false);
+    setSlotSession(null);
+    setPendingCompoundQueue([]);
+
+    const nextSettings = normalizeAssistantSettings(
+      readStoredObject(SETTINGS_STORAGE_KEY, DEFAULT_ASSISTANT_SETTINGS, activeUid)
+    );
+    const nextThreads = readStoredArray<AssistantChatThread>(THREADS_STORAGE_KEY, activeUid).slice(0, 15);
+    const nextThreadId = readStoredActiveThreadId(activeUid);
+    const matchedThread = nextThreads.find((t) => t.id === nextThreadId);
+
+    setAssistantSettingsState(nextSettings);
+    setQuotaStats(readStoredObject(QUOTA_STORAGE_KEY, createInitialQuotaStats(), activeUid));
+    setPreferences(readStoredArray<AssistantUserPref>(PREFS_STORAGE_KEY, activeUid));
+    setQueuedTasks(readStoredArray<AssistantQueuedTask>(QUEUE_STORAGE_KEY, activeUid));
+    setApprovalDrafts(readStoredArray<AssistantApprovalDraft>(DRAFTS_STORAGE_KEY, activeUid));
+    setQuickNotes(readStoredArray<AssistantQuickNote>(QUICK_NOTES_STORAGE_KEY, activeUid));
+    setLastBackupAt(getRawScopedItem(LAST_BACKUP_STORAGE_KEY, activeUid));
+    setBrainMode(readStoredBrainMode(activeUid));
+    setActiveCommandCenterTab(readStoredCenterTab(activeUid));
+    setConversationMemory(
+      readStoredObject<AssistantConversationMemory>(MEMORY_CONTEXT_STORAGE_KEY, {}, activeUid)
+    );
+    setResponseCache(
+      nextSettings.cacheEnabled
+        ? readStoredArray<AssistantCacheEntry>(RESPONSE_CACHE_STORAGE_KEY, activeUid).slice(0, 60)
+        : []
+    );
+    setChatThreads(nextThreads);
+    setActiveThreadId(nextThreadId);
+    setMessages(
+      matchedThread && Array.isArray(matchedThread.messages) && matchedThread.messages.length > 0
+        ? matchedThread.messages
+        : [createWelcomeMessage()]
+    );
+  }, [scopeId, activeUid, createWelcomeMessage]);
 
   // Persist thread archive snapshot whenever substantive conversation updates occur
   useEffect(() => {
-    try {
-      localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(chatThreads.slice(0, 15)));
-    } catch {
-      // ignore quota error
-    }
-  }, [chatThreads]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(THREADS_STORAGE_KEY, activeUid, JSON.stringify(chatThreads.slice(0, 15)));
+  }, [chatThreads, scopeId, activeUid]);
+
+  useEffect(() => {
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(ACTIVE_THREAD_STORAGE_KEY, activeUid, activeThreadId);
+  }, [activeThreadId, scopeId, activeUid]);
 
   useEffect(() => {
     const firstUserMsg = messages.find((m) => m.role === 'user');
@@ -269,52 +423,126 @@ export function useAssistantEngine(params: {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(preferences));
-    } catch {
-      // ignore quota error
-    }
-  }, [preferences]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(PREFS_STORAGE_KEY, activeUid, JSON.stringify(preferences));
+  }, [preferences, scopeId, activeUid]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queuedTasks));
-    } catch {
-      // ignore quota error
-    }
-  }, [queuedTasks]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(QUEUE_STORAGE_KEY, activeUid, JSON.stringify(queuedTasks));
+  }, [queuedTasks, scopeId, activeUid]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(approvalDrafts.slice(0, 40)));
-    } catch {
-      // ignore quota error
-    }
-  }, [approvalDrafts]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(DRAFTS_STORAGE_KEY, activeUid, JSON.stringify(approvalDrafts.slice(0, 40)));
+  }, [approvalDrafts, scopeId, activeUid]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(QUICK_NOTES_STORAGE_KEY, JSON.stringify(quickNotes.slice(0, 80)));
-    } catch {
-      // ignore quota error
-    }
-  }, [quickNotes]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(QUICK_NOTES_STORAGE_KEY, activeUid, JSON.stringify(quickNotes.slice(0, 80)));
+  }, [quickNotes, scopeId, activeUid]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(assistantSettings));
-    } catch {
-      // ignore
-    }
-  }, [assistantSettings]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(SETTINGS_STORAGE_KEY, activeUid, JSON.stringify(assistantSettings));
+  }, [assistantSettings, scopeId, activeUid]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify(quotaStats));
-    } catch {
-      // ignore
-    }
-  }, [quotaStats]);
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(QUOTA_STORAGE_KEY, activeUid, JSON.stringify(quotaStats));
+  }, [quotaStats, scopeId, activeUid]);
+
+  useEffect(() => {
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(BRAIN_MODE_STORAGE_KEY, activeUid, brainMode);
+  }, [brainMode, scopeId, activeUid]);
+
+  useEffect(() => {
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(CENTER_TAB_STORAGE_KEY, activeUid, activeCommandCenterTab);
+  }, [activeCommandCenterTab, scopeId, activeUid]);
+
+  useEffect(() => {
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(MEMORY_CONTEXT_STORAGE_KEY, activeUid, JSON.stringify(conversationMemory));
+  }, [conversationMemory, scopeId, activeUid]);
+
+  useEffect(() => {
+    if (hydratedScopeRef.current !== scopeId) return;
+    writeRawScopedItem(
+      RESPONSE_CACHE_STORAGE_KEY,
+      activeUid,
+      JSON.stringify(assistantSettings.cacheEnabled ? responseCache.slice(0, 60) : [])
+    );
+  }, [responseCache, assistantSettings.cacheEnabled, scopeId, activeUid]);
+
+  const latestAssistantSnapshotRef = useRef({
+    activeUid,
+    scopeId,
+    preferences,
+    queuedTasks,
+    approvalDrafts,
+    quickNotes,
+    assistantSettings,
+    quotaStats,
+    brainMode,
+    activeCommandCenterTab,
+    conversationMemory,
+    responseCache,
+    chatThreads,
+    activeThreadId,
+  });
+  latestAssistantSnapshotRef.current = {
+    activeUid,
+    scopeId,
+    preferences,
+    queuedTasks,
+    approvalDrafts,
+    quickNotes,
+    assistantSettings,
+    quotaStats,
+    brainMode,
+    activeCommandCenterTab,
+    conversationMemory,
+    responseCache,
+    chatThreads,
+    activeThreadId,
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const flushAssistantSync = () => {
+      const snap = latestAssistantSnapshotRef.current;
+      if (hydratedScopeRef.current !== snap.scopeId) return;
+      writeRawScopedItem(PREFS_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.preferences));
+      writeRawScopedItem(QUEUE_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.queuedTasks));
+      writeRawScopedItem(DRAFTS_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.approvalDrafts.slice(0, 40)));
+      writeRawScopedItem(QUICK_NOTES_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.quickNotes.slice(0, 80)));
+      writeRawScopedItem(SETTINGS_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.assistantSettings));
+      writeRawScopedItem(QUOTA_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.quotaStats));
+      writeRawScopedItem(BRAIN_MODE_STORAGE_KEY, snap.activeUid, snap.brainMode);
+      writeRawScopedItem(CENTER_TAB_STORAGE_KEY, snap.activeUid, snap.activeCommandCenterTab);
+      writeRawScopedItem(MEMORY_CONTEXT_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.conversationMemory));
+      writeRawScopedItem(
+        RESPONSE_CACHE_STORAGE_KEY,
+        snap.activeUid,
+        JSON.stringify(snap.assistantSettings.cacheEnabled ? snap.responseCache.slice(0, 60) : [])
+      );
+      writeRawScopedItem(THREADS_STORAGE_KEY, snap.activeUid, JSON.stringify(snap.chatThreads.slice(0, 15)));
+      writeRawScopedItem(ACTIVE_THREAD_STORAGE_KEY, snap.activeUid, snap.activeThreadId);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushAssistantSync();
+    };
+    window.addEventListener('pagehide', flushAssistantSync);
+    window.addEventListener('beforeunload', flushAssistantSync);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushAssistantSync);
+      window.removeEventListener('beforeunload', flushAssistantSync);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -368,6 +596,9 @@ export function useAssistantEngine(params: {
 
   const updateAssistantSettings = useCallback(
     (patch: Partial<AssistantSettingsConfig>) => {
+      if (patch.cacheEnabled === false) {
+        setResponseCache([]);
+      }
       setAssistantSettingsState((prev) =>
         normalizeAssistantSettings({
           ...prev,
@@ -387,7 +618,8 @@ export function useAssistantEngine(params: {
 
   const clearResponseCache = useCallback(() => {
     setResponseCache([]);
-  }, []);
+    writeRawScopedItem(RESPONSE_CACHE_STORAGE_KEY, activeUid, '[]');
+  }, [activeUid]);
 
   const spotlightTimerRef = useRef<number | null>(null);
   const triggerSpotlight = useCallback(
@@ -430,13 +662,9 @@ export function useAssistantEngine(params: {
       onExportBackupFile(silentAuto);
       const nowIso = new Date().toISOString();
       setLastBackupAt(nowIso);
-      try {
-        localStorage.setItem(LAST_BACKUP_STORAGE_KEY, nowIso);
-      } catch {
-        // ignore
-      }
+      writeRawScopedItem(LAST_BACKUP_STORAGE_KEY, activeUid, nowIso);
     },
-    [onExportBackupFile]
+    [onExportBackupFile, activeUid]
   );
 
   const saveUserPref = useCallback(
@@ -773,6 +1001,10 @@ export function useAssistantEngine(params: {
     },
     []
   );
+
+  const clearConversationMemory = useCallback(() => {
+    setConversationMemory({});
+  }, []);
 
   const undoLastAssistantAction = useCallback(
     (sourceMessageId?: string) => {
@@ -1901,7 +2133,26 @@ export function useAssistantEngine(params: {
           : 'مفعل: السحابة ترى الإحصائيات والوكالات كاملة مع حجب أسماء المستفيدين تلقائياً',
     });
 
-    // 5. Server status & all cloud models binding check
+    // 5. Device Auto-Save & Assistant Memory Persistence check
+    let storageWriteOk = false;
+    try {
+      const probeKey = scopedAssistantKey('morrow_storage_probe_v1', activeUid);
+      localStorage.setItem(probeKey, '1');
+      storageWriteOk = localStorage.getItem(probeKey) === '1';
+      localStorage.removeItem(probeKey);
+    } catch {
+      storageWriteOk = false;
+    }
+    checks.push({
+      id: 'device_autosave_memory',
+      label: 'الحفظ التلقائي الشامل على الجهاز وذاكرة Morrow',
+      status: storageWriteOk ? 'ok' : 'warning',
+      detail: storageWriteOk
+        ? `مفعل دائماً للحساب (${preferences.length} قاعدة ذاكرة · ${chatThreads.length} محادثة محفوظة · ${quickNotes.length} ملاحظة · ${responseCache.length} رد مخزّن مؤقتاً)`
+        : 'تعذر التحقق من صلاحية التخزين المحلي في المتصفح (قد يكون التصفح خاصاً أو الذاكرة ممتلئة).',
+    });
+
+    // 6. Server status & all cloud models binding check
     try {
       const res = await fetch('/api/assistant/status');
       if (res.ok) {
@@ -1975,7 +2226,19 @@ export function useAssistantEngine(params: {
       boundPersonsCount: fullRuntime.state.persons.length,
       checks,
     };
-  }, [liveCloudPayload, fullRuntime.state, fullRuntime.uiContext, conversationMemory, lastBackupAt, brainMode]);
+  }, [
+    liveCloudPayload,
+    fullRuntime.state,
+    fullRuntime.uiContext,
+    conversationMemory,
+    lastBackupAt,
+    brainMode,
+    activeUid,
+    preferences.length,
+    chatThreads.length,
+    quickNotes.length,
+    responseCache.length,
+  ]);
 
   const flushNextCompoundStepIfAny = useCallback(() => {
     setPendingCompoundQueue((prev) => {
@@ -2433,6 +2696,7 @@ export function useAssistantEngine(params: {
     clearResponseCache,
     smartSuggestions,
     conversationMemory,
+    clearConversationMemory,
     hasUndoableAssistantMessage,
     undoLastAssistantAction,
     stageToolDrafts,

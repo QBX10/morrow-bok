@@ -1,7 +1,10 @@
-import { and, desc, eq } from 'drizzle-orm';
+import crypto from 'crypto';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { db } from './index.ts';
 import {
   appearanceProfiles,
+  syncAuditLogs,
+  userPreferences,
   users,
   workspaceSnapshots,
 } from './schema.ts';
@@ -15,9 +18,25 @@ export function isSqlDatabaseConfigured(): boolean {
   );
 }
 
+export async function pingSqlDatabase(): Promise<boolean> {
+  if (!isSqlDatabaseConfigured()) return false;
+  try {
+    await db.execute(sql`SELECT 1`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function computeChecksum(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
+}
+
 export async function getOrCreateUser(params: {
   uid: string;
   email: string;
+  username?: string | null;
+  phone?: string | null;
   displayName?: string;
   avatarUrl?: string | null;
   authProvider?: string;
@@ -25,14 +44,44 @@ export async function getOrCreateUser(params: {
   try {
     const safeEmail = (params.email || `${params.uid}@tabrex.local`).trim().toLowerCase();
     const safeDisplay = (params.displayName || safeEmail.split('@')[0] || 'مستخدم').trim();
+    const normPhone = params.phone ? params.phone.trim() : null;
+    const normUsername = params.username ? params.username.trim().toLowerCase() : null;
+
+    // Unified lookup by uid, verified email, or normalized phone
+    const existingByIdentity = await resolveExistingSqlUser({
+      uid: params.uid,
+      email: safeEmail.endsWith('.local') ? null : safeEmail,
+      phone: normPhone,
+      username: normUsername,
+    });
+
+    if (existingByIdentity) {
+      const updated = await db
+        .update(users)
+        .set({
+          displayName: existingByIdentity.displayName || safeDisplay,
+          ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+          ...(normPhone && !existingByIdentity.phone ? { phone: normPhone } : {}),
+          ...(normUsername && !existingByIdentity.username ? { username: normUsername } : {}),
+          lastLoginAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existingByIdentity.id))
+        .returning();
+      return updated[0] || existingByIdentity;
+    }
+
     const result = await db
       .insert(users)
       .values({
         uid: params.uid,
         email: safeEmail,
+        username: normUsername,
+        phone: normPhone,
         displayName: safeDisplay,
         avatarUrl: params.avatarUrl ?? null,
         authProvider: params.authProvider || 'google',
+        lastLoginAt: new Date(),
       })
       .onConflictDoUpdate({
         target: users.uid,
@@ -40,6 +89,7 @@ export async function getOrCreateUser(params: {
           email: safeEmail,
           displayName: safeDisplay,
           ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+          lastLoginAt: new Date(),
           updatedAt: new Date(),
         },
       })
@@ -54,6 +104,36 @@ export async function getOrCreateUser(params: {
   }
 }
 
+export async function resolveExistingSqlUser(params: {
+  uid?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  username?: string | null;
+}) {
+  const uid = params.uid?.trim();
+  const email = params.email?.trim().toLowerCase();
+  const phone = params.phone?.trim();
+  const username = params.username?.trim().toLowerCase();
+
+  if (uid) {
+    const byUid = await db.select().from(users).where(eq(users.uid, uid));
+    if (byUid[0]) return byUid[0];
+  }
+  if (email && !email.endsWith('.local')) {
+    const byEmail = await db.select().from(users).where(eq(users.email, email));
+    if (byEmail[0]) return byEmail[0];
+  }
+  if (phone) {
+    const byPhone = await db.select().from(users).where(eq(users.phone, phone));
+    if (byPhone[0]) return byPhone[0];
+  }
+  if (username) {
+    const byUsername = await db.select().from(users).where(eq(users.username, username));
+    if (byUsername[0]) return byUsername[0];
+  }
+  return null;
+}
+
 export async function getSqlUserByUid(uid: string) {
   try {
     const rows = await db.select().from(users).where(eq(users.uid, uid));
@@ -64,6 +144,111 @@ export async function getSqlUserByUid(uid: string) {
       cause: error,
     });
   }
+}
+
+export async function findSqlUserByEmail(email: string) {
+  const norm = email.trim().toLowerCase();
+  if (!norm) return null;
+  const rows = await db.select().from(users).where(eq(users.email, norm));
+  return rows[0] || null;
+}
+
+export async function findSqlUserByUsername(username: string) {
+  const norm = username.trim().toLowerCase();
+  if (!norm) return null;
+  const rows = await db.select().from(users).where(eq(users.username, norm));
+  return rows[0] || null;
+}
+
+export async function findSqlUserByPhone(phone: string) {
+  const norm = phone.trim();
+  if (!norm) return null;
+  const rows = await db.select().from(users).where(eq(users.phone, norm));
+  return rows[0] || null;
+}
+
+export async function findSqlUserByAnyIdentifier(params: {
+  email?: string;
+  username?: string;
+  phone?: string;
+}) {
+  const conditions = [];
+  if (params.email) conditions.push(eq(users.email, params.email.trim().toLowerCase()));
+  if (params.username) conditions.push(eq(users.username, params.username.trim().toLowerCase()));
+  if (params.phone) conditions.push(eq(users.phone, params.phone.trim()));
+  if (conditions.length === 0) return null;
+  const rows = await db
+    .select()
+    .from(users)
+    .where(conditions.length === 1 ? conditions[0] : or(...conditions));
+  return rows[0] || null;
+}
+
+export async function createSqlPasswordUser(params: {
+  uid: string;
+  authProvider: 'google' | 'username' | 'phone';
+  displayName: string;
+  email?: string | null;
+  username?: string | null;
+  phone?: string | null;
+  passwordHash: string | null;
+}) {
+  const safeEmail = (params.email || `${params.uid}@tabrex.local`).trim().toLowerCase();
+  const rows = await db
+    .insert(users)
+    .values({
+      uid: params.uid,
+      email: safeEmail,
+      username: params.username ? params.username.trim().toLowerCase() : null,
+      phone: params.phone ? params.phone.trim() : null,
+      passwordHash: params.passwordHash,
+      displayName: params.displayName.trim(),
+      authProvider: params.authProvider,
+      role: 'manager',
+      lastLoginAt: new Date(),
+    })
+    .returning();
+  return rows[0];
+}
+
+export async function updateSqlUserPasswordHash(uid: string, passwordHash: string) {
+  const rows = await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.uid, uid))
+    .returning();
+  return rows[0] || null;
+}
+
+export async function linkSqlUsernameToUid(params: {
+  uid: string;
+  username: string;
+  passwordHash?: string | null;
+}): Promise<
+  | { ok: true; user: typeof users.$inferSelect }
+  | { ok: false; error: string; status: number }
+> {
+  const norm = params.username.trim().toLowerCase();
+  const conflict = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, norm));
+  if (conflict[0] && conflict[0].uid !== params.uid) {
+    return { ok: false, error: 'اسم المستخدم محجوز لحساب آخر بالفعل.', status: 409 };
+  }
+  const updated = await db
+    .update(users)
+    .set({
+      username: norm,
+      ...(params.passwordHash ? { passwordHash: params.passwordHash } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.uid, params.uid))
+    .returning();
+  if (!updated[0]) {
+    return { ok: false, error: 'لم يتم العثور على الحساب المطلوب.', status: 404 };
+  }
+  return { ok: true, user: updated[0] };
 }
 
 export async function updateSqlUserProfile(params: {
@@ -106,6 +291,10 @@ export async function getWorkspaceByUid(uid: string) {
         snapshotJson: workspaceSnapshots.snapshotJson,
         recordCount: workspaceSnapshots.recordCount,
         agencyCount: workspaceSnapshots.agencyCount,
+        clientUpdatedAt: workspaceSnapshots.clientUpdatedAt,
+        deviceId: workspaceSnapshots.deviceId,
+        version: workspaceSnapshots.version,
+        checksum: workspaceSnapshots.checksum,
         updatedAt: workspaceSnapshots.updatedAt,
       })
       .from(workspaceSnapshots)
@@ -128,6 +317,8 @@ export async function saveWorkspaceByUid(params: {
   snapshotJson: string;
   recordCount: number;
   agencyCount: number;
+  clientUpdatedAt?: string;
+  deviceId?: string;
 }) {
   try {
     const userRow = await getOrCreateUser({
@@ -136,6 +327,14 @@ export async function saveWorkspaceByUid(params: {
       displayName: params.displayName,
       authProvider: params.authProvider,
     });
+    const existing = await db
+      .select()
+      .from(workspaceSnapshots)
+      .where(eq(workspaceSnapshots.userId, userRow.id));
+    const nextVersion = existing[0] ? (existing[0].version || 1) + 1 : 1;
+    const nowIso = params.clientUpdatedAt || new Date().toISOString();
+    const checksum = computeChecksum(params.snapshotJson);
+
     const result = await db
       .insert(workspaceSnapshots)
       .values({
@@ -143,6 +342,10 @@ export async function saveWorkspaceByUid(params: {
         snapshotJson: params.snapshotJson,
         recordCount: params.recordCount,
         agencyCount: params.agencyCount,
+        clientUpdatedAt: nowIso,
+        deviceId: params.deviceId || 'web',
+        version: nextVersion,
+        checksum,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -151,6 +354,10 @@ export async function saveWorkspaceByUid(params: {
           snapshotJson: params.snapshotJson,
           recordCount: params.recordCount,
           agencyCount: params.agencyCount,
+          clientUpdatedAt: nowIso,
+          deviceId: params.deviceId || 'web',
+          version: nextVersion,
+          checksum,
           updatedAt: new Date(),
         },
       })
@@ -162,6 +369,133 @@ export async function saveWorkspaceByUid(params: {
       cause: error,
     });
   }
+}
+
+export async function syncSqlWorkspaceWithLww(params: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  authProvider?: string;
+  snapshotJson: string;
+  recordCount: number;
+  agencyCount: number;
+  clientUpdatedAt?: string;
+  deviceId?: string;
+  force?: boolean;
+}) {
+  const existing = await getWorkspaceByUid(params.uid);
+  const incomingChecksum = computeChecksum(params.snapshotJson);
+
+  if (existing && !params.force && params.clientUpdatedAt) {
+    const incomingMs = Date.parse(params.clientUpdatedAt);
+    const serverRef = existing.clientUpdatedAt || existing.updatedAt?.toISOString() || '';
+    const serverMs = Date.parse(serverRef);
+    if (
+      Number.isFinite(incomingMs) &&
+      Number.isFinite(serverMs) &&
+      serverMs > incomingMs + 250 &&
+      existing.checksum !== incomingChecksum
+    ) {
+      return {
+        conflictResolved: true,
+        winner: 'server' as const,
+        snapshot: existing,
+      };
+    }
+  }
+
+  const saved = await saveWorkspaceByUid(params);
+  return {
+    conflictResolved: false,
+    winner: 'client' as const,
+    snapshot: saved,
+  };
+}
+
+export async function appendSqlAuditEvents(
+  uid: string,
+  email: string,
+  events: Array<{
+    eventId: string;
+    actionType: string;
+    title: string;
+    summary?: string;
+    deviceId?: string;
+    payloadJson?: string;
+  }>
+) {
+  if (events.length === 0) return;
+  const userRow = await getOrCreateUser({ uid, email });
+  for (const ev of events) {
+    if (!ev.eventId) continue;
+    await db
+      .insert(syncAuditLogs)
+      .values({
+        userId: userRow.id,
+        eventId: ev.eventId,
+        actionType: ev.actionType,
+        title: ev.title,
+        summary: ev.summary || '',
+        deviceId: ev.deviceId || 'web',
+        payloadJson: ev.payloadJson || null,
+      })
+      .onConflictDoNothing({ target: syncAuditLogs.eventId });
+  }
+}
+
+export async function listSqlAuditEvents(uid: string, limit = 60) {
+  const userRow = await getSqlUserByUid(uid);
+  if (!userRow) return [];
+  return db
+    .select({
+      eventId: syncAuditLogs.eventId,
+      actionType: syncAuditLogs.actionType,
+      title: syncAuditLogs.title,
+      summary: syncAuditLogs.summary,
+      deviceId: syncAuditLogs.deviceId,
+      payloadJson: syncAuditLogs.payloadJson,
+      createdAt: syncAuditLogs.createdAt,
+    })
+    .from(syncAuditLogs)
+    .where(eq(syncAuditLogs.userId, userRow.id))
+    .orderBy(desc(syncAuditLogs.createdAt))
+    .limit(limit);
+}
+
+export async function saveSqlUserPreferences(
+  uid: string,
+  email: string,
+  preferencesJson: string
+) {
+  const userRow = await getOrCreateUser({ uid, email });
+  const rows = await db
+    .insert(userPreferences)
+    .values({
+      userId: userRow.id,
+      preferencesJson,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: userPreferences.userId,
+      set: {
+        preferencesJson,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return rows[0];
+}
+
+export async function getSqlUserPreferences(uid: string) {
+  const rows = await db
+    .select({
+      preferencesJson: userPreferences.preferencesJson,
+      updatedAt: userPreferences.updatedAt,
+    })
+    .from(userPreferences)
+    .innerJoin(users, eq(userPreferences.userId, users.id))
+    .where(eq(users.uid, uid));
+  return rows[0] || null;
 }
 
 export async function listAppearanceProfilesByUid(uid: string) {

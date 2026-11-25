@@ -23,6 +23,10 @@ import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
 import { ToastHost } from './components/ToastHost';
 import { DelayedTruckLoaderOverlay } from './components/ui/DelayedTruckLoaderOverlay';
+import {
+  runWithSignatureLoader,
+  startSignatureLoading,
+} from './utils/delayedLoader';
 import { AccountSecurityHubView } from './components/AccountSecurityHubView';
 import { Switcher } from './components/cosmos/Switcher';
 import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
@@ -118,6 +122,115 @@ type DeleteTarget =
   | { kind: 'ready_item'; item: ReadyListItem }
   | { kind: 'ready_list'; item: ReadyList }
   | { kind: 'relation'; item: RelationEntry };
+
+interface PersistedUiState {
+  activeView: AppView;
+  selectedAgencyId: number;
+  settingsSection: SettingsSectionId;
+  settingsScreenMode: 'hub' | 'detail';
+  settingsCapsuleId: string | null;
+  tableViewingMode: boolean;
+}
+
+const VALID_APP_VIEWS: AppView[] = [
+  'hub',
+  'agency_roster',
+  'master_roster',
+  'ready_lists',
+  'relationships',
+  'finance',
+  'quick_extract',
+  'morrow_center',
+  'smart_models',
+  'data_archives',
+  'google_workspace',
+  'account_security',
+  'settings',
+];
+
+const VALID_SETTINGS_SECTIONS: SettingsSectionId[] = [
+  'appearance',
+  'fonts',
+  'modes',
+  'calculator',
+  'general',
+  'quick_extract_settings',
+  'relations_lists',
+  'security_data',
+  'ai_assistant',
+  'system_map',
+];
+
+function uiScopeSuffix(uid?: string | null): string {
+  const trimmed = String(uid || '').trim();
+  return trimmed ? trimmed.replace(/[^a-zA-Z0-9._:@-]/g, '_') : 'guest';
+}
+
+function readSavedUiState(uid?: string | null): PersistedUiState {
+  const fallback: PersistedUiState = {
+    activeView: 'hub',
+    selectedAgencyId: 0,
+    settingsSection: 'appearance',
+    settingsScreenMode: 'hub',
+    settingsCapsuleId: null,
+    tableViewingMode: false,
+  };
+  try {
+    const raw = localStorage.getItem(`morrow_ui_state_v1::${uiScopeSuffix(uid)}`);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<PersistedUiState>;
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    return {
+      activeView: VALID_APP_VIEWS.includes(parsed.activeView as AppView)
+        ? (parsed.activeView as AppView)
+        : 'hub',
+      selectedAgencyId:
+        typeof parsed.selectedAgencyId === 'number' && Number.isFinite(parsed.selectedAgencyId)
+          ? parsed.selectedAgencyId
+          : 0,
+      settingsSection: VALID_SETTINGS_SECTIONS.includes(parsed.settingsSection as SettingsSectionId)
+        ? (parsed.settingsSection as SettingsSectionId)
+        : 'appearance',
+      settingsScreenMode: parsed.settingsScreenMode === 'detail' ? 'detail' : 'hub',
+      settingsCapsuleId:
+        typeof parsed.settingsCapsuleId === 'string' && parsed.settingsCapsuleId
+          ? parsed.settingsCapsuleId
+          : null,
+      tableViewingMode: Boolean(parsed.tableViewingMode),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSavedUiState(uid: string | null | undefined, snap: PersistedUiState): void {
+  if (!uid) return;
+  try {
+    localStorage.setItem(`morrow_ui_state_v1::${uiScopeSuffix(uid)}`, JSON.stringify(snap));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function readSavedSidebarCollapsed(uid?: string | null): boolean {
+  try {
+    const scopedKey = `tabrix_sidebar_collapsed::${uiScopeSuffix(uid)}`;
+    const scoped = localStorage.getItem(scopedKey);
+    if (scoped !== null) return scoped === '1';
+    const legacy = localStorage.getItem('tabrix_sidebar_collapsed');
+    if (legacy !== null && uid) {
+      try {
+        localStorage.setItem(scopedKey, legacy);
+      } catch {
+        // ignore
+      }
+      return legacy === '1';
+    }
+    return legacy === '1';
+  } catch {
+    return false;
+  }
+}
 
 export default function App() {
   // Multi-Auth state lifted above store to guarantee strict per-uid isolation
@@ -231,6 +344,8 @@ export default function App() {
     removeRelationEntryConfirmed,
     addAgencyDirect,
     updateAgencyDetails,
+    transferAgencyRecordsConfirmed,
+    deleteAgencyConfirmed,
     ucrsSessions,
     ucrsLearningRules,
     upsertUcrsSession,
@@ -240,23 +355,43 @@ export default function App() {
     deleteUcrsLearningRule,
     applyAssistantAutoFixes,
     syncWorkspaceToServer,
+    forceSyncNow,
     restoreWorkspaceFromServer,
+    exportMemoryVaultJson,
+    restoreAuditCheckpoint,
+    updateSmartPreferences,
+    smartPreferences,
+    auditLog,
+    syncStatus,
+    storageStatus,
+    syncQueue,
+    isOnline,
+    lastConflictNotice,
+    dismissConflictNotice,
     compressionStats,
-    loadStarterDemoData,
+    storageReady,
   } = useAgencyStore(authUser?.uid ?? null);
 
-  const [activeView, setActiveView] = useState<AppView>('hub');
+  const initialUiRef = useRef<PersistedUiState | null>(null);
+  if (!initialUiRef.current) {
+    initialUiRef.current = readSavedUiState(authUser?.uid ?? null);
+  }
+
+  const [activeView, setActiveView] = useState<AppView>(initialUiRef.current.activeView);
   const [previousView, setPreviousView] = useState<AppView>('hub');
-  const [settingsSection, setSettingsSection] =
-    useState<SettingsSectionId>('appearance');
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>(
+    initialUiRef.current.settingsSection
+  );
   const [settingsScreenMode, setSettingsScreenMode] = useState<'hub' | 'detail'>(
-    'hub'
+    initialUiRef.current.settingsScreenMode
   );
   const [settingsCapsuleId, setSettingsCapsuleId] = useState<string | null>(
-    null
+    initialUiRef.current.settingsCapsuleId
   );
   const [spotlightNodeId, setSpotlightNodeId] = useState<string | null>(null);
-  const [tableViewingMode, setTableViewingMode] = useState(false);
+  const [tableViewingMode, setTableViewingMode] = useState(
+    initialUiRef.current.tableViewingMode
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
@@ -264,17 +399,17 @@ export default function App() {
       setTableViewingMode(false);
     }
   }, [activeView]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('tabrix_sidebar_collapsed') === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    readSavedSidebarCollapsed(authUser?.uid ?? null)
+  );
   const toggleSidebarCollapsed = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
       try {
+        localStorage.setItem(
+          `tabrix_sidebar_collapsed::${uiScopeSuffix(authUser?.uid ?? null)}`,
+          next ? '1' : '0'
+        );
         localStorage.setItem('tabrix_sidebar_collapsed', next ? '1' : '0');
       } catch {
         // ignore storage failures
@@ -287,30 +422,178 @@ export default function App() {
   const pointerNearTopRef = useRef(false);
   const headerFocusActiveRef = useRef(false);
   const [selectedAgencyId, setSelectedAgencyId] = useState<number>(
-    state.agencies[0]?.id ?? 0
+    initialUiRef.current.selectedAgencyId || (state.agencies[0]?.id ?? 0)
   );
 
+  // Persist current UI navigation & view state per-uid automatically
+  const uiStateHydratedUidRef = useRef<string | null>(authUser?.uid ?? null);
   useEffect(() => {
+    const uid = authUser?.uid ?? null;
+    if (uiStateHydratedUidRef.current === uid) return;
+    uiStateHydratedUidRef.current = uid;
+    if (!uid) return;
+
+    const restored = readSavedUiState(uid);
+    const hasNodeHash =
+      typeof window !== 'undefined' && (window.location.hash || '').startsWith('#node=');
+    if (!hasNodeHash) {
+      setActiveView(restored.activeView);
+      setSettingsSection(restored.settingsSection);
+      setSettingsScreenMode(restored.settingsScreenMode);
+      setSettingsCapsuleId(restored.settingsCapsuleId);
+      setTableViewingMode(restored.tableViewingMode);
+      if (restored.selectedAgencyId > 0) {
+        setSelectedAgencyId(restored.selectedAgencyId);
+      }
+    }
+    setSidebarCollapsed(readSavedSidebarCollapsed(uid));
+  }, [authUser?.uid]);
+
+  const latestUiStateRef = useRef<{ uid: string | null; snap: PersistedUiState }>({
+    uid: authUser?.uid ?? null,
+    snap: {
+      activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      settingsCapsuleId,
+      tableViewingMode,
+    },
+  });
+  latestUiStateRef.current = {
+    uid: authUser?.uid ?? null,
+    snap: {
+      activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      settingsCapsuleId,
+      tableViewingMode,
+    },
+  };
+
+  useEffect(() => {
+    if (!authUser?.uid || uiStateHydratedUidRef.current !== authUser.uid) return;
+    writeSavedUiState(authUser.uid, {
+      activeView,
+      selectedAgencyId,
+      settingsSection,
+      settingsScreenMode,
+      settingsCapsuleId,
+      tableViewingMode,
+    });
+  }, [
+    authUser?.uid,
+    activeView,
+    selectedAgencyId,
+    settingsSection,
+    settingsScreenMode,
+    settingsCapsuleId,
+    tableViewingMode,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const flushUi = () => {
+      const cur = latestUiStateRef.current;
+      if (cur.uid && uiStateHydratedUidRef.current === cur.uid) {
+        writeSavedUiState(cur.uid, cur.snap);
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flushUi();
+    };
+    window.addEventListener('pagehide', flushUi);
+    window.addEventListener('beforeunload', flushUi);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flushUi);
+      window.removeEventListener('beforeunload', flushUi);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
     if (state.agencies.length === 0) {
       setSelectedAgencyId(0);
     } else if (!state.agencies.some((a) => a.id === selectedAgencyId)) {
       setSelectedAgencyId(state.agencies[0].id);
     }
-  }, [state.agencies, selectedAgencyId]);
+  }, [storageReady, state.agencies, selectedAgencyId]);
+
+  const pendingAuthRevealRef = useRef<{ uid: string; endFn: () => void } | null>(
+    null
+  );
+
+  useEffect(() => {
+    const pending = pendingAuthRevealRef.current;
+    if (!pending) return;
+    if (authUser?.uid === pending.uid && storageReady) {
+      pendingAuthRevealRef.current = null;
+      pending.endFn();
+      playTactileFeedback('auth_welcome', { haptic: true, sound: true });
+    }
+  }, [authUser?.uid, storageReady]);
 
   const handleAuthenticated = (user: AuthUser) => {
-    playTactileFeedback('auth_welcome', { haptic: true, sound: true });
+    const isWorkspaceSwitch = authUser?.uid !== user.uid;
+    if (isWorkspaceSwitch) {
+      if (pendingAuthRevealRef.current) {
+        pendingAuthRevealRef.current.endFn();
+        pendingAuthRevealRef.current = null;
+      }
+      const label = authUser
+        ? `جاري التبديل إلى حساب «${user.displayName}» وتجهيز البيانات...`
+        : `جاري فتح مساحة عمل «${user.displayName}»...`;
+      const endFn = startSignatureLoading(
+        label,
+        'يتم التحقق من الجلسة وتحميل الوكالات والتخصيصات المحفوظة بأمان...',
+        850
+      );
+      pendingAuthRevealRef.current = { uid: user.uid, endFn };
+    } else {
+      playTactileFeedback('auth_welcome', { haptic: true, sound: true });
+    }
+    const restored = readSavedUiState(user.uid);
+    uiStateHydratedUidRef.current = user.uid;
     setAuthUser(user);
     setAuthModalOpen(false);
-    setActiveView('hub');
+    setActiveView(restored.activeView);
+    setSettingsSection(restored.settingsSection);
+    setSettingsScreenMode(restored.settingsScreenMode);
+    setSettingsCapsuleId(restored.settingsCapsuleId);
+    setTableViewingMode(restored.tableViewingMode);
+    if (restored.selectedAgencyId > 0) {
+      setSelectedAgencyId(restored.selectedAgencyId);
+    }
+    setSidebarCollapsed(readSavedSidebarCollapsed(user.uid));
   };
 
-  const handleLogout = () => {
-    clearSession();
-    setAuthUser(null);
-    setAuthModalOpen(false);
-    setDrawerOpen(false);
-    setActiveView('hub');
+  const handleLogout = async () => {
+    if (pendingAuthRevealRef.current) {
+      pendingAuthRevealRef.current.endFn();
+      pendingAuthRevealRef.current = null;
+    }
+    await runWithSignatureLoader(
+      {
+        label: 'جاري حفظ التعديلات وتسجيل الخروج بأمان...',
+        subtitle: 'يتم تأمين بيانات الحساب وإغلاق الجلسة الحالية...',
+        minVisibleMs: 850,
+      },
+      async () => {
+        const cur = latestUiStateRef.current;
+        if (cur.uid && uiStateHydratedUidRef.current === cur.uid) {
+          writeSavedUiState(cur.uid, cur.snap);
+        }
+        clearSession();
+        uiStateHydratedUidRef.current = null;
+        setAuthUser(null);
+        setAuthModalOpen(false);
+        setDrawerOpen(false);
+        setActiveView('hub');
+      }
+    );
   };
 
   // Privacy lock overlay input state
@@ -647,24 +930,339 @@ export default function App() {
     }
   };
 
-  const handleDownloadBackupJson = (silentAuto = false) => {
-    const payload = JSON.stringify(state, null, 2);
-    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${silentAuto ? 'morrow-auto-backup' : 'morrow-backup'}-${new Date()
-      .toISOString()
-      .slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    if (!silentAuto) {
-      playTactileFeedback('save_complete', {
-        haptic: workspaceCosmos.accessibility.hapticFeedback,
-      });
+  const handleDownloadBackupJson = async (silentAuto = false) => {
+    const runDownload = () => {
+      const { jsonText } = exportMemoryVaultJson();
+      const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${silentAuto ? 'morrow-auto-vault' : 'morrow-memory-vault'}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (!silentAuto) {
+        playTactileFeedback('save_complete', {
+          haptic: workspaceCosmos.accessibility.hapticFeedback,
+        });
+      }
+    };
+    if (silentAuto) {
+      runDownload();
+      return;
     }
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تجهيز وتصدير لقطة الذاكرة الكاملة (Memory Vault)...',
+        subtitle: 'يتم تجميع كافة الوكالات والسجلات والتفضيلات وسجل التدقيق في ملف JSON آمن...',
+      },
+      runDownload
+    );
+  };
+
+  // --- Smart Signature Loader Wrappers for App-Wide Changes & Milestone Operations ---
+  const handleChangeModeTier = async (tier: typeof state.modeTier) => {
+    if (tier === state.modeTier) return;
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تكييف وضع وصلاحيات التطبيق بالكامل...',
+        subtitle: 'يتم إعادة ضبط الأدوات والأقسام والصلاحيات حسب المستوى المختار...',
+      },
+      () => {
+        setModeTier(tier);
+      }
+    );
+  };
+
+  const handleToggleDarkTheme = async (dark: boolean) => {
+    if (dark === state.darkTheme) return;
+    await runWithSignatureLoader(
+      {
+        label: dark
+          ? 'جاري تفعيل المظهر الليلي للتطبيق...'
+          : 'جاري تفعيل المظهر النهاري للتطبيق...',
+        subtitle: 'يتم تحديث ألوان الواجهة والبطاقات والجداول بالكامل...',
+      },
+      () => {
+        setDarkTheme(dark);
+      }
+    );
+  };
+
+  const handleUpdateThemePrefs = async (patch: Partial<typeof themePrefs>) => {
+    const isStructuralChange =
+      (patch.appTheme !== undefined && patch.appTheme !== themePrefs.appTheme) ||
+      (patch.appShape !== undefined && patch.appShape !== themePrefs.appShape) ||
+      (patch.tableTheme !== undefined && patch.tableTheme !== themePrefs.tableTheme) ||
+      (patch.fontFamily !== undefined && patch.fontFamily !== themePrefs.fontFamily);
+
+    if (!isStructuralChange) {
+      setThemePrefs(patch);
+      return;
+    }
+
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تطبيق المظهر والهوية الجديدة على التطبيق...',
+        subtitle: 'يتم تحديث الثيم والأشكال والخطوط في كافة الشاشات...',
+      },
+      () => {
+        setThemePrefs(patch);
+      }
+    );
+  };
+
+  const handleUpdateGeneralPrefs = async (patch: Partial<typeof generalPrefs>) => {
+    const isSurfaceThemeSwitch =
+      patch.surface2dPrefs?.themeId !== undefined &&
+      patch.surface2dPrefs.themeId !== activeSurfacePrefs.themeId;
+
+    if (!isSurfaceThemeSwitch) {
+      setGeneralPrefs(patch);
+      return;
+    }
+
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تغيير لوحة الألوان والمشهد البصري للتطبيق...',
+        subtitle: 'يتم إعادة رسم الخلفية الهندسية والسطوح الزجاجية بالكامل...',
+      },
+      () => {
+        setGeneralPrefs(patch);
+      }
+    );
+  };
+
+  const handleResetThemePrefs = async () => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري استعادة مظهر التطبيق الافتراضي...',
+        subtitle: 'يتم إرجاع الثيم والخطوط والأشكال إلى وضعها القياسي...',
+      },
+      () => {
+        resetThemePrefs();
+      }
+    );
+  };
+
+  const handleApplyAppearanceProfile = async (profileId: string) => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تطبيق ملف المظهر المتكامل...',
+        subtitle: 'يتم تبديل الألوان والخطوط وإعدادات الجداول عبر التطبيق بالكامل...',
+      },
+      () => {
+        applyAppearanceProfile(profileId);
+      }
+    );
+  };
+
+  const handleResetExpertTableConfig = async () => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري استعادة تخطيط الجداول الافتراضي...',
+        subtitle: 'يتم إعادة ضبط الأعمدة والعرض والخصائص القياسية...',
+      },
+      () => {
+        resetExpertTableConfig();
+      }
+    );
+  };
+
+  const handleRestoreMigrationSnapshot = async (): Promise<boolean> => {
+    return runWithSignatureLoader(
+      {
+        label: 'جاري استعادة نسخة ما قبل الترحيل...',
+        subtitle: 'يتم إرجاع بنية الواجهة والإعدادات المحفوظة بدقة...',
+      },
+      () => restorePreMigrationSnapshot()
+    );
+  };
+
+  const handleSaveCalculationSettings = async (
+    next: typeof state.calculationSettings
+  ) => {
+    const cur = state.calculationSettings;
+    const changed =
+      next.feePerIndividualIqd !== cur.feePerIndividualIqd ||
+      next.kgPerIndividual !== cur.kgPerIndividual ||
+      next.kgPerBag !== cur.kgPerBag ||
+      next.fixedCardFeeIqd !== cur.fixedCardFeeIqd ||
+      next.calculationMode !== cur.calculationMode ||
+      next.includeBlockedInFees !== cur.includeBlockedInFees ||
+      next.roundingStepIqd !== cur.roundingStepIqd ||
+      next.discountPercent !== cur.discountPercent;
+
+    if (!changed) {
+      setCalculationSettings(next);
+      return;
+    }
+
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تحديث معادلة الحصص والرسوم عبر التطبيق...',
+        subtitle: 'يتم إعادة احتساب الأوزان والأكياس والمبالغ في كافة الوكالات...',
+      },
+      () => {
+        setCalculationSettings(next);
+      }
+    );
+  };
+
+  const handleUpdateAccessibilityPrefs = async (
+    patch: Partial<typeof workspaceCosmos.accessibility>
+  ) => {
+    const cur = workspaceCosmos.accessibility;
+    const isMajorChange =
+      (patch.oneHandedMode !== undefined && patch.oneHandedMode !== cur.oneHandedMode) ||
+      (patch.numeralSystem !== undefined && patch.numeralSystem !== cur.numeralSystem) ||
+      (patch.calendarSystem !== undefined && patch.calendarSystem !== cur.calendarSystem) ||
+      (patch.experienceMode !== undefined && patch.experienceMode !== cur.experienceMode);
+
+    if (!isMajorChange) {
+      updateAccessibilityPrefs(patch);
+      return;
+    }
+
+    await runWithSignatureLoader(
+      {
+        label: 'جاري تطبيق التخصيص الشامل على واجهة التطبيق...',
+        subtitle: 'يتم إعادة تكييف العرض والأرقام ونمط التفاعل في جميع الأقسام...',
+      },
+      () => {
+        updateAccessibilityPrefs(patch);
+      }
+    );
+  };
+
+  const handleAddAgency = async (name: string, icon: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const nextId = state.agencies.reduce((m, a) => Math.max(m, a.id), 0) + 1;
+    await runWithSignatureLoader(
+      {
+        label: `جاري إنشاء وتجهيز وكالة «${clean}»...`,
+        subtitle: 'يتم بناء سجل الوكالة وحساباتها وربطها بمحفظة العمل...',
+      },
+      () => {
+        addAgencyDirect(clean, icon);
+        setSelectedAgencyId(nextId);
+      }
+    );
+  };
+
+  const handleTransferAgencyRecords = async (
+    fromAgencyId: number,
+    toAgencyId: number
+  ) => {
+    if (fromAgencyId === toAgencyId) return;
+    const fromName =
+      state.agencies.find((a) => a.id === fromAgencyId)?.name || 'الوكالة';
+    const toName =
+      state.agencies.find((a) => a.id === toAgencyId)?.name || 'الوكالة المستهدفة';
+    await runWithSignatureLoader(
+      {
+        label: `جاري نقل سجلات «${fromName}» إلى «${toName}»...`,
+        subtitle: 'يتم تحويل المستفيدين والقوائم والمصروفات والعلاقات بأمان...',
+      },
+      () => {
+        transferAgencyRecordsConfirmed(fromAgencyId, toAgencyId);
+        setSelectedAgencyId(toAgencyId);
+      }
+    );
+  };
+
+  const handleDeleteAgency = async (agencyId: number) => {
+    const targetName =
+      state.agencies.find((a) => a.id === agencyId)?.name || 'الوكالة';
+    await runWithSignatureLoader(
+      {
+        label: `جاري حذف وكالة «${targetName}»...`,
+        subtitle: 'يتم حفظ كافة سجلاتها في سلة الأمان قبل الإزالة النهائية من المحفظة...',
+      },
+      () => {
+        deleteAgencyConfirmed(agencyId);
+        if (selectedAgencyId === agencyId) {
+          const remaining = state.agencies.find((a) => a.id !== agencyId);
+          setSelectedAgencyId(remaining?.id ?? 0);
+        }
+      }
+    );
+  };
+
+  const handleMovePersonsToAgency = async (
+    personIds: number[],
+    targetAgencyId: number
+  ) => {
+    if (personIds.length === 0) return;
+    const targetName =
+      state.agencies.find((a) => a.id === targetAgencyId)?.name || 'الوكالة';
+    await runWithSignatureLoader(
+      {
+        label: `جاري نقل ${personIds.length} سجل إلى «${targetName}»...`,
+        subtitle: 'يتم تحديث جداول الوكالات وإعادة احتساب الإجماليات...',
+      },
+      () => {
+        movePersonsToAgencyConfirmed(personIds, targetAgencyId);
+      }
+    );
+  };
+
+  const handleImportWorkspaceJson = async (rawJson: string) => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري استيراد وفحص بيانات مساحة العمل...',
+        subtitle: 'يتم التحقق من سلامة الملف واستعادة الوكالات والسجلات والإعدادات...',
+      },
+      () => {
+        importWorkspaceJson(rawJson);
+      }
+    );
+  };
+
+  const handleArchiveCurrentPeriod = async (options: {
+    label?: string;
+    isClosed: boolean;
+    archiveSource: 'manual' | 'auto';
+  }) => {
+    return runWithSignatureLoader(
+      {
+        label: 'جاري حفظ وأرشفة الفترة الحالية...',
+        subtitle: 'يتم تثبيت نسخة تاريخية مستقلة للسجلات والحسابات والمالية...',
+      },
+      () => archiveCurrentPeriod(options)
+    );
+  };
+
+  const handleStartNextMonthRollover = async (options: {
+    nextQuotaName?: string;
+    nextQuotaNumber?: string;
+    nextDate?: string;
+    autoArchiveCurrent: boolean;
+    resetNotesAndChanges: boolean;
+  }) => {
+    await runWithSignatureLoader(
+      {
+        label: 'جاري الترحيل وبدء الفترة الشهرية الجديدة...',
+        subtitle: 'يتم تأمين أرشيف الفترة السابقة وتهيئة وجبة الشهر الجديد...',
+      },
+      () => {
+        startNextMonthRollover(options);
+      }
+    );
+  };
+
+  const handleApplyAutoFixes = async () => {
+    return runWithSignatureLoader(
+      {
+        label: 'جاري تنفيذ الإصلاحات الذكية التلقائية...',
+        subtitle: 'يتم تدقيق وتنظيف السجلات وتصحيح التناقضات عبر المحفظة...',
+      },
+      () => applyAssistantAutoFixes()
+    );
   };
 
   const focusedPersonName = useMemo(
@@ -677,6 +1275,104 @@ export default function App() {
 
   const { toasts, pushToast, dismissToast } = useToastQueue();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Surface LWW cloud conflict resolution notices cleanly via toast
+  useEffect(() => {
+    if (!lastConflictNotice) return;
+    pushToast({
+      title: 'تحديث المزامنة السحابية',
+      description: lastConflictNotice,
+      tone: 'info',
+    });
+    dismissConflictNotice();
+  }, [lastConflictNotice, dismissConflictNotice, pushToast]);
+
+  // Bi-directional Smart Preferences Memory sync across devices
+  const lastRemotePrefsAppliedRef = useRef<string>('');
+  const lastLocalPrefsPushedRef = useRef<string>('');
+  useEffect(() => {
+    if (!storageReady || !authUser?.uid || !smartPreferences?.updatedAt) return;
+    const stamp = `${authUser.uid}::${smartPreferences.updatedAt}`;
+    if (
+      lastRemotePrefsAppliedRef.current === stamp ||
+      lastLocalPrefsPushedRef.current === stamp
+    ) {
+      return;
+    }
+    lastRemotePrefsAppliedRef.current = stamp;
+    if (
+      smartPreferences.activeView &&
+      VALID_APP_VIEWS.includes(smartPreferences.activeView)
+    ) {
+      setActiveView(smartPreferences.activeView);
+    }
+    if (
+      typeof smartPreferences.selectedAgencyId === 'number' &&
+      state.agencies.some((a) => a.id === smartPreferences.selectedAgencyId)
+    ) {
+      setSelectedAgencyId(smartPreferences.selectedAgencyId);
+    }
+    if (typeof smartPreferences.tableViewingMode === 'boolean') {
+      setTableViewingMode(smartPreferences.tableViewingMode);
+    }
+    if (typeof smartPreferences.sidebarCollapsed === 'boolean') {
+      setSidebarCollapsed(smartPreferences.sidebarCollapsed);
+    }
+  }, [storageReady, authUser?.uid, smartPreferences, state.agencies]);
+
+  useEffect(() => {
+    if (!storageReady || !authUser?.uid) return;
+    const matchesCurrent =
+      smartPreferences.activeView === activeView &&
+      smartPreferences.selectedAgencyId === selectedAgencyId &&
+      Boolean(smartPreferences.tableViewingMode) === tableViewingMode &&
+      Boolean(smartPreferences.sidebarCollapsed) === sidebarCollapsed;
+    if (matchesCurrent) return;
+    const timer = window.setTimeout(() => {
+      const stamp = new Date().toISOString();
+      lastLocalPrefsPushedRef.current = `${authUser.uid}::${stamp}`;
+      updateSmartPreferences({
+        activeView,
+        selectedAgencyId,
+        tableViewingMode,
+        sidebarCollapsed,
+        updatedAt: stamp,
+      });
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [
+    storageReady,
+    authUser?.uid,
+    activeView,
+    selectedAgencyId,
+    tableViewingMode,
+    sidebarCollapsed,
+    smartPreferences.activeView,
+    smartPreferences.selectedAgencyId,
+    smartPreferences.tableViewingMode,
+    smartPreferences.sidebarCollapsed,
+    updateSmartPreferences,
+  ]);
+
+  const handleForceSyncTrigger = async () => {
+    try {
+      await forceSyncNow({ force: true });
+      pushToast({
+        title: 'تمت المزامنة السحابية',
+        description: 'تم تأمين وتوحيد كافة البيانات والتفضيلات عبر الأجهزة.',
+        tone: 'success',
+      });
+    } catch (err) {
+      pushToast({
+        title: 'تعذرت المزامنة الفورية',
+        description:
+          err instanceof Error
+            ? err.message
+            : 'التغييرات محفوظة محلياً وسيُعاد إرسالها تلقائياً.',
+        tone: 'error',
+      });
+    }
+  };
 
   // Silent Smart Weekly Auto-Backup Evaluator
   const weeklyAutoRanRef = useRef(false);
@@ -837,6 +1533,7 @@ export default function App() {
     onExportBackupFile: handleDownloadBackupJson,
     canUndoApp: canUndo,
     onUndoAppAction: undo,
+    activeUid: authUser?.uid ?? null,
   });
 
   // Restore deep-linked Cosmos node on initial mount if URL hash is set
@@ -1156,6 +1853,7 @@ export default function App() {
         <div className="text-xs font-medium tracking-wider opacity-70">
           جارٍ التحقق من الجلسة...
         </div>
+        <DelayedTruckLoaderOverlay />
       </div>
     );
   }
@@ -1169,6 +1867,7 @@ export default function App() {
           appShape={themePrefs.appShape}
           onAuthenticated={handleAuthenticated}
         />
+        <DelayedTruckLoaderOverlay />
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -1242,6 +1941,11 @@ export default function App() {
           canGoForward={navHistory.index < navHistory.stack.length - 1}
           onGoBack={goBackHistory}
           onGoForward={goForwardHistory}
+          syncStatus={syncStatus}
+          storageStatus={storageStatus}
+          pendingSyncCount={syncQueue.filter((q) => q.status !== 'synced').length}
+          isOnline={isOnline}
+          onForceSyncNow={() => void handleForceSyncTrigger()}
         />
       )}
 
@@ -1292,23 +1996,27 @@ export default function App() {
               capabilities={capabilities}
               generalPrefs={generalPrefs}
               appShape={themePrefs.appShape}
-              onUpdateThemePrefs={setThemePrefs}
-              onUpdateGeneralPrefs={setGeneralPrefs}
+              onUpdateThemePrefs={(patch) => void handleUpdateThemePrefs(patch)}
+              onUpdateGeneralPrefs={(patch) => void handleUpdateGeneralPrefs(patch)}
               onUpdateActivePeriod={updateActivePeriod}
               onUpdateCalculationSettings={(patch) =>
-                setCalculationSettings({ ...state.calculationSettings, ...patch })
+                void handleSaveCalculationSettings({
+                  ...state.calculationSettings,
+                  ...patch,
+                })
               }
-              onExportBackupFile={() => handleDownloadBackupJson(false)}
+              onExportBackupFile={() => void handleDownloadBackupJson(false)}
               onAddExpense={addExpense}
               onOpenMasterRoster={() => setActiveView('master_roster')}
               onOpenAgencyRoster={(id) => {
                 setSelectedAgencyId(id);
                 setActiveView('agency_roster');
               }}
-              onAddAgency={addAgencyDirect}
+              onAddAgency={handleAddAgency}
               onUpdateAgencyDetails={updateAgencyDetails}
+              onTransferAgencyRecords={handleTransferAgencyRecords}
+              onDeleteAgency={handleDeleteAgency}
               onNavigateView={handleNavigate}
-              onLoadStarterData={loadStarterDemoData}
             />
           )}
 
@@ -1332,7 +2040,7 @@ export default function App() {
           onRedo={redo}
           onBackToHub={() => setActiveView('hub')}
           onUpdateTableHeaderMeta={updateTableHeaderMeta}
-          onMovePersonsToAgency={movePersonsToAgencyConfirmed}
+          onMovePersonsToAgency={handleMovePersonsToAgency}
           onAddPersonsToReadyList={(listId, pids) =>
             addPersonsToReadyList(listId, pids)
           }
@@ -1352,16 +2060,27 @@ export default function App() {
           onCreateReadyListFromSelection={createReadyListFromSelection}
           columnCustomizerOpen={columnCustomizerOpen}
           onColumnCustomizerOpenChange={setColumnCustomizerOpen}
-          onEnableExpertModeForCustomizer={() => setModeTier('expert')}
+          onEnableExpertModeForCustomizer={() => void handleChangeModeTier('expert')}
           onUpdateExpertTableConfig={setExpertTableConfig}
           onAddExpertCustomColumn={addExpertCustomColumn}
           onRemoveExpertCustomColumn={removeExpertCustomColumn}
-          onResetExpertTableConfig={resetExpertTableConfig}
+          onResetExpertTableConfig={() => void handleResetExpertTableConfig()}
           onOpenSettings={() => handleNavigate('settings', 'modes')}
           externalTableCommand={externalTableCommand}
           onFocusedPersonChange={setFocusedPersonId}
           viewingMode={tableViewingMode}
           onViewingModeChange={setTableViewingMode}
+          savedFilterPreset={
+            smartPreferences.rosterFilters?.[`agency:${currentAgency.id}`]
+          }
+          onSaveFilterPreset={(preset) =>
+            updateSmartPreferences({
+              rosterFilters: {
+                ...(smartPreferences.rosterFilters || {}),
+                [`agency:${currentAgency.id}`]: preset,
+              },
+            })
+          }
         />
       )}
 
@@ -1385,7 +2104,7 @@ export default function App() {
           onRedo={redo}
           onBackToHub={() => setActiveView('hub')}
           onUpdateTableHeaderMeta={updateTableHeaderMeta}
-          onMovePersonsToAgency={movePersonsToAgencyConfirmed}
+          onMovePersonsToAgency={handleMovePersonsToAgency}
           onAddPersonsToReadyList={(listId, pids) =>
             addPersonsToReadyList(listId, pids)
           }
@@ -1405,16 +2124,25 @@ export default function App() {
           onCreateReadyListFromSelection={createReadyListFromSelection}
           columnCustomizerOpen={columnCustomizerOpen}
           onColumnCustomizerOpenChange={setColumnCustomizerOpen}
-          onEnableExpertModeForCustomizer={() => setModeTier('expert')}
+          onEnableExpertModeForCustomizer={() => void handleChangeModeTier('expert')}
           onUpdateExpertTableConfig={setExpertTableConfig}
           onAddExpertCustomColumn={addExpertCustomColumn}
           onRemoveExpertCustomColumn={removeExpertCustomColumn}
-          onResetExpertTableConfig={resetExpertTableConfig}
+          onResetExpertTableConfig={() => void handleResetExpertTableConfig()}
           onOpenSettings={() => handleNavigate('settings', 'modes')}
           externalTableCommand={externalTableCommand}
           onFocusedPersonChange={setFocusedPersonId}
           viewingMode={tableViewingMode}
           onViewingModeChange={setTableViewingMode}
+          savedFilterPreset={smartPreferences.rosterFilters?.master}
+          onSaveFilterPreset={(preset) =>
+            updateSmartPreferences({
+              rosterFilters: {
+                ...(smartPreferences.rosterFilters || {}),
+                master: preset,
+              },
+            })
+          }
         />
       )}
 
@@ -1447,7 +2175,7 @@ export default function App() {
             handleRequestDelete({ kind: 'ready_item', item })
           }
           onBulkDeleteItems={deleteReadyListItemsBulkConfirmed}
-          onMovePersonsToAgency={movePersonsToAgencyConfirmed}
+          onMovePersonsToAgency={handleMovePersonsToAgency}
           onUpsertRelation={upsertRelationEntry}
         />
       )}
@@ -1467,7 +2195,7 @@ export default function App() {
           onRequestDeleteRelation={(rel) =>
             handleRequestDelete({ kind: 'relation', item: rel })
           }
-          onMoveToAgency={movePersonsToAgencyConfirmed}
+          onMoveToAgency={handleMovePersonsToAgency}
           onAddToReadyList={(listId, pids) =>
             addPersonsToReadyList(listId, pids)
           }
@@ -1483,8 +2211,8 @@ export default function App() {
           capabilities={capabilities}
           activePeriod={activePeriod}
           generalPrefs={generalPrefs}
-          onUpdateGeneralPrefs={setGeneralPrefs}
-          onSaveCalculationSettings={setCalculationSettings}
+          onUpdateGeneralPrefs={(patch) => void handleUpdateGeneralPrefs(patch)}
+          onSaveCalculationSettings={(next) => void handleSaveCalculationSettings(next)}
           onAddExpense={addExpense}
           onRequestDeleteExpense={(expense) =>
             handleRequestDelete({ kind: 'expense', item: expense })
@@ -1508,7 +2236,7 @@ export default function App() {
           onUpdateQuickExtractPrefs={setQuickExtractPrefs}
           onSaveQuickExtractTemplate={saveQuickExtractTemplate}
           onCommitQuickExtractPlan={commitQuickExtractPlan}
-          onMovePersonsToAgency={movePersonsToAgencyConfirmed}
+          onMovePersonsToAgency={handleMovePersonsToAgency}
           onAddPersonsToReadyList={(listId, pids) =>
             addPersonsToReadyList(listId, pids)
           }
@@ -1526,6 +2254,7 @@ export default function App() {
           initialQueuedFiles={pendingExtractFiles}
           taskRouting={assistant.assistantSettings.taskRouting}
           onOpenAiModelsStudio={openAiModelsStudio}
+          activeUid={authUser?.uid ?? null}
         />
       )}
 
@@ -1536,8 +2265,8 @@ export default function App() {
           capabilities={capabilities}
           authUser={authUser}
           onUpdateActivePeriod={updateActivePeriod}
-          onArchiveCurrentPeriod={archiveCurrentPeriod}
-          onStartNextMonthRollover={startNextMonthRollover}
+          onArchiveCurrentPeriod={handleArchiveCurrentPeriod}
+          onStartNextMonthRollover={handleStartNextMonthRollover}
           onMarkArchiveCloudSynced={markArchiveCloudSynced}
           onDeleteArchive={deleteMonthlyArchive}
           onSyncServer={syncWorkspaceToServer}
@@ -1572,7 +2301,7 @@ export default function App() {
           onRestoreRecycleBinItem={restoreRecycleBinItem}
           onPurgeRecycleBinItem={purgeRecycleBinItem}
           onClearRecycleBin={clearRecycleBin}
-          onImportWorkspaceJson={importWorkspaceJson}
+          onImportWorkspaceJson={handleImportWorkspaceJson}
           onSyncServer={syncWorkspaceToServer}
           onRestoreServer={restoreWorkspaceFromServer}
           onNotifySuccess={(msg) =>
@@ -1581,6 +2310,16 @@ export default function App() {
           onNotifyError={(msg) =>
             pushToast({ title: msg, tone: 'error' })
           }
+          syncStatus={syncStatus}
+          storageStatus={storageStatus}
+          syncQueue={syncQueue}
+          isOnline={isOnline}
+          auditLog={auditLog}
+          onForceSyncNow={async () => {
+            await forceSyncNow({ force: true });
+          }}
+          onExportMemoryVaultJson={exportMemoryVaultJson}
+          onRestoreAuditCheckpoint={restoreAuditCheckpoint}
         />
       )}
 
@@ -1588,7 +2327,7 @@ export default function App() {
         <SmartModelsWorkspaceView
           state={state}
           reduceMotion={tabrixReducedMotion}
-          onApplyAutoFixes={applyAssistantAutoFixes}
+          onApplyAutoFixes={handleApplyAutoFixes}
           onOpenAgencyRoster={(agId) => {
             setSelectedAgencyId(agId);
             setActiveView('agency_roster');
@@ -1696,6 +2435,9 @@ export default function App() {
           surfacePrefs={activeSurfacePrefs}
           canViewFinance={capabilities.canViewFinance}
           canUseQuickExtract={capabilities.canUseQuickExtract}
+          activeUid={authUser?.uid ?? null}
+          conversationMemory={assistant.conversationMemory}
+          onClearConversationMemory={assistant.clearConversationMemory}
         />
       )}
 
@@ -1737,28 +2479,28 @@ export default function App() {
           securityPrefs={securityPrefs}
           recycleBin={recycleBin}
           authUser={authUser}
-          onChangeModeTier={setModeTier}
+          onChangeModeTier={(tier) => void handleChangeModeTier(tier)}
           onToggleEditor={setEditorEnabled}
-          onToggleDarkTheme={setDarkTheme}
+          onToggleDarkTheme={(dark) => void handleToggleDarkTheme(dark)}
           onToggleRequireLogin={setRequireLoginOnStart}
-          onSaveCalculationSettings={setCalculationSettings}
-          onUpdateThemePrefs={setThemePrefs}
-          onResetThemePrefs={resetThemePrefs}
+          onSaveCalculationSettings={(next) => void handleSaveCalculationSettings(next)}
+          onUpdateThemePrefs={(patch) => void handleUpdateThemePrefs(patch)}
+          onResetThemePrefs={() => void handleResetThemePrefs()}
           onSaveAppearanceProfile={saveAppearanceProfile}
-          onApplyAppearanceProfile={applyAppearanceProfile}
+          onApplyAppearanceProfile={(id) => void handleApplyAppearanceProfile(id)}
           onDeleteAppearanceProfile={deleteAppearanceProfile}
           onChangeTopBarConfig={setTopBarConfig}
           onUpdateExpertTableConfig={setExpertTableConfig}
-          onResetExpertTableConfig={resetExpertTableConfig}
+          onResetExpertTableConfig={() => void handleResetExpertTableConfig()}
           onUpdateQuickExtractPrefs={setQuickExtractPrefs}
           onDeleteQuickExtractTemplate={deleteQuickExtractTemplate}
           onUpdateRelationsPrefs={setRelationsPrefs}
-          onUpdateGeneralPrefs={setGeneralPrefs}
+          onUpdateGeneralPrefs={(patch) => void handleUpdateGeneralPrefs(patch)}
           onUpdateSecurityPrefs={setSecurityPrefs}
           onRestoreRecycleBinItem={restoreRecycleBinItem}
           onPurgeRecycleBinItem={purgeRecycleBinItem}
           onClearRecycleBin={clearRecycleBin}
-          onImportWorkspaceJson={importWorkspaceJson}
+          onImportWorkspaceJson={handleImportWorkspaceJson}
           onSyncServer={syncWorkspaceToServer}
           onRestoreServer={restoreWorkspaceFromServer}
           onOpenAuth={() => setAuthModalOpen(true)}
@@ -1772,18 +2514,18 @@ export default function App() {
           workspaceCosmos={workspaceCosmos}
           rootCosmos={cosmosRoot}
           migrationSnapshot={state.migrationSnapshot}
-          onUpdateAccessibilityPrefs={updateAccessibilityPrefs}
+          onUpdateAccessibilityPrefs={(patch) => void handleUpdateAccessibilityPrefs(patch)}
           onUpdateFeatureFlags={updateFeatureFlags}
           onUpdateCosmosExperienceMode={(mode) =>
-            updateAccessibilityPrefs({ experienceMode: mode })
+            void handleUpdateAccessibilityPrefs({ experienceMode: mode })
           }
           onTogglePinnedNode={togglePinnedCosmosNode}
           onSaveCustomTheme={saveCustomThemePreset}
           onDeleteCustomTheme={deleteCustomThemePreset}
           onToggleHiddenWorld={toggleHiddenCosmosWorld}
-          onRestoreMigrationSnapshot={restorePreMigrationSnapshot}
+          onRestoreMigrationSnapshot={handleRestoreMigrationSnapshot}
           onAppendChangeLog={appendWorldChangeLog}
-          onRunAutoFix={() => applyAssistantAutoFixes()}
+          onRunAutoFix={handleApplyAutoFixes}
           onOpenWorldSwitcher={() => setWorldSwitcherOpen(true)}
           onSelectCosmosNode={handleSelectCosmosNode}
         />
@@ -2051,7 +2793,7 @@ export default function App() {
         />
       )}
 
-      {/* Global 5-Second Delayed Animated Cargo Truck & Parcel Loader */}
+      {/* Global 4-Second Delayed & Signature Animated Cargo Truck & Parcel Loader */}
       <DelayedTruckLoaderOverlay />
 
       {/* Discreet Background & Stealth Execution Toast Stack */}

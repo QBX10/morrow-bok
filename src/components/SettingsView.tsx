@@ -251,14 +251,16 @@ interface SettingsViewProps {
   onSaveCustomTheme?: (preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => void;
   onDeleteCustomTheme?: (id: string) => void;
   onToggleHiddenWorld?: (worldId: string) => void;
-  onRestoreMigrationSnapshot?: () => boolean;
+  onRestoreMigrationSnapshot?: () => boolean | Promise<boolean>;
   onAppendChangeLog?: (entry: {
     worldId: CosmosWorldId;
     label: string;
     beforeValue?: string;
     afterValue?: string;
   }) => void;
-  onRunAutoFix?: () => { fixedCount: number; summaryLines: string[] };
+  onRunAutoFix?: () =>
+    | { fixedCount: number; summaryLines: string[] }
+    | Promise<{ fixedCount: number; summaryLines: string[] }>;
   onOpenWorldSwitcher?: () => void;
   onSelectCosmosNode?: (node: CosmosNode) => void;
 }
@@ -2457,8 +2459,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onRunAutoFix && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const res = onRunAutoFix();
+                  onClick={async () => {
+                    const res = await onRunAutoFix();
                     notifySuccess(
                       res.fixedCount > 0
                         ? `تم إصلاح ${res.fixedCount} ملاحظة بنجاح.`

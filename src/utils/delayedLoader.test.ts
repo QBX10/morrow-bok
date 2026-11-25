@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   createDelayedLoadingController,
   DELAYED_LOADER_THRESHOLD_MS,
+  runWithSignatureLoader,
   trackDelayedLoading,
   type TimerDriver,
 } from './delayedLoader.ts';
@@ -22,6 +23,7 @@ function createFakeTimers() {
       if (handle === null) return;
       tasks.delete(handle as unknown as number);
     },
+    now: () => now,
   };
 
   const advanceBy = (ms: number) => {
@@ -51,22 +53,22 @@ function createFakeTimers() {
   };
 }
 
-test('THRESHOLD is strictly 5000 ms', () => {
-  assert.equal(DELAYED_LOADER_THRESHOLD_MS, 5000);
+test('THRESHOLD is strictly 4000 ms', () => {
+  assert.equal(DELAYED_LOADER_THRESHOLD_MS, 4000);
 });
 
-test('startLoadingWith5SecDelay cancels cleanly when finishLoading runs before 5000ms', () => {
+test('startLoadingWith4SecDelay cancels cleanly when finishLoading runs before 4000ms', () => {
   const fake = createFakeTimers();
-  const ctrl = createDelayedLoadingController(5000, fake.driver);
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
 
   let shownCount = 0;
   let hiddenCount = 0;
 
-  ctrl.startLoadingWith5SecDelay(() => {
+  ctrl.startLoadingWith4SecDelay(() => {
     shownCount += 1;
   });
 
-  fake.advanceBy(4999);
+  fake.advanceBy(3999);
   assert.equal(shownCount, 0);
 
   ctrl.finishLoading(() => {
@@ -75,21 +77,21 @@ test('startLoadingWith5SecDelay cancels cleanly when finishLoading runs before 5
   assert.equal(hiddenCount, 1);
   assert.equal(fake.pendingCount(), 0);
 
-  // Advancing well past 5000ms never triggers the cancelled timer
+  // Advancing well past 4000ms never triggers the cancelled timer
   fake.advanceBy(10000);
   assert.equal(shownCount, 0);
 });
 
-test('startLoadingWith5SecDelay shows at 5000ms and hides on finishLoading', () => {
+test('startLoadingWith4SecDelay shows at 4000ms and hides on finishLoading', () => {
   const fake = createFakeTimers();
-  const ctrl = createDelayedLoadingController(5000, fake.driver);
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
 
   let visible = false;
-  ctrl.startLoadingWith5SecDelay(() => {
+  ctrl.startLoadingWith4SecDelay(() => {
     visible = true;
   });
 
-  fake.advanceBy(4999);
+  fake.advanceBy(3999);
   assert.equal(visible, false);
 
   fake.advanceBy(1);
@@ -101,9 +103,9 @@ test('startLoadingWith5SecDelay shows at 5000ms and hides on finishLoading', () 
   assert.equal(visible, false);
 });
 
-test('fast task (< 5s) never activates global delayed loader', () => {
+test('fast delayed task (< 4s) never activates global delayed loader', () => {
   const fake = createFakeTimers();
-  const ctrl = createDelayedLoadingController(5000, fake.driver);
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
 
   const token = ctrl.beginTask('تحميل سريع');
   fake.advanceBy(2400);
@@ -116,9 +118,9 @@ test('fast task (< 5s) never activates global delayed loader', () => {
   assert.equal(ctrl.getSnapshot().visible, false);
 });
 
-test('slow task (>= 5s) reveals truck loader at 5000ms and stays visible until completion', () => {
+test('slow task (>= 4s) reveals truck loader at 4000ms and stays visible until completion', () => {
   const fake = createFakeTimers();
-  const ctrl = createDelayedLoadingController(5000, fake.driver);
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
 
   const states: boolean[] = [];
   const unsub = ctrl.subscribe((snap) => {
@@ -126,12 +128,13 @@ test('slow task (>= 5s) reveals truck loader at 5000ms and stays visible until c
   });
 
   const token = ctrl.beginTask('جاري سحب البيانات الثقيلة...');
-  fake.advanceBy(4500);
+  fake.advanceBy(3500);
   assert.equal(ctrl.getSnapshot().visible, false);
 
   fake.advanceBy(500);
   assert.equal(ctrl.getSnapshot().visible, true);
   assert.equal(ctrl.getSnapshot().label, 'جاري سحب البيانات الثقيلة...');
+  assert.equal(ctrl.getSnapshot().mode, 'delayed');
 
   fake.advanceBy(3000);
   assert.equal(ctrl.getSnapshot().visible, true);
@@ -142,9 +145,9 @@ test('slow task (>= 5s) reveals truck loader at 5000ms and stays visible until c
   unsub();
 });
 
-test('concurrent tasks keep timer & visibility accurate until all active operations complete', () => {
+test('concurrent delayed tasks keep timer & visibility accurate until all active operations complete', () => {
   const fake = createFakeTimers();
-  const ctrl = createDelayedLoadingController(5000, fake.driver);
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
 
   const t1 = ctrl.beginTask('عملية أولى');
   fake.advanceBy(1500);
@@ -156,8 +159,8 @@ test('concurrent tasks keep timer & visibility accurate until all active operati
   assert.equal(ctrl.getSnapshot().visible, false);
   assert.equal(ctrl.getSnapshot().activeCount, 1);
 
-  // Reaches 5000ms overall -> reveals because second task is still running
-  fake.advanceBy(3000);
+  // Reaches 4000ms overall -> reveals because second task is still running
+  fake.advanceBy(2000);
   assert.equal(ctrl.getSnapshot().visible, true);
 
   // Hides once the remaining task completes
@@ -166,9 +169,44 @@ test('concurrent tasks keep timer & visibility accurate until all active operati
   assert.equal(ctrl.getSnapshot().activeCount, 0);
 });
 
-test('trackDelayedLoading resolves value and cleans up even on rejection', async () => {
+test('immediate milestone task appears instantly with custom subtitle and honors minVisibleMs', () => {
+  const fake = createFakeTimers();
+  const ctrl = createDelayedLoadingController(4000, fake.driver);
+
+  const token = ctrl.beginTask({
+    label: 'جاري تسجيل الدخول...',
+    subtitle: 'يتم تجهيز مساحة العمل',
+    mode: 'immediate',
+    minVisibleMs: 900,
+  });
+
+  assert.equal(ctrl.getSnapshot().visible, true);
+  assert.equal(ctrl.getSnapshot().mode, 'immediate');
+  assert.equal(ctrl.getSnapshot().label, 'جاري تسجيل الدخول...');
+  assert.equal(ctrl.getSnapshot().subtitle, 'يتم تجهيز مساحة العمل');
+
+  // Ending early at 200ms keeps loader visible until 900ms minVisibleMs elapses
+  fake.advanceBy(200);
+  ctrl.endTask(token);
+  assert.equal(ctrl.getSnapshot().visible, true);
+
+  fake.advanceBy(699);
+  assert.equal(ctrl.getSnapshot().visible, true);
+
+  fake.advanceBy(1);
+  assert.equal(ctrl.getSnapshot().visible, false);
+  assert.equal(ctrl.getSnapshot().activeCount, 0);
+});
+
+test('trackDelayedLoading and runWithSignatureLoader resolve values and clean up on rejection', async () => {
   const ok = await trackDelayedLoading(async () => 'done', 'اختبار');
   assert.equal(ok, 'done');
+
+  const sig = await runWithSignatureLoader(
+    { label: 'إنشاء وكالة', subtitle: 'تجهيز السجلات', minVisibleMs: 0 },
+    async () => 42
+  );
+  assert.equal(sig, 42);
 
   await assert.rejects(
     trackDelayedLoading(async () => {

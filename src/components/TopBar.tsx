@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Bell,
   Calculator,
   CheckCircle2,
   ChevronDown,
+  Cloud,
+  HardDrive,
   Menu,
   Plus,
   Redo2,
+  RefreshCw,
   ScanLine,
   Search,
   Share2,
@@ -19,6 +23,7 @@ import {
   Undo2,
   UserCheck,
   UserCircle2,
+  WifiOff,
   X,
 } from 'lucide-react';
 import type {
@@ -29,8 +34,10 @@ import type {
   ReadyList,
   RelationEntry,
   SettingsSectionId,
+  StorageSystemStatus,
   TopBarFocusMode,
   UcrsSession,
+  WorkspaceSyncStatus,
 } from '../types/agency';
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
@@ -89,6 +96,11 @@ interface TopBarProps {
   canGoForward?: boolean;
   onGoBack?: () => void;
   onGoForward?: () => void;
+  syncStatus?: WorkspaceSyncStatus;
+  storageStatus?: StorageSystemStatus | null;
+  pendingSyncCount?: number;
+  isOnline?: boolean;
+  onForceSyncNow?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -131,6 +143,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   canGoForward = false,
   onGoBack,
   onGoForward,
+  syncStatus = 'local_only',
+  storageStatus = null,
+  pendingSyncCount = 0,
+  isOnline = true,
+  onForceSyncNow,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
   const [searchQuery, setSearchQuery] = useState('');
@@ -877,6 +894,82 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             )}
 
+          {/* Live Sync Status Indicator */}
+          {authUser && (() => {
+            const effectiveStatus: WorkspaceSyncStatus = !isOnline
+              ? 'pending_offline'
+              : syncStatus;
+            const statusMeta =
+              effectiveStatus === 'syncing'
+                ? {
+                    label: 'جاري المزامنة',
+                    color: 'var(--accent)',
+                    Icon: RefreshCw,
+                    spin: true,
+                  }
+                : effectiveStatus === 'pending_offline'
+                ? {
+                    label:
+                      pendingSyncCount > 0
+                        ? `معلق (${pendingSyncCount})`
+                        : 'معلق دون إنترنت',
+                    color: 'var(--warning)',
+                    Icon: WifiOff,
+                    spin: false,
+                  }
+                : effectiveStatus === 'error'
+                ? {
+                    label: 'تعذر المزامنة',
+                    color: 'var(--danger)',
+                    Icon: AlertTriangle,
+                    spin: false,
+                  }
+                : effectiveStatus === 'cloud_synced'
+                ? {
+                    label: 'متزامن سحابياً',
+                    color: 'var(--success)',
+                    Icon: Cloud,
+                    spin: false,
+                  }
+                : {
+                    label: 'محفوظ محلياً',
+                    color: 'var(--text-muted)',
+                    Icon: HardDrive,
+                    spin: false,
+                  };
+            const StatusIcon = statusMeta.Icon;
+            return (
+              <MotionActionButton
+                type="button"
+                onClick={() => {
+                  if (onForceSyncNow && isOnline && effectiveStatus !== 'syncing') {
+                    onForceSyncNow();
+                  } else {
+                    onNavigateView('account_security');
+                  }
+                }}
+                title={`${statusMeta.label}${
+                  storageStatus?.storageMode === 'local_fallback'
+                    ? ' · وضع التخزين السحابي المؤقت'
+                    : ''
+                } (انقر للمزامنة الفورية)`}
+                aria-label={statusMeta.label}
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2 text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <StatusIcon
+                  className={`h-3.5 w-3.5 shrink-0 ${statusMeta.spin ? 'animate-spin' : ''}`}
+                  style={{ color: statusMeta.color }}
+                />
+                <span className="hidden xl:inline">{statusMeta.label}</span>
+              </MotionActionButton>
+            );
+          })()}
+
           {/* Operational Alerts Bell */}
           <div ref={notifWrapRef} className="relative">
             <MotionActionButton
@@ -1063,11 +1156,45 @@ export const TopBar: React.FC<TopBarProps> = ({
                       className="mt-0.5 text-[11px]"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      {authUser
-                        ? 'متصل ومزامن سحابياً'
-                        : 'الحفظ التلقائي على الجهاز'}
+                      {!authUser
+                        ? 'الحفظ التلقائي على الجهاز'
+                        : !isOnline || syncStatus === 'pending_offline'
+                        ? `معلق دون إنترنت (${pendingSyncCount} عملية)`
+                        : syncStatus === 'syncing'
+                        ? 'جاري المزامنة السحابية...'
+                        : syncStatus === 'cloud_synced'
+                        ? storageStatus?.storageMode === 'local_fallback'
+                          ? 'متزامن (خادم محلي مؤقت)'
+                          : 'متزامن سحابياً عبر الأجهزة'
+                        : 'محفوظ محلياً'}
                     </div>
                   </div>
+
+                  {authUser && onForceSyncNow && (
+                    <button
+                      type="button"
+                      disabled={syncStatus === 'syncing' || !isOnline}
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        onForceSyncNow();
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-right font-bold transition-colors hover:bg-[var(--bg-nav-active)] disabled:opacity-50"
+                    >
+                      <span>
+                        {syncStatus === 'syncing'
+                          ? 'جاري المزامنة...'
+                          : pendingSyncCount > 0
+                          ? `مزامنة فورية (${pendingSyncCount})`
+                          : 'مزامنة فورية الآن'}
+                      </span>
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${
+                          syncStatus === 'syncing' ? 'animate-spin' : ''
+                        }`}
+                        style={{ color: 'var(--accent)' }}
+                      />
+                    </button>
+                  )}
 
                   <button
                     type="button"

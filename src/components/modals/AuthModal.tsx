@@ -15,9 +15,10 @@ import {
   User,
   X,
 } from 'lucide-react';
+import type { ConfirmationResult } from 'firebase/auth';
 import {
-  clearSession,
   confirmPasswordResetApi,
+  exchangeFirebaseIdTokenApi,
   getRememberedAccounts,
   loginWithPasswordApi,
   registerWithPasswordApi,
@@ -29,6 +30,11 @@ import {
   verifyPhoneOtpApi,
   type RememberedAccountSummary,
 } from '../../lib/authClient';
+import {
+  confirmFirebasePhoneSignIn,
+  isFirebasePhoneAuthConfigured,
+  startFirebasePhoneSignIn,
+} from '../../lib/firebase';
 import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
@@ -80,6 +86,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [demoOtpHint, setDemoOtpHint] = useState('');
+  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
 
   const [resetIdentifier, setResetIdentifier] = useState('');
   const [resetCodeSent, setResetCodeSent] = useState(false);
@@ -89,7 +96,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  useDelayedLoading(loading || avatarBusy, 'جاري معالجة وتحديث الحساب...');
+  useDelayedLoading(loading || avatarBusy, 'جاري معالجة وتحديث الحساب...', {
+    immediate: true,
+    subtitle: 'يتم توثيق الجلسة وتحديث بيانات الحساب بأمان...',
+  });
   const [avatarNotice, setAvatarNotice] = useState('');
   const [error, setError] = useState('');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -267,10 +277,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       if (!otpSent) {
-        const res = await requestPhoneOtpApi(phone.trim());
+        const cleanPhone = phone.trim();
+        fbPhoneConfirmationRef.current = null;
+        if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
+          try {
+            const conf = await startFirebasePhoneSignIn(
+              cleanPhone,
+              'modal-firebase-phone-recaptcha'
+            );
+            fbPhoneConfirmationRef.current = conf;
+            setOtpSent(true);
+            setDemoOtpHint('');
+            return;
+          } catch {
+            fbPhoneConfirmationRef.current = null;
+          }
+        }
+        const res = await requestPhoneOtpApi(cleanPhone);
         setOtpSent(true);
         if (res.demoCode) setDemoOtpHint(res.demoCode);
       } else {
+        if (fbPhoneConfirmationRef.current) {
+          const { idToken } = await confirmFirebasePhoneSignIn(
+            fbPhoneConfirmationRef.current,
+            otpCode.trim()
+          );
+          const session = await exchangeFirebaseIdTokenApi({
+            idToken,
+            rememberMe,
+            displayName: displayName.trim() || undefined,
+          });
+          fbPhoneConfirmationRef.current = null;
+          triggerSuccessTactile();
+          onAuthenticated(session.user);
+          onClose();
+          return;
+        }
         const session = await verifyPhoneOtpApi({
           phone: phone.trim(),
           code: otpCode.trim(),
@@ -346,6 +388,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       maxWidthClass="max-w-lg"
     >
       <div className="nexus-squircle overflow-hidden">
+        <div id="modal-firebase-phone-recaptcha" className="hidden" />
         <div className="space-y-4 p-5 sm:p-6">
           {currentUser && (
             <div
@@ -396,7 +439,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    clearSession();
                     onLoggedOut();
                   }}
                   className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-semibold whitespace-nowrap cursor-pointer"

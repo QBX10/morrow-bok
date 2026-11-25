@@ -1153,8 +1153,90 @@ export interface MigrationSnapshotRecord {
   securityPrefs?: SecurityPrefs;
 }
 
+export type WorkspaceSyncStatus =
+  | 'local_only'
+  | 'syncing'
+  | 'cloud_synced'
+  | 'pending_offline'
+  | 'error';
+
+export type SyncQueueOpStatus = 'pending' | 'synced' | 'failed';
+
+export interface SyncQueueOperation {
+  id: string;
+  type: 'workspace_snapshot' | 'preference_update' | 'data_mutation';
+  entity: string;
+  summary: string;
+  updatedAt: string;
+  deviceId: string;
+  status: SyncQueueOpStatus;
+  retryCount: number;
+  lastError?: string;
+}
+
+export interface StorageSystemStatus {
+  cloudSqlConfigured: boolean;
+  cloudSqlReachable: boolean;
+  smsProviderConfigured: boolean;
+  firebaseAuthConfigured: boolean;
+  storageMode: 'cloud_sql' | 'local_fallback';
+}
+
+export interface RosterFilterPreset {
+  searchQuery: string;
+  statusFilter: 'all' | 'active' | 'blocked' | 'archived';
+  categoryFilter: string;
+  sortBy: 'default' | 'name_asc' | 'individuals_desc';
+  updatedAt: string;
+}
+
+export interface SmartPreferencesMemory {
+  activeView?: AppView;
+  selectedAgencyId?: number;
+  tableViewingMode?: boolean;
+  sidebarCollapsed?: boolean;
+  currencyUnit?: 'IQD' | 'USD';
+  weightUnit?: 'kg' | 'bag';
+  rosterFilters?: Record<string, RosterFilterPreset>;
+  updatedAt?: string;
+}
+
+export type AuditCheckpointActionType =
+  | 'data_mutation'
+  | 'settings_change'
+  | 'cloud_sync'
+  | 'conflict_lww'
+  | 'checkpoint_restore'
+  | 'vault_import'
+  | 'undo_action';
+
+export interface AuditCheckpointDataSlice {
+  agencies: Agency[];
+  persons: Person[];
+  expenses: AgencyExpense[];
+  readyLists: ReadyList[];
+  readyListItems: ReadyListItem[];
+  relations: RelationEntry[];
+  tableHeaders: Record<string, SectionTableHeaderMeta>;
+  calculationSettings: CalculationSettings;
+}
+
+export interface AuditCheckpointEvent {
+  id: string;
+  actionType: AuditCheckpointActionType;
+  title: string;
+  summary: string;
+  timestamp: string;
+  deviceId: string;
+  conflictResolved?: boolean;
+  restorableData?: AuditCheckpointDataSlice;
+}
+
 export interface AppDatabaseState {
   stateVersion?: number;
+  updatedAt?: string;
+  lastSyncedAt?: string;
+  deviceId?: string;
   migrationSnapshot?: MigrationSnapshotRecord;
   workspaceCosmos?: WorkspaceCosmosState;
   agencies: Agency[];
@@ -1178,6 +1260,8 @@ export interface AppDatabaseState {
   relationsPrefs?: RelationsReadyListsPrefs;
   generalPrefs?: GeneralAppPrefs;
   securityPrefs?: SecurityPrefs;
+  smartPreferences?: SmartPreferencesMemory;
+  auditLog?: AuditCheckpointEvent[];
   recycleBin?: RecycleBinEntry[];
   workspaceNotes?: WorkspaceNoteItem[];
   ucrsSessions?: UcrsSession[];
