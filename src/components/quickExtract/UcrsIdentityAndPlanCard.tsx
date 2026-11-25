@@ -19,7 +19,7 @@ import type {
   UcrsReadingPlan,
   UcrsRelevanceLevel,
 } from '../../types/agency';
-import { Tabrix3DTiltSurface } from '../ui/TabrixMotionPrimitives';
+import { MotionSurfaceCard } from '../ui/TabrixMotionPrimitives';
 import {
   TABRIX_POPOVER_VARIANTS,
   TABRIX_REDUCED_VARIANTS,
@@ -78,9 +78,7 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
       className="grid grid-cols-1 gap-4 lg:grid-cols-2"
     >
       {/* Content Identity & Discovery Card */}
-      <Tabrix3DTiltSurface
-        maxTiltX={3.8}
-        maxTiltY={4.5}
+      <MotionSurfaceCard
         className="space-y-3 rounded-xl border p-4"
         style={{
           backgroundColor: 'var(--bg-surface)',
@@ -228,12 +226,10 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
             </button>
           </div>
         )}
-      </Tabrix3DTiltSurface>
+      </MotionSurfaceCard>
 
       {/* Reading Plan Card */}
-      <Tabrix3DTiltSurface
-        maxTiltX={3.8}
-        maxTiltY={4.5}
+      <MotionSurfaceCard
         className="flex flex-col justify-between space-y-3 rounded-xl border p-4"
         style={{
           backgroundColor: 'var(--bg-surface)',
@@ -392,7 +388,7 @@ export const UcrsIdentityAndPlanCard: React.FC<UcrsIdentityAndPlanCardProps> = (
             )}
           </button>
         </div>
-      </Tabrix3DTiltSurface>
+      </MotionSurfaceCard>
     </section>
   );
 };

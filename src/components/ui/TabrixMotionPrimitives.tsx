@@ -1,11 +1,11 @@
 import React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import {
-  TABRIX_PAGE_VARIANTS,
-  TABRIX_REDUCED_VARIANTS,
-  TABRIX_SPRING,
-  TABRIX_SUBVIEW_VARIANTS,
-  useTabrix3DTilt,
+  TABRIX_BUTTON_HOVER,
+  TABRIX_BUTTON_TAP,
+  TABRIX_INDICATOR_SPRING,
+  TABRIX_TACTILE_SPRING,
+  useSurfaceSheen2D,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 
@@ -17,33 +17,27 @@ interface TabrixPageTransitionProps {
 }
 
 /**
- * TabrixPageTransition — Primary route & full-view Framer Motion 3D Enter/Exit stage.
- * Uses directional spatial axis + GPU-only transforms inside a 1400px perspective canvas.
+ * TabrixPageTransition — Instantaneous non-blocking GPU route stage.
+ * Uses compositor-only transform + opacity (`220ms cubic-bezier(0.22, 1, 0.36, 1)`)
+ * with zero blocking exit-wait delay so bottom nav & view switching is immediate.
  */
 export const TabrixPageTransition: React.FC<TabrixPageTransitionProps> = ({
   viewKey,
-  direction = 1,
   className = '',
   children,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
 
   return (
-    <div className="tabrix-3d-stage flex-1 min-w-0 flex flex-col">
-      <AnimatePresence mode="wait" custom={direction} initial={false}>
-        <motion.div
-          key={viewKey}
-          custom={direction}
-          variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_PAGE_VARIANTS}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className={`flex-1 min-w-0 flex flex-col ${className}`}
-          style={{ transformOrigin: '50% 45%' }}
-        >
-          {children}
-        </motion.div>
-      </AnimatePresence>
+    <div className="tabrix-2d-stage flex-1 min-w-0 flex flex-col">
+      <div
+        key={viewKey}
+        className={`flex-1 min-w-0 flex flex-col ${
+          reducedMotion ? '' : 'tabrix-route-instant-enter'
+        } ${className}`}
+      >
+        {children}
+      </div>
     </div>
   );
 };
@@ -56,46 +50,33 @@ interface TabrixSubViewTransitionProps {
 }
 
 /**
- * TabrixSubViewTransition — Silky Framer Motion Enter/Exit transition for sub-tabs,
- * workspace modes, and 4-level Settings capsule hierarchy.
+ * TabrixSubViewTransition — Instant GPU 2D transition for sub-tabs,
+ * workspace modes, and Settings capsule hierarchy without exit-wait stalls.
  */
 export const TabrixSubViewTransition: React.FC<TabrixSubViewTransitionProps> = ({
   viewKey,
-  direction = 1,
   className = '',
   children,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
 
   return (
-    <div className="tabrix-3d-stage w-full">
-      <AnimatePresence mode="wait" custom={direction} initial={false}>
-        <motion.div
-          key={viewKey}
-          custom={direction}
-          variants={
-            reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_SUBVIEW_VARIANTS
-          }
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className={className}
-          style={{ transformOrigin: '50% 40%' }}
-        >
-          {children}
-        </motion.div>
-      </AnimatePresence>
+    <div className="tabrix-2d-stage w-full">
+      <div
+        key={viewKey}
+        className={`${reducedMotion ? '' : 'tabrix-route-instant-enter'} ${className}`}
+      >
+        {children}
+      </div>
     </div>
   );
 };
 
-interface Tabrix3DTiltSurfaceProps {
+interface MotionSurfaceCardProps {
   as?: 'div' | 'article' | 'section' | 'button';
   type?: 'button' | 'submit' | 'reset';
   className?: string;
   style?: React.CSSProperties;
-  maxTiltX?: number;
-  maxTiltY?: number;
   disabled?: boolean;
   showSheen?: boolean;
   onClick?: () => void;
@@ -105,16 +86,13 @@ interface Tabrix3DTiltSurfaceProps {
 }
 
 /**
- * Tabrix3DTiltSurface — Interactive 3D spatial tilt container with dynamic specular sheen.
- * Safely encapsulates useTabrix3DTilt for mapped grids & KPI cards.
+ * MotionSurfaceCard — Pure 2D interactive card container with calm hover lift and optional specular sheen.
  */
-export const Tabrix3DTiltSurface: React.FC<Tabrix3DTiltSurfaceProps> = ({
+export const MotionSurfaceCard: React.FC<MotionSurfaceCardProps> = ({
   as = 'div',
   type = 'button',
   className = '',
   style,
-  maxTiltX = 4.6,
-  maxTiltY = 5.6,
   disabled = false,
   showSheen = true,
   onClick,
@@ -123,9 +101,7 @@ export const Tabrix3DTiltSurface: React.FC<Tabrix3DTiltSurfaceProps> = ({
   children,
 }) => {
   const reducedMotion = useTabrixReducedMotion();
-  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLElement>({
-    maxTiltX,
-    maxTiltY,
+  const { surfaceRef, surfaceHandlers } = useSurfaceSheen2D<HTMLElement>({
     disabled: disabled || reducedMotion,
   });
 
@@ -133,9 +109,9 @@ export const Tabrix3DTiltSurface: React.FC<Tabrix3DTiltSurfaceProps> = ({
 
   return (
     <Tag
-      ref={tiltRef as React.RefObject<never>}
+      ref={surfaceRef as React.RefObject<never>}
       type={as === 'button' ? type : undefined}
-      {...tiltHandlers}
+      {...surfaceHandlers}
       onClick={onClick}
       aria-label={ariaLabel}
       data-testid={dataTestId}
@@ -169,16 +145,52 @@ export const TabrixPillIndicator: React.FC<TabrixPillIndicatorProps> = ({
   return (
     <motion.span
       layoutId={layoutId}
-      transition={reducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
-      className={`pointer-events-none absolute inset-0 ${className}`}
+      transition={reducedMotion ? { duration: 0.05 } : TABRIX_INDICATOR_SPRING}
+      className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}
       style={{
         backgroundColor: 'var(--bg-nav-active)',
         border: '1px solid color-mix(in srgb, var(--accent) 46%, var(--border-color))',
-        boxShadow: '0 4px 14px color-mix(in srgb, var(--accent) 18%, transparent)',
+        boxShadow:
+          'inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #fff) 22%, transparent), 0 4px 14px color-mix(in srgb, var(--accent) 18%, transparent)',
         ...style,
       }}
       aria-hidden="true"
     />
+  );
+};
+
+interface MotionActionButtonProps
+  extends Omit<React.ComponentPropsWithoutRef<typeof motion.button>, 'ref'> {
+  disableLift?: boolean;
+}
+
+/**
+ * MotionActionButton — Tactile 2D spring button with smooth hover float and press settle.
+ */
+export const MotionActionButton: React.FC<MotionActionButtonProps> = ({
+  disableLift = false,
+  disabled,
+  transition,
+  whileHover,
+  whileTap,
+  className = '',
+  children,
+  ...rest
+}) => {
+  const reducedMotion = useTabrixReducedMotion();
+  const interactive = !disabled && !reducedMotion && !disableLift;
+
+  return (
+    <motion.button
+      disabled={disabled}
+      whileHover={interactive ? whileHover ?? TABRIX_BUTTON_HOVER : undefined}
+      whileTap={!disabled && !reducedMotion ? whileTap ?? TABRIX_BUTTON_TAP : undefined}
+      transition={transition ?? TABRIX_TACTILE_SPRING}
+      className={className}
+      {...rest}
+    >
+      {children}
+    </motion.button>
   );
 };
 

@@ -58,7 +58,6 @@ export const SmartSyncProgressOverlay: React.FC<SmartSyncProgressOverlayProps> =
           exit={{ opacity: 0 }}
           transition={{ duration: reducedMotion ? 0.05 : 0.2 }}
           className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
-          style={{ perspective: 1200 }}
         >
           <motion.div
             variants={

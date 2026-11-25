@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppToastItem } from '../types/assistant.ts';
+import { trackDelayedLoading } from '../utils/delayedLoader.ts';
 
 const TOAST_EVENT_NAME = 'morrow:toast';
 
@@ -32,7 +33,9 @@ export function runAsyncExportTask(
   emitAppToast({ title: startLabel, tone: 'info' });
   const run = async () => {
     try {
-      await task();
+      await trackDelayedLoading(async () => {
+        await task();
+      }, startLabel);
       emitAppToast({ title: successLabel, tone: 'success' });
     } catch (err) {
       emitAppToast({

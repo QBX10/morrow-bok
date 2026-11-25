@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import type { SpatialCardDensity, SpatialTiltIntensity } from '../../types/agency';
-import { getDensityPaddingClass } from '../../utils/spatial3dConfig';
+import type { Motion2DIntensity, SurfaceCardDensity } from '../../types/agency';
+import { getDensityPaddingClass } from '../../utils/surface2dConfig';
 
-interface GlassBentoCardProps {
+interface BentoCard2DProps {
   children: React.ReactNode;
   className?: string;
   elevated?: boolean;
-  tiltIntensity?: SpatialTiltIntensity;
-  density?: SpatialCardDensity;
+  motionIntensity?: Motion2DIntensity;
+  density?: SurfaceCardDensity;
   spotlight?: boolean;
   accentGlow?: string;
   noPadding?: boolean;
@@ -16,12 +16,11 @@ interface GlassBentoCardProps {
 }
 
 /**
- * Pure 2D Multi-Layered Glassmorphic Bento Card:
- * - Smoked translucent surface with 1px directional specular rim
- * - Architectural corner brackets on elevated panels
- * - High-FPS rAF pointer-tracking radial spotlight (zero 3D skew, zero React re-renders)
+ * Pure 2D Calm Bento Surface Card:
+ * - Clean single-level surface with crisp 1px border
+ * - Restrained top highlight line and smooth GPU pointer sheen
  */
-export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
+export const BentoCard2D: React.FC<BentoCard2DProps> = ({
   children,
   className = '',
   elevated = false,
@@ -35,10 +34,10 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const resolvedDensity: SpatialCardDensity =
+  const resolvedDensity: SurfaceCardDensity =
     density ||
     (typeof document !== 'undefined'
-      ? ((document.documentElement.dataset.spatialDensity as SpatialCardDensity) || 'balanced')
+      ? ((document.documentElement.dataset.surfaceDensity as SurfaceCardDensity) || 'balanced')
       : 'balanced');
 
   const padClass = noPadding ? '' : getDensityPaddingClass(resolvedDensity);
@@ -96,46 +95,30 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
       data-testid={testId ?? dataTestId}
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
-      className={`glass-bento-card relative overflow-hidden rounded-[22px] ${
+      className={`glass-bento-card relative overflow-hidden rounded-[20px] ${
         elevated ? 'glass-bento-card-elevated' : ''
       } ${padClass} ${className}`}
     >
-      {/* Top 1px Fresnel specular bevel */}
+      {/* Top 1px subtle highlight */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-[1px]"
         style={{
           background:
-            'linear-gradient(90deg, transparent 5%, rgba(255,255,255,0.24) 32%, var(--accent-bright, #86FFDE) 50%, rgba(255,255,255,0.2) 68%, transparent 95%)',
-          opacity: elevated ? 0.85 : 0.48,
+            'linear-gradient(90deg, transparent 8%, var(--accent-bright, #EED278) 50%, transparent 92%)',
+          opacity: elevated ? 0.55 : 0.3,
         }}
       />
 
-      {/* Precision Geometric Corner Reticles for Elevated Architectural Cards */}
-      {elevated && (
-        <>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute top-2.5 right-2.5 w-3.5 h-3.5 border-t border-r rounded-tr-md opacity-45"
-            style={{ borderColor: 'var(--accent-bright, #86FFDE)' }}
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-2.5 left-2.5 w-3.5 h-3.5 border-b border-l rounded-bl-md opacity-45"
-            style={{ borderColor: 'var(--accent-bright, #86FFDE)' }}
-          />
-        </>
-      )}
-
-      {/* Interactive rAF pointer-tracking spotlight */}
+      {/* Interactive rAF 2D radial sheen */}
       {spotlight && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 transition-opacity duration-200"
           style={{
             opacity: 'var(--spot-opacity, 0)' as unknown as number,
-            background: `radial-gradient(420px circle at var(--spot-x, 50%) var(--spot-y, 50%), ${
-              accentGlow || 'var(--spatial-glow, rgba(16, 224, 166, 0.16))'
+            background: `radial-gradient(380px circle at var(--spot-x, 50%) var(--spot-y, 50%), ${
+              accentGlow || 'var(--spatial-glow, rgba(212, 175, 55, 0.14))'
             }, transparent 68%)`,
           }}
         />
@@ -152,7 +135,7 @@ interface RecessedChannelWellProps {
 }
 
 /**
- * Recessed Structural Well for numeric telemetry, metric housings, and segmented tabs.
+ * Clean matte recessed metric container.
  */
 export const RecessedChannelWell: React.FC<RecessedChannelWellProps> = ({
   children,
@@ -160,7 +143,7 @@ export const RecessedChannelWell: React.FC<RecessedChannelWellProps> = ({
 }) => {
   return (
     <div
-      className={`recessed-well rounded-2xl border border-white/[0.06] ${className}`}
+      className={`recessed-well rounded-2xl border border-[var(--border-color)] ${className}`}
     >
       {children}
     </div>
@@ -187,7 +170,7 @@ export const GeometricSectionHeader: React.FC<GeometricSectionHeaderProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           {icon && (
-            <div className="geo-icon-socket w-11 h-11 shrink-0">
+            <div className="geo-icon-socket w-10 h-10 shrink-0">
               {icon}
             </div>
           )}

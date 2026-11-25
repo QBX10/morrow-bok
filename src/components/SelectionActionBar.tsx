@@ -19,10 +19,12 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  TABRIX_EASE,
   TABRIX_POPOVER_VARIANTS,
   TABRIX_SPRING,
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
+import { MotionActionButton } from './ui/TabrixMotionPrimitives';
 import type {
   Agency,
   BlockScope,
@@ -301,13 +303,13 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               </span>
               <div className="flex items-center gap-2">
                 {canUndo && onUndo && (
-                  <button
+                  <MotionActionButton
                     type="button"
                     onClick={() => {
                       onUndo();
                       setLastDeletedBanner(null);
                     }}
-                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-bold"
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-bold cursor-pointer"
                     style={{
                       backgroundColor: 'var(--accent)',
                       color: 'var(--accent-fg)',
@@ -315,7 +317,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     <span>تراجع عن الحذف</span>
-                  </button>
+                  </MotionActionButton>
                 )}
                 <button
                   type="button"
@@ -374,20 +376,20 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           </span>
 
           {selectedRecords.length < totalVisibleCount && (
-            <button
+            <MotionActionButton
               type="button"
               onClick={onSelectAll}
-              className="living-control h-7 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap"
+              className="living-control h-7 rounded-lg border px-2.5 text-[11px] font-bold whitespace-nowrap cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
               }}
             >
               تحديد الكل ({totalVisibleCount})
-            </button>
+            </MotionActionButton>
           )}
 
-          <button
+          <MotionActionButton
             type="button"
             onClick={() => {
               setShowQuickDetails(false);
@@ -395,7 +397,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               setMoreMenuOpen(false);
               onClearSelection();
             }}
-            className="living-control inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-bold whitespace-nowrap"
+            className="living-control inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-bold whitespace-nowrap cursor-pointer"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -404,7 +406,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           >
             <X className="h-3 w-3" />
             <span>إلغاء</span>
-          </button>
+          </MotionActionButton>
         </div>
 
         {/* Concise Live Totals */}
@@ -449,7 +451,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           {!readOnlyArchiveMode &&
             linkedPersonIds.length > 0 &&
             onBulkUpdateStatusAndCategory && (
-              <button
+              <MotionActionButton
                 type="button"
                 onClick={() => {
                   setBatchBlockType('keep');
@@ -457,7 +459,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   setBatchBlockReason('');
                   setBatchEditOpen(true);
                 }}
-                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap cursor-pointer"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
@@ -468,13 +470,13 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                   style={{ color: 'var(--accent)' }}
                 />
                 <span>تعديل جماعي</span>
-              </button>
+              </MotionActionButton>
             )}
 
-          <button
+          <MotionActionButton
             type="button"
             onClick={() => setShowQuickDetails((v) => !v)}
-            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
+            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap cursor-pointer"
             style={{
               backgroundColor: showQuickDetails
                 ? 'var(--bg-nav-active)'
@@ -487,10 +489,10 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           >
             <Eye className="h-3.5 w-3.5" />
             <span>إظهار التفاصيل</span>
-          </button>
+          </MotionActionButton>
 
           {!readOnlyArchiveMode && (
-            <button
+            <MotionActionButton
               type="button"
               onClick={() => {
                 setMoveMode(readyLists.length > 0 ? 'ready_list' : 'agency');
@@ -499,7 +501,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
                 }
                 setMoveModalOpen(true);
               }}
-              className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 font-extrabold whitespace-nowrap cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
@@ -507,17 +509,17 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             >
               <ArrowRightLeft className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
               <span>نقل</span>
-            </button>
+            </MotionActionButton>
           )}
 
           {/* Overflow Menu ("المزيد ▾") housing all secondary tools cleanly */}
           <div ref={moreMenuRef} className="relative">
-            <button
+            <MotionActionButton
               type="button"
               data-testid="selection-more-actions-btn"
               aria-expanded={moreMenuOpen}
               onClick={() => setMoreMenuOpen((v) => !v)}
-              className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-3.5 font-extrabold whitespace-nowrap"
+              className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-3.5 font-extrabold whitespace-nowrap cursor-pointer"
               style={{
                 backgroundColor: moreMenuOpen
                   ? 'var(--bg-nav-active)'
@@ -529,8 +531,18 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
               }}
             >
               <span>المزيد</span>
-              <ChevronDown className="h-3.5 w-3.5" />
-            </button>
+              <motion.span
+                animate={{ rotate: moreMenuOpen ? 180 : 0 }}
+                transition={
+                  reducedMotion
+                    ? { duration: 0.05 }
+                    : { duration: 0.2, ease: TABRIX_EASE }
+                }
+                className="inline-flex items-center justify-center"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </motion.span>
+            </MotionActionButton>
 
             <AnimatePresence>
               {moreMenuOpen && (
@@ -675,10 +687,10 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
         </div>
 
         {!readOnlyArchiveMode && onBulkDeleteSelected && (
-          <button
+          <MotionActionButton
             type="button"
             onClick={() => setConfirmDeleteOpen((v) => !v)}
-            className="living-control inline-flex h-8 items-center gap-1 rounded-xl border px-3 font-extrabold whitespace-nowrap"
+            className="living-control inline-flex h-8 items-center gap-1 rounded-xl border px-3 font-extrabold whitespace-nowrap cursor-pointer"
             style={{
               backgroundColor: confirmDeleteOpen
                 ? 'var(--danger)'
@@ -689,7 +701,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
           >
             <Trash2 className="h-3.5 w-3.5" />
             <span>حذف ({selectedRecords.length})</span>
-          </button>
+          </MotionActionButton>
         )}
       </div>
 

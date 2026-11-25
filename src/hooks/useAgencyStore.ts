@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { trackDelayedLoading } from '../utils/delayedLoader.ts';
 import {
   DEFAULT_EXPERT_TABLE_CONFIG,
   DEFAULT_GENERAL_PREFS,
@@ -59,6 +60,8 @@ import type {
   SectionTableHeaderMeta,
   SecurityPrefs,
   SmartSyncCheckpoint,
+  Surface2DPrefs,
+  Surface2DThemeId,
   ThemePreferences,
   TopBarConfig,
   UcrsLearningRule,
@@ -96,11 +99,11 @@ import {
   resolveTableThemeId,
 } from '../utils/themes';
 import {
-  applySpatial3DPrefsToDocument,
-  mapAppThemeToSpatialTheme,
-  mapSpatialThemeToAppTheme,
-  resolveSpatial3DPrefs,
-} from '../utils/spatial3dConfig';
+  applySurface2DPrefsToDocument,
+  mapAppThemeToSurfaceTheme,
+  mapSurfaceThemeToAppTheme,
+  resolveSurface2DPrefs,
+} from '../utils/surface2dConfig';
 
 const DEFAULT_MAX_UNDO_HISTORY = 35;
 
@@ -495,11 +498,15 @@ export function useAgencyStore(activeUid: string | null = null) {
   const activeCosmos: WorkspaceCosmosState = mergeWorkspaceCosmos(state.workspaceCosmos);
   const uiDensity = state.generalPrefs?.uiDensity || 'balanced';
 
-  const activeSpatial3dPrefs = resolveSpatial3DPrefs({
-    ...(state.generalPrefs?.spatial3dPrefs || {}),
+  const legacySpatialPrefs = (
+    state.generalPrefs as { spatial3dPrefs?: Partial<Surface2DPrefs> } | undefined
+  )?.spatial3dPrefs;
+  const rawSurfacePrefs = state.generalPrefs?.surface2dPrefs ?? legacySpatialPrefs;
+  const activeSurface2dPrefs = resolveSurface2DPrefs({
+    ...(rawSurfacePrefs || {}),
     themeId:
-      state.generalPrefs?.spatial3dPrefs?.themeId ||
-      mapAppThemeToSpatialTheme(resolvedAppThemeId),
+      (rawSurfacePrefs?.themeId as Surface2DThemeId | undefined) ||
+      mapAppThemeToSurfaceTheme(resolvedAppThemeId),
   });
 
   const [autoThemeTick, setAutoThemeTick] = useState(0);
@@ -507,7 +514,7 @@ export function useAgencyStore(activeUid: string | null = null) {
   useEffect(() => {
     if (
       activeThemePrefs.appTheme !== 'auto' &&
-      activeSpatial3dPrefs.themeId !== 'auto_adaptive'
+      activeSurface2dPrefs.themeId !== 'auto_adaptive'
     ) {
       return;
     }
@@ -527,7 +534,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       }
       window.clearInterval(timer);
     };
-  }, [activeThemePrefs.appTheme, activeSpatial3dPrefs.themeId]);
+  }, [activeThemePrefs.appTheme, activeSurface2dPrefs.themeId]);
 
   useEffect(() => {
     applyThemePreferencesToDocument(activeThemePrefs, {
@@ -536,19 +543,19 @@ export function useAgencyStore(activeUid: string | null = null) {
       numeralSystem: activeCosmos.accessibility.numeralSystem,
       calendarSystem: activeCosmos.accessibility.calendarSystem,
     });
-    applySpatial3DPrefsToDocument(activeSpatial3dPrefs);
+    applySurface2DPrefsToDocument(activeSurface2dPrefs);
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.uiDensity = uiDensity;
     }
   }, [
     autoThemeTick,
     uiDensity,
-    activeSpatial3dPrefs.themeId,
-    activeSpatial3dPrefs.tiltIntensity,
-    activeSpatial3dPrefs.cardDensity,
-    activeSpatial3dPrefs.customColors?.accent,
-    activeSpatial3dPrefs.customColors?.secondary,
-    activeSpatial3dPrefs.customColors?.surfaceTone,
+    activeSurface2dPrefs.themeId,
+    activeSurface2dPrefs.motionIntensity,
+    activeSurface2dPrefs.cardDensity,
+    activeSurface2dPrefs.customColors?.accent,
+    activeSurface2dPrefs.customColors?.secondary,
+    activeSurface2dPrefs.customColors?.surfaceTone,
     activeThemePrefs.appTheme,
     activeThemePrefs.appShape,
     activeThemePrefs.tableTheme,
@@ -684,15 +691,19 @@ export function useAgencyStore(activeUid: string | null = null) {
             ? patch.activeProfileId
             : prev.themePrefs?.activeProfileId ?? null,
       };
-      const prevSpatial = resolveSpatial3DPrefs(prev.generalPrefs?.spatial3dPrefs);
-      const nextSpatial =
+      const prevSurface = resolveSurface2DPrefs(
+        prev.generalPrefs?.surface2dPrefs ??
+          (prev.generalPrefs as { spatial3dPrefs?: Record<string, unknown> } | undefined)
+            ?.spatial3dPrefs
+      );
+      const nextSurface =
         patch.appTheme !== undefined
           ? {
-              ...prevSpatial,
-              themeId: mapAppThemeToSpatialTheme(nextAppTheme),
+              ...prevSurface,
+              themeId: mapAppThemeToSurfaceTheme(nextAppTheme),
               customColors: undefined,
             }
-          : prevSpatial;
+          : prevSurface;
       return {
         ...prev,
         darkTheme: effectiveTheme.isDark,
@@ -701,7 +712,7 @@ export function useAgencyStore(activeUid: string | null = null) {
           ...DEFAULT_GENERAL_PREFS,
           ...(prev.generalPrefs || {}),
           appShape: nextShape,
-          spatial3dPrefs: nextSpatial,
+          surface2dPrefs: nextSurface,
         },
       };
     });
@@ -713,7 +724,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       darkTheme: true,
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
-        appTheme: 'abyssal-emerald',
+        appTheme: 'obsidian-gold',
         appShape: 'geometric-glass',
         themeColorMode: 'dark',
         savedProfiles:
@@ -726,9 +737,9 @@ export function useAgencyStore(activeUid: string | null = null) {
         ...DEFAULT_GENERAL_PREFS,
         ...(prev.generalPrefs || {}),
         appShape: 'geometric-glass',
-        spatial3dPrefs: {
-          themeId: 'emerald_smoked',
-          tiltIntensity: 'subtle',
+        surface2dPrefs: {
+          themeId: 'obsidian_gold',
+          motionIntensity: 'subtle',
           cardDensity: 'balanced',
           customColors: undefined,
         },
@@ -1004,9 +1015,9 @@ export function useAgencyStore(activeUid: string | null = null) {
           ...DEFAULT_GENERAL_PREFS,
           ...(prev.generalPrefs || {}),
           appShape: nextShape,
-          spatial3dPrefs: {
-            ...resolveSpatial3DPrefs(prev.generalPrefs?.spatial3dPrefs),
-            themeId: mapAppThemeToSpatialTheme(nextAppTheme),
+          surface2dPrefs: {
+            ...resolveSurface2DPrefs(prev.generalPrefs?.surface2dPrefs),
+            themeId: mapAppThemeToSurfaceTheme(nextAppTheme),
             customColors: undefined,
           },
         },
@@ -1253,8 +1264,8 @@ export function useAgencyStore(activeUid: string | null = null) {
         nextThemePrefs.borderRadiusPx = getAppShapeById(nextShape).cardRadiusPx;
         themePrefsModified = true;
       }
-      if (patch.spatial3dPrefs?.themeId !== undefined) {
-        const mappedAppTheme = mapSpatialThemeToAppTheme(patch.spatial3dPrefs.themeId);
+      if (patch.surface2dPrefs?.themeId !== undefined) {
+        const mappedAppTheme = mapSurfaceThemeToAppTheme(patch.surface2dPrefs.themeId);
         nextThemePrefs.appTheme = mappedAppTheme;
         nextThemePrefs.themeColorMode =
           mappedAppTheme === 'auto'
@@ -2669,52 +2680,56 @@ export function useAgencyStore(activeUid: string | null = null) {
   }, [commitDataMutation]);
 
   const syncWorkspaceToServer = useCallback(async () => {
-    const token = await getActiveBearerToken();
-    const sess = getStoredSession();
-    if (!token || !sess) {
-      throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
-    }
-    const res = await fetch('/api/workspace', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ snapshot: state }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'تعذرت المزامنة.');
+    return trackDelayedLoading(async () => {
+      const token = await getActiveBearerToken();
+      const sess = getStoredSession();
+      if (!token || !sess) {
+        throw new Error('يرجى تسجيل الدخول أولًا لمزامنة البيانات.');
+      }
+      const res = await fetch('/api/workspace', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ snapshot: state }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'تعذرت المزامنة.');
 
-    void syncWorkspaceSummaryToFirestore({
-      uid: sess.user.uid,
-      title: state.activePeriod?.quotaName || 'مساحة عمل Morrow',
-      agencyCount: state.agencies.length,
-      recordCount: state.persons.length,
-      themePrefs: state.themePrefs,
-    }).catch(() => {});
+      void syncWorkspaceSummaryToFirestore({
+        uid: sess.user.uid,
+        title: state.activePeriod?.quotaName || 'مساحة عمل Morrow',
+        agencyCount: state.agencies.length,
+        recordCount: state.persons.length,
+        themePrefs: state.themePrefs,
+      }).catch(() => {});
 
-    return data;
+      return data;
+    }, 'جاري مزامنة البيانات وحفظها سحابياً...');
   }, [state]);
 
   const restoreWorkspaceFromServer = useCallback(async () => {
-    const token = await getActiveBearerToken();
-    if (!token) {
-      throw new Error('يرجى تسجيل الدخول أولًا.');
-    }
-    const res = await fetch('/api/workspace', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
-    if (data?.exists && data.snapshot) {
-      setState(() =>
-        normalizeLoadedWorkspaceState(data.snapshot, activeUid ?? null)
-      );
-      setPast([]);
-      setFuture([]);
-      return true;
-    }
-    return false;
+    return trackDelayedLoading(async () => {
+      const token = await getActiveBearerToken();
+      if (!token) {
+        throw new Error('يرجى تسجيل الدخول أولًا.');
+      }
+      const res = await fetch('/api/workspace', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'تعذر استرجاع البيانات.');
+      if (data?.exists && data.snapshot) {
+        setState(() =>
+          normalizeLoadedWorkspaceState(data.snapshot, activeUid ?? null)
+        );
+        setPast([]);
+        setFuture([]);
+        return true;
+      }
+      return false;
+    }, 'جاري سحب واسترجاع مساحة العمل...');
   }, [activeUid]);
 
   // --- Monthly Archives & Active Period Management ---
@@ -2984,7 +2999,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         ...(DEFAULT_GENERAL_PREFS.agencyAccentColors || {}),
         ...(state.generalPrefs?.agencyAccentColors || {}),
       },
-      spatial3dPrefs: activeSpatial3dPrefs,
+      surface2dPrefs: activeSurface2dPrefs,
     },
     securityPrefs: {
       ...DEFAULT_SECURITY_PREFS,

@@ -54,7 +54,7 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixSubViewTransition,
 } from '../ui/TabrixMotionPrimitives';
 import { LiveStage } from '../cosmos/LiveStage';
@@ -62,7 +62,7 @@ import { RegistryInspector } from '../cosmos/RegistryInspector';
 import { ResultCard } from '../cosmos/ResultCard';
 import { SettingRow } from '../cosmos/SettingRow';
 
-/* ─── 1. Absolute Marine Themes 3D Identity Panel ─── */
+/* ─── 1. Calm 2D Identity Themes Panel ─── */
 interface CustomThemeStudioPanelProps {
   themePrefs: ThemePreferences;
   accessibility: AccessibilityAndExperiencePrefs;
@@ -97,7 +97,7 @@ export const CustomThemeStudioPanel: React.FC<CustomThemeStudioPanelProps> = ({
           }}
         >
           <div className="text-sm font-extrabold" style={{ color: activeTheme.vars['--accent-bright'] }}>
-            Morrow 3D Marine Edition · {activeTheme.englishName}
+            Morrow 2D Edition · {activeTheme.englishName}
           </div>
           <div className="text-xs" style={{ color: activeTheme.vars['--text-muted'] }}>
             رسم الفرد: {formatCosmosNumerals('250', accessibility.numeralSystem)} د.ع · شفافية زجاجية {themePrefs.glassOpacityPct ?? 70}%
@@ -490,7 +490,7 @@ export const HealthAndKpiPanel: React.FC<HealthAndKpiPanelProps> = ({
           },
           { label: 'صافي الإيراد التقديري', val: formatIqd(metrics.profit) },
         ].map((k) => (
-          <Tabrix3DTiltSurface
+          <MotionSurfaceCard
             key={k.label}
             className="rounded-[20px] border p-4"
             style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
@@ -501,7 +501,7 @@ export const HealthAndKpiPanel: React.FC<HealthAndKpiPanelProps> = ({
             <div className="mt-1 text-base sm:text-lg font-extrabold tabular-nums">
               {k.val}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
         ))}
       </div>
 

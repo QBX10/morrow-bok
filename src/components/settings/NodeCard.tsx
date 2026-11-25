@@ -4,7 +4,7 @@ import type {
   HierarchyBadge,
   HierarchyNode,
 } from '../../utils/hierarchyRegistry';
-import { useTabrix3DTilt } from '../../utils/tabrixMotion';
+import { useSurfaceSheen2D } from '../../utils/tabrixMotion';
 import { SectionLogo } from './sectionLogos';
 
 interface NodeCardProps {
@@ -25,15 +25,12 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   onOpen,
 }) => {
   const desc = node.description || node.subtitle;
-  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLButtonElement>({
-    maxTiltX: 4.8,
-    maxTiltY: 5.8,
-  });
+  const { surfaceRef, surfaceHandlers } = useSurfaceSheen2D<HTMLButtonElement>();
 
   return (
     <button
-      ref={tiltRef}
-      {...tiltHandlers}
+      ref={surfaceRef}
+      {...surfaceHandlers}
       type="button"
       data-capsule-node-id={node.id}
       onClick={() => onOpen(node)}

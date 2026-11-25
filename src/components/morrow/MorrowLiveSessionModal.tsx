@@ -561,18 +561,18 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Glowing 3D Electric Indigo Orb Voice Stage */}
+          {/* Calm 2D Theme-Synced Voice Stage Indicator */}
           <div className="flex flex-col items-center justify-center py-4">
             <motion.div
               animate={{
                 scale:
                   status === 'live' && !reducedMotion
-                    ? 1 + (isModelSpeaking ? 0.09 : micLevel * 0.16)
+                    ? 1 + (isModelSpeaking ? 0.08 : micLevel * 0.14)
                     : 1,
               }}
               transition={TABRIX_SPRING}
               className={`relative flex h-28 w-28 items-center justify-center ${
-                status === 'live' ? 'nexus-orb-3d' : 'rounded-full border-2'
+                status === 'live' ? 'morrow-voice-orb-2d' : 'rounded-full border-2'
               }`}
               style={
                 status !== 'live'

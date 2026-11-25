@@ -17,7 +17,7 @@ import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
-import { Tabrix3DTiltSurface } from '../ui/TabrixMotionPrimitives';
+import { MotionSurfaceCard } from '../ui/TabrixMotionPrimitives';
 
 interface MorrowHistoryPageProps {
   chatThreads: AssistantChatThread[];
@@ -229,9 +229,7 @@ export const MorrowHistoryPage: React.FC<MorrowHistoryPageProps> = ({
                       animate="animate"
                       exit="exit"
                     >
-                      <Tabrix3DTiltSurface
-                        maxTiltX={4.2}
-                        maxTiltY={5}
+                      <MotionSurfaceCard
                         className="nexus-squircle nexus-squircle-interactive flex items-start justify-between gap-2.5 p-4 h-full"
                         style={{
                           backgroundColor: isCurrent
@@ -280,7 +278,7 @@ export const MorrowHistoryPage: React.FC<MorrowHistoryPageProps> = ({
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
-                      </Tabrix3DTiltSurface>
+                      </MotionSurfaceCard>
                     </motion.div>
                   );
                 })}

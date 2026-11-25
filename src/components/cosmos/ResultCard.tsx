@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowUpLeft } from 'lucide-react';
-import { useTabrix3DTilt } from '../../utils/tabrixMotion';
+import { useSurfaceSheen2D } from '../../utils/tabrixMotion';
 
 export interface ResultCardAction {
   id: string;
@@ -40,10 +40,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({
   actions,
   children,
 }) => {
-  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLDivElement>({
-    maxTiltX: 4,
-    maxTiltY: 5,
-  });
+  const { surfaceRef, surfaceHandlers } = useSurfaceSheen2D<HTMLDivElement>();
 
   const toneColor =
     tone === 'success'
@@ -64,8 +61,8 @@ export const ResultCard: React.FC<ResultCardProps> = ({
 
   return (
     <div
-      ref={tiltRef}
-      {...tiltHandlers}
+      ref={surfaceRef}
+      {...surfaceHandlers}
       className="cosmos-glass-panel group relative overflow-hidden border p-4 sm:p-5 space-y-3"
       style={{
         borderColor: `color-mix(in srgb, ${toneColor} 36%, var(--border-color))`,

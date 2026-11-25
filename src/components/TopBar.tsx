@@ -4,8 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Bell,
-  Bot,
-  BrainCircuit,
   Calculator,
   CheckCircle2,
   ChevronDown,
@@ -37,7 +35,11 @@ import type {
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import { MotionActionButton } from './ui/TabrixMotionPrimitives';
 import {
+  TABRIX_BUTTON_HOVER,
+  TABRIX_BUTTON_TAP,
+  TABRIX_EASE,
   TABRIX_POPOVER_VARIANTS,
   TABRIX_REDUCED_VARIANTS,
   TABRIX_TACTILE_SPRING,
@@ -441,11 +443,11 @@ export const TopBar: React.FC<TopBarProps> = ({
       >
         {/* Zone 1: Mobile Menu, Back/Forward, Brand & Active View Context */}
         <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
-          <button
+          <MotionActionButton
             type="button"
             onClick={onOpenMobileSidebar}
             aria-label="فتح القائمة"
-            className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border lg:hidden"
+            className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border lg:hidden cursor-pointer"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
@@ -453,38 +455,38 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
           >
             <Menu className="h-4 w-4" />
-          </button>
+          </MotionActionButton>
 
           {(onGoBack || onGoForward) && (
             <div className="hidden sm:flex items-center gap-1 shrink-0">
-              <button
+              <MotionActionButton
                 type="button"
                 onClick={onGoBack}
                 disabled={!canGoBack}
                 aria-label="رجوع"
                 title="رجوع"
-                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
                 <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-              <button
+              </MotionActionButton>
+              <MotionActionButton
                 type="button"
                 onClick={onGoForward}
                 disabled={!canGoForward}
                 aria-label="تقدم"
                 title="تقدم"
-                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
                 }}
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
-              </button>
+              </MotionActionButton>
             </div>
           )}
 
@@ -777,7 +779,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Zone 3: Search Trigger + Context-Smart Controls + Morrow CTA + Notifications + Account */}
         <div className="flex shrink-0 items-center gap-1.5">
           {!searchOpen && (
-            <button
+            <MotionActionButton
               type="button"
               onClick={() => {
                 setSearchOpen(true);
@@ -787,7 +789,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               }}
               title="بحث سريع (/)"
               aria-label="فتح البحث السريع"
-              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border"
+              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -795,7 +797,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               }}
             >
               <Search className="h-3.5 w-3.5" />
-            </button>
+            </MotionActionButton>
           )}
 
           {adaptiveAction && (() => {
@@ -811,10 +813,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                 }
                 initial="initial"
                 animate="animate"
-                whileHover={reducedMotion ? undefined : { scale: 1.02 }}
-                whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+                whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
                 transition={TABRIX_TACTILE_SPRING}
-                className="nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0"
+                className="nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -831,94 +833,47 @@ export const TopBar: React.FC<TopBarProps> = ({
             showUndoRedo &&
             capabilities.canEditRecords && (
               <div className="hidden xl:flex items-center gap-1">
-                <button
+                <MotionActionButton
                   type="button"
                   onClick={onUndo}
                   disabled={!canUndo}
                   title="تراجع"
                   aria-label="تراجع"
-                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
                   <Undo2 className="h-3.5 w-3.5" />
-                </button>
-                <button
+                </MotionActionButton>
+                <MotionActionButton
                   type="button"
                   onClick={onRedo}
                   disabled={!canRedo}
                   title="إعادة"
                   aria-label="إعادة"
-                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35"
+                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                   }}
                 >
                   <Redo2 className="h-3.5 w-3.5" />
-                </button>
+                </MotionActionButton>
               </div>
             )}
 
-          {/* Smart Models 3D Quick-Launch CTA */}
-          <button
-            type="button"
-            data-testid="topbar-smart-models-btn"
-            onClick={() => onNavigateView('smart_models')}
-            title="النماذج الذكية"
-            className={`nexus-pill-btn hidden sm:inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-              activeView === 'smart_models'
-                ? 'border-[var(--accent)] bg-[var(--bg-nav-active)] text-[var(--accent-bright)]'
-                : 'border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-primary)] hover:border-[var(--accent)]'
-            }`}
-          >
-            <BrainCircuit className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
-            <span className="hidden lg:inline">النماذج الذكية</span>
-          </button>
-
-          {/* Primary Smart AI Studio CTA (Absolute Marine 3D Accent) */}
-          <button
-            type="button"
-            onClick={onOpenMorrowStudio}
-            className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3 sm:px-3.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
-            style={{
-              background:
-                'linear-gradient(135deg, color-mix(in srgb, var(--accent) 26%, var(--bg-table-header, #0E1F33)) 0%, color-mix(in srgb, var(--bg-main) 92%, transparent) 100%)',
-              borderColor: 'color-mix(in srgb, var(--accent) 48%, transparent)',
-              color: 'var(--accent-bright, var(--text-primary))',
-              boxShadow:
-                'inset 0 1px 0 color-mix(in srgb, var(--accent-bright) 24%, transparent), 0 6px 16px -6px color-mix(in srgb, var(--accent) 32%, transparent)',
-            }}
-          >
-            <Bot className="h-3.5 w-3.5 shrink-0" />
-            <span className={searchOpen ? 'hidden lg:inline' : 'hidden sm:inline'}>
-              Morrow
-            </span>
-            {pendingDraftsCount > 0 && (
-              <span
-                className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-black tabular-nums"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                {pendingDraftsCount}
-              </span>
-            )}
-          </button>
-
           {/* Operational Alerts Bell */}
           <div ref={notifWrapRef} className="relative">
-            <button
+            <MotionActionButton
               type="button"
               onClick={() => {
                 setNotifOpen((p) => !p);
                 setAccountMenuOpen(false);
               }}
               aria-label="تنبيهات الوكالات"
-              className="nexus-pill-btn relative inline-flex h-8 w-8 items-center justify-center border"
+              className="nexus-pill-btn relative inline-flex h-8 w-8 items-center justify-center border cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: notifOpen ? 'var(--accent)' : 'var(--border-color)',
@@ -936,7 +891,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   {notifications.length}
                 </span>
               )}
-            </button>
+            </MotionActionButton>
 
             <AnimatePresence>
               {notifOpen && (
@@ -1013,13 +968,13 @@ export const TopBar: React.FC<TopBarProps> = ({
           {/* Account Menu (Includes Quick Command Palette Trigger ⌘K) */}
           {showAuthButton && (
             <div ref={accountWrapRef} className="relative">
-              <button
+              <MotionActionButton
                 type="button"
                 onClick={() => {
                   setAccountMenuOpen((p) => !p);
                   setNotifOpen(false);
                 }}
-                className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-2.5 text-xs font-bold whitespace-nowrap"
+                className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-2.5 text-xs font-bold whitespace-nowrap cursor-pointer"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: accountMenuOpen
@@ -1041,8 +996,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <span className="hidden xl:inline max-w-[90px] truncate" dir="auto">
                   {authUser ? authUser.displayName : 'الحساب'}
                 </span>
-                <ChevronDown className="h-3 w-3 opacity-60" />
-              </button>
+                <motion.span
+                  animate={{ rotate: accountMenuOpen ? 180 : 0 }}
+                  transition={
+                    reducedMotion
+                      ? { duration: 0.05 }
+                      : { duration: 0.2, ease: TABRIX_EASE }
+                  }
+                  className="inline-flex items-center justify-center opacity-60"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </motion.span>
+              </MotionActionButton>
 
               <AnimatePresence>
                 {accountMenuOpen && (

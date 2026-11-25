@@ -38,7 +38,7 @@ import {
   useTabrixReducedMotion,
 } from '../../../utils/tabrixMotion';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixSubViewTransition,
 } from '../../ui/TabrixMotionPrimitives';
 import { ShapeSilhouetteIcon } from '../../ui/ShapeSilhouetteIcon';
@@ -163,12 +163,12 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         onResetBranch={() => {
           onResetThemePrefs();
           onNotifySuccess(
-            'تمت استعادة المظهر البحري الافتراضي (العمق الزمردي) وإعدادات الجداول.'
+            'تمت استعادة المظهر الافتراضي (السبح والذهب) وإعدادات الجداول.'
           );
         }}
         resetBranchLabel="استعادة افتراضيات المظهر والأبعاد"
       >
-        {/* Interactive Absolute Marine Themes 3D Studio */}
+        {/* Interactive Calm 2D Themes Studio */}
         <section className="chamfered-glass-card smoked-glass-elevated p-4 sm:p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               </div>
               <div>
                 <div className="text-sm font-black" style={{ color: 'var(--accent-bright, var(--text-primary))' }}>
-                  ثيمات التطبيق (5 ثيمات + التلقائي) — {currentThemeObj.name}
+                  ثيمات التطبيق (6 ثيمات + التلقائي) — {currentThemeObj.name}
                 </div>
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {currentThemeObj.id === 'auto'
@@ -934,7 +934,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         >
           {activeTableTheme === 'card-based' ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
-              <Tabrix3DTiltSurface
+              <MotionSurfaceCard
                 className="border p-3.5 space-y-2"
                 style={{
                   backgroundColor: 'var(--bg-main)',
@@ -950,8 +950,8 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                   <span>45 كغم</span>
                   <span>1,500 د.ع</span>
                 </div>
-              </Tabrix3DTiltSurface>
-              <Tabrix3DTiltSurface
+              </MotionSurfaceCard>
+              <MotionSurfaceCard
                 className="border p-3.5 space-y-2"
                 style={{
                   backgroundColor: cond.highlightZeroIndividuals
@@ -971,7 +971,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                   <span>—</span>
                   <span>0 د.ع</span>
                 </div>
-              </Tabrix3DTiltSurface>
+              </MotionSurfaceCard>
             </div>
           ) : (
             <div

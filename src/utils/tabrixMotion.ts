@@ -8,23 +8,40 @@ export const TABRIX_EXIT_EASE = [0.4, 0, 0.85, 0.35] as const;
 
 export const TABRIX_SPRING = {
   type: 'spring' as const,
-  stiffness: 400,
-  damping: 30,
+  stiffness: 360,
+  damping: 28,
   mass: 0.8,
 };
 
 export const TABRIX_TACTILE_SPRING = {
   type: 'spring' as const,
-  stiffness: 460,
-  damping: 28,
+  stiffness: 440,
+  damping: 26,
   mass: 0.65,
 };
 
-export const TABRIX_3D_SPRING = {
+export const TABRIX_INDICATOR_SPRING = {
   type: 'spring' as const,
-  stiffness: 400,
+  stiffness: 390,
+  damping: 29,
+  mass: 0.78,
+};
+
+export const TABRIX_SMOOTH_SPRING = {
+  type: 'spring' as const,
+  stiffness: 340,
   damping: 30,
   mass: 0.85,
+};
+
+export const TABRIX_BUTTON_HOVER = {
+  y: -1.5,
+  scale: 1.015,
+};
+
+export const TABRIX_BUTTON_TAP = {
+  y: 0.5,
+  scale: 0.96,
 };
 
 /* ─── Route Topology (RTL-Aware Directional Axis) ─────────────────────────── */
@@ -87,7 +104,7 @@ export const TABRIX_PAGE_VARIANTS: Variants = {
     y: 0,
     scale: 1,
     transition: {
-      duration: 0.17,
+      duration: 0.2,
       ease: TABRIX_EASE,
     },
   },
@@ -97,7 +114,7 @@ export const TABRIX_PAGE_VARIANTS: Variants = {
     y: -3,
     scale: 0.995,
     transition: {
-      duration: 0.09,
+      duration: 0.1,
       ease: TABRIX_EXIT_EASE,
     },
   }),
@@ -119,7 +136,7 @@ export const TABRIX_SUBVIEW_VARIANTS: Variants = {
     y: 0,
     scale: 1,
     transition: {
-      duration: 0.15,
+      duration: 0.17,
       ease: TABRIX_EASE,
     },
   },
@@ -129,7 +146,7 @@ export const TABRIX_SUBVIEW_VARIANTS: Variants = {
     y: -2,
     scale: 0.995,
     transition: {
-      duration: 0.08,
+      duration: 0.09,
       ease: TABRIX_EXIT_EASE,
     },
   }),
@@ -142,7 +159,7 @@ export const TABRIX_PUSH_VARIANTS: Variants = {
   initial: {
     opacity: 0,
     y: 16,
-    scale: 0.985,
+    scale: 0.986,
   },
   animate: {
     opacity: 1,
@@ -196,15 +213,15 @@ export const TABRIX_MODAL_VARIANTS: Variants = {
 export const TABRIX_POPOVER_VARIANTS: Variants = {
   initial: {
     opacity: 0,
-    y: -4,
-    scale: 0.975,
+    y: -5,
+    scale: 0.97,
   },
   animate: {
     opacity: 1,
     y: 0,
     scale: 1,
     transition: {
-      duration: 0.13,
+      duration: 0.15,
       ease: TABRIX_EASE,
     },
   },
@@ -213,7 +230,7 @@ export const TABRIX_POPOVER_VARIANTS: Variants = {
     y: -3,
     scale: 0.98,
     transition: {
-      duration: 0.08,
+      duration: 0.09,
       ease: TABRIX_EXIT_EASE,
     },
   },
@@ -313,16 +330,14 @@ export function useTabrixOrderedDirection(
   });
 }
 
-/* ─── GPU-Smooth rAF 2D Specular Spotlight Hook (Zero 3D Tilt Skew) ───────── */
-export interface Tabrix3DTiltOptions {
-  maxTiltX?: number;
-  maxTiltY?: number;
+/* ─── GPU-Smooth rAF 2D Specular Spotlight Hook ──────────────────────────── */
+export interface SurfaceSheen2DOptions {
   disabled?: boolean;
 }
 
-export function useTabrix3DTilt<T extends HTMLElement = HTMLElement>({
+export function useSurfaceSheen2D<T extends HTMLElement = HTMLElement>({
   disabled = false,
-}: Tabrix3DTiltOptions = {}) {
+}: SurfaceSheen2DOptions = {}) {
   const elementRef = useRef<T | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -374,8 +389,8 @@ export function useTabrix3DTilt<T extends HTMLElement = HTMLElement>({
   }, []);
 
   return {
-    tiltRef: elementRef,
-    tiltHandlers: {
+    surfaceRef: elementRef,
+    surfaceHandlers: {
       onMouseMove,
       onMouseLeave,
     },

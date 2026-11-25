@@ -1,15 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import type { Spatial3DPrefs } from '../../types/agency';
+import type { Surface2DPrefs } from '../../types/agency';
 import {
-  computeHubOrbTelemetry,
-  resolveActiveSpatialPalette,
-  triggerGlobalSpatialPulse,
-} from '../../utils/spatial3dConfig';
+  computeHubDialTelemetry,
+  resolveActiveSurfacePalette,
+  triggerGlobalMotionPulse,
+} from '../../utils/surface2dConfig';
 import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../../utils/tabrixMotion';
 
-interface MorrowHubOrb3DProps {
-  spatialPrefs?: Spatial3DPrefs;
+interface PortfolioDial2DProps {
+  surfacePrefs?: Surface2DPrefs;
   agencyCount?: number;
   activeIndividuals?: number;
   issueCount?: number;
@@ -18,12 +18,11 @@ interface MorrowHubOrb3DProps {
 }
 
 /**
- * Pure 2D SVG Geometric Portfolio Astrolabe Dial inside AgenciesHubView & MorrowCommandCenterView.
- * Maps live agency count, individual throughput, and audit health into concentric vector orbitals
- * with tabular-nums precision telemetry.
+ * Pure 2D SVG Portfolio Health Gauge inside AgenciesHubView & MorrowCommandCenterView.
+ * Renders crisp tabular-nums readiness telemetry with calm Obsidian & Gold / active theme accents.
  */
-export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
-  spatialPrefs,
+export const PortfolioDial2D: React.FC<PortfolioDial2DProps> = ({
+  surfacePrefs,
   agencyCount = 0,
   activeIndividuals = 0,
   issueCount = 0,
@@ -34,13 +33,13 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
   const [pulseKey, setPulseKey] = useState(0);
 
   const telemetry = useMemo(
-    () => computeHubOrbTelemetry(agencyCount, activeIndividuals, issueCount),
+    () => computeHubDialTelemetry(agencyCount, activeIndividuals, issueCount),
     [agencyCount, activeIndividuals, issueCount]
   );
 
   const palette = useMemo(
-    () => resolveActiveSpatialPalette(spatialPrefs),
-    [spatialPrefs]
+    () => resolveActiveSurfacePalette(surfacePrefs),
+    [surfacePrefs]
   );
 
   const satelliteAngles = useMemo(() => {
@@ -55,23 +54,23 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
 
   const handleClick = () => {
     setPulseKey((k) => k + 1);
-    triggerGlobalSpatialPulse(1.25);
+    triggerGlobalMotionPulse(1.15);
     onPulse?.();
   };
 
   return (
     <motion.button
       type="button"
-      data-testid="morrow-hub-orb-3d"
+      data-testid="portfolio-dial-2d"
       onClick={handleClick}
-      whileHover={reducedMotion ? undefined : { scale: 1.04 }}
-      whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+      whileHover={reducedMotion ? undefined : { scale: 1.03 }}
+      whileTap={reducedMotion ? undefined : { scale: 0.97 }}
       transition={TABRIX_TACTILE_SPRING}
       title={`حالة المحفظة: ${telemetry.healthPct}% — ${agencyCount} وكالة (${activeIndividuals} فرد)`}
       aria-label={`مؤشر محفظة الوكالات: الجاهزية ${telemetry.healthPct}%`}
-      className={`relative w-[108px] h-[108px] sm:w-[116px] sm:h-[116px] rounded-full cursor-pointer select-none flex items-center justify-center border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-[var(--card-shadow)] ${className}`}
+      className={`relative w-[104px] h-[104px] sm:w-[112px] sm:h-[112px] rounded-full cursor-pointer select-none flex items-center justify-center border border-[var(--border-color)] bg-[var(--bg-surface)] shadow-[var(--card-shadow)] ${className}`}
     >
-      {/* Ambient Radial Core Glow */}
+      {/* Subtle Core Tint */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-2 rounded-full"
@@ -80,16 +79,16 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
         }}
       />
 
-      {/* Interactive SVG Pulse Ring */}
+      {/* Interactive 2D Pulse Ring */}
       {!reducedMotion && pulseKey > 0 && (
         <motion.span
           key={pulseKey}
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 rounded-full border"
           style={{ borderColor: palette.accentBright }}
-          initial={{ scale: 0.9, opacity: 0.75 }}
-          animate={{ scale: 1.45, opacity: 0 }}
-          transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+          initial={{ scale: 0.92, opacity: 0.65 }}
+          animate={{ scale: 1.38, opacity: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         />
       )}
 
@@ -101,12 +100,11 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
       >
-        {/* Outer rotating satellite ring */}
         <g
           className={reducedMotion ? '' : 'spin-orbital-cw'}
           style={{
             transformOrigin: '56px 56px',
-            animationDuration: `${Math.max(9, Math.round(20 / Math.max(0.5, telemetry.ringSpinRate)))}s`,
+            animationDuration: `${telemetry.ringDurationSec}s`,
           }}
         >
           <circle
@@ -114,9 +112,9 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
             cy="56"
             r="48"
             stroke={palette.secondary}
-            strokeOpacity="0.28"
-            strokeWidth="1"
-            strokeDasharray="4 4"
+            strokeOpacity="0.24"
+            strokeWidth="0.9"
+            strokeDasharray="4 5"
           />
           {satelliteAngles.map((rad, i) => {
             const cx = 56 + Math.cos(rad) * 48;
@@ -126,29 +124,27 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
                 key={i}
                 cx={cx}
                 cy={cy}
-                r={i === 0 ? 2.6 : 1.9}
+                r={i === 0 ? 2.3 : 1.7}
                 fill={i % 2 === 0 ? palette.accentBright : palette.secondary}
               />
             );
           })}
         </g>
 
-        {/* Health Gauge Track */}
         <circle
           cx="56"
           cy="56"
           r={radius}
           stroke={palette.borderColor}
-          strokeWidth="3.5"
+          strokeWidth="3.2"
         />
 
-        {/* Active Health Arc */}
         <circle
           cx="56"
           cy="56"
           r={radius}
           stroke={telemetry.alertIntensity > 0.35 ? '#F59E0B' : palette.accent}
-          strokeWidth="3.5"
+          strokeWidth="3.2"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -156,12 +152,11 @@ export const MorrowHubOrb3D: React.FC<MorrowHubOrb3DProps> = ({
           style={{ transition: 'stroke-dashoffset 450ms cubic-bezier(0.22, 1, 0.36, 1)' }}
         />
 
-        {/* Inner Diamond Reticle */}
         <polygon
-          points="56,28 84,56 56,84 28,56"
+          points="56,30 82,56 56,82 30,56"
           stroke={palette.accentBright}
-          strokeOpacity="0.22"
-          strokeWidth="0.9"
+          strokeOpacity="0.18"
+          strokeWidth="0.8"
         />
       </svg>
 

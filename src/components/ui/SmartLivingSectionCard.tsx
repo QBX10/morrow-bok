@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { useTabrix3DTilt } from '../../utils/tabrixMotion';
+import { useSurfaceSheen2D } from '../../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './NexusDuotoneIcon';
 
 export interface SmartSubIconItem {
@@ -35,15 +35,12 @@ export const SmartLivingSectionCard: React.FC<SmartLivingSectionCardProps> = ({
   onOpen,
 }) => {
   const displaySubIcons = subIcons.slice(0, 4);
-  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLElement>({
-    maxTiltX: 4.8,
-    maxTiltY: 5.8,
-  });
+  const { surfaceRef, surfaceHandlers } = useSurfaceSheen2D<HTMLElement>();
 
   return (
     <article
-      ref={tiltRef}
-      {...tiltHandlers}
+      ref={surfaceRef}
+      {...surfaceHandlers}
       data-testid={testId}
       className="nexus-squircle smart-living-card group relative flex flex-col justify-between gap-4 overflow-hidden border p-5 text-right"
       style={{

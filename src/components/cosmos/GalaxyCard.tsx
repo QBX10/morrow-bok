@@ -3,7 +3,7 @@ import { ChevronLeft, Lock, Sparkles, Star } from 'lucide-react';
 import { SectionLogo } from '../settings/sectionLogos';
 import type { CosmosNode } from '../../utils/cosmosRegistry';
 import type { HierarchyBadgeContext } from '../../utils/hierarchyRegistry';
-import { useTabrix3DTilt } from '../../utils/tabrixMotion';
+import { useSurfaceSheen2D } from '../../utils/tabrixMotion';
 
 interface GalaxyCardProps {
   node: CosmosNode;
@@ -22,15 +22,12 @@ export const GalaxyCard: React.FC<GalaxyCardProps> = ({
 }) => {
   const badge =
     badgeContext && node.getBadge ? node.getBadge(badgeContext) : null;
-  const { tiltRef, tiltHandlers } = useTabrix3DTilt<HTMLElement>({
-    maxTiltX: 4.8,
-    maxTiltY: 5.8,
-  });
+  const { surfaceRef, surfaceHandlers } = useSurfaceSheen2D<HTMLElement>();
 
   return (
     <article
-      ref={tiltRef}
-      {...tiltHandlers}
+      ref={surfaceRef}
+      {...surfaceHandlers}
       className="nexus-squircle nexus-squircle-interactive group relative flex flex-col justify-between overflow-hidden p-4 sm:p-5"
       style={{
         backgroundImage: node.gradient,

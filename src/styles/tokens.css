@@ -2,29 +2,29 @@
 :root {
   color-scheme: dark;
 
-  /* Dynamic Palette Aliases */
-  --obsidian-bg: var(--bg-main, #050A14);
-  --obsidian-surface: var(--bg-surface, #0C172B);
-  --obsidian-surface-elevated: var(--bg-table-header, #12223E);
-  --gold-primary: var(--accent, #10E0A6);
-  --gold-bright: var(--accent-bright, #86FFDE);
-  --gold-amber: var(--accent, #10E0A6);
-  --gold-border: var(--border-color, rgba(56, 239, 194, 0.24));
-  --gold-border-strong: color-mix(in srgb, var(--accent, #10E0A6) 48%, transparent);
-  --gold-glow: var(--marine-caustic-1, rgba(16, 224, 166, 0.18));
+  /* Dynamic Palette Aliases — السبح والذهب (الافتراضي الهادئ) */
+  --obsidian-bg: var(--bg-main, #070708);
+  --obsidian-surface: var(--bg-surface, #101012);
+  --obsidian-surface-elevated: var(--bg-table-header, #171614);
+  --gold-primary: var(--accent, #D4AF37);
+  --gold-bright: var(--accent-bright, #EED278);
+  --gold-amber: var(--accent, #D4AF37);
+  --gold-border: var(--border-color, rgba(212, 175, 55, 0.22));
+  --gold-border-strong: color-mix(in srgb, var(--accent, #D4AF37) 44%, transparent);
+  --gold-glow: var(--marine-caustic-1, rgba(212, 175, 55, 0.14));
 
   /* Semantic Surface Tokens */
-  --surface-well: rgba(4, 10, 22, 0.72);
-  --surface-subtle: rgba(255, 255, 255, 0.04);
-  --surface-pill: rgba(12, 23, 43, 0.85);
-  --surface-overlay: rgba(3, 8, 18, 0.82);
+  --surface-well: rgba(11, 11, 13, 0.78);
+  --surface-subtle: rgba(255, 255, 255, 0.035);
+  --surface-pill: rgba(16, 16, 18, 0.9);
+  --surface-overlay: rgba(5, 5, 6, 0.84);
 
-  /* Layered Smoked Surface & Specular Rim Lighting (Lightweight for 60fps) */
-  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #0C172B) 90%, var(--bg-main, #050A14));
-  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #0C172B) 94%, transparent);
-  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #86FFDE) 24%, rgba(255, 255, 255, 0.14));
-  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.42);
-  --chrome-blur: blur(12px) saturate(140%);
+  /* Layered Calm Surface & Subtle Top Rim */
+  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #101012) 94%, var(--bg-main, #070708));
+  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #101012) 96%, transparent);
+  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #EED278) 14%, rgba(255, 255, 255, 0.06));
+  --glass-bevel-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+  --chrome-blur: blur(10px) saturate(125%);
 
   /* 60fps Motion Timing */
   --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
@@ -138,7 +138,7 @@ html[data-color-scheme="light"] .geo-display-title {
   color: transparent;
 }
 
-.tabrix-3d-stage {
+.tabrix-2d-stage {
   position: relative;
 }
 
@@ -148,41 +148,37 @@ html[data-color-scheme="light"] .geo-display-title {
   border: 1px solid var(--border-color);
   box-shadow:
     var(--glass-specular-top),
-    var(--glass-bevel-bottom),
-    var(--card-shadow, 0 12px 28px -16px rgba(2, 10, 22, 0.52));
+    var(--card-shadow, 0 8px 22px -14px rgba(0, 0, 0, 0.52));
 }
 
-/* Floating Popovers / Overlay Chrome (keeps subtle blur only on overlays) */
+/* Floating Popovers / Overlay Chrome */
 .smoked-glass-elevated {
   background: linear-gradient(
     158deg,
-    color-mix(in srgb, var(--bg-table-header, #12223E) 92%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 60%,
-    color-mix(in srgb, var(--bg-main, #050A14) 98%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #171614) 94%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #101012) 97%, transparent) 60%,
+    color-mix(in srgb, var(--bg-main, #070708) 99%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-color));
   box-shadow:
     var(--glass-specular-top),
-    var(--glass-bevel-bottom),
-    0 18px 42px -18px rgba(2, 10, 22, 0.48),
-    0 0 30px -18px var(--marine-caustic-1, rgba(16, 224, 166, 0.2));
+    0 14px 34px -18px rgba(0, 0, 0, 0.62);
 }
 
-/* Architectural 2D Chamfered Hero / Auth Card (scrolls smoothly without heavy blur) */
+/* Architectural 2D Chamfered Hero / Auth Card */
 .chamfered-glass-card {
   position: relative;
   border-radius: var(--card-radius, 20px);
   background: linear-gradient(
     148deg,
-    color-mix(in srgb, var(--bg-table-header, #12223E) 88%, var(--bg-surface)) 0%,
-    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 55%,
-    color-mix(in srgb, var(--bg-main, #050A14) 98%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #171614) 90%, var(--bg-surface)) 0%,
+    color-mix(in srgb, var(--bg-surface, #101012) 97%, transparent) 55%,
+    color-mix(in srgb, var(--bg-main, #070708) 99%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-color));
   box-shadow:
     var(--glass-specular-top),
-    var(--glass-bevel-bottom),
-    var(--card-shadow, 0 16px 36px -18px rgba(2, 10, 22, 0.56));
+    var(--card-shadow, 0 10px 26px -16px rgba(0, 0, 0, 0.56));
 }
 
 html[data-color-scheme="light"] .chamfered-glass-card,
@@ -248,20 +244,20 @@ html[data-reduce-motion="1"] .ambient-orb-gold {
 
 /* Tactile Primary CTA Button */
 .obsidian-gold-cta,
-.marine-3d-cta {
+.primary-accent-cta {
   border-radius: calc(var(--btn-radius, 14px) * 0.25 + 10px);
   background: linear-gradient(
     135deg,
-    var(--accent-bright, #6EE7B7) 0%,
-    var(--accent, #10B981) 52%,
-    var(--accent-deep, #047857) 100%
+    var(--accent-bright, #EED278) 0%,
+    var(--accent, #D4AF37) 55%,
+    var(--accent-deep, #9F7F22) 100%
   );
-  color: var(--accent-fg, #031510);
+  color: var(--accent-fg, #0B0904);
   font-weight: 800;
-  border: 1px solid color-mix(in srgb, var(--accent-bright) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 42%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    0 8px 20px -10px color-mix(in srgb, var(--accent) 55%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 6px 16px -10px color-mix(in srgb, var(--accent) 44%, transparent);
   transition:
     transform 150ms var(--ease-luxury),
     filter 150ms var(--ease-luxury),
@@ -269,7 +265,7 @@ html[data-reduce-motion="1"] .ambient-orb-gold {
 }
 
 html[data-color-scheme="light"] .obsidian-gold-cta,
-html[data-color-scheme="light"] .marine-3d-cta {
+html[data-color-scheme="light"] .primary-accent-cta {
   background: linear-gradient(
     135deg,
     var(--accent, #B45309) 0%,
@@ -279,17 +275,17 @@ html[data-color-scheme="light"] .marine-3d-cta {
 }
 
 .obsidian-gold-cta:hover:not(:disabled),
-.marine-3d-cta:hover:not(:disabled) {
-  transform: translate3d(0, -1.5px, 0);
-  filter: brightness(1.06);
+.primary-accent-cta:hover:not(:disabled) {
+  transform: translate3d(0, -1px, 0);
+  filter: brightness(1.05);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 12px 26px -10px color-mix(in srgb, var(--accent) 68%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 10px 22px -10px color-mix(in srgb, var(--accent) 52%, transparent);
 }
 
 .obsidian-gold-cta:active:not(:disabled),
-.marine-3d-cta:active:not(:disabled) {
-  transform: scale(0.97);
+.primary-accent-cta:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 /* Curved RTL Glass Sidebar Edge (lightweight chrome blur) */
@@ -325,20 +321,20 @@ html[data-color-scheme="light"] .curved-glass-sidebar {
   }
 }
 
-.marine-float-3d {
-  animation: marineFloat2D 5.2s ease-in-out infinite;
+.ambient-float-2d {
+  animation: marineFloat2D 5.6s ease-in-out infinite;
 }
 
-html[data-reduce-motion="1"] .marine-float-3d {
+html[data-reduce-motion="1"] .ambient-float-2d {
   animation: none !important;
 }
 
 /* ─── Pure 2D Geometric Structural Wells, Dividers & Bento Cards ──────────── */
 .recessed-well {
-  background: var(--surface-well, rgba(4, 10, 22, 0.72));
+  background: var(--surface-well, rgba(11, 11, 13, 0.78));
   box-shadow:
-    inset 0 1px 6px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 0 1px 4px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 html[data-color-scheme="light"] .recessed-well {
@@ -352,13 +348,13 @@ html[data-color-scheme="light"] .recessed-well {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    color-mix(in srgb, var(--spatial-accent, var(--accent, #10B981)) 55%, transparent) 28%,
-    color-mix(in srgb, var(--spatial-secondary, #22D3EE) 55%, transparent) 72%,
+    color-mix(in srgb, var(--spatial-accent, var(--accent, #D4AF37)) 42%, transparent) 28%,
+    color-mix(in srgb, var(--spatial-secondary, #C89B3C) 38%, transparent) 72%,
     transparent 100%
   );
 }
 
-/* Zero heavy scroll blur on repeatable Bento cards for buttery 60fps scrolling */
+/* Clean calm 2D Bento card */
 .glass-bento-card {
   --spot-x: 50%;
   --spot-y: 50%;
@@ -367,8 +363,8 @@ html[data-color-scheme="light"] .recessed-well {
   border-radius: var(--card-radius, 20px);
   background: linear-gradient(
     152deg,
-    color-mix(in srgb, var(--bg-surface, #0C172B) 94%, var(--bg-table-header)) 0%,
-    color-mix(in srgb, var(--bg-main, #050A14) 97%, var(--bg-surface)) 100%
+    color-mix(in srgb, var(--bg-surface, #101012) 96%, var(--bg-table-header)) 0%,
+    color-mix(in srgb, var(--bg-main, #070708) 98%, var(--bg-surface)) 100%
   );
   border: 1px solid var(--border-color);
   transform: scale3d(var(--tilt-scale), var(--tilt-scale), 1);
@@ -378,20 +374,19 @@ html[data-color-scheme="light"] .recessed-well {
     box-shadow 180ms var(--ease-luxury);
   box-shadow:
     var(--glass-specular-top),
-    var(--card-shadow, 0 14px 32px -18px rgba(0, 0, 0, 0.6));
+    var(--card-shadow, 0 8px 22px -14px rgba(0, 0, 0, 0.5));
 }
 
 .glass-bento-card-elevated {
   background: linear-gradient(
     148deg,
-    color-mix(in srgb, var(--bg-table-header, #12223E) 92%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #171614) 94%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #101012) 97%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10E0A6)) 36%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #D4AF37)) 30%, var(--border-color));
   box-shadow:
     var(--glass-specular-top),
-    var(--card-shadow, 0 18px 40px -20px rgba(2, 8, 22, 0.65)),
-    0 0 28px -18px var(--spatial-glow, rgba(16, 224, 166, 0.22));
+    var(--card-shadow, 0 12px 28px -16px rgba(0, 0, 0, 0.55));
 }
 
 html[data-color-scheme="light"] .glass-bento-card,
@@ -443,7 +438,7 @@ html[data-app-shape="sharp-monolith"] .morrow-showcase-frame {
 
 html[data-app-shape="sharp-monolith"] .nexus-pill-btn,
 html[data-app-shape="sharp-monolith"] .obsidian-gold-cta,
-html[data-app-shape="sharp-monolith"] .marine-3d-cta,
+html[data-app-shape="sharp-monolith"] .primary-accent-cta,
 html[data-app-shape="sharp-monolith"] .geo-icon-socket,
 html[data-app-shape="sharp-monolith"] .metric-well,
 html[data-app-shape="sharp-monolith"] .smart-dashboard-subicon,
@@ -495,7 +490,7 @@ html[data-app-shape="royal-octagram"] .cosmos-glass-panel {
 }
 
 html[data-app-shape="royal-octagram"] .obsidian-gold-cta,
-html[data-app-shape="royal-octagram"] .marine-3d-cta,
+html[data-app-shape="royal-octagram"] .primary-accent-cta,
 html[data-app-shape="royal-octagram"] .nexus-pill-btn {
   border-radius: 4px !important;
   clip-path: polygon(
@@ -558,7 +553,7 @@ html[data-app-shape="swiss-editorial"] .chamfered-glass-card {
 
 html[data-app-shape="swiss-editorial"] .nexus-pill-btn,
 html[data-app-shape="swiss-editorial"] .obsidian-gold-cta,
-html[data-app-shape="swiss-editorial"] .marine-3d-cta {
+html[data-app-shape="swiss-editorial"] .primary-accent-cta {
   border-radius: 8px !important;
   box-shadow: none !important;
 }
@@ -587,7 +582,7 @@ html[data-app-shape="floating-capsule"] .smart-living-subicon {
 }
 
 html[data-app-shape="floating-capsule"] .obsidian-gold-cta,
-html[data-app-shape="floating-capsule"] .marine-3d-cta,
+html[data-app-shape="floating-capsule"] .primary-accent-cta,
 html[data-app-shape="floating-capsule"] .nexus-pill-btn {
   border-radius: 9999px !important;
 }

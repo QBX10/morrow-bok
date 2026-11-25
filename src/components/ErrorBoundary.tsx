@@ -54,7 +54,7 @@ export class ErrorBoundary extends React.Component<
       return (
         <div
           dir="rtl"
-          className="tabrix-3d-stage ambient-obsidian-canvas flex min-h-screen items-center justify-center p-6"
+          className="tabrix-2d-stage ambient-obsidian-canvas flex min-h-screen items-center justify-center p-6"
           style={{
             backgroundColor: 'var(--bg-main, #0f172a)',
             color: 'var(--text-primary, #f8fafc)',
@@ -92,7 +92,7 @@ export class ErrorBoundary extends React.Component<
                 this.setState({ hasError: false, friendlyMessage: '' });
                 window.location.reload();
               }}
-              className="marine-3d-cta nexus-pill-btn inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold"
+              className="primary-accent-cta nexus-pill-btn inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold"
             >
               <RotateCcw className="h-4 w-4" />
               <span>إعادة تحميل التطبيق</span>

@@ -22,6 +22,7 @@ import { AssistantWidget } from './components/AssistantWidget';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { MorrowCommandCenterView } from './components/MorrowCommandCenterView';
 import { ToastHost } from './components/ToastHost';
+import { DelayedTruckLoaderOverlay } from './components/ui/DelayedTruckLoaderOverlay';
 import { AccountSecurityHubView } from './components/AccountSecurityHubView';
 import { Switcher } from './components/cosmos/Switcher';
 import { CosmosBottomNav } from './components/cosmos/CosmosBottomNav';
@@ -33,9 +34,9 @@ import { clearSession, getStoredSession } from './lib/authClient';
 import { OnboardingFlow } from './components/auth/OnboardingFlow';
 import { FlipAuthGuard } from './components/auth/FlipAuthGuard';
 import { getTenantOnboardingKey } from './services/storage/tenantStorage';
-import { Spatial3DCanvas } from './components/spatial3d/Spatial3DCanvas';
+import { Backdrop2DCanvas } from './components/motion2d/Backdrop2DCanvas';
 import { SmartModelsWorkspaceView } from './components/SmartModelsWorkspaceView';
-import { resolveSpatial3DPrefs } from './utils/spatial3dConfig';
+import { resolveSurface2DPrefs } from './utils/surface2dConfig';
 import type {
   AssistantExternalTableCommand,
   MorrowCanvasMode,
@@ -1024,9 +1025,9 @@ export default function App() {
       ? `agency_roster_${selectedAgencyId}`
       : activeView;
 
-  const activeSpatialPrefs = useMemo(
-    () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
-    [generalPrefs?.spatial3dPrefs]
+  const activeSurfacePrefs = useMemo(
+    () => resolveSurface2DPrefs(generalPrefs?.surface2dPrefs),
+    [generalPrefs?.surface2dPrefs]
   );
 
   if (!authUser) {
@@ -1043,8 +1044,8 @@ export default function App() {
               className="min-h-screen"
             >
               <OnboardingFlow
-                themeId={activeSpatialPrefs.themeId}
-                spatialPrefs={activeSpatialPrefs}
+                themeId={activeSurfacePrefs.themeId}
+                surfacePrefs={activeSurfacePrefs}
                 appShape={themePrefs.appShape}
                 onComplete={() => {
                   try {
@@ -1066,8 +1067,8 @@ export default function App() {
               className="min-h-screen"
             >
               <FlipAuthGuard
-                themeId={activeSpatialPrefs.themeId}
-                spatialPrefs={activeSpatialPrefs}
+                themeId={activeSurfacePrefs.themeId}
+                surfacePrefs={activeSurfacePrefs}
                 appShape={themePrefs.appShape}
                 onAuthenticated={handleAuthenticated}
                 onReplayOnboarding={() => setOnboardingDone(false)}
@@ -1082,9 +1083,9 @@ export default function App() {
 
   return (
     <div className="ambient-obsidian-canvas relative flex min-h-screen flex-col [overflow-x:clip]">
-      <Spatial3DCanvas
-        themeId={activeSpatialPrefs.themeId}
-        spatialPrefs={activeSpatialPrefs}
+      <Backdrop2DCanvas
+        themeId={activeSurfacePrefs.themeId}
+        surfacePrefs={activeSurfacePrefs}
         appShape={themePrefs.appShape}
         activeView={activeView}
         reduceMotion={tabrixReducedMotion}
@@ -1390,6 +1391,7 @@ export default function App() {
           activePeriod={activePeriod}
           generalPrefs={generalPrefs}
           onUpdateGeneralPrefs={setGeneralPrefs}
+          onSaveCalculationSettings={setCalculationSettings}
           onAddExpense={addExpense}
           onRequestDeleteExpense={(expense) =>
             handleRequestDelete({ kind: 'expense', item: expense })
@@ -1598,7 +1600,7 @@ export default function App() {
           onClearMessages={assistant.clearMessages}
           onRetryLastPrompt={assistant.retryLastPrompt}
           modelHealthSnapshots={assistant.modelHealthSnapshots}
-          spatialPrefs={state.generalPrefs?.spatial3dPrefs}
+          surfacePrefs={activeSurfacePrefs}
           canViewFinance={capabilities.canViewFinance}
           canUseQuickExtract={capabilities.canUseQuickExtract}
         />
@@ -1949,17 +1951,9 @@ export default function App() {
       {!isAuthGateLocked && !securityPrefs.privacyLocked && !isDedicatedFullScreenView && (
         <CosmosBottomNav
           activeView={activeView}
-          canAddPerson={capabilities.canEditRecords}
-          canUseQuickExtract={capabilities.canUseQuickExtract}
           onNavigateView={handleNavigate}
-          onQuickAddPerson={() => {
-            setAddDefaultAgencyId(currentAgency?.id ?? state.agencies[0]?.id ?? 1);
-            setAddPersonOpen(true);
-          }}
           onOpenAssistant={() => openMorrowStudio('chat')}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           pendingDraftsCount={assistant.pendingDraftsCount}
-          isCenterActionActive={addPersonOpen || commandPaletteOpen}
           isAssistantOpen={assistant.isOpen}
         />
       )}
@@ -2017,6 +2011,9 @@ export default function App() {
           </motion.aside>
         )}
       </AnimatePresence>
+
+      {/* Global 5-Second Delayed Animated Cargo Truck & Parcel Loader */}
+      <DelayedTruckLoaderOverlay />
 
       {/* Discreet Background & Stealth Execution Toast Stack */}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />

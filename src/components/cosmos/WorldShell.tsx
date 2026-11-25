@@ -27,10 +27,10 @@ import {
 } from '../../utils/cosmosRegistry';
 import { SectionLogo } from '../settings/sectionLogos';
 import { BottomSheet } from './BottomSheet';
+import { FloatingGlassBottomNav, type FloatingNavItem } from './CosmosBottomNav';
 import { TabrixSubViewTransition } from '../ui/TabrixMotionPrimitives';
 import {
   TABRIX_REDUCED_VARIANTS,
-  TABRIX_SPRING,
   TABRIX_SUBVIEW_VARIANTS,
   useTabrixOrderedDirection,
   useTabrixReducedMotion,
@@ -526,55 +526,53 @@ export const WorldShell: React.FC<WorldShellProps> = ({
           </WorldTabStage>
         </div>
 
-        {/* Dedicated World Bottom Navigation Bar */}
+        {/* Dedicated 70px Floating World Bottom Navigation Bar */}
         <div
-          className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav)] border-t backdrop-blur-lg"
+          className="no-print fixed inset-x-0 bottom-3 z-[var(--z-bottom-nav)] pointer-events-none flex justify-center px-3"
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
-            borderColor: 'var(--border-color)',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           }}
         >
-          <div className="mx-auto grid max-w-2xl grid-cols-4 gap-1 px-2 py-1.5">
-            {(
+          <FloatingGlassBottomNav
+            items={
               [
-                { id: 'quick', label: 'سريع', icon: Zap },
-                { id: 'galaxies', label: 'الأقسام', icon: Orbit },
-                { id: 'favorites', label: 'المفضلة', icon: Star },
-                { id: 'search', label: 'بحث', icon: Search },
-              ] as const
-            ).map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => onChangeTab(tab.id)}
-                  className="cosmos-touch-target relative flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 overflow-hidden rounded-xl py-1.5 text-[11px] sm:text-xs font-extrabold transition-colors"
-                  style={
-                    active
-                      ? {
-                          color: world.accentColor || 'var(--accent)',
-                        }
-                      : { color: 'var(--text-muted)' }
-                  }
-                >
-                  {active && (
-                    <motion.span
-                      layoutId={`world-shell-tab-${world.id}`}
-                      transition={TABRIX_SPRING}
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-xl"
-                      style={{ backgroundColor: 'var(--bg-nav-active)' }}
-                    />
-                  )}
-                  <Icon className="relative z-10 h-4 w-4" />
-                  <span className="relative z-10">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+                {
+                  key: 'quick',
+                  label: 'سريع',
+                  icon: ({ className, strokeWidth }) => (
+                    <Zap className={className} strokeWidth={strokeWidth} />
+                  ),
+                },
+                {
+                  key: 'galaxies',
+                  label: 'الأقسام',
+                  icon: ({ className, strokeWidth }) => (
+                    <Orbit className={className} strokeWidth={strokeWidth} />
+                  ),
+                },
+                {
+                  key: 'favorites',
+                  label: 'المفضلة',
+                  icon: ({ className, strokeWidth }) => (
+                    <Star className={className} strokeWidth={strokeWidth} />
+                  ),
+                },
+                {
+                  key: 'search',
+                  label: 'بحث',
+                  icon: ({ className, strokeWidth }) => (
+                    <Search className={className} strokeWidth={strokeWidth} />
+                  ),
+                },
+              ] satisfies FloatingNavItem[]
+            }
+            activeKey={activeTab}
+            onChange={(key) => onChangeTab(key as WorldSubTab)}
+            showHomeIndicator={false}
+            showLabels={true}
+            ariaLabel={`تنقل ${world.title}`}
+            className="mx-auto"
+          />
         </div>
 
         {/* World Tools Bottom Sheet (Reset THIS world only, Presets, Change Log, Export) */}

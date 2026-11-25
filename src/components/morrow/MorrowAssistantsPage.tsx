@@ -10,7 +10,7 @@ import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
-import { Tabrix3DTiltSurface } from '../ui/TabrixMotionPrimitives';
+import { MotionSurfaceCard } from '../ui/TabrixMotionPrimitives';
 
 interface MorrowAssistantsPageProps {
   activeAssistantId: string;
@@ -40,10 +40,8 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
         {SPECIALIZED_ASSISTANTS.map((profile) => {
           const isActive = profile.id === activeAssistantId;
           return (
-            <Tabrix3DTiltSurface
+            <MotionSurfaceCard
               key={profile.id}
-              maxTiltX={5}
-              maxTiltY={6}
               className="nexus-squircle flex flex-col justify-between gap-4 p-5 transition-colors"
               style={{
                 backgroundColor: isActive
@@ -136,7 +134,7 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
                   <span>{isActive ? 'مُفعّل حالياً — دخول للمحادثة' : 'تفعيل هذا المساعد'}</span>
                 </motion.button>
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
           );
         })}
       </div>

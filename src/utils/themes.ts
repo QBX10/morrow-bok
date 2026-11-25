@@ -362,45 +362,45 @@ export const OBSIDIAN_GOLD_THEME: AppThemeDefinition = {
   id: 'obsidian-gold',
   name: 'السبح والذهب',
   englishName: 'Obsidian & Gold',
-  mood: 'تناغم ملكي بين الأسود السبجي والذهب المصقول',
+  mood: 'تناغم هادئ وعصري بين السواد السبجي والذهب المصقول',
   description:
-    'الثيم الخامس الفاخر: سواد سبجي عميق (#050506) وأسطح كربونية دافئة (#0E0C08) منسقة بدقة مع الذهب المصقول (#D4AF37).',
+    'الثيم التلقائي الافتراضي: سواد سبجي هادئ (#070708) وأسطح كربونية ناعمة (#101012) منسقة مع ذهب مصقول متوازن (#D4AF37) وتباين قرائي مريح.',
   isDark: true,
   capsuleGroup: 'marine',
-  swatches: ['#050506', '#0E0C08', '#D4AF37'],
+  swatches: ['#070708', '#101012', '#D4AF37'],
   vars: {
-    '--bg-main': '#050506',
-    '--bg-surface': '#0E0C08',
-    '--bg-header': '#090806',
-    '--bg-table-header': '#17130B',
-    '--bg-nav-active': 'rgba(212, 175, 55, 0.17)',
-    '--bg-zebra': 'rgba(247, 215, 116, 0.028)',
-    '--bg-numeric': 'rgba(212, 175, 55, 0.085)',
-    '--row-hover-bg': 'rgba(212, 175, 55, 0.13)',
-    '--surface-well': 'rgba(6, 5, 4, 0.78)',
-    '--surface-subtle': 'rgba(212, 175, 55, 0.06)',
-    '--surface-pill': 'rgba(18, 15, 10, 0.9)',
-    '--surface-overlay': 'rgba(4, 4, 5, 0.86)',
-    '--text-primary': '#FAF6EE',
-    '--text-muted': '#BFB297',
-    '--border-color': 'rgba(212, 175, 55, 0.28)',
-    '--grid-color': 'rgba(212, 175, 55, 0.13)',
+    '--bg-main': '#070708',
+    '--bg-surface': '#101012',
+    '--bg-header': '#0B0B0D',
+    '--bg-table-header': '#171614',
+    '--bg-nav-active': 'rgba(212, 175, 55, 0.14)',
+    '--bg-zebra': 'rgba(238, 210, 120, 0.024)',
+    '--bg-numeric': 'rgba(212, 175, 55, 0.075)',
+    '--row-hover-bg': 'rgba(212, 175, 55, 0.11)',
+    '--surface-well': 'rgba(11, 10, 9, 0.84)',
+    '--surface-subtle': 'rgba(212, 175, 55, 0.05)',
+    '--surface-pill': 'rgba(20, 18, 15, 0.92)',
+    '--surface-overlay': 'rgba(5, 5, 6, 0.84)',
+    '--text-primary': '#F4F1EA',
+    '--text-muted': '#9E9689',
+    '--border-color': 'rgba(212, 175, 55, 0.22)',
+    '--grid-color': 'rgba(212, 175, 55, 0.11)',
     '--accent': '#D4AF37',
-    '--accent-bright': '#F7D774',
-    '--accent-deep': '#9A7418',
-    '--accent-fg': '#0B0802',
-    '--spatial-secondary': '#F59E0B',
-    '--spatial-aurora': '#B45309',
-    '--marine-caustic-1': 'rgba(212, 175, 55, 0.18)',
-    '--marine-caustic-2': 'rgba(245, 158, 11, 0.11)',
-    '--success': '#22C55E',
-    '--success-fg': '#041A0C',
-    '--success-bg': 'rgba(34, 197, 94, 0.16)',
+    '--accent-bright': '#EED278',
+    '--accent-deep': '#9F7F22',
+    '--accent-fg': '#0B0904',
+    '--spatial-secondary': '#C89B3C',
+    '--spatial-aurora': '#7C5E18',
+    '--marine-caustic-1': 'rgba(212, 175, 55, 0.13)',
+    '--marine-caustic-2': 'rgba(200, 155, 60, 0.08)',
+    '--success': '#34D399',
+    '--success-fg': '#041B12',
+    '--success-bg': 'rgba(52, 211, 153, 0.14)',
     '--warning': '#FBBF24',
-    '--warning-bg': 'rgba(251, 191, 36, 0.16)',
+    '--warning-bg': 'rgba(251, 191, 36, 0.14)',
     '--danger': '#F43F5E',
     '--danger-fg': '#FFFFFF',
-    '--danger-bg': 'rgba(244, 63, 94, 0.16)',
+    '--danger-bg': 'rgba(244, 63, 94, 0.15)',
   },
 };
 
@@ -465,11 +465,11 @@ export const AUTO_ADAPTIVE_THEME: AppThemeDefinition = {
 };
 
 export const CORE_FIVE_THEMES: AppThemeDefinition[] = [
+  OBSIDIAN_GOLD_THEME,
   ABYSSAL_EMERALD_THEME,
   MIDNIGHT_TRENCH_THEME,
   BIOLUMINESCENT_REEF_THEME,
   PELAGIC_SAPPHIRE_THEME,
-  OBSIDIAN_GOLD_THEME,
 ];
 
 export const MARINE_THEMES: AppThemeDefinition[] = CORE_FIVE_THEMES;
@@ -491,8 +491,8 @@ export const APP_THEME_CAPSULES: Array<{
 }> = [
   {
     id: 'marine',
-    title: 'الثيمات المعتمدة (5 هويات شاملة السبح والذهب)',
-    subtitle: 'ألوان متزنة بنظام 60-30-10 مع تباين عالي الوضوح لكل الشاشات',
+    title: 'الثيمات الأساسية (السبح والذهب + 4 ثيمات هادئة)',
+    subtitle: 'ألوان متزنة بنظام 60-30-10 مع تباين مريح وواضح لكل الشاشات',
     themes: CORE_FIVE_THEMES,
   },
   {
@@ -530,12 +530,12 @@ const LEGACY_APP_THEME_MAP: Record<string, AppThemeId> = {
 export function resolveAppThemeId(
   rawId?: string | null
 ): MarineAppThemeId | AutoAppThemeId {
-  if (!rawId) return 'abyssal-emerald';
+  if (!rawId) return 'obsidian-gold';
   if (rawId === 'auto' || rawId === 'daylight-alabaster') return rawId;
   if (CORE_FIVE_THEMES.some((t) => t.id === rawId)) {
     return rawId as MarineAppThemeId;
   }
-  return (LEGACY_APP_THEME_MAP[rawId] as MarineAppThemeId | AutoAppThemeId) || 'abyssal-emerald';
+  return (LEGACY_APP_THEME_MAP[rawId] as MarineAppThemeId | AutoAppThemeId) || 'obsidian-gold';
 }
 
 /**
@@ -554,7 +554,6 @@ export function resolveAutoThemeTarget(options?: {
   const hour =
     typeof options?.hour === 'number' ? options.hour : new Date().getHours();
   const isDaytime = hour >= 6 && hour < 18;
-  // Use Daylight Alabaster if OS explicitly prefers light OR during daytime unless OS explicitly prefers dark
   let prefersDark = false;
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
     prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -575,7 +574,7 @@ export function getEffectiveAppTheme(
   if (resolvedId === 'daylight-alabaster') {
     return DAYLIGHT_ALABASTER_THEME;
   }
-  return CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || ABYSSAL_EMERALD_THEME;
+  return CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || OBSIDIAN_GOLD_THEME;
 }
 
 export function getAppThemeById(id?: string | null): AppThemeDefinition {
@@ -583,7 +582,7 @@ export function getAppThemeById(id?: string | null): AppThemeDefinition {
   if (resolvedId === 'auto') return AUTO_ADAPTIVE_THEME;
   if (resolvedId === 'daylight-alabaster') return DAYLIGHT_ALABASTER_THEME;
   return (
-    CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || ABYSSAL_EMERALD_THEME
+    CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || OBSIDIAN_GOLD_THEME
   );
 }
 
@@ -742,23 +741,23 @@ export const ROW_DENSITY_MAP: Record<
 
 export const SHADOW_LEVEL_CSS: Record<CardShadowLevel, string> = {
   none: 'none',
-  soft: '0 10px 26px -12px rgba(2, 10, 22, 0.35)',
-  elevated: '0 18px 40px -14px rgba(2, 10, 22, 0.5)',
+  soft: '0 8px 20px -12px rgba(0, 0, 0, 0.36)',
+  elevated: '0 14px 32px -14px rgba(0, 0, 0, 0.48)',
 };
 
 export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: 'preset_obsidian_gold',
-    name: 'وضع السبح والذهب الملكي',
+    name: 'وضع السبح والذهب التلقائي',
     appTheme: 'obsidian-gold',
-    appShape: 'royal-octagram',
-    tableTheme: 'royal-executive',
-    fontFamily: 'cairo',
+    appShape: 'geometric-glass',
+    tableTheme: 'glass',
+    fontFamily: 'ibm-plex',
     fontSizePx: 15,
-    rowHeightPx: 42,
+    rowHeightPx: 44,
     colWidthScale: 100,
-    borderRadiusPx: 10,
-    cardShadowLevel: 'elevated',
+    borderRadiusPx: 20,
+    cardShadowLevel: 'soft',
     glassEffect: true,
     conditionalFormatting: {
       highlightBlockedRows: true,
@@ -768,7 +767,7 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
   },
   {
     id: 'preset_night_work',
-    name: 'وضع العمق الزمردي القياسي',
+    name: 'وضع العمق الزمردي الهادئ',
     appTheme: 'abyssal-emerald',
     appShape: 'geometric-glass',
     tableTheme: 'glass',
@@ -807,7 +806,7 @@ export const DEFAULT_APPEARANCE_PROFILES: AppearanceProfile[] = [
 ];
 
 export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
-  appTheme: 'abyssal-emerald',
+  appTheme: 'obsidian-gold',
   appShape: 'geometric-glass',
   tableTheme: 'glass',
   fontFamily: 'ibm-plex',

@@ -31,14 +31,14 @@ import {
   type SmartSpeedMode,
 } from '../utils/smartModelsEngine';
 import {
-  SmartModelCore3D,
+  ModelPulseCore2D,
   type SmartCoreExecutionState,
-} from './spatial3d/SmartModelCore3D';
+} from './motion2d/ModelPulseCore2D';
 import {
+  BentoCard2D,
   GeometricSectionHeader,
-  GlassBentoCard,
   RecessedChannelWell,
-} from './spatial3d/SpatialPrimitives';
+} from './motion2d/SurfacePrimitives2D';
 import { formatIqd } from '../utils/agencyLogic';
 
 interface SmartModelsWorkspaceViewProps {
@@ -172,8 +172,8 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
       data-testid="smart-models-workspace"
       className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:pb-24"
     >
-      {/* 3.1 Hero 3D Holographic Core & Command Header */}
-      <GlassBentoCard elevated className="p-5 sm:p-7">
+      {/* 3.1 Hero 2D Analytical Core & Command Header */}
+      <BentoCard2D elevated className="p-5 sm:p-7">
         <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.85fr] gap-6 items-center">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -181,8 +181,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                 <div
                   className="w-12 h-12 rounded-2xl border border-[var(--border-color)] flex items-center justify-center shrink-0"
                   style={{
-                    background: `radial-gradient(circle at 30% 25%, ${activeModel.accentHex}33, var(--surface-well))`,
-                    boxShadow: `0 10px 26px -10px ${activeModel.accentHex}`,
+                    background: `radial-gradient(circle at 30% 25%, ${activeModel.accentHex}24, var(--surface-well))`,
                   }}
                 >
                   <BrainCircuit
@@ -248,8 +247,8 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
             </RecessedChannelWell>
           </div>
 
-          {/* Interactive 3D Holographic Core */}
-          <SmartModelCore3D
+          {/* Interactive 2D Analytical Matrix Core */}
+          <ModelPulseCore2D
             accentHex={activeModel.accentHex}
             secondaryHex={activeModel.secondaryHex}
             executionState={executionState}
@@ -258,7 +257,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
             reduceMotion={reduceMotion}
           />
         </div>
-      </GlassBentoCard>
+      </BentoCard2D>
 
       {/* 3.2 Specialized 2D Bento Model Cards */}
       <section aria-label="اختيار النموذج الذكي">
@@ -273,7 +272,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
           {SMART_MODELS_CATALOG.map((model) => {
             const isSelected = model.id === selectedModelId;
             return (
-              <GlassBentoCard
+              <BentoCard2D
                 key={model.id}
                 elevated={isSelected}
                 noPadding
@@ -330,14 +329,14 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                     </span>
                   </div>
                 </button>
-              </GlassBentoCard>
+              </BentoCard2D>
             );
           })}
         </div>
       </section>
 
-      {/* Interactive 3D Command Bar + Quick Chips + Parameter Controls */}
-      <GlassBentoCard className="space-y-5">
+      {/* Interactive 2D Command Bar + Quick Chips + Parameter Controls */}
+      <BentoCard2D className="space-y-5">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
             <input
@@ -491,10 +490,10 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
             </div>
           </RecessedChannelWell>
         </div>
-      </GlassBentoCard>
+      </BentoCard2D>
 
-      {/* 3.3 Structured 3D Response & Reasoning Workspace */}
-      <GlassBentoCard elevated data-testid="smart-model-output-card" className="space-y-6">
+      {/* 3.3 Structured 2D Response & Reasoning Workspace */}
+      <BentoCard2D elevated data-testid="smart-model-output-card" className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1.5 max-w-3xl">
             <div className="inline-flex items-center gap-2 text-[11px] font-bold text-[var(--accent-bright)]">
@@ -739,7 +738,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
             </div>
           </RecessedChannelWell>
         </div>
-      </GlassBentoCard>
+      </BentoCard2D>
     </main>
   );
 };

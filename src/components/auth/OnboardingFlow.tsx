@@ -12,9 +12,9 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { DotMatrixPattern, GeometricRavenCrest } from '../brand/VectorMotifs';
-import { MorrowMascot3D } from '../spatial3d/MorrowMascot3D';
-import { Spatial3DCanvas } from '../spatial3d/Spatial3DCanvas';
-import { GlassBentoCard, RecessedChannelWell } from '../spatial3d/SpatialPrimitives';
+import { MorrowEmblem2D } from '../motion2d/MorrowEmblem2D';
+import { Backdrop2DCanvas } from '../motion2d/Backdrop2DCanvas';
+import { BentoCard2D, RecessedChannelWell } from '../motion2d/SurfacePrimitives2D';
 import {
   TABRIX_PAGE_VARIANTS,
   TABRIX_REDUCED_VARIANTS,
@@ -22,13 +22,13 @@ import {
   useTabrixDirection,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
-import { triggerGlobalSpatialPulse } from '../../utils/spatial3dConfig';
-import type { AppShapeId, Spatial3DPrefs, Spatial3DThemeId } from '../../types/agency';
+import { triggerGlobalMotionPulse } from '../../utils/surface2dConfig';
+import type { AppShapeId, Surface2DPrefs, Surface2DThemeId } from '../../types/agency';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
-  themeId?: Spatial3DThemeId;
-  spatialPrefs?: Spatial3DPrefs;
+  themeId?: Surface2DThemeId;
+  surfacePrefs?: Surface2DPrefs;
   appShape?: AppShapeId;
 }
 
@@ -79,8 +79,8 @@ const SLIDES = [
 
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   onComplete,
-  themeId = 'emerald_smoked',
-  spatialPrefs,
+  themeId = 'obsidian_gold',
+  surfacePrefs,
   appShape,
 }) => {
   const [stepIndex, setStepIndex] = useState(0);
@@ -98,10 +98,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[140] flex min-h-[100dvh] items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
-      {/* Autonomous 2D Sacred Geometry & Gradient Mesh Backdrop */}
-      <Spatial3DCanvas
+      {/* Pure 2D Calm Geometric Backdrop */}
+      <Backdrop2DCanvas
         themeId={themeId}
-        spatialPrefs={spatialPrefs}
+        surfacePrefs={surfacePrefs}
         appShape={appShape}
         reduceMotion={reducedMotion}
       />
@@ -112,11 +112,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
       >
-        <GlassBentoCard
+        <BentoCard2D
           elevated
-          tiltIntensity="subtle"
+          motionIntensity="subtle"
           className="p-5 sm:p-8 lg:p-10"
-          testId="onboarding-3d-stage"
+          testId="onboarding-2d-stage"
         >
           <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
             <DotMatrixPattern />
@@ -126,9 +126,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <div className="relative z-10 flex items-center justify-between gap-4 mb-5">
             <div className="flex items-center gap-3.5">
               <motion.div
-                whileHover={reducedMotion ? undefined : { scale: 1.05 }}
+                whileHover={reducedMotion ? undefined : { scale: 1.04 }}
                 transition={TABRIX_TACTILE_SPRING}
-                className="w-12 h-12 rounded-2xl border bg-[var(--surface-well)] flex items-center justify-center shadow-[0_0_26px_var(--spatial-glow)]"
+                className="w-12 h-12 rounded-2xl border bg-[var(--surface-well)] flex items-center justify-center"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 <GeometricRavenCrest size={38} />
@@ -224,7 +224,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     {current.subtitle}
                   </p>
 
-                  {/* Slide-Synced 3D Geometric Highlight Tiles */}
+                  {/* Slide-Synced 2D Geometric Highlight Tiles */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
                     {current.highlights.map((item, idx) => {
                       const ItemIcon = item.icon;
@@ -238,12 +238,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                             duration: 0.32,
                             ease: [0.22, 1, 0.36, 1],
                           }}
-                          whileHover={reducedMotion ? undefined : { y: -3, scale: 1.02 }}
+                          whileHover={reducedMotion ? undefined : { y: -2, scale: 1.01 }}
                         >
                           <RecessedChannelWell className="px-2 py-2.5 sm:p-3 text-center h-full relative overflow-hidden">
                             <div
                               aria-hidden="true"
-                              className="absolute inset-x-3 top-0 h-[1.5px] opacity-75"
+                              className="absolute inset-x-3 top-0 h-[1px] opacity-65"
                               style={{
                                 background:
                                   'linear-gradient(90deg, transparent, var(--accent-bright), transparent)',
@@ -268,10 +268,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               </AnimatePresence>
             </div>
 
-            {/* Interactive 3D Morrow Neural Sovereign Entity */}
-            <MorrowMascot3D
+            {/* Interactive 2D Morrow Emblem */}
+            <MorrowEmblem2D
               themeId={themeId}
-              spatialPrefs={spatialPrefs}
+              surfacePrefs={surfacePrefs}
               activeSlideIndex={stepIndex}
               reduceMotion={reducedMotion}
             />
@@ -291,7 +291,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     aria-label={`الانتقال إلى الشريحة ${idx + 1}`}
                     onClick={() => {
                       if (idx !== stepIndex) {
-                        triggerGlobalSpatialPulse(1.15);
+                        triggerGlobalMotionPulse(1.15);
                         setStepIndex(idx);
                       }
                     }}
@@ -302,7 +302,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                       backgroundColor: active
                         ? 'var(--accent)'
                         : 'var(--border-color)',
-                      boxShadow: active ? '0 0 12px var(--spatial-glow)' : 'none',
                     }}
                   />
                 );
@@ -316,7 +315,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                   whileHover={reducedMotion ? undefined : { y: -1.5 }}
                   whileTap={reducedMotion ? undefined : { scale: 0.97 }}
                   onClick={() => {
-                    triggerGlobalSpatialPulse(1.1);
+                    triggerGlobalMotionPulse(1.1);
                     setStepIndex((prev) => Math.max(0, prev - 1));
                   }}
                   className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:bg-[var(--bg-nav-active)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -333,7 +332,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 whileTap={reducedMotion ? undefined : { scale: 0.97 }}
                 transition={TABRIX_TACTILE_SPRING}
                 onClick={() => {
-                  triggerGlobalSpatialPulse(1.2);
+                  triggerGlobalMotionPulse(1.2);
                   if (isLast) {
                     onComplete();
                   } else {
@@ -347,7 +346,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               </motion.button>
             </div>
           </div>
-        </GlassBentoCard>
+        </BentoCard2D>
       </motion.div>
     </div>
   );

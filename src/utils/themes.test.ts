@@ -24,8 +24,8 @@ test('exposes 5 core themes (incl. Obsidian & Gold), Auto theme, 5 geometric app
   assert.equal(MODERN_APP_THEMES.length, 6);
   assert.equal(ALL_APP_THEMES.length, 6);
   assert.equal(APP_THEME_CAPSULES.length, 2);
-  assert.equal(APP_THEMES[0].id, 'abyssal-emerald');
-  assert.equal(APP_THEMES[4].id, 'obsidian-gold');
+  assert.equal(APP_THEMES[0].id, 'obsidian-gold');
+  assert.equal(APP_THEMES[1].id, 'abyssal-emerald');
   assert.equal(MODERN_APP_THEMES[5].id, 'auto');
   assert.equal(APP_SHAPES.length, 5);
   assert.equal(TABLE_THEMES.length, 8);
@@ -53,7 +53,8 @@ test('exposes 5 core themes (incl. Obsidian & Gold), Auto theme, 5 geometric app
   }
 });
 
-test('resolves core themes, Obsidian & Gold, Auto Adaptive, and App Shapes safely', () => {
+test('resolves core themes, Obsidian & Gold default, Auto Adaptive, and App Shapes safely', () => {
+  assert.equal(resolveAppThemeId(), 'obsidian-gold');
   assert.equal(resolveAppThemeId('abyssal-emerald'), 'abyssal-emerald');
   assert.equal(resolveAppThemeId('midnight-trench'), 'midnight-trench');
   assert.equal(resolveAppThemeId('bioluminescent-reef'), 'bioluminescent-reef');
@@ -66,10 +67,11 @@ test('resolves core themes, Obsidian & Gold, Auto Adaptive, and App Shapes safel
   assert.equal(resolveAppThemeId('midnight-slate'), 'pelagic-sapphire');
   assert.equal(resolveAppThemeId('charcoal-emerald'), 'bioluminescent-reef');
   assert.equal(resolveAppThemeId('nordic-dusk'), 'pelagic-sapphire');
-  assert.equal(resolveAppThemeId('unknown-theme'), 'abyssal-emerald');
+  assert.equal(resolveAppThemeId('unknown-theme'), 'obsidian-gold');
 
   assert.equal(getAppThemeById('abyssal-emerald').isDark, true);
   assert.equal(getAppThemeById('obsidian-gold').vars['--accent'], '#D4AF37');
+  assert.equal(getAppThemeById('obsidian-gold').vars['--bg-main'], '#070708');
   assert.equal(getAppThemeById('desert-mirage').id, 'obsidian-gold');
 
   assert.equal(resolveAutoThemeTarget({ prefersLight: true, hour: 22 }).id, 'daylight-alabaster');

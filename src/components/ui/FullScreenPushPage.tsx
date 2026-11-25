@@ -26,9 +26,9 @@ interface FullScreenPushPageProps {
 }
 
 /**
- * Full-Screen Push Navigation Container ("Tabrix 3D Push").
+ * Full-Screen Push Navigation Container ("Tabrix 2D Push").
  * Replaces popups, modals, and bottom sheets with a calm, focused full-screen page
- * featuring smooth Framer Motion 3D Enter/Exit transitions and a slim frosted header.
+ * featuring smooth Framer Motion 2D Enter/Exit transitions and a slim frosted header.
  */
 export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
   open,
@@ -79,8 +79,6 @@ export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
             backgroundColor: 'var(--bg-main)',
             color: 'var(--text-primary)',
             paddingTop: 'env(safe-area-inset-top, 0px)',
-            perspective: 1400,
-            transformOrigin: '50% 35%',
           }}
         >
           {/* Slim Frosted Glassmorphism Lite Header */}
@@ -153,7 +151,7 @@ export const FullScreenPushPage: React.FC<FullScreenPushPageProps> = ({
           </header>
 
           {/* Main Scrollable Content Canvas */}
-          <div className="tabrix-3d-stage flex-1 overflow-y-auto px-3 py-5 sm:px-6 sm:py-6">
+          <div className="tabrix-2d-stage flex-1 overflow-y-auto px-3 py-5 sm:px-6 sm:py-6">
             <div className={`mx-auto w-full ${maxWidthClass}`}>{children}</div>
           </div>
 

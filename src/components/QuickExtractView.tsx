@@ -112,10 +112,11 @@ import {
 } from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 interface QuickExtractViewProps {
   agencies: Agency[];
@@ -284,6 +285,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
+  useDelayedLoading(loading, 'جاري سحب ومعالجة البيانات والكشف...');
   const [uploadError, setUploadError] = useState('');
   const [resilienceStatus, setResilienceStatus] = useState('');
   const [selectionToast, setSelectionToast] = useState('');
@@ -2574,7 +2576,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           </div>
         </div>
 
-        {/* Intake Dropzones with 3D Enter/Exit transition */}
+        {/* Intake Dropzones with 2D Enter/Exit transition */}
         <TabrixSubViewTransition viewKey={captureMode} direction={captureDirection}>
           {captureMode === 'pdf' && (
             <label
@@ -3148,7 +3150,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
           {/* 4-Metric Audit Bar */}
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Tabrix3DTiltSurface className="px-4 py-3">
+            <MotionSurfaceCard className="px-4 py-3">
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 فحص جودة المصدر
               </div>
@@ -3158,9 +3160,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {analysis.clarityScore}% · مقبول
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
 
-            <Tabrix3DTiltSurface className="px-4 py-3">
+            <MotionSurfaceCard className="px-4 py-3">
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 الصفوف المؤكدة 100%
               </div>
@@ -3170,9 +3172,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {verifiedRows.length} من {rows.length} صف
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
 
-            <Tabrix3DTiltSurface
+            <MotionSurfaceCard
               className="px-4 py-3"
               style={{
                 borderColor:
@@ -3195,9 +3197,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {doubtedRows.length} قيد للمراجعة
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
 
-            <Tabrix3DTiltSurface
+            <MotionSurfaceCard
               className="px-4 py-3"
               style={{
                 borderColor:
@@ -3220,7 +3222,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               >
                 {missingRows.length} صف ناقص
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
           </section>
 
           {/* Stage 2A: Red-Flag Doubt & Arabic Glyph Decomposition Panel */}

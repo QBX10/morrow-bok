@@ -20,7 +20,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({ toasts, onDismiss }) => {
     <div
       aria-live="polite"
       aria-label="إشعارات العمليات"
-      className="no-print pointer-events-none fixed bottom-16 left-1/2 z-[80] flex w-[min(400px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2 sm:bottom-5"
+      className="no-print pointer-events-none fixed bottom-28 left-1/2 z-[80] flex w-[min(400px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2 sm:bottom-5"
     >
       <AnimatePresence initial={false} mode="popLayout">
         {toasts.map((t) => {

@@ -57,11 +57,11 @@ import type {
   PeriodQuotaMeta,
   Person,
   RelationEntry,
+  Motion2DIntensity,
   SettingsSectionId,
-  Spatial3DThemeId,
-  SpatialCardDensity,
-  SpatialSurfaceTone,
-  SpatialTiltIntensity,
+  Surface2DThemeId,
+  SurfaceCardDensity,
+  SurfaceToneId,
   ThemePreferences,
 } from '../types/agency';
 import {
@@ -82,20 +82,21 @@ import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import { ShapeSilhouetteIcon } from './ui/ShapeSilhouetteIcon';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixPillIndicator,
 } from './ui/TabrixMotionPrimitives';
 import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
-import { RecessedChannelWell } from './spatial3d/SpatialPrimitives';
-import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
+import { RecessedChannelWell } from './motion2d/SurfacePrimitives2D';
+import { PortfolioDial2D } from './motion2d/PortfolioDial2D';
 import {
   CURATED_ACCENT_SWATCHES,
   CURATED_SECONDARY_SWATCHES,
-  SPATIAL_3D_THEMES,
+  SURFACE_2D_THEMES,
   SURFACE_TONE_PRESETS,
-  resolveActiveSpatialPalette,
-  resolveSpatial3DPrefs,
-} from '../utils/spatial3dConfig';
+  mapSurfaceThemeToAppTheme,
+  resolveActiveSurfacePalette,
+  resolveSurface2DPrefs,
+} from '../utils/surface2dConfig';
 import {
   APP_SHAPES,
   resolveAppShapeId,
@@ -250,7 +251,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
   // Workspace Studio / Home Control Hub State
   const [customizerOpen, setCustomizerOpen] = useState(false);
-  const [hubTab, setHubTab] = useState<'agencies' | 'layout' | 'spatial3d' | 'smart'>('agencies');
+  const [hubTab, setHubTab] = useState<'agencies' | 'layout' | 'appearance' | 'smart'>('agencies');
   const [localLayoutPrefs, setLocalLayoutPrefs] = useState<HomeLayoutPrefs>(
     DEFAULT_HOME_LAYOUT_PREFS
   );
@@ -284,19 +285,19 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editIcon, setEditIcon] = useState('🌾');
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
-  const spatialPrefs = useMemo(
-    () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
-    [generalPrefs?.spatial3dPrefs]
+  const surfacePrefs = useMemo(
+    () => resolveSurface2DPrefs(generalPrefs?.surface2dPrefs),
+    [generalPrefs?.surface2dPrefs]
   );
 
-  const activeSpatialPalette = useMemo(
-    () => resolveActiveSpatialPalette(spatialPrefs),
-    [spatialPrefs]
+  const activeSurfacePalette = useMemo(
+    () => resolveActiveSurfacePalette(surfacePrefs),
+    [surfacePrefs]
   );
 
-  const updateSpatialPrefs = (patch: Partial<typeof spatialPrefs>) => {
-    const next = { ...spatialPrefs, ...patch };
-    onUpdateGeneralPrefs?.({ spatial3dPrefs: next });
+  const updateSurfacePrefs = (patch: Partial<typeof surfacePrefs>) => {
+    const next = { ...surfacePrefs, ...patch };
+    onUpdateGeneralPrefs?.({ surface2dPrefs: next });
   };
 
   const layoutPrefs: HomeLayoutPrefs = useMemo(() => {
@@ -692,7 +693,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tabrix3DTiltSurface className="p-4">
+        <MotionSurfaceCard className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -709,9 +710,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           >
             من أصل {masterMetrics.registeredHouseholds.toLocaleString('en-US')} سجل مسجل
           </div>
-        </Tabrix3DTiltSurface>
+        </MotionSurfaceCard>
 
-        <Tabrix3DTiltSurface className="p-4">
+        <MotionSurfaceCard className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -732,9 +733,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             {masterBlockBreakdown.fullyBlockedCount} محجوب كلياً ·{' '}
             {masterBlockBreakdown.partialBlockedCount} جزئياً
           </div>
-        </Tabrix3DTiltSurface>
+        </MotionSurfaceCard>
 
-        <Tabrix3DTiltSurface className="p-4">
+        <MotionSurfaceCard className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -757,9 +758,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           >
             الوزن الصافي: {masterMetrics.totalKg.toLocaleString('en-US')} كغم
           </div>
-        </Tabrix3DTiltSurface>
+        </MotionSurfaceCard>
 
-        <Tabrix3DTiltSurface className="p-4">
+        <MotionSurfaceCard className="p-4">
           <div
             className="flex items-center justify-between text-xs"
             style={{ color: 'var(--text-muted)' }}
@@ -783,7 +784,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             الإيراد {formatIqd(masterMetrics.revenue)} · المصاريف{' '}
             {formatIqd(masterMetrics.totalExpenses)}
           </div>
-        </Tabrix3DTiltSurface>
+        </MotionSurfaceCard>
       </div>
 
       <RecessedChannelWell className="mt-4 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-[11px]">
@@ -967,7 +968,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             const issuesTotal = audits.length + missingIdCount;
 
             return (
-              <Tabrix3DTiltSurface
+              <MotionSurfaceCard
                 as="article"
                 key={agency.id}
                 disabled={isEditing}
@@ -1293,7 +1294,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   </motion.div>
                 )}
                 </AnimatePresence>
-              </Tabrix3DTiltSurface>
+              </MotionSurfaceCard>
             );
           })}
         </div>
@@ -2147,8 +2148,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           {/* 2D Geometric Telemetry Dial + Symmetric 2-Column Hero Action Controls */}
           <div className="flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
             <div className="hidden md:flex shrink-0">
-              <MorrowHubOrb3D
-                spatialPrefs={spatialPrefs}
+              <PortfolioDial2D
+                surfacePrefs={surfacePrefs}
                 agencyCount={agencies.length}
                 activeIndividuals={masterMetrics.activeIndividuals}
                 issueCount={smartAgencySignals.length}
@@ -2296,7 +2297,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               [
                 ['agencies', 'الوكالات والحصص'],
                 ['layout', 'ترتيب الواجهة'],
-                ['spatial3d', 'الألوان والأشكال'],
+                ['appearance', 'الألوان والأشكال'],
                 ['smart', 'إضافات ذكية'],
               ] as const
             ).map(([tId, tLabel]) => {
@@ -2696,7 +2697,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           )}
 
           {/* TAB 3: 7 Themes (incl. السبح والذهب + التلقائي) + 5 App Shapes + Live Custom Color Studio */}
-          {hubTab === 'spatial3d' && (
+          {hubTab === 'appearance' && (
             <div className="space-y-5">
               {/* App Shapes Studio (5 distinct structural shapes) */}
               <div className="space-y-2.5">
@@ -2726,7 +2727,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         style={{
                           borderColor: active ? 'var(--accent)' : 'var(--border-color)',
                           backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--surface-well)',
-                          boxShadow: active ? '0 8px 20px -10px var(--spatial-glow)' : 'none',
                         }}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -2753,12 +2753,12 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
               <div className="space-y-2.5">
                 <h3 className="text-xs font-black">
-                  الثيمات والمظهر العام (بضمنها السبح والذهب + التلقائي)
+                  الثيمات والمظهر العام (السبح والذهب الافتراضي + 6 ثيمات متكاملة)
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {(Object.keys(SPATIAL_3D_THEMES) as Spatial3DThemeId[]).map((tId) => {
-                    const def = SPATIAL_3D_THEMES[tId];
-                    const active = spatialPrefs.themeId === tId && !spatialPrefs.customColors;
+                  {(Object.keys(SURFACE_2D_THEMES) as Surface2DThemeId[]).map((tId) => {
+                    const def = SURFACE_2D_THEMES[tId];
+                    const active = surfacePrefs.themeId === tId && !surfacePrefs.customColors;
                     const resolvedAutoLabel =
                       tId === 'auto_adaptive'
                         ? resolveAutoThemeTarget().name
@@ -2769,14 +2769,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         type="button"
                         data-testid={`hub-theme-${tId}`}
                         onClick={() => {
-                          updateSpatialPrefs({ themeId: tId, customColors: undefined });
+                          updateSurfacePrefs({ themeId: tId, customColors: undefined });
+                          onUpdateThemePrefs?.({ appTheme: mapSurfaceThemeToAppTheme(tId) });
                           setHubNotice(`تم تفعيل ثيم: ${def.nameAr}`);
                         }}
                         className="rounded-2xl border p-3.5 text-right transition-all cursor-pointer"
                         style={{
                           borderColor: active ? 'var(--accent)' : 'var(--border-color)',
                           backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--surface-well)',
-                          boxShadow: active ? '0 10px 24px -12px var(--spatial-glow)' : 'none',
                         }}
                       >
                         <div className="flex items-center justify-between gap-2 mb-2">
@@ -2822,12 +2822,12 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       عدّل اللون الأساسي، الإضاءة الثانوية، وخلفية التطبيق بشكل فوري متزامن مع جميع العناصر الهندسية
                     </p>
                   </div>
-                  {spatialPrefs.customColors && (
+                  {surfacePrefs.customColors && (
                     <button
                       type="button"
                       data-testid="reset-custom-colors-btn"
                       onClick={() => {
-                        updateSpatialPrefs({ customColors: undefined });
+                        updateSurfacePrefs({ customColors: undefined });
                         setHubNotice('تمت استعادة ألوان الثيم الأصلية.');
                       }}
                       className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] hover:bg-[var(--bg-nav-active)] px-3 py-1.5 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer"
@@ -2848,17 +2848,17 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           dir="ltr"
                           className="font-mono-num text-[11px] font-bold text-[var(--accent-bright)]"
                         >
-                          {activeSpatialPalette.accent}
+                          {activeSurfacePalette.accent}
                         </span>
                         <input
                           type="color"
                           data-testid="custom-accent-color-picker"
                           aria-label="اختيار اللون الأساسي"
-                          value={activeSpatialPalette.accent}
+                          value={activeSurfacePalette.accent}
                           onChange={(e) =>
-                            updateSpatialPrefs({
+                            updateSurfacePrefs({
                               customColors: {
-                                ...spatialPrefs.customColors,
+                                ...surfacePrefs.customColors,
                                 accent: e.target.value.toUpperCase(),
                               },
                             })
@@ -2869,7 +2869,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                     </div>
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {CURATED_ACCENT_SWATCHES.map((hex) => {
-                        const sel = activeSpatialPalette.accent === hex;
+                        const sel = activeSurfacePalette.accent === hex;
                         return (
                           <button
                             key={hex}
@@ -2877,9 +2877,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             data-testid={`accent-swatch-${hex}`}
                             aria-label={`اختيار اللون الأساسي ${hex}`}
                             onClick={() =>
-                              updateSpatialPrefs({
+                              updateSurfacePrefs({
                                 customColors: {
-                                  ...spatialPrefs.customColors,
+                                  ...surfacePrefs.customColors,
                                   accent: hex,
                                 },
                               })
@@ -2888,7 +2888,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             style={{
                               backgroundColor: hex,
                               borderColor: sel ? 'var(--text-primary)' : 'var(--border-color)',
-                              boxShadow: sel ? `0 0 12px ${hex}` : 'none',
                               transform: sel ? 'scale(1.12)' : undefined,
                             }}
                           />
@@ -2906,17 +2905,17 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           dir="ltr"
                           className="font-mono-num text-[11px] font-bold text-[var(--text-primary)]"
                         >
-                          {activeSpatialPalette.secondary}
+                          {activeSurfacePalette.secondary}
                         </span>
                         <input
                           type="color"
                           data-testid="custom-secondary-color-picker"
                           aria-label="اختيار لون الإضاءة الثانوي"
-                          value={activeSpatialPalette.secondary}
+                          value={activeSurfacePalette.secondary}
                           onChange={(e) =>
-                            updateSpatialPrefs({
+                            updateSurfacePrefs({
                               customColors: {
-                                ...spatialPrefs.customColors,
+                                ...surfacePrefs.customColors,
                                 secondary: e.target.value.toUpperCase(),
                               },
                             })
@@ -2927,7 +2926,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                     </div>
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {CURATED_SECONDARY_SWATCHES.map((hex) => {
-                        const sel = activeSpatialPalette.secondary === hex;
+                        const sel = activeSurfacePalette.secondary === hex;
                         return (
                           <button
                             key={hex}
@@ -2935,9 +2934,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             data-testid={`secondary-swatch-${hex}`}
                             aria-label={`اختيار اللون الثانوي ${hex}`}
                             onClick={() =>
-                              updateSpatialPrefs({
+                              updateSurfacePrefs({
                                 customColors: {
-                                  ...spatialPrefs.customColors,
+                                  ...surfacePrefs.customColors,
                                   secondary: hex,
                                 },
                               })
@@ -2946,7 +2945,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             style={{
                               backgroundColor: hex,
                               borderColor: sel ? 'var(--text-primary)' : 'var(--border-color)',
-                              boxShadow: sel ? `0 0 12px ${hex}` : 'none',
                               transform: sel ? 'scale(1.12)' : undefined,
                             }}
                           />
@@ -2962,19 +2960,19 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(
                       Object.entries(SURFACE_TONE_PRESETS) as Array<
-                        [SpatialSurfaceTone, (typeof SURFACE_TONE_PRESETS)[SpatialSurfaceTone]]
+                        [SurfaceToneId, (typeof SURFACE_TONE_PRESETS)[SurfaceToneId]]
                       >
                     ).map(([toneId, preset]) => {
-                      const activeTone = spatialPrefs.customColors?.surfaceTone === toneId;
+                      const activeTone = surfacePrefs.customColors?.surfaceTone === toneId;
                       return (
                         <button
                           key={toneId}
                           type="button"
                           data-testid={`surface-tone-${toneId}`}
                           onClick={() =>
-                            updateSpatialPrefs({
+                            updateSurfacePrefs({
                               customColors: {
-                                ...spatialPrefs.customColors,
+                                ...surfacePrefs.customColors,
                                 surfaceTone: toneId,
                               },
                             })
@@ -3000,26 +2998,26 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3.5">
-                  <div className="text-xs font-black">حيوية الحركة والتفاعل</div>
+                  <div className="text-xs font-black">حيوية الحركة والتفاعل (2D)</div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(
                       [
                         ['off', 'إيقاف'],
                         ['subtle', 'خفيف'],
                         ['dynamic', 'ديناميكي'],
-                      ] as Array<[SpatialTiltIntensity, string]>
+                      ] as Array<[Motion2DIntensity, string]>
                     ).map(([mode, label]) => {
-                      const activeTilt = spatialPrefs.tiltIntensity === mode;
+                      const activeMotion = surfacePrefs.motionIntensity === mode;
                       return (
                         <button
                           key={mode}
                           type="button"
-                          onClick={() => updateSpatialPrefs({ tiltIntensity: mode })}
+                          onClick={() => updateSurfacePrefs({ motionIntensity: mode })}
                           className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
                           style={{
-                            borderColor: activeTilt ? 'var(--accent)' : 'var(--border-color)',
-                            backgroundColor: activeTilt ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
-                            color: activeTilt ? 'var(--accent-bright)' : 'var(--text-muted)',
+                            borderColor: activeMotion ? 'var(--accent)' : 'var(--border-color)',
+                            backgroundColor: activeMotion ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                            color: activeMotion ? 'var(--accent-bright)' : 'var(--text-muted)',
                           }}
                         >
                           {label}
@@ -3037,14 +3035,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         ['compact', 'مضغوط'],
                         ['balanced', 'متوازن'],
                         ['spacious', 'رحب'],
-                      ] as Array<[SpatialCardDensity, string]>
+                      ] as Array<[SurfaceCardDensity, string]>
                     ).map(([density, label]) => {
-                      const activeDensity = spatialPrefs.cardDensity === density;
+                      const activeDensity = surfacePrefs.cardDensity === density;
                       return (
                         <button
                           key={density}
                           type="button"
-                          onClick={() => updateSpatialPrefs({ cardDensity: density })}
+                          onClick={() => updateSurfacePrefs({ cardDensity: density })}
                           className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
                           style={{
                             borderColor: activeDensity ? 'var(--accent)' : 'var(--border-color)',
@@ -3110,14 +3108,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                     type="button"
                     onClick={() => {
                       resetHomeLayout();
-                      updateSpatialPrefs({
-                        themeId: 'emerald_smoked',
-                        tiltIntensity: 'subtle',
+                      updateSurfacePrefs({
+                        themeId: 'obsidian_gold',
+                        motionIntensity: 'subtle',
                         cardDensity: 'balanced',
                         customColors: undefined,
                       });
-                      onUpdateThemePrefs?.({ appShape: 'geometric-glass' });
-                      setHubNotice('تمت استعادة التخطيط والألوان والشكل الافتراضي.');
+                      onUpdateThemePrefs?.({ appTheme: 'obsidian-gold', appShape: 'geometric-glass' });
+                      setHubNotice('تمت استعادة التخطيط وثيم السبح والذهب والشكل الافتراضي.');
                     }}
                     className="rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
                   >

@@ -19,7 +19,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
@@ -64,6 +64,7 @@ import {
   SelectionActionBar,
   type SelectablePersonRecord,
 } from './SelectionActionBar';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 interface DataArchivesViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -105,6 +106,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
   const [notice, setNotice] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [syncingCloud, setSyncingCloud] = useState(false);
+  useDelayedLoading(syncingCloud, 'جاري مزامنة وحفظ الأرشيف...');
 
   // Archive browser filters
   const [archiveSearch, setArchiveSearch] = useState('');
@@ -434,15 +436,15 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
 
         {/* Summary KPI Strip */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Tabrix3DTiltSurface className="p-3.5">
+          <MotionSurfaceCard className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               العائلات المؤرشفة
             </div>
             <div className="mt-1 text-lg font-bold tabular-nums">
               {openedArchive.summary.totalHouseholds}
             </div>
-          </Tabrix3DTiltSurface>
-          <Tabrix3DTiltSurface className="p-3.5">
+          </MotionSurfaceCard>
+          <MotionSurfaceCard className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               إجمالي الأفراد المستحقة
             </div>
@@ -452,8 +454,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             >
               {openedArchive.summary.totalIndividuals}
             </div>
-          </Tabrix3DTiltSurface>
-          <Tabrix3DTiltSurface className="p-3.5">
+          </MotionSurfaceCard>
+          <MotionSurfaceCard className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               إجمالي الكمية
             </div>
@@ -463,8 +465,8 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 openedArchive.calculationSettings
               )}
             </div>
-          </Tabrix3DTiltSurface>
-          <Tabrix3DTiltSurface className="p-3.5">
+          </MotionSurfaceCard>
+          <MotionSurfaceCard className="p-3.5">
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               الإيرادات المؤرشفة
             </div>
@@ -474,7 +476,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             >
               {formatIqd(openedArchive.summary.totalRevenueIqd)}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
         </div>
 
         {/* Sub-Tabs */}
@@ -1228,7 +1230,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           className="grid grid-cols-1 gap-4 md:grid-cols-2"
         >
           {filteredArchives.map((arch) => (
-            <Tabrix3DTiltSurface
+            <MotionSurfaceCard
               as="article"
               key={arch.id}
               className="flex flex-col justify-between gap-4 p-5"
@@ -1366,7 +1368,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                   )}
                 </div>
               </div>
-            </Tabrix3DTiltSurface>
+            </MotionSurfaceCard>
           ))}
         </section>
       )}

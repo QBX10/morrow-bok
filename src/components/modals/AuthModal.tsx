@@ -28,11 +28,12 @@ import { FullScreenPushPage } from '../ui/FullScreenPushPage';
 import {
   normalizeUsernameInput,
   validateAuthUsername,
-} from '../../utils/spatial3dConfig';
+} from '../../utils/surface2dConfig';
 import {
   playTactileFeedback,
   shouldFireTactileEvent,
 } from '../../utils/tactileFeedback';
+import { useDelayedLoading } from '../../utils/delayedLoader';
 
 interface AuthModalProps {
   open: boolean;
@@ -70,6 +71,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  useDelayedLoading(loading || avatarBusy, 'جاري معالجة وتحديث الحساب...');
   const [avatarNotice, setAvatarNotice] = useState('');
   const [error, setError] = useState('');
   const avatarInputRef = useRef<HTMLInputElement | null>(null);

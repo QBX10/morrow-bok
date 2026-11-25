@@ -44,7 +44,7 @@ import type {
   PeriodQuotaMeta,
   Person,
   SettingsSectionId,
-  Spatial3DPrefs,
+  Surface2DPrefs,
 } from '../types/agency.ts';
 import type {
   AiCollaborationMode,
@@ -114,20 +114,21 @@ import {
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
-import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
-import { MorrowMascot3D } from './spatial3d/MorrowMascot3D';
+import { PortfolioDial2D } from './motion2d/PortfolioDial2D';
+import { MorrowEmblem2D } from './motion2d/MorrowEmblem2D';
 import {
-  resolveSpatial3DPrefs,
-  triggerGlobalSpatialPulse,
-} from '../utils/spatial3dConfig';
+  resolveSurface2DPrefs,
+  triggerGlobalMotionPulse,
+} from '../utils/surface2dConfig';
 import {
   SPECIALIZED_ASSISTANTS,
   type MorrowWorkspacePage,
   type SpecializedAssistantProfile,
 } from './morrow/morrowWorkspaceTypes';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 interface MorrowCommandCenterViewProps {
   activeTab: MorrowCenterTab;
@@ -216,7 +217,7 @@ interface MorrowCommandCenterViewProps {
   >;
   canViewFinance?: boolean;
   canUseQuickExtract?: boolean;
-  spatialPrefs?: Spatial3DPrefs;
+  surfacePrefs?: Surface2DPrefs;
 }
 
 interface AttachedDocumentItem {
@@ -479,12 +480,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   modelHealthSnapshots = [],
   canViewFinance = true,
   canUseQuickExtract = true,
-  spatialPrefs,
+  surfacePrefs,
 }) => {
   const [commandHeroMode, setCommandHeroMode] = useState<'orb' | 'entity'>('orb');
-  const resolvedSpatialPrefs = useMemo(
-    () => resolveSpatial3DPrefs(spatialPrefs),
-    [spatialPrefs]
+  const resolvedSurfacePrefs = useMemo(
+    () => resolveSurface2DPrefs(surfacePrefs),
+    [surfacePrefs]
   );
   // Dual Hamburger Drawers + Clickable Center Morrow Model Selector + Standalone Page State
   const reducedMotion = useTabrixReducedMotion();
@@ -558,6 +559,10 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const [micPermissionGuide, setMicPermissionGuide] = useState<MediaPermissionGuide | null>(null);
   const [checkingMicPermission, setCheckingMicPermission] = useState(false);
   const pendingMicRetryTargetRef = useRef<'chat' | 'note' | null>(null);
+  useDelayedLoading(
+    analyzingAttachment || transcribingVoice || transcribingNoteVoice || verifyingSystem,
+    'جاري تحليل المرفقات ومعالجة البيانات...'
+  );
 
   const noteMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const noteRecordedChunksRef = useRef<Blob[]>([]);
@@ -1902,7 +1907,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         data-testid="morrow-hero-mode-orb"
                         onClick={() => {
                           setCommandHeroMode('orb');
-                          triggerGlobalSpatialPulse(1.2);
+                          triggerGlobalMotionPulse(1.2);
                         }}
                         className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
                         style={{
@@ -1920,7 +1925,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         data-testid="morrow-hero-mode-entity"
                         onClick={() => {
                           setCommandHeroMode('entity');
-                          triggerGlobalSpatialPulse(1.35);
+                          triggerGlobalMotionPulse(1.35);
                         }}
                         className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
                         style={{
@@ -1938,8 +1943,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   <div className="relative z-10 flex flex-col items-center justify-center">
                     {commandHeroMode === 'orb' ? (
                       <div className="flex flex-col items-center gap-3 py-1">
-                        <MorrowHubOrb3D
-                          spatialPrefs={resolvedSpatialPrefs}
+                        <PortfolioDial2D
+                          surfacePrefs={resolvedSurfacePrefs}
                           agencyCount={agencies.length}
                           activeIndividuals={persons.length}
                           issueCount={pendingDrafts.length}
@@ -1948,12 +1953,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                       </div>
                     ) : (
                       <div
-                        data-testid="morrow-command-entity-3d"
-                        className="w-full max-w-md h-[210px] sm:h-[230px] overflow-hidden rounded-2xl border border-white/15 bg-[#040916]"
+                        data-testid="morrow-command-entity-2d"
+                        className="w-full max-w-md h-[210px] sm:h-[230px] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-main)]"
                       >
-                        <MorrowMascot3D
-                          spatialPrefs={resolvedSpatialPrefs}
-                          onGreetClick={() => triggerGlobalSpatialPulse(1.4)}
+                        <MorrowEmblem2D
+                          surfacePrefs={resolvedSurfacePrefs}
+                          onGreetClick={() => triggerGlobalMotionPulse(1.4)}
                           className="!min-h-full !h-full !border-0 !rounded-none"
                         />
                       </div>
@@ -1977,59 +1982,59 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   </div>
                 </div>
 
-                {/* 3D Tilting Quick-Action Bento Chips */}
+                {/* 2D Motion Quick-Action Bento Chips */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full pt-0.5">
-                  <Tabrix3DTiltSurface
+                  <MotionSurfaceCard
                     as="button"
                     type="button"
                     onClick={() => {
-                      triggerGlobalSpatialPulse(1.25);
+                      triggerGlobalMotionPulse(1.25);
                       submitChatPrompt('أعطني ملخص اليوم');
                     }}
                     className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-ai, #12E5AD)' }} />
+                    <Sparkles className="h-4 w-4" style={{ color: 'var(--accent, #D4AF37)' }} />
                     <span>ملخص اليوم</span>
-                  </Tabrix3DTiltSurface>
+                  </MotionSurfaceCard>
 
-                  <Tabrix3DTiltSurface
+                  <MotionSurfaceCard
                     as="button"
                     type="button"
                     onClick={() => {
-                      triggerGlobalSpatialPulse(1.25);
+                      triggerGlobalMotionPulse(1.25);
                       submitChatPrompt('ماذا لو رسم الفرد 500');
                     }}
                     className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <TrendingUp className="h-4 w-4" style={{ color: 'var(--spatial-secondary, #38BDF8)' }} />
+                    <TrendingUp className="h-4 w-4" style={{ color: 'var(--spatial-secondary, #8E95A5)' }} />
                     <span>محاكاة مالية</span>
-                  </Tabrix3DTiltSurface>
+                  </MotionSurfaceCard>
 
-                  <Tabrix3DTiltSurface
+                  <MotionSurfaceCard
                     as="button"
                     type="button"
                     onClick={() => {
-                      triggerGlobalSpatialPulse(1.25);
+                      triggerGlobalMotionPulse(1.25);
                       submitChatPrompt('قارن بين الوكالات');
                     }}
                     className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <BarChart3 className="h-4 w-4" style={{ color: 'var(--accent-bright, #98FFE5)' }} />
+                    <BarChart3 className="h-4 w-4" style={{ color: 'var(--accent-bright, #EED278)' }} />
                     <span>مقارنة الوكالات</span>
-                  </Tabrix3DTiltSurface>
+                  </MotionSurfaceCard>
 
-                  <Tabrix3DTiltSurface
+                  <MotionSurfaceCard
                     as="button"
                     type="button"
                     onClick={() => {
-                      triggerGlobalSpatialPulse(1.25);
+                      triggerGlobalMotionPulse(1.25);
                       submitChatPrompt('افحص التطبيق');
                     }}
                     className="flex flex-col items-center justify-center gap-1.5 px-3 py-3 text-xs font-extrabold cursor-pointer"
                   >
-                    <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent-ai, #12E5AD)' }} />
+                    <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent, #D4AF37)' }} />
                     <span>فحص السجلات</span>
-                  </Tabrix3DTiltSurface>
+                  </MotionSurfaceCard>
                 </div>
 
                 {/* Subtle Dynamic Suggestion Chips if present */}

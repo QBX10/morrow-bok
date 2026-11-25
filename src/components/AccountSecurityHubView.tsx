@@ -96,6 +96,7 @@ import {
 import { StructuredExportModal } from './StructuredExportModal';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 const GoogleGsiSvg: React.FC = () => (
   <svg
@@ -247,6 +248,10 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   const [driveConnectedEmail, setDriveConnectedEmail] = useState<string | null>(null);
   const [driveFiles, setDriveFiles] = useState<GoogleDriveBackupFile[]>([]);
   const [driveBusy, setDriveBusy] = useState(false);
+  useDelayedLoading(
+    authBusy || avatarBusy || driveBusy,
+    'جاري مزامنة الحساب وحفظ البيانات...'
+  );
   const [pendingDriveConfirm, setPendingDriveConfirm] = useState<
     | { kind: 'delete'; file: GoogleDriveBackupFile }
     | { kind: 'overwrite'; file: GoogleDriveBackupFile }

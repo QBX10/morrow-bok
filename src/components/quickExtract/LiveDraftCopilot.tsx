@@ -21,6 +21,7 @@ import {
   TABRIX_REDUCED_VARIANTS,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
+import { useDelayedLoading } from '../../utils/delayedLoader';
 
 export interface CopilotOperation {
   type:
@@ -160,6 +161,7 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  useDelayedLoading(loading, 'جاري تحليل المسودة بالذكاء الاصطناعي...');
   const [resilienceNote, setResilienceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);

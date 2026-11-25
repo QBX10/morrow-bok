@@ -80,6 +80,7 @@ import {
 } from '../utils/morrowRouter.ts';
 import { autoLinkQuickNoteToPerson } from '../utils/quickNotesMatcher.ts';
 import { emitAppToast } from './useToastQueue.ts';
+import { useDelayedLoading } from '../utils/delayedLoader.ts';
 
 const PREFS_STORAGE_KEY = 'tabrex_assistant_prefs_v1';
 const QUEUE_STORAGE_KEY = 'tabrex_assistant_queue_v1';
@@ -137,6 +138,7 @@ export function useAssistantEngine(params: {
   );
   const [cloudConfigured, setCloudConfigured] = useState<boolean>(true);
   const [isThinking, setIsThinking] = useState(false);
+  useDelayedLoading(isThinking, 'جاري معالجة الطلب عبر العقل الذكي...');
   const [slotSession, setSlotSession] = useState<AssistantSlotSession | null>(null);
   const [spotlight, setSpotlight] = useState<AssistantSpotlightState | null>(null);
   const [conversationMemory, setConversationMemory] =

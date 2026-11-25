@@ -66,7 +66,7 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion.ts';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from '../ui/TabrixMotionPrimitives.tsx';
@@ -598,7 +598,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   tone: indexed.totals.blockedCount > 0 ? 'var(--warning)' : 'var(--success)',
                 },
               ].map((kpi, idx) => (
-                <Tabrix3DTiltSurface
+                <MotionSurfaceCard
                   key={idx}
                   className="rounded-xl border p-3"
                   style={{
@@ -618,7 +618,7 @@ export const DynamicWorkspaceCanvas: React.FC<DynamicWorkspaceCanvasProps> = ({
                   <div className="mt-0.5 text-[10px] tabular-nums truncate" style={{ color: 'var(--text-muted)' }}>
                     {kpi.sub}
                   </div>
-                </Tabrix3DTiltSurface>
+                </MotionSurfaceCard>
               ))}
             </div>
 

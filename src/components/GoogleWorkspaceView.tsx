@@ -46,6 +46,7 @@ import {
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 interface GoogleWorkspaceViewProps {
   activePeriod: PeriodQuotaMeta;
@@ -121,6 +122,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
   const [needsAuth, setNeedsAuth] = useState(true);
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  useDelayedLoading(loading || authLoading, 'جاري المزامنة مع مساحة عمل Google...');
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
 

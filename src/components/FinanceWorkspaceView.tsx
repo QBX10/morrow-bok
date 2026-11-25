@@ -1,13 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import {
   BookmarkPlus,
+  Calculator,
+  CheckCircle2,
   Coffee,
   Download,
   Filter,
   HardHat,
+  Minus,
   PackageOpen,
   Plus,
   Repeat,
+  RotateCcw,
   Sparkles,
   Tag,
   Trash2,
@@ -26,9 +30,12 @@ import type {
   WageBasis,
 } from '../types/agency';
 import {
+  calculateAllocation,
   computeAgencyMetrics,
+  DEFAULT_CALCULATION_SETTINGS,
   formatIqd,
   formatNumberCompact,
+  formatQuota,
   getExpenseCategoryLabel,
 } from '../utils/agencyLogic';
 import { AnimatePresence, motion } from 'motion/react';
@@ -39,7 +46,7 @@ import type { ModeCapabilities } from '../utils/modePermissions';
 import { TABRIX_EASE, useTabrixOrderedDirection } from '../utils/tabrixMotion';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
 import {
-  Tabrix3DTiltSurface,
+  MotionSurfaceCard,
   TabrixPillIndicator,
   TabrixSubViewTransition,
 } from './ui/TabrixMotionPrimitives';
@@ -53,6 +60,7 @@ interface FinanceWorkspaceViewProps {
   activePeriod?: PeriodQuotaMeta;
   generalPrefs?: GeneralAppPrefs;
   onUpdateGeneralPrefs?: (patch: Partial<GeneralAppPrefs>) => void;
+  onSaveCalculationSettings?: (next: CalculationSettings) => void;
   onAddExpense: (input: {
     agencyId: number;
     description: string;
@@ -102,9 +110,42 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
   activePeriod,
   generalPrefs,
   onUpdateGeneralPrefs,
+  onSaveCalculationSettings,
   onAddExpense,
   onRequestDeleteExpense,
 }) => {
+  const [activeHubSection, setActiveHubSection] = useState<
+    'all' | 'calculator' | 'accounts'
+  >('all');
+  const [calcIndividuals, setCalcIndividuals] = useState('5');
+  const [kgPerIndDraft, setKgPerIndDraft] = useState(
+    String(calculationSettings.kgPerIndividual)
+  );
+  const [kgPerBagDraft, setKgPerBagDraft] = useState(
+    String(calculationSettings.kgPerBag)
+  );
+  const [feePerIndDraft, setFeePerIndDraft] = useState(
+    String(calculationSettings.feePerIndividualIqd)
+  );
+  const [fixedCardFeeDraft, setFixedCardFeeDraft] = useState(
+    String(calculationSettings.fixedCardFeeIqd)
+  );
+  const [discountPercentDraft, setDiscountPercentDraft] = useState(
+    String(calculationSettings.discountPercent ?? 0)
+  );
+  const [roundingStepDraft, setRoundingStepDraft] = useState(
+    String(calculationSettings.roundingStepIqd ?? 0)
+  );
+  const [calcSavedNotice, setCalcSavedNotice] = useState(false);
+
+  React.useEffect(() => {
+    setKgPerIndDraft(String(calculationSettings.kgPerIndividual));
+    setKgPerBagDraft(String(calculationSettings.kgPerBag));
+    setFeePerIndDraft(String(calculationSettings.feePerIndividualIqd));
+    setFixedCardFeeDraft(String(calculationSettings.fixedCardFeeIqd));
+    setDiscountPercentDraft(String(calculationSettings.discountPercent ?? 0));
+    setRoundingStepDraft(String(calculationSettings.roundingStepIqd ?? 0));
+  }, [calculationSettings]);
   const [selectedAgencyId, setSelectedAgencyId] = useState<number>(
     agencies[0]?.id ?? 1
   );
@@ -356,76 +397,568 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
     custom: 3,
   });
 
+  const draftCalcSettings: CalculationSettings = useMemo(
+    () => ({
+      ...calculationSettings,
+      kgPerIndividual: Math.max(0.5, Number(kgPerIndDraft) || 9),
+      kgPerBag: Math.max(1, Number(kgPerBagDraft) || 50),
+      feePerIndividualIqd: Math.max(0, Number(feePerIndDraft) || 0),
+      fixedCardFeeIqd: Math.max(0, Number(fixedCardFeeDraft) || 0),
+      discountPercent: Math.max(
+        0,
+        Math.min(100, Number(discountPercentDraft) || 0)
+      ),
+      roundingStepIqd: Math.max(0, Number(roundingStepDraft) || 0),
+    }),
+    [
+      calculationSettings,
+      kgPerIndDraft,
+      kgPerBagDraft,
+      feePerIndDraft,
+      fixedCardFeeDraft,
+      discountPercentDraft,
+      roundingStepDraft,
+    ]
+  );
+
+  const isCalcDirty = useMemo(
+    () =>
+      draftCalcSettings.kgPerIndividual !== calculationSettings.kgPerIndividual ||
+      draftCalcSettings.kgPerBag !== calculationSettings.kgPerBag ||
+      draftCalcSettings.feePerIndividualIqd !==
+        calculationSettings.feePerIndividualIqd ||
+      draftCalcSettings.fixedCardFeeIqd !==
+        calculationSettings.fixedCardFeeIqd ||
+      (draftCalcSettings.discountPercent ?? 0) !==
+        (calculationSettings.discountPercent ?? 0) ||
+      (draftCalcSettings.roundingStepIqd ?? 0) !==
+        (calculationSettings.roundingStepIqd ?? 0),
+    [draftCalcSettings, calculationSettings]
+  );
+
+  const calcIndCount = Math.max(0, Math.round(Number(calcIndividuals) || 0));
+  const quickCalcResult = useMemo(
+    () => ({
+      alloc: calculateAllocation(calcIndCount, draftCalcSettings),
+      quotaLabel: formatQuota(calcIndCount, undefined, draftCalcSettings),
+      baseIndFeeIqd: calcIndCount * draftCalcSettings.feePerIndividualIqd,
+    }),
+    [calcIndCount, draftCalcSettings]
+  );
+
+  const handleApplyCalculatorPreset = (preset: {
+    kgPerIndividual?: number;
+    kgPerBag?: number;
+    feePerIndividualIqd?: number;
+    fixedCardFeeIqd?: number;
+    discountPercent?: number;
+    roundingStepIqd?: number;
+  }) => {
+    const nextSettings: CalculationSettings = {
+      ...draftCalcSettings,
+      ...preset,
+    };
+    setKgPerIndDraft(String(nextSettings.kgPerIndividual));
+    setKgPerBagDraft(String(nextSettings.kgPerBag));
+    setFeePerIndDraft(String(nextSettings.feePerIndividualIqd));
+    setFixedCardFeeDraft(String(nextSettings.fixedCardFeeIqd));
+    setDiscountPercentDraft(String(nextSettings.discountPercent ?? 0));
+    setRoundingStepDraft(String(nextSettings.roundingStepIqd ?? 0));
+    if (onSaveCalculationSettings) {
+      onSaveCalculationSettings(nextSettings);
+      setCalcSavedNotice(true);
+      window.setTimeout(() => setCalcSavedNotice(false), 2000);
+    }
+  };
+
+  const handleSaveCalculatorSettings = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!onSaveCalculationSettings) return;
+    onSaveCalculationSettings(draftCalcSettings);
+    setCalcSavedNotice(true);
+    window.setTimeout(() => setCalcSavedNotice(false), 2000);
+  };
+
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 pb-24 sm:p-6 sm:pb-20">
-      {/* Top Living Finance Header */}
-      <div className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
-        <div className="flex items-start gap-3.5 min-w-0">
-          <NexusDuotoneIcon sizeClass="hidden sm:flex h-11 w-11">
-            <Wallet className="h-5 w-5" />
-          </NexusDuotoneIcon>
-          <div className="min-w-0">
-            <h1 className="text-lg font-black sm:text-xl">
-              الحسابات والمالية والتشغيل
-            </h1>
-            <p
-              className="mt-1 text-xs sm:text-sm"
-              style={{ color: 'var(--text-muted)' }}
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 p-4 pb-28 sm:p-6 sm:pb-24">
+      {/* Top Living Accounting + Smart Calculator Header */}
+      <div className="nexus-squircle space-y-4 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5 min-w-0">
+            <NexusDuotoneIcon sizeClass="hidden sm:flex h-11 w-11">
+              <Wallet className="h-5 w-5" />
+            </NexusDuotoneIcon>
+            <div className="min-w-0">
+              <h1 className="text-lg font-black sm:text-xl">
+                المحاسبة والحاسبة الذكية
+              </h1>
+              <p
+                className="mt-1 text-xs sm:text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                مركز موحد يجمع الحاسبة الذكية السريعة مع الحسابات والمالية وأجور العمال وصافي الربح
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              value={selectedAgency?.id}
+              onChange={(e) => setSelectedAgencyId(Number(e.target.value))}
+              aria-label="اختيار الوكالة في المالية"
+              className="living-control min-h-[40px] rounded-xl border px-3 py-2 text-xs font-extrabold"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+              }}
             >
-              إدارة الإيرادات، أجور العمال، مستلزمات التعبئة، الضيافة، والمصروفات الخاصة مع حساب صافي الربح لحظياً
-            </p>
+              {agencies.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.icon} {a.name}
+                </option>
+              ))}
+            </select>
+
+            {capabilities.canUseExcelTools && selectedAgency && (
+              <button
+                type="button"
+                onClick={() =>
+                  runAsyncExportTask(
+                    `جاري تجهيز التقرير المالي (${selectedAgency.name})...`,
+                    `تم تصدير التقرير المالي «${selectedAgency.name}» بنجاح`,
+                    () => {
+                      exportFinancialReportToExcel({
+                        agencyName: selectedAgency.name,
+                        persons: scopedPersons,
+                        expenses: scopedExpenses,
+                        settings: calculationSettings,
+                      });
+                    }
+                  )
+                }
+                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <Download className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <span>تصدير التقرير المالي</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <select
-            value={selectedAgency?.id}
-            onChange={(e) => setSelectedAgencyId(Number(e.target.value))}
-            aria-label="اختيار الوكالة في المالية"
-            className="living-control min-h-[40px] rounded-xl border px-3 py-2 text-xs font-extrabold"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--accent)',
-              color: 'var(--accent)',
-            }}
-          >
-            {agencies.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.icon} {a.name}
-              </option>
-            ))}
-          </select>
+        {/* Unified Section Switcher: Both Together / Quick Calculator / Finance */}
+        <div
+          role="tablist"
+          aria-label="أقسام المحاسبة"
+          data-testid="finance-section-tabs"
+          className="inline-flex flex-wrap items-center gap-1.5 rounded-2xl border p-1"
+          style={{
+            backgroundColor: 'var(--bg-main)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          {(
+            [
+              ['all', 'الكل معاً (موحد)'],
+              ['calculator', 'الحاسبة الذكية السريعة'],
+              ['accounts', 'الحسابات والمالية'],
+            ] as const
+          ).map(([tabId, label]) => {
+            const active = activeHubSection === tabId;
+            return (
+              <button
+                key={tabId}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                data-testid={`accounting-tab-${tabId}`}
+                onClick={() => setActiveHubSection(tabId)}
+                className="relative rounded-xl px-3.5 py-2 text-xs font-extrabold transition-colors cursor-pointer whitespace-nowrap"
+                style={{
+                  color: active ? 'var(--accent-bright, var(--accent))' : 'var(--text-muted)',
+                }}
+              >
+                {active && (
+                  <TabrixPillIndicator
+                    layoutId="accounting-hub-tab-pill"
+                    className="rounded-xl"
+                  />
+                )}
+                <span className="relative z-10">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          {capabilities.canUseExcelTools && selectedAgency && (
-            <button
-              type="button"
-              onClick={() =>
-                runAsyncExportTask(
-                  `جاري تجهيز التقرير المالي (${selectedAgency.name})...`,
-                  `تم تصدير التقرير المالي «${selectedAgency.name}» بنجاح`,
-                  () => {
-                    exportFinancialReportToExcel({
-                      agencyName: selectedAgency.name,
-                      persons: scopedPersons,
-                      expenses: scopedExpenses,
-                      settings: calculationSettings,
-                    });
-                  }
-                )
-              }
-              className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
+      {/* Section 1: الحاسبة الذكية السريعة (Quick Smart Calculator) */}
+      {(activeHubSection === 'all' || activeHubSection === 'calculator') && (
+        <section
+          aria-label="الحاسبة الذكية السريعة"
+          data-testid="smart-quick-calculator-section"
+          className="nexus-squircle p-5 sm:p-6 space-y-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center gap-2.5">
+              <NexusDuotoneIcon sizeClass="h-9 w-9">
+                <Calculator className="h-4 w-4" />
+              </NexusDuotoneIcon>
+              <div>
+                <h2 className="text-sm sm:text-base font-black">
+                  الحاسبة الذكية السريعة
+                </h2>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  حساب فوري للحصص والأكياس والمبالغ وتعديل تسعيرة الفرد مباشرة
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  handleApplyCalculatorPreset({
+                    kgPerIndividual: DEFAULT_CALCULATION_SETTINGS.kgPerIndividual,
+                    kgPerBag: DEFAULT_CALCULATION_SETTINGS.kgPerBag,
+                    feePerIndividualIqd: DEFAULT_CALCULATION_SETTINGS.feePerIndividualIqd,
+                    fixedCardFeeIqd: DEFAULT_CALCULATION_SETTINGS.fixedCardFeeIqd,
+                    discountPercent: 0,
+                    roundingStepIqd: 0,
+                  })
+                }
+                className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1.5 text-[11px] font-bold cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <RotateCcw className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>القياسي (250 د.ع)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleApplyCalculatorPreset({
+                    feePerIndividualIqd: 500,
+                  })
+                }
+                className="nexus-pill-btn border px-3 py-1.5 text-[11px] font-bold cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                رسم 500 د.ع
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleApplyCalculatorPreset({
+                    fixedCardFeeIqd: 0,
+                  })
+                }
+                className="nexus-pill-btn border px-3 py-1.5 text-[11px] font-bold cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                بدون رسم بطاقة
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Instant Family Calculator Simulator */}
+            <div
+              className="lg:col-span-6 rounded-2xl border p-4 space-y-4"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--bg-nav-active) 28%, var(--bg-main))',
+                borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--border-color))',
+              }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-extrabold">حساب فوري لعدد الأفراد</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label="إنقاص عدد الأفراد"
+                    onClick={() =>
+                      setCalcIndividuals(String(Math.max(0, calcIndCount - 1)))
+                    }
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <input
+                    type="number"
+                    min={0}
+                    aria-label="عدد الأفراد في الحاسبة السريعة"
+                    value={calcIndividuals}
+                    onChange={(e) => setCalcIndividuals(e.target.value)}
+                    className="h-9 w-20 rounded-xl border text-center text-sm font-black tabular-nums outline-none"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--accent)',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="زيادة عدد الأفراد"
+                    onClick={() => setCalcIndividuals(String(calcIndCount + 1))}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {[1, 3, 5, 8, 10, 12].map((cnt) => {
+                  const selected = calcIndCount === cnt;
+                  return (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setCalcIndividuals(String(cnt))}
+                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold tabular-nums cursor-pointer transition-colors"
+                      style={{
+                        backgroundColor: selected
+                          ? 'var(--accent)'
+                          : 'var(--bg-surface)',
+                        borderColor: selected
+                          ? 'var(--accent)'
+                          : 'var(--border-color)',
+                        color: selected
+                          ? 'var(--accent-fg)'
+                          : 'var(--text-primary)',
+                      }}
+                    >
+                      {cnt} {cnt === 1 ? 'فرد' : 'أفراد'}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div
+                  className="rounded-xl border p-3"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    الحصة التموينية
+                  </div>
+                  <div className="mt-1 text-sm font-black tabular-nums">
+                    {quickCalcResult.quotaLabel}
+                  </div>
+                </div>
+                <div
+                  className="rounded-xl border p-3"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    الوزن الصافي
+                  </div>
+                  <div className="mt-1 text-sm font-black tabular-nums">
+                    {quickCalcResult.alloc?.totalKg ?? 0} كغم
+                  </div>
+                </div>
+                <div
+                  className="rounded-xl border p-3"
+                  style={{
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    رسم الأفراد الأساسي
+                  </div>
+                  <div className="mt-1 text-sm font-black tabular-nums">
+                    {formatIqd(quickCalcResult.baseIndFeeIqd)}
+                  </div>
+                </div>
+                <div
+                  className="rounded-xl border p-3"
+                  style={{
+                    backgroundColor: 'var(--bg-nav-active)',
+                    borderColor: 'var(--accent)',
+                  }}
+                >
+                  <div className="text-[11px] font-bold" style={{ color: 'var(--accent-bright, var(--accent))' }}>
+                    المبلغ النهائي المستحق
+                  </div>
+                  <div className="mt-1 text-base font-black tabular-nums" style={{ color: 'var(--accent-bright, var(--accent))' }}>
+                    {formatIqd(quickCalcResult.alloc?.priceIqd ?? 0)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Pricing & Weight Formula Editor */}
+            <form
+              onSubmit={handleSaveCalculatorSettings}
+              className="lg:col-span-6 rounded-2xl border p-4 space-y-3.5"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Download className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-              <span>تصدير التقرير المالي</span>
-            </button>
-          )}
-        </div>
-      </div>
+              <div className="text-xs font-extrabold">
+                ضبط معادلة الحاسبة والتسعيرة الحالية
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    كغم لكل فرد
+                  </label>
+                  <input
+                    type="number"
+                    min={0.5}
+                    step={0.5}
+                    value={kgPerIndDraft}
+                    onChange={(e) => setKgPerIndDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    سعة الكيس (كغم)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={kgPerBagDraft}
+                    onChange={(e) => setKgPerBagDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    رسم الفرد (د.ع)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={feePerIndDraft}
+                    onChange={(e) => setFeePerIndDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    رسم البطاقة الثابت
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={fixedCardFeeDraft}
+                    onChange={(e) => setFixedCardFeeDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    نسبة الخصم (%)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={discountPercentDraft}
+                    onChange={(e) => setDiscountPercentDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                    تقريب لأقرب (د.ع)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={roundingStepDraft}
+                    onChange={(e) => setRoundingStepDraft(e.target.value)}
+                    className="h-9 w-full rounded-xl border px-2.5 text-xs font-bold tabular-nums"
+                    style={{
+                      backgroundColor: 'var(--bg-surface)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+              </div>
 
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px]" style={{ color: calcSavedNotice ? 'var(--success)' : 'var(--text-muted)' }}>
+                  {calcSavedNotice
+                    ? 'تم حفظ وتطبيق المعادلة على المالية والجدول ✓'
+                    : isCalcDirty
+                    ? 'يوجد تعديلات بانتظار الاعتماد'
+                    : 'المعادلة متطابقة مع السجلات والمالية'}
+                </span>
+                {onSaveCalculationSettings && (
+                  <button
+                    type="submit"
+                    data-testid="save-quick-calc-btn"
+                    className="nexus-pill-btn inline-flex min-h-[38px] items-center gap-1.5 px-4 py-1.5 text-xs font-extrabold cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                    }}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>اعتماد المعادلة</span>
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </section>
+      )}
+
+      {/* Section 2: الحسابات والمالية والأجور (Accounts & Finance) */}
+      {(activeHubSection === 'all' || activeHubSection === 'accounts') && (
+        <div className="space-y-6">
       {/* 6 Required Financial KPIs + Live Breakdown Bar */}
       <section
         aria-label="ملخص الحسابات للوكالة"
@@ -433,7 +966,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
         className="space-y-4"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Tabrix3DTiltSurface className="p-4 sm:p-5">
+          <MotionSurfaceCard className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               عدد الأكياس
             </div>
@@ -443,18 +976,18 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
                 ? ` + ${formatNumberCompact(metrics.remainderKg)} كغم`
                 : ''}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
-          <Tabrix3DTiltSurface className="p-4 sm:p-5">
+          <MotionSurfaceCard className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               عدد الأفراد المشمولين
             </div>
             <div className="mt-1.5 text-xl font-black tabular-nums">
               {metrics.activeIndividuals} فرد
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
-          <Tabrix3DTiltSurface className="p-4 sm:p-5">
+          <MotionSurfaceCard className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               الإيرادات التقديرية
             </div>
@@ -464,9 +997,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.revenue)}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
-          <Tabrix3DTiltSurface className="p-4 sm:p-5">
+          <MotionSurfaceCard className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               أجور العمال
             </div>
@@ -476,9 +1009,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.workerWages)}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
-          <Tabrix3DTiltSurface className="p-4 sm:p-5">
+          <MotionSurfaceCard className="p-4 sm:p-5">
             <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
               الصرفيات التشغيلية (تعبئة · ضيافة · خاصة)
             </div>
@@ -488,9 +1021,9 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.generalExpenses)}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
-          <Tabrix3DTiltSurface
+          <MotionSurfaceCard
             className="p-4 sm:p-5"
             style={{
               borderColor:
@@ -516,7 +1049,7 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
             >
               {formatIqd(metrics.profit)}
             </div>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
         </div>
 
         {/* Live Expense Category Breakdown Progress Bar */}
@@ -1253,6 +1786,8 @@ export const FinanceWorkspaceView: React.FC<FinanceWorkspaceViewProps> = ({
           </table>
         </div>
       </section>
+        </div>
+      )}
     </main>
   );
 };

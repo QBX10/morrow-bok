@@ -35,6 +35,7 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
+import { useDelayedLoading } from '../../utils/delayedLoader';
 
 interface SnippetExportModalProps {
   open: boolean;
@@ -58,6 +59,7 @@ export const SnippetExportModal: React.FC<SnippetExportModalProps> = ({
   onClose,
 }) => {
   const [busy, setBusy] = useState(false);
+  useDelayedLoading(busy, 'جاري تجهيز وتصدير القصاصة...');
   const [notice, setNotice] = useState('');
   const [cachedRecords, setCachedRecords] = useState<SnippetRecordInput[]>(records);
   const reducedMotion = useTabrixReducedMotion();

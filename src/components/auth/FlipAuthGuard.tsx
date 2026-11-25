@@ -15,8 +15,8 @@ import {
 import type {
   AppShapeId,
   AuthUser,
-  Spatial3DPrefs,
-  Spatial3DThemeId,
+  Surface2DPrefs,
+  Surface2DThemeId,
 } from '../../types/agency';
 import {
   googleQuickSignInApi,
@@ -27,7 +27,7 @@ import {
   verifyPhoneOtpApi,
 } from '../../lib/authClient';
 import { DotMatrixPattern, GeometricRavenCrest } from '../brand/VectorMotifs';
-import { Spatial3DCanvas } from '../spatial3d/Spatial3DCanvas';
+import { Backdrop2DCanvas } from '../motion2d/Backdrop2DCanvas';
 import {
   TABRIX_POPOVER_VARIANTS,
   TABRIX_REDUCED_VARIANTS,
@@ -36,19 +36,20 @@ import {
 } from '../../utils/tabrixMotion';
 import {
   normalizeUsernameInput,
-  triggerGlobalSpatialPulse,
+  triggerGlobalMotionPulse,
   validateAuthUsername,
-} from '../../utils/spatial3dConfig';
+} from '../../utils/surface2dConfig';
 import {
   playTactileFeedback,
   shouldFireTactileEvent,
 } from '../../utils/tactileFeedback';
+import { useDelayedLoading } from '../../utils/delayedLoader';
 
 interface FlipAuthGuardProps {
   onAuthenticated: (user: AuthUser) => void;
   onReplayOnboarding?: () => void;
-  themeId?: Spatial3DThemeId;
-  spatialPrefs?: Spatial3DPrefs;
+  themeId?: Surface2DThemeId;
+  surfacePrefs?: Surface2DPrefs;
   appShape?: AppShapeId;
 }
 
@@ -69,8 +70,8 @@ const AUTH_METHOD_OPTIONS: Array<{
 export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   onAuthenticated,
   onReplayOnboarding,
-  themeId = 'emerald_smoked',
-  spatialPrefs,
+  themeId = 'obsidian_gold',
+  surfacePrefs,
   appShape,
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -103,6 +104,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [showRegPass, setShowRegPass] = useState(false);
 
   const [busy, setBusy] = useState(false);
+  useDelayedLoading(busy, 'جاري التحقق وتسجيل الدخول...');
   const [errorMsg, setErrorMsg] = useState('');
   const lastTactileRef = React.useRef(0);
 
@@ -121,7 +123,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     setDemoOtpHint('');
     setIsFlippingCrest(true);
     setIsFlipped(toCreateAccount);
-    triggerGlobalSpatialPulse(1.25);
+    triggerGlobalMotionPulse(1.25);
     window.setTimeout(() => {
       setIsFlippingCrest(false);
     }, 520);
@@ -727,9 +729,9 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[135] flex min-h-[100dvh] items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
-      <Spatial3DCanvas
+      <Backdrop2DCanvas
         themeId={themeId}
-        spatialPrefs={spatialPrefs}
+        surfacePrefs={surfacePrefs}
         appShape={appShape}
         reduceMotion={reducedMotion}
       />

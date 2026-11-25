@@ -33,7 +33,7 @@ import {
 } from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
-import { Tabrix3DTiltSurface } from './ui/TabrixMotionPrimitives';
+import { MotionSurfaceCard } from './ui/TabrixMotionPrimitives';
 import type {
   Agency,
   BlockScope,
@@ -73,6 +73,7 @@ import {
   SelectionActionBar,
   type SelectablePersonRecord,
 } from './SelectionActionBar';
+import { useDelayedLoading } from '../utils/delayedLoader';
 
 interface ReadyListsViewProps {
   agencies: Agency[];
@@ -211,6 +212,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   const [sharePreviewText, setSharePreviewText] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState('');
   const [exportingImage, setExportingImage] = useState(false);
+  useDelayedLoading(exportingImage, 'جاري تجهيز وتصدير القائمة...');
 
   // Edit List Meta Modal (with confirmation per Editor rules)
   const [editingMetaOpen, setEditingMetaOpen] = useState(false);
@@ -565,7 +567,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
   return (
     <>
       {/* ========================================================================
-          STANDALONE FULL-SCREEN LIST OVERLAY WITH 3D ENTER/EXIT TRANSITION
+          STANDALONE FULL-SCREEN LIST OVERLAY WITH 2D ENTER/EXIT TRANSITION
          ======================================================================== */}
       <AnimatePresence>
         {activeList && (
@@ -2171,7 +2173,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
             );
 
             return (
-              <Tabrix3DTiltSurface
+              <MotionSurfaceCard
                 key={list.id}
                 as="article"
                 className="group flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -2267,7 +2269,7 @@ export const ReadyListsView: React.FC<ReadyListsViewProps> = ({
                     </button>
                   )}
                 </div>
-              </Tabrix3DTiltSurface>
+              </MotionSurfaceCard>
             );
           })
         )}

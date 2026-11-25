@@ -915,30 +915,30 @@ export interface HomeLayoutPrefs {
   activeMiniWidgets: HomeMiniWidgetId[];
 }
 
-export type Spatial3DThemeId =
+export type Surface2DThemeId =
+  | 'obsidian_gold'
   | 'emerald_smoked'
   | 'holographic_cyan'
   | 'crimson_obsidian'
   | 'royal_amethyst'
-  | 'solar_obsidian_gold'
   | 'auto_adaptive'
   | 'arctic_titanium';
 
-export type SpatialTiltIntensity = 'off' | 'subtle' | 'dynamic';
-export type SpatialCardDensity = 'compact' | 'balanced' | 'spacious';
-export type SpatialSurfaceTone = 'abyssal' | 'midnight' | 'obsidian' | 'graphite' | 'alabaster';
+export type Motion2DIntensity = 'off' | 'subtle' | 'dynamic';
+export type SurfaceCardDensity = 'compact' | 'balanced' | 'spacious';
+export type SurfaceToneId = 'obsidian' | 'abyssal' | 'midnight' | 'graphite' | 'alabaster';
 
-export interface SpatialCustomColors {
+export interface SurfaceCustomColors {
   accent?: string;
   secondary?: string;
-  surfaceTone?: SpatialSurfaceTone;
+  surfaceTone?: SurfaceToneId;
 }
 
-export interface Spatial3DPrefs {
-  themeId: Spatial3DThemeId;
-  tiltIntensity: SpatialTiltIntensity;
-  cardDensity: SpatialCardDensity;
-  customColors?: SpatialCustomColors;
+export interface Surface2DPrefs {
+  themeId: Surface2DThemeId;
+  motionIntensity: Motion2DIntensity;
+  cardDensity: SurfaceCardDensity;
+  customColors?: SurfaceCustomColors;
 }
 
 export interface GeneralAppPrefs {
@@ -956,7 +956,7 @@ export interface GeneralAppPrefs {
   agencyAccentColors?: Record<number, string>;
   dismissedAttentionIds?: string[];
   homeLayoutPrefs?: HomeLayoutPrefs;
-  spatial3dPrefs?: Spatial3DPrefs;
+  surface2dPrefs?: Surface2DPrefs;
   customExpenseCategories?: string[];
   recurringExpenseTemplates?: RecurringExpenseTemplate[];
 }

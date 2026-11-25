@@ -36,7 +36,14 @@ import { computeAgencyMetrics } from '../utils/agencyLogic';
 import type { ModeCapabilities } from '../utils/modePermissions';
 import { GeometricRavenCrest } from './brand/VectorMotifs';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
-import { TABRIX_SPRING, useTabrixReducedMotion } from '../utils/tabrixMotion';
+import {
+  TABRIX_BUTTON_HOVER,
+  TABRIX_BUTTON_TAP,
+  TABRIX_EASE,
+  TABRIX_INDICATOR_SPRING,
+  TABRIX_TACTILE_SPRING,
+  useTabrixReducedMotion,
+} from '../utils/tabrixMotion';
 
 interface AppSidebarProps {
   activeView: AppView;
@@ -112,7 +119,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     const compact = !isMobileDrawer && collapsed && !hoverExpanded;
 
     const itemClass = (active: boolean) =>
-      `group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.98] cursor-pointer ${
+      `group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.97] cursor-pointer ${
         compact ? 'justify-center px-0' : ''
       } ${
         active
@@ -133,10 +140,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               ? 'tabrix-sidebar-mobile-pill'
               : 'tabrix-sidebar-desktop-pill'
           }
-          transition={reducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+          transition={
+            reducedMotion ? { duration: 0.05 } : TABRIX_INDICATOR_SPRING
+          }
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 rounded-xl border border-[var(--accent)]/45 bg-[var(--bg-nav-active)] shadow-[0_6px_18px_var(--marine-caustic-1),inset_0_1px_0_rgba(255,255,255,0.16)]"
-        />
+        >
+          <span
+            className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l-full"
+            style={{ backgroundColor: 'var(--accent)' }}
+          />
+        </motion.span>
       ) : null;
 
     return (
@@ -166,20 +180,26 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
 
             {isMobileDrawer ? (
-              <button
+              <motion.button
                 type="button"
                 onClick={onCloseMobile}
                 aria-label="إغلاق القائمة"
+                whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+                whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
+                transition={TABRIX_TACTILE_SPRING}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-primary)] cursor-pointer"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </motion.button>
             ) : (
-              <button
+              <motion.button
                 type="button"
                 onClick={onToggleCollapse}
                 title={collapsed ? 'تثبيت التوسيع' : 'طي القائمة الجانبية'}
                 aria-label={collapsed ? 'توسيع القائمة الجانبية' : 'طي القائمة الجانبية'}
+                whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+                whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
+                transition={TABRIX_TACTILE_SPRING}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-muted)] hover:text-[var(--accent-bright)] hover:border-[var(--accent)] transition-colors cursor-pointer"
               >
                 {compact ? (
@@ -187,7 +207,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5" />
                 )}
-              </button>
+              </motion.button>
             )}
           </div>
 
@@ -204,12 +224,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               onClick={() => navAndClose('hub')}
               className={itemClass(activeView === 'hub')}
               style={itemStyle(activeView === 'hub')}
-              title="الوكالات (الرئيسية)"
+              title="القوائم (الوكالات)"
             >
               {renderActivePill(activeView === 'hub')}
               <Home className="relative z-10 h-4 w-4 shrink-0 text-[var(--accent)]" />
               {!compact && (
-                <span className="relative z-10 truncate whitespace-nowrap">الوكالات (الرئيسية)</span>
+                <span className="relative z-10 truncate whitespace-nowrap">القوائم (الوكالات)</span>
               )}
             </button>
 
@@ -218,13 +238,13 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               onClick={() => navAndClose('master_roster')}
               className={itemClass(activeView === 'master_roster')}
               style={itemStyle(activeView === 'master_roster')}
-              title="السجل الشامل لجميع الوكالات"
+              title="السجلات الشاملة لجميع الوكالات"
             >
               {renderActivePill(activeView === 'master_roster')}
               <Table2 className="relative z-10 h-4 w-4 shrink-0 text-[var(--accent)]" />
               {!compact && (
                 <div className="relative z-10 flex flex-1 items-center justify-between gap-1.5 min-w-0">
-                  <span className="truncate whitespace-nowrap">السجل الشامل</span>
+                  <span className="truncate whitespace-nowrap">السجلات الشاملة</span>
                   <span className="font-mono-num text-[11px] font-bold text-[var(--accent-bright)]/85">
                     {persons.length}
                   </span>
@@ -243,11 +263,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     <FolderKanban className="h-3.5 w-3.5 text-[var(--accent)]" />
                     <span className="whitespace-nowrap">جداول الوكالات ({agencies.length})</span>
                   </span>
-                  <ChevronDown
-                    className={`h-3.5 w-3.5 transition-transform ${
-                      agenciesExpanded ? 'rotate-180' : ''
-                    }`}
-                  />
+                  <motion.span
+                    animate={{ rotate: agenciesExpanded ? 180 : 0 }}
+                    transition={
+                      reducedMotion
+                        ? { duration: 0.05 }
+                        : { duration: 0.22, ease: TABRIX_EASE }
+                    }
+                    className="inline-flex items-center justify-center"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </motion.span>
                 </button>
 
                 <AnimatePresence initial={false}>
@@ -373,12 +399,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 onClick={() => navAndClose('finance')}
                 className={itemClass(activeView === 'finance')}
                 style={itemStyle(activeView === 'finance')}
-                title="الحسابات والمالية"
+                title="المحاسبة والحاسبة الذكية"
               >
                 {renderActivePill(activeView === 'finance')}
                 <CircleDollarSign className="relative z-10 h-4 w-4 shrink-0 text-[var(--accent)]" />
                 {!compact && (
-                  <span className="relative z-10 truncate whitespace-nowrap">الحسابات والمالية</span>
+                  <span className="relative z-10 truncate whitespace-nowrap">المحاسبة والحاسبة</span>
                 )}
               </button>
             )}
@@ -446,11 +472,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                         {pendingDraftsCount}
                       </span>
                     )}
-                    <ChevronDown
-                      className={`h-3.5 w-3.5 opacity-60 transition-transform ${
-                        morrowExpanded ? 'rotate-180' : ''
-                      }`}
-                    />
+                    <motion.span
+                      animate={{ rotate: morrowExpanded ? 180 : 0 }}
+                      transition={
+                        reducedMotion
+                          ? { duration: 0.05 }
+                          : { duration: 0.22, ease: TABRIX_EASE }
+                      }
+                      className="inline-flex items-center justify-center opacity-60"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </motion.span>
                   </div>
                 </div>
               )}
@@ -513,10 +545,13 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           className="border-t p-3 space-y-2"
           style={{ borderColor: 'var(--border-color)' }}
         >
-          <button
+          <motion.button
             type="button"
             onClick={() => navAndClose('account_security')}
-            className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-xs font-extrabold transition-all hover:border-[var(--accent)] cursor-pointer ${
+            whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+            whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
+            transition={TABRIX_TACTILE_SPRING}
+            className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-xs font-extrabold transition-colors hover:border-[var(--accent)] cursor-pointer ${
               compact ? 'justify-center px-0' : 'justify-between'
             }`}
             style={{
@@ -565,12 +600,15 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {!compact && (
               <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
             )}
-          </button>
+          </motion.button>
 
           <div className={`flex items-center gap-1.5 ${compact ? 'flex-col' : ''}`}>
-            <button
+            <motion.button
               type="button"
               onClick={() => navAndClose('settings')}
+              whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+              whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
+              transition={TABRIX_TACTILE_SPRING}
               className={`flex flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-extrabold transition-colors hover:border-[var(--accent)] cursor-pointer ${
                 compact ? 'w-full justify-center px-0' : 'justify-between'
               }`}
@@ -597,14 +635,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               {!compact && (
                 <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
               )}
-            </button>
+            </motion.button>
 
             {onLogout && authUser && (
-              <button
+              <motion.button
                 type="button"
                 onClick={onLogout}
                 title="تسجيل الخروج"
                 aria-label="تسجيل الخروج"
+                whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
+                whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
+                transition={TABRIX_TACTILE_SPRING}
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors cursor-pointer"
                 style={{
                   borderColor: 'color-mix(in srgb, var(--danger) 35%, transparent)',
@@ -613,7 +654,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 }}
               >
                 <LogOut className="h-4 w-4" />
-              </button>
+              </motion.button>
             )}
           </div>
         </div>

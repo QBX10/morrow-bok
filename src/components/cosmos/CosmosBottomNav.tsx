@@ -1,32 +1,9 @@
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
-import {
-  AnimatePresence,
-  motion,
-  useAnimation,
-  useMotionValue,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-  useVelocity,
-} from 'motion/react';
-import {
-  Bot,
-  BrainCircuit,
-  Home,
-  PlusCircle,
-  ScanLine,
-  Search,
-  Settings,
-  Table2,
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ListChecks, ScanLine, Table2, Wallet } from 'lucide-react';
 import type { AppView, SettingsSectionId } from '../../types/agency';
+import { useTabrixReducedMotion } from '../../utils/tabrixMotion';
 import { playTactileFeedback } from '../../utils/tactileFeedback';
+import { GeometricNeuralBrain } from '../brand/VectorMotifs';
 
 export interface FloatingNavItem {
   key: string;
@@ -48,25 +25,46 @@ export interface FloatingGlassBottomNavProps {
   className?: string;
 }
 
-const BADGE_DIAMETER = 48;
-const BADGE_REST_TOP = -11; // Protrudes 11px upward above the 64px pill top edge
-
-const INDICATOR_SPRING = {
-  stiffness: 420,
-  damping: 30,
-  mass: 0.85,
-};
-
-const TAP_SPRING = {
-  type: 'spring' as const,
-  stiffness: 500,
-  damping: 30,
-};
+const BADGE_DIAMETER = 52;
+const BADGE_REST_TOP = -21; // Elevated cleanly above the 70px floating bar
+const NOTCH_WIDTH = 84;
+const NOTCH_HEIGHT = 26;
+const SMOOTH_CUBIC = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 /**
- * Reusable floating pill-shaped glassmorphic bottom navigation bar
- * with velocity-coupled spring physics, distance-aware ballistic arc,
- * synchronized glass specular lighting, and sub-pixel RTL/LTR alignment.
+ * Pure mathematical RTL/LTR slot placement for the raised golden indicator orb
+ * and the liquid curved notch saddle.
+ * Uses percentage-width carrier (`100% / totalItems`) + GPU `translate3d(±idx * 100%, 0, 0)`
+ * so alignment is exact across every screen width, resize, and route change with zero DOM lag.
+ */
+export function computeBottomNavCarrierStyle(params: {
+  activeIndex: number;
+  totalItems: number;
+  isRtl: boolean;
+  reducedMotion?: boolean;
+}): React.CSSProperties {
+  const count = Math.max(1, params.totalItems);
+  const idx = Math.max(0, Math.min(count - 1, params.activeIndex));
+  const slotPct = 100 / count;
+  const offsetPct = (params.isRtl ? -idx : idx) * 100;
+
+  return {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: `${slotPct}%`,
+    ...(params.isRtl ? { right: 0 } : { left: 0 }),
+    transform: `translate3d(${offsetPct}%, 0, 0)`,
+    willChange: 'transform',
+    transition: params.reducedMotion
+      ? 'none'
+      : `transform 250ms ${SMOOTH_CUBIC}, opacity 220ms ${SMOOTH_CUBIC}`,
+  };
+}
+
+/**
+ * Reusable 70px floating bottom navigation bar with exact mathematical Liquid/Curved Notch,
+ * elevated glowing gold orb, active Arabic label + underline bar, and pure GPU transform+opacity motion.
  */
 export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
   items,
@@ -79,19 +77,30 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
   ariaLabel = 'شريط التنقل العائم',
   className = '',
 }) => {
-  const prefersReducedMotion = useReducedMotion();
+  const isReducedMotionActive = useTabrixReducedMotion();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const holdTimerRef = useRef<number | null>(null);
-  const prevActiveIndexRef = useRef<number>(-1);
-  const lastMeasuredIndexRef = useRef<number>(-1);
-  const hasInitializedXRef = useRef(false);
 
-  const [badgeX, setBadgeX] = useState<number | null>(null);
-  const [reTapNonce, setReTapNonce] = useState(0);
-  const [pulseNonce, setPulseNonce] = useState(0);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const arcControls = useAnimation();
+  const [isRtl, setIsRtl] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return true;
+    return document.documentElement.dir !== 'ltr';
+  });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const detected = window.getComputedStyle(el).direction !== 'ltr';
+    setIsRtl((prev) => (prev === detected ? prev : detected));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current !== null) {
+        clearTimeout(holdTimerRef.current);
+      }
+    };
+  }, []);
 
   const resolvedIndex =
     typeof activeIndex === 'number'
@@ -103,149 +112,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
       : -1;
 
   const activeItem = resolvedIndex >= 0 ? items[resolvedIndex] : null;
-
-  const isReducedMotionActive = Boolean(
-    prefersReducedMotion ||
-      (typeof document !== 'undefined' &&
-        document.documentElement.dataset.reduceMotion === '1')
-  );
-
-  // Continuous spring-driven horizontal motion value & velocity coupling
-  const rawX = useMotionValue(0);
-  const springX = useSpring(rawX, INDICATOR_SPRING);
-  const velocityX = useVelocity(springX);
-
-  // Real-time aerodynamic liquid deformation & lift coupled to horizontal velocity
-  const aeroScaleX = useTransform(
-    velocityX,
-    [-1600, 0, 1600],
-    isReducedMotionActive ? [1, 1, 1] : [1.14, 1, 1.14]
-  );
-  const aeroScaleY = useTransform(
-    velocityX,
-    [-1600, 0, 1600],
-    isReducedMotionActive ? [1, 1, 1] : [0.91, 1, 0.91]
-  );
-  const aeroLiftY = useTransform(
-    velocityX,
-    [-1400, 0, 1400],
-    isReducedMotionActive ? [0, 0, 0] : [-5, 0, -5]
-  );
-  const aeroTilt = useTransform(
-    velocityX,
-    [-1600, 0, 1600],
-    isReducedMotionActive ? [0, 0, 0] : [-5, 0, 5]
-  );
-
-  const measureBadgePosition = useCallback(() => {
-    const containerEl = containerRef.current;
-    if (!containerEl || resolvedIndex < 0) {
-      setBadgeX(null);
-      return;
-    }
-    const targetTab = tabRefs.current[resolvedIndex];
-    if (!targetTab) return;
-
-    const containerRect = containerEl.getBoundingClientRect();
-    const tabRect = targetTab.getBoundingClientRect();
-    if (containerRect.width === 0 || tabRect.width === 0) return;
-
-    const targetLeft =
-      tabRect.left - containerRect.left + (tabRect.width - BADGE_DIAMETER) / 2;
-
-    const indexChanged = lastMeasuredIndexRef.current !== resolvedIndex;
-    lastMeasuredIndexRef.current = resolvedIndex;
-
-    if (!hasInitializedXRef.current || isReducedMotionActive || !indexChanged) {
-      hasInitializedXRef.current = true;
-      rawX.jump(targetLeft);
-      springX.jump(targetLeft);
-    } else {
-      rawX.set(targetLeft);
-    }
-
-    setBadgeX(targetLeft);
-  }, [resolvedIndex, isReducedMotionActive, rawX, springX]);
-
-  useLayoutEffect(() => {
-    measureBadgePosition();
-  }, [measureBadgePosition, items.length]);
-
-  useEffect(() => {
-    const containerEl = containerRef.current;
-    if (!containerEl) return;
-
-    const ro =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => measureBadgePosition())
-        : null;
-    ro?.observe(containerEl);
-    window.addEventListener('resize', measureBadgePosition, { passive: true });
-    if (typeof document !== 'undefined' && document.fonts?.ready) {
-      void document.fonts.ready.then(() => measureBadgePosition());
-    }
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener('resize', measureBadgePosition);
-    };
-  }, [measureBadgePosition]);
-
-  // Distance-aware ballistic pop-up arc + concentric arrival pulse
-  useEffect(() => {
-    if (resolvedIndex < 0 || badgeX === null) {
-      prevActiveIndexRef.current = resolvedIndex;
-      return;
-    }
-
-    const prevIdx = prevActiveIndexRef.current;
-    prevActiveIndexRef.current = resolvedIndex;
-
-    if (prevIdx === -1) {
-      return;
-    }
-
-    if (isReducedMotionActive) {
-      arcControls.set({ y: 0, scale: 1 });
-      return;
-    }
-
-    if (prevIdx !== resolvedIndex) {
-      const distance = Math.abs(resolvedIndex - prevIdx);
-      const peakLift = distance >= 3 ? -12 : distance === 2 ? -9.5 : -7;
-      const peakScale = distance >= 3 ? 1.08 : 1.055;
-      const duration = distance >= 3 ? 0.46 : distance === 2 ? 0.41 : 0.35;
-
-      setPulseNonce((n) => n + 1);
-      void arcControls.start({
-        y: [0, peakLift, 0],
-        scale: [1, peakScale, 1],
-        transition: {
-          duration,
-          times: [0, 0.38, 1],
-          ease: [0.22, 1.28, 0.36, 1],
-        },
-      });
-    } else if (reTapNonce > 0) {
-      setPulseNonce((n) => n + 1);
-      void arcControls.start({
-        y: [0, -4.5, 0],
-        scale: [1, 1.05, 1],
-        transition: {
-          duration: 0.32,
-          times: [0, 0.42, 1],
-          ease: [0.22, 1.28, 0.36, 1],
-        },
-      });
-    }
-  }, [resolvedIndex, badgeX, reTapNonce, arcControls, isReducedMotionActive]);
-
-  useEffect(() => {
-    return () => {
-      if (holdTimerRef.current !== null) {
-        clearTimeout(holdTimerRef.current);
-      }
-    };
-  }, []);
+  const hasActiveTab = Boolean(activeItem && resolvedIndex >= 0);
 
   const clearHoldTimer = () => {
     if (holdTimerRef.current !== null) {
@@ -258,10 +125,6 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
     if (items.length === 0) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
-    const isRtl =
-      containerRef.current &&
-      typeof window !== 'undefined' &&
-      window.getComputedStyle(containerRef.current).direction === 'rtl';
     const step =
       e.key === 'ArrowRight' ? (isRtl ? -1 : 1) : isRtl ? 1 : -1;
     const baseIdx = resolvedIndex >= 0 ? resolvedIndex : 0;
@@ -273,180 +136,154 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
     }
   };
 
-  const isVisibleBadge = Boolean(activeItem && badgeX !== null);
+  const carrierStyle = computeBottomNavCarrierStyle({
+    activeIndex: resolvedIndex >= 0 ? resolvedIndex : 0,
+    totalItems: items.length,
+    isRtl,
+    reducedMotion: isReducedMotionActive,
+  });
+
+  const navHideStyle: React.CSSProperties = {
+    transform: hiddenByScroll
+      ? 'translate3d(0, 112px, 0)'
+      : 'translate3d(0, 0, 0)',
+    opacity: hiddenByScroll ? 0 : 1,
+    willChange: 'transform, opacity',
+    transition: isReducedMotionActive
+      ? 'opacity 80ms linear'
+      : `transform 250ms ${SMOOTH_CUBIC}, opacity 220ms ${SMOOTH_CUBIC}`,
+  };
 
   return (
     <nav
       aria-label={ariaLabel}
-      className={`no-print pointer-events-none flex flex-col items-center justify-end px-2 transition-transform duration-300 ${
-        hiddenByScroll ? 'translate-y-28' : 'translate-y-0'
-      } ${className}`}
+      style={navHideStyle}
+      className={`no-print pointer-events-none flex flex-col items-center justify-end ${className}`}
     >
       <div
         ref={containerRef}
         role="tablist"
         onKeyDown={handleKeyDown}
-        onMouseLeave={() => setHoveredIdx(null)}
-        className="pointer-events-auto relative h-16 w-[min(calc(100vw-84px),430px)] rounded-full overflow-visible select-none"
+        className="pointer-events-auto relative h-[70px] w-[min(calc(100vw-88px),392px)] overflow-visible select-none"
       >
-        {/* Separate clipped glassmorphic surface layer with synchronized internal optical glow */}
+        {/* Clipped 70px floating bar glass layer + Gliding Liquid Curved Notch */}
         <div
           aria-hidden="true"
-          className="cosmos-bottom-pill pointer-events-none absolute inset-0 overflow-hidden rounded-full"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-surface, #0A1726) 86%, var(--bg-main, #020812))',
-            backdropFilter: 'blur(14px) saturate(145%)',
-            WebkitBackdropFilter: 'blur(14px) saturate(145%)',
-            border: '1px solid var(--border-color)',
-            boxShadow:
-              'var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.22)), var(--card-shadow, 0 14px 32px -6px rgba(2, 10, 22, 0.5))',
-          }}
+          className="cosmos-bottom-nav-shell pointer-events-none absolute inset-0 overflow-hidden"
         >
-          {/* Gliding subsurface marine-emerald aura tracking the active orb */}
-          {isVisibleBadge && (
-            <motion.div
-              style={{
-                x: springX,
-                left: (BADGE_DIAMETER - 92) / 2,
-                top: -4,
-                width: 92,
-                height: 64,
-                background:
-                  'radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--accent, #10B981) 36%, transparent) 0%, color-mix(in srgb, var(--accent-bright, #6EE7B7) 14%, transparent) 48%, transparent 74%)',
-              }}
-              className="pointer-events-none absolute"
-            />
-          )}
+          {/* Subtle luxury Obsidian & Gold gradient overlay */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(135deg, color-mix(in srgb, var(--accent-bright, var(--accent)) 9%, transparent) 0%, transparent 46%, color-mix(in srgb, var(--spatial-secondary, var(--accent)) 7%, transparent) 100%), linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 52%, rgba(2, 10, 22, 0.1) 100%)',
+            }}
+          />
 
-          {/* Gliding top rim specular highlight riding the 1px glass edge */}
-          {isVisibleBadge && (
-            <motion.div
-              style={{
-                x: springX,
-                left: (BADGE_DIAMETER - 56) / 2,
-                top: 0,
-                width: 56,
-                height: 1.5,
-                background:
-                  'linear-gradient(90deg, transparent 0%, var(--accent-bright, rgba(167, 243, 208, 0.9)) 50%, transparent 100%)',
-              }}
-              className="pointer-events-none absolute"
-            />
+          {/* Mathematically aligned carrier for ambient gold glow & curved notch saddle */}
+          {hasActiveTab && (
+            <div style={carrierStyle} className="pointer-events-none">
+              {/* Soft pooled gold glow centered inside the active slot */}
+              <div
+                className="pointer-events-none absolute top-[-2px] left-1/2 h-[58px] w-[92px]"
+                style={{
+                  transform: 'translate3d(-50%, 0, 0)',
+                  background:
+                    'radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--accent, #D4AF37) 34%, transparent) 0%, color-mix(in srgb, var(--accent-bright, #EED278) 12%, transparent) 48%, transparent 74%)',
+                }}
+              />
+
+              {/* Liquid / Curved Notch SVG Saddle dead-center over active tab */}
+              <div
+                className="pointer-events-none absolute top-[-1px] left-1/2 z-10"
+                style={{
+                  width: NOTCH_WIDTH,
+                  height: NOTCH_HEIGHT,
+                  transform: 'translate3d(-50%, 0, 0)',
+                }}
+              >
+                <svg
+                  width={NOTCH_WIDTH}
+                  height={NOTCH_HEIGHT}
+                  viewBox={`0 0 ${NOTCH_WIDTH} ${NOTCH_HEIGHT}`}
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M0,0 L84,0 C71,0 66,23.5 42,23.5 C18,23.5 13,0 0,0 Z"
+                    fill="var(--bg-main, #070708)"
+                  />
+                  <path
+                    d="M2,1 C14.5,1 18.5,23.5 42,23.5 C65.5,23.5 69.5,1 82,1"
+                    stroke="color-mix(in srgb, var(--accent-bright, #EED278) 56%, var(--border-color))"
+                    strokeWidth="1.35"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Non-clipped overlay layer for the velocity-coupled elevated emerald circle */}
+        {/* Non-clipped overlay layer for the elevated glowing gold indicator orb */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-20 overflow-visible"
         >
-          <AnimatePresence initial={false}>
-            {isVisibleBadge && activeItem && (
-              <motion.div
-                key="elevated-active-indicator"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ duration: isReducedMotionActive ? 0.01 : 0.18 }}
+          {hasActiveTab && activeItem && (
+            <div style={carrierStyle} className="pointer-events-none">
+              <div
+                data-testid="bottom-nav-active-orb"
+                className="absolute left-1/2 flex items-center justify-center rounded-full"
                 style={{
-                  position: 'absolute',
-                  left: 0,
                   top: BADGE_REST_TOP,
                   width: BADGE_DIAMETER,
                   height: BADGE_DIAMETER,
-                  x: springX,
-                  y: aeroLiftY,
+                  transform: 'translate3d(-50%, 0, 0)',
+                  willChange: 'transform',
+                  background:
+                    'linear-gradient(145deg, color-mix(in srgb, var(--accent-bright, #F4DC8A) 36%, var(--accent, #D4AF37)) 0%, var(--accent, #D4AF37) 52%, var(--accent-deep, #9F7F22) 100%)',
+                  border:
+                    '2px solid color-mix(in srgb, var(--accent-bright, #F4DC8A) 65%, transparent)',
+                  boxShadow:
+                    '0 0 0 4px color-mix(in srgb, var(--bg-main, #070708) 78%, transparent), 0 0 22px -2px color-mix(in srgb, var(--accent, #D4AF37) 55%, transparent), 0 10px 22px -6px color-mix(in srgb, var(--accent, #D4AF37) 42%, transparent), var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.35))',
+                  color: 'var(--accent-fg, #090806)',
                 }}
               >
-                {/* Arrival / re-tap geometric concentric ring pulse */}
-                {pulseNonce > 0 && !isReducedMotionActive && (
-                  <motion.span
-                    key={`pulse-${pulseNonce}`}
-                    initial={{ scale: 0.9, opacity: 0.6 }}
-                    animate={{ scale: 1.52, opacity: 0 }}
-                    transition={{
-                      duration: 0.46,
-                      ease: [0.16, 1, 0.3, 1],
-                    }}
-                    className="pointer-events-none absolute inset-0 rounded-full"
-                    style={{
-                      border: '1.5px solid color-mix(in srgb, var(--accent-bright, #6EE7B7) 60%, transparent)',
-                    }}
-                  />
-                )}
-
-                <motion.div
-                  animate={arcControls}
+                {/* Precision inner metallic bezel ring */}
+                <span
+                  className="pointer-events-none absolute inset-[2px] rounded-full"
                   style={{
-                    scaleX: aeroScaleX,
-                    scaleY: aeroScaleY,
-                    rotate: aeroTilt,
-                    background:
-                      'linear-gradient(145deg, color-mix(in srgb, var(--accent, #10B981) 82%, #ffffff 12%) 0%, var(--accent-deep, #065F46) 100%)',
-                    border: '1.5px solid color-mix(in srgb, var(--accent-bright, #6EE7B7) 48%, transparent)',
-                    boxShadow:
-                      '0 10px 24px color-mix(in srgb, var(--accent, #10B981) 38%, transparent), 0 4px 10px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.34), inset 0 -2px 4px rgba(0, 0, 0, 0.28)',
-                    color: 'var(--accent-fg, #021C16)',
+                    border: '1px solid rgba(255, 255, 255, 0.28)',
                   }}
-                  className="relative flex h-full w-full items-center justify-center rounded-full"
-                >
-                  {/* Precision inner bezel ring + top specular arc */}
-                  <span
-                    className="pointer-events-none absolute inset-[3px] rounded-full"
-                    style={{
-                      border: '1px solid rgba(255, 255, 255, 0.16)',
-                    }}
-                  />
-                  <span
-                    className="pointer-events-none absolute inset-x-3 top-[2px] h-[1px] rounded-full"
-                    style={{
-                      background:
-                        'linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-bright, #A7F3D0) 75%, #ffffff), transparent)',
-                    }}
-                  />
+                />
 
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    <motion.span
-                      key={activeItem.key}
-                      initial={
-                        isReducedMotionActive
-                          ? { opacity: 1, scale: 1 }
-                          : { opacity: 0, scale: 0.82 }
-                      }
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={
-                        isReducedMotionActive
-                          ? { opacity: 0 }
-                          : { opacity: 0, scale: 0.82 }
-                      }
-                      transition={{
-                        duration: isReducedMotionActive ? 0.01 : 0.2,
-                        ease: [0.25, 0.1, 0.25, 1],
-                      }}
-                      className="relative z-10 flex items-center justify-center"
-                    >
-                      {activeItem.icon({
-                        className: 'h-[21px] w-[21px]',
-                        strokeWidth: 2,
-                      })}
-                    </motion.span>
-                  </AnimatePresence>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                {/* Single clean active icon (no exiting overlapping duplicate) */}
+                <span
+                  key={activeItem.key}
+                  className={`relative z-10 flex items-center justify-center ${
+                    isReducedMotionActive ? '' : 'bottom-nav-orb-icon-enter'
+                  }`}
+                >
+                  {activeItem.icon({
+                    className: 'h-[21px] w-[21px]',
+                    strokeWidth: 2.15,
+                  })}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Equal-width interactive navigation items */}
+        {/* Equal-width 4 navigation slots (zero horizontal padding offset for exact 25% alignment) */}
         <div
-          className="relative z-10 grid h-full w-full items-center px-1"
+          className="relative z-10 grid h-full w-full items-center"
           style={{
             gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))`,
           }}
         >
           {items.map((item, idx) => {
             const isActive = idx === resolvedIndex;
-            const isHovered = hoveredIdx === idx && !isActive;
 
             const startHold = () => {
               if (!item.onLongPress) return;
@@ -466,19 +303,16 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                 }}
                 type="button"
                 role="tab"
+                data-testid={`bottom-nav-tab-${item.key}`}
                 aria-selected={isActive}
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={item.label}
                 title={item.label}
-                onMouseEnter={() => setHoveredIdx(idx)}
                 onClick={() => {
                   playTactileFeedback('tap', {
                     haptic: true,
                     reduceMotion: isReducedMotionActive,
                   });
-                  if (isActive) {
-                    setReTapNonce((n) => n + 1);
-                  }
                   onChange(item.key, idx);
                 }}
                 onContextMenu={
@@ -493,77 +327,71 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                 onTouchStart={startHold}
                 onTouchEnd={clearHoldTimer}
                 onTouchCancel={clearHoldTimer}
-                className="relative flex h-full min-h-[44px] w-full flex-col items-center justify-center rounded-full focus-visible:outline-none cursor-pointer"
+                className="bottom-nav-tab relative flex h-full min-h-[44px] w-full flex-col items-center justify-center rounded-[14px] focus-visible:outline-none cursor-pointer"
+                data-active={isActive ? '1' : '0'}
               >
-                {/* Magnetic hover spotlight capsule on desktop/trackpad */}
-                {isHovered && !isReducedMotionActive && (
-                  <motion.span
-                    layoutId="floating-nav-hover-spot"
-                    transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-1.5 inset-y-1.5 rounded-full"
-                    style={{
-                      backgroundColor: 'var(--surface-subtle, rgba(255, 255, 255, 0.08))',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  />
-                )}
-
-                {/* Base icon slot yields seamlessly when active so zero double-icon overlaps */}
-                <motion.span
+                {/* Base icon transitions strictly via GPU transform & opacity */}
+                <span
                   aria-hidden="true"
-                  whileTap={
-                    !isActive && !isReducedMotionActive
-                      ? { scale: 0.9 }
-                      : undefined
-                  }
-                  transition={TAP_SPRING}
-                  animate={{
-                    opacity: isActive ? 0 : 1,
-                    scale: isActive ? 0.78 : isHovered ? 1.06 : 1,
-                    y: isHovered && !isReducedMotionActive ? -2 : 0,
-                  }}
-                  className={`relative z-10 flex items-center justify-center ${
-                    showLabels ? '-translate-y-[6px]' : ''
-                  }`}
+                  className="bottom-nav-tab-icon relative z-10 flex items-center justify-center"
                   style={{
-                    color: isHovered
-                      ? 'var(--accent, #10E0A6)'
-                      : 'var(--text-primary)',
+                    opacity: isActive ? 0 : 1,
+                    transform: isActive
+                      ? 'translate3d(0, -14px, 0) scale(0.76)'
+                      : showLabels
+                      ? 'translate3d(0, -4px, 0) scale(1)'
+                      : 'translate3d(0, 0, 0) scale(1)',
                   }}
                 >
                   {item.icon({
                     className: 'h-[21px] w-[21px]',
                     strokeWidth: 1.85,
                   })}
-                </motion.span>
+                </span>
 
                 {showLabels && (
-                  <motion.span
-                    animate={{
-                      y: isActive ? 0 : isHovered ? -0.5 : 0,
-                      opacity: isActive ? 1 : isHovered ? 0.96 : 0.82,
-                    }}
-                    transition={{ duration: 0.18 }}
-                    className="pointer-events-none absolute bottom-[5px] inset-x-1 truncate text-center text-[10px] leading-none"
+                  <span
+                    className="bottom-nav-tab-label pointer-events-none absolute bottom-[12px] inset-x-1 truncate text-center text-[11px] leading-none tracking-tight"
                     style={{
+                      transform: isActive
+                        ? 'translate3d(0, -3px, 0) scale(1.02)'
+                        : 'translate3d(0, 2px, 0) scale(0.96)',
+                      opacity: isActive ? 1 : 0.76,
                       color: isActive
-                        ? 'var(--accent, #10E0A6)'
+                        ? 'var(--accent-bright, var(--accent))'
                         : 'var(--text-primary)',
-                      fontWeight: isActive ? 700 : 600,
+                      fontWeight: isActive ? 800 : 600,
                     }}
                   >
                     {item.label}
-                  </motion.span>
+                  </span>
+                )}
+
+                {/* Crisp active glowing gold underline indicator bar */}
+                {showLabels && (
+                  <span
+                    aria-hidden="true"
+                    className="bottom-nav-tab-bar pointer-events-none absolute bottom-[5px] h-[2.5px] w-4 rounded-full"
+                    style={{
+                      opacity: isActive ? 1 : 0,
+                      transform: isActive
+                        ? 'scaleX(1) translate3d(0, 0, 0)'
+                        : 'scaleX(0.3) translate3d(0, 0, 0)',
+                      backgroundColor: 'var(--accent, #D4AF37)',
+                      boxShadow:
+                        '0 0 8px color-mix(in srgb, var(--accent, #D4AF37) 65%, transparent)',
+                    }}
+                  />
                 )}
 
                 {typeof item.badge === 'number' && item.badge > 0 && (
                   <span
-                    className="absolute top-1.5 right-3 z-30 min-w-[16px] rounded-full px-1 text-center font-mono-num text-[9px] font-black leading-[15px]"
+                    className="absolute top-2 right-3 z-30 min-w-[16px] rounded-full px-1 text-center font-mono-num text-[9px] font-black leading-[15px]"
                     style={{
-                      backgroundColor: 'var(--accent, #10B981)',
-                      color: 'var(--accent-fg, #04271D)',
-                      boxShadow: '0 2px 8px color-mix(in srgb, var(--accent, #10B981) 50%, transparent)',
+                      backgroundColor: 'var(--accent, #D4AF37)',
+                      color: 'var(--accent-fg, #090806)',
+                      boxShadow:
+                        '0 2px 8px color-mix(in srgb, var(--accent, #D4AF37) 48%, transparent)',
                     }}
                   >
                     {item.badge}
@@ -578,7 +406,7 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
       {showHomeIndicator && (
         <div
           aria-hidden="true"
-          className="mt-1.5 h-[4px] w-[120px] rounded-full pointer-events-none md:hidden opacity-45"
+          className="mt-1.5 h-[4px] w-[108px] rounded-full pointer-events-none md:hidden opacity-40"
           style={{ backgroundColor: 'var(--text-muted)' }}
         />
       )}
@@ -588,171 +416,131 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
 
 interface CosmosBottomNavProps {
   activeView: AppView;
-  canAddPerson: boolean;
-  canUseQuickExtract: boolean;
   onNavigateView: (view: AppView, sec?: SettingsSectionId) => void;
-  onQuickAddPerson: () => void;
   onOpenAssistant: () => void;
-  onOpenCommandPalette: () => void;
   pendingDraftsCount?: number;
-  isCenterActionActive?: boolean;
   isAssistantOpen?: boolean;
 }
 
 /**
- * Morrow Floating Glassmorphic Bottom Navigation Bar integrated with app routes.
+ * Unified Obsidian & Gold Floating 4-Tab Bottom Dock + Standalone Morrow AI Brain Core Button.
+ * RTL Order (Right -> Left): القوائم -> السجلات -> المحاسبة -> السحب, with Brain Core anchored on the left.
  */
 export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   activeView,
-  canAddPerson,
-  canUseQuickExtract,
   onNavigateView,
-  onQuickAddPerson,
   onOpenAssistant,
-  onOpenCommandPalette,
   pendingDraftsCount = 0,
-  isCenterActionActive = false,
   isAssistantOpen = false,
 }) => {
+  const isReducedMotionActive = useTabrixReducedMotion();
   const [hiddenByScroll, setHiddenByScroll] = useState(false);
   const lastScrollYRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
 
-  // Always reveal dock smoothly whenever route or modal context switches
   useEffect(() => {
     setHiddenByScroll(false);
-  }, [activeView, isCenterActionActive, isAssistantOpen]);
+  }, [activeView, isAssistantOpen]);
 
   useEffect(() => {
     const onScroll = () => {
-      const curY = window.scrollY || 0;
-      const delta = curY - lastScrollYRef.current;
-      if (curY < 60) {
-        setHiddenByScroll(false);
-      } else if (delta > 24) {
-        setHiddenByScroll(true);
-      } else if (delta < -10) {
-        setHiddenByScroll(false);
-      }
-      lastScrollYRef.current = curY;
+      if (rafRef.current !== null) return;
+      rafRef.current = window.requestAnimationFrame(() => {
+        rafRef.current = null;
+        const curY = window.scrollY || 0;
+        const delta = curY - lastScrollYRef.current;
+        if (curY < 60) {
+          setHiddenByScroll((prev) => (prev ? false : prev));
+        } else if (delta > 24) {
+          setHiddenByScroll((prev) => (prev ? prev : true));
+        } else if (delta < -10) {
+          setHiddenByScroll((prev) => (prev ? false : prev));
+        }
+        lastScrollYRef.current = curY;
+      });
     };
     const onResize = () => {
-      setHiddenByScroll(false);
+      setHiddenByScroll((prev) => (prev ? false : prev));
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onResize, { passive: true });
     return () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+      }
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
     };
   }, []);
 
-  const showSettingsSlot =
-    !canUseQuickExtract ||
-    activeView === 'settings' ||
-    activeView === 'account_security';
-
+  // Strictly 4 unified main sections in RTL right-to-left order
   const items: FloatingNavItem[] = [
     {
-      key: 'hub',
-      label: 'الوكالات',
+      key: 'lists',
+      label: 'القوائم',
       icon: ({ className, strokeWidth }) => (
-        <Home className={className} strokeWidth={strokeWidth} />
+        <ListChecks className={className} strokeWidth={strokeWidth} />
       ),
+      onLongPress: () => onNavigateView('ready_lists'),
     },
     {
-      key: 'master_roster',
-      label: 'الجدول',
+      key: 'records',
+      label: 'السجلات',
       icon: ({ className, strokeWidth }) => (
         <Table2 className={className} strokeWidth={strokeWidth} />
       ),
+      onLongPress: () => onNavigateView('relationships'),
     },
     {
-      key: 'center_action',
-      label: canAddPerson ? 'إضافة' : 'بحث',
-      icon: ({ className, strokeWidth }) =>
-        canAddPerson ? (
-          <PlusCircle className={className} strokeWidth={strokeWidth} />
-        ) : (
-          <Search className={className} strokeWidth={strokeWidth} />
-        ),
-      onLongPress: onOpenCommandPalette,
-    },
-    {
-      key: 'morrow',
-      label: 'Morrow',
-      badge: pendingDraftsCount > 0 ? pendingDraftsCount : undefined,
+      key: 'accounting',
+      label: 'المحاسبة',
       icon: ({ className, strokeWidth }) => (
-        <Bot className={className} strokeWidth={strokeWidth} />
+        <Wallet className={className} strokeWidth={strokeWidth} />
       ),
-      onLongPress: () => onNavigateView('morrow_center'),
+      onLongPress: () => onNavigateView('finance'),
     },
-    showSettingsSlot
-      ? {
-          key: 'settings',
-          label: 'الإعدادات',
-          icon: ({ className, strokeWidth }) => (
-            <Settings className={className} strokeWidth={strokeWidth} />
-          ),
-          onLongPress: canUseQuickExtract
-            ? () => onNavigateView('quick_extract')
-            : undefined,
-        }
-      : {
-          key: 'extract',
-          label: 'السحب',
-          icon: ({ className, strokeWidth }) => (
-            <ScanLine className={className} strokeWidth={strokeWidth} />
-          ),
-          onLongPress: () => onNavigateView('settings'),
-        },
+    {
+      key: 'extract',
+      label: 'السحب',
+      icon: ({ className, strokeWidth }) => (
+        <ScanLine className={className} strokeWidth={strokeWidth} />
+      ),
+      onLongPress: () => onNavigateView('settings'),
+    },
   ];
 
-  const resolvedActiveKey = isCenterActionActive
-    ? 'center_action'
-    : activeView === 'hub'
-    ? 'hub'
-    : activeView === 'master_roster' ||
-      activeView === 'agency_roster' ||
-      activeView === 'ready_lists' ||
-      activeView === 'relationships' ||
-      activeView === 'finance' ||
-      activeView === 'data_archives'
-    ? 'master_roster'
-    : activeView === 'morrow_center' ||
-      activeView === 'smart_models' ||
-      activeView === 'google_workspace' ||
-      isAssistantOpen
-    ? 'morrow'
-    : activeView === 'quick_extract' && !showSettingsSlot
-    ? 'extract'
-    : showSettingsSlot &&
-      (activeView === 'settings' || activeView === 'account_security')
-    ? 'settings'
-    : undefined;
+  const resolvedActiveKey =
+    activeView === 'hub' || activeView === 'ready_lists'
+      ? 'lists'
+      : activeView === 'master_roster' ||
+        activeView === 'agency_roster' ||
+        activeView === 'relationships' ||
+        activeView === 'data_archives'
+      ? 'records'
+      : activeView === 'finance'
+      ? 'accounting'
+      : activeView === 'quick_extract'
+      ? 'extract'
+      : undefined;
+
+  const isMorrowBrainActive =
+    activeView === 'morrow_center' ||
+    activeView === 'smart_models' ||
+    isAssistantOpen;
 
   const handleSelect = (key: string) => {
     switch (key) {
-      case 'hub':
+      case 'lists':
         onNavigateView('hub');
         break;
-      case 'master_roster':
+      case 'records':
         onNavigateView('master_roster');
         break;
-      case 'center_action':
-        if (canAddPerson) {
-          onQuickAddPerson();
-        } else {
-          onOpenCommandPalette();
-        }
-        break;
-      case 'morrow':
-        onOpenAssistant();
+      case 'accounting':
+        onNavigateView('finance');
         break;
       case 'extract':
         onNavigateView('quick_extract');
-        break;
-      case 'settings':
-        onNavigateView('settings');
         break;
       default:
         break;
@@ -760,7 +548,8 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
   };
 
   return (
-    <div className="no-print lg:hidden fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-3 px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))]">
+    <div className="no-print fixed inset-x-0 bottom-0 z-[var(--z-bottom-nav,35)] pointer-events-none flex items-center justify-center gap-2.5 px-2.5 pb-[max(0.55rem,env(safe-area-inset-bottom))] lg:inset-x-auto lg:left-6 lg:bottom-6 lg:px-0 lg:pb-0">
+      {/* 4-Section Floating Glass Navigation Bar (mobile/tablet) */}
       <FloatingGlassBottomNav
         items={items}
         activeKey={resolvedActiveKey}
@@ -768,32 +557,89 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
         hiddenByScroll={hiddenByScroll}
         showHomeIndicator={true}
         showLabels={true}
+        className="lg:hidden"
       />
 
-      {/* Orbital 3D Smart Models Quick-Launch Orb anchored beside the glass dock */}
+      {/* Unified Brain Core (Morrow AI — العقل المدبر) Standalone Floating Capsule */}
       <button
         type="button"
-        data-testid="dock-smart-models-btn"
-        aria-label="النماذج الذكية"
-        title="النماذج الذكية"
-        onClick={() => onNavigateView('smart_models')}
-        className={`cosmos-bottom-orb pointer-events-auto flex mb-2 md:mb-0 h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full border backdrop-blur-md transition-all cursor-pointer ${
-          hiddenByScroll ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'
-        }`}
+        data-testid="dock-morrow-brain-btn"
+        aria-label="المساعد الشخصي الذكي Morrow — عقل التطبيق"
+        title="Morrow AI — العقل المدبر"
+        aria-pressed={isMorrowBrainActive}
+        onClick={() => {
+          playTactileFeedback('tap', {
+            haptic: true,
+            reduceMotion: isReducedMotionActive,
+          });
+          onOpenAssistant();
+        }}
+        className="cosmos-bottom-orb pointer-events-auto relative flex mb-2 md:mb-0 h-[58px] w-[58px] shrink-0 items-center justify-center rounded-[20px] border cursor-pointer overflow-visible"
         style={{
-          borderColor: activeView === 'smart_models' ? 'var(--accent)' : 'var(--border-color)',
-          backgroundColor:
-            activeView === 'smart_models'
-              ? 'var(--accent)'
-              : 'color-mix(in srgb, var(--bg-surface) 92%, var(--bg-main))',
-          color: activeView === 'smart_models' ? 'var(--accent-fg)' : 'var(--accent)',
-          boxShadow:
-            activeView === 'smart_models'
-              ? '0 10px 28px var(--spatial-glow)'
-              : 'var(--card-shadow, 0 12px 24px rgba(0,0,0,0.35))',
+          transform: hiddenByScroll
+            ? 'translate3d(0, 96px, 0)'
+            : 'translate3d(0, 0, 0)',
+          opacity: hiddenByScroll ? 0 : 1,
+          willChange: 'transform, opacity',
+          transition: isReducedMotionActive
+            ? 'opacity 80ms linear'
+            : `transform 250ms ${SMOOTH_CUBIC}, opacity 220ms ${SMOOTH_CUBIC}`,
+          borderColor: isMorrowBrainActive
+            ? 'var(--accent-bright, #F4DC8A)'
+            : 'color-mix(in srgb, var(--accent, #D4AF37) 58%, var(--border-color))',
+          background: isMorrowBrainActive
+            ? 'linear-gradient(155deg, color-mix(in srgb, var(--accent) 28%, #15120D) 0%, #090806 100%)'
+            : 'linear-gradient(155deg, color-mix(in srgb, var(--bg-table-header, #171410) 92%, var(--accent) 8%) 0%, color-mix(in srgb, var(--bg-main, #070708) 94%, transparent) 100%)',
+          backdropFilter: 'blur(14px) saturate(155%)',
+          WebkitBackdropFilter: 'blur(14px) saturate(155%)',
+          boxShadow: isMorrowBrainActive
+            ? 'inset 0 1px 0 rgba(255, 240, 195, 0.36), 0 0 28px -2px color-mix(in srgb, var(--accent, #D4AF37) 60%, transparent), var(--card-shadow, 0 14px 32px -14px rgba(0, 0, 0, 0.72))'
+            : 'inset 0 1px 0 rgba(255, 240, 195, 0.24), inset 0 -1px 0 rgba(0, 0, 0, 0.55), 0 0 20px -4px color-mix(in srgb, var(--accent, #D4AF37) 36%, transparent), var(--card-shadow, 0 14px 32px -14px rgba(0, 0, 0, 0.72))',
         }}
       >
-        <BrainCircuit className="h-5 w-5" />
+        {/* Calm Ambient Neural Pulse outer aura */}
+        <span
+          aria-hidden="true"
+          className="ambient-neural-pulse-ring pointer-events-none absolute -inset-[5px] rounded-[24px]"
+          style={{
+            border:
+              '1px solid color-mix(in srgb, var(--accent-bright, #F4DC8A) 45%, transparent)',
+            boxShadow:
+              '0 0 18px color-mix(in srgb, var(--accent, #D4AF37) 26%, transparent)',
+          }}
+        />
+
+        {/* Luxury inner gold glass sheen */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-[20px]"
+          style={{
+            background:
+              'radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--accent-bright, #F4DC8A) 20%, transparent) 0%, transparent 62%)',
+          }}
+        />
+
+        {/* Bespoke Geometric Glowing-Gold Neural Brain Icon */}
+        <GeometricNeuralBrain
+          size={31}
+          active={isMorrowBrainActive}
+          className="relative z-10"
+        />
+
+        {/* Subtle golden badge for pending drafts awaiting review */}
+        {pendingDraftsCount > 0 && (
+          <span
+            className="absolute -top-1.5 -right-1.5 z-20 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center font-mono-num text-[10px] font-black"
+            style={{
+              backgroundColor: 'var(--accent, #D4AF37)',
+              color: 'var(--accent-fg, #090806)',
+              boxShadow:
+                '0 0 10px color-mix(in srgb, var(--accent, #D4AF37) 65%, transparent)',
+            }}
+          >
+            {pendingDraftsCount}
+          </span>
+        )}
       </button>
     </div>
   );

@@ -13,7 +13,7 @@ import {
 import { TABRIX_TACTILE_SPRING, useTabrixReducedMotion } from '../utils/tabrixMotion';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
-import { Tabrix3DTiltSurface } from './ui/TabrixMotionPrimitives';
+import { MotionSurfaceCard } from './ui/TabrixMotionPrimitives';
 
 interface StructuredExportModalProps {
   open: boolean;
@@ -89,7 +89,7 @@ export const StructuredExportModal: React.FC<StructuredExportModalProps> = ({
         {/* Two Clear Action Paths */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Path 1: Direct Share */}
-          <Tabrix3DTiltSurface as="section" maxTiltX={4.8} maxTiltY={6} className="p-5 flex flex-col justify-between gap-4">
+          <MotionSurfaceCard as="section" className="p-5 flex flex-col justify-between gap-4">
             <div className="relative z-[1] space-y-3">
               <div className="flex items-center gap-3">
                 <NexusDuotoneIcon tone="ai" size="md">
@@ -128,13 +128,11 @@ export const StructuredExportModal: React.FC<StructuredExportModalProps> = ({
               <Share2 className="h-4 w-4" />
               <span>مشاركة الحزمة الآن</span>
             </motion.button>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
 
           {/* Path 2: Structured Folder Export */}
-          <Tabrix3DTiltSurface
+          <MotionSurfaceCard
             as="section"
-            maxTiltX={4.8}
-            maxTiltY={6}
             className="p-5 flex flex-col justify-between gap-4"
             style={{
               borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--border-color))',
@@ -177,7 +175,7 @@ export const StructuredExportModal: React.FC<StructuredExportModalProps> = ({
               <FolderTree className="h-4 w-4" />
               <span>إنشاء وتنزيل المجلد المنظّم</span>
             </motion.button>
-          </Tabrix3DTiltSurface>
+          </MotionSurfaceCard>
         </div>
 
         {/* Folder Tree Preview */}
