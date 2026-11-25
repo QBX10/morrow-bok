@@ -59,6 +59,12 @@ import type {
   UcrsSourceRecord,
 } from '../types/agency';
 import type { AiTaskRoutingMap } from '../types/assistant';
+import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+  stopWatchingSpeechSynthesisForMusic,
+  watchSpeechSynthesisForMusic,
+} from '../utils/backgroundMusicEngine';
 import { normalizeArabic } from '../utils/agencyLogic';
 import type { BurstFusionSummary } from '../utils/ledgerImageProcessor';
 import {
@@ -298,6 +304,20 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
   >(null);
   const lastPayloadRef = useRef<StoredSourcePayload | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
+      releaseMusicPauseLock('quick-extract:tts');
+    };
+  }, []);
 
   // Local Undo / Redo history for inline edits inside Quick Extract
   const [pastRows, setPastRows] = useState<QuickExtractEvaluatedRow[][]>([]);
@@ -707,12 +727,17 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
             `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`
           );
           audioRef.current = audio;
+          acquireMusicPauseLock('quick-extract:tts', 'tts', 100);
+          audio.onended = () => releaseMusicPauseLock('quick-extract:tts');
+          audio.onerror = () => releaseMusicPauseLock('quick-extract:tts');
+          audio.onpause = () => releaseMusicPauseLock('quick-extract:tts');
           await audio.play();
           setTtsStatus('يتم تشغيل القراءة الصوتية الآن.');
           return;
         }
       }
     } catch {
+      releaseMusicPauseLock('quick-extract:tts');
       // Fallback gracefully to browser SpeechSynthesis
     }
 
@@ -721,6 +746,9 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
       const utter = new SpeechSynthesisUtterance(clean);
       utter.lang = 'ar-IQ';
       utter.rate = 0.95;
+      utter.onend = () => stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
+      utter.onerror = () => stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
+      watchSpeechSynthesisForMusic('quick-extract:tts');
       window.speechSynthesis.speak(utter);
       setTtsStatus('يتم تشغيل القراءة الصوتية عبر المتصفح.');
     } else {

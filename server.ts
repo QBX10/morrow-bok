@@ -30,8 +30,11 @@ import {
   findUserByPhone,
   findUserByUid,
   findUserByUsername,
+  getSoundSettings,
   getWorkspaceSnapshot,
+  saveSoundSettings,
   saveWorkspaceSnapshot,
+  updateUserPasswordHash,
   upsertLocalProfile,
 } from './src/db/localStore.ts';
 import {
@@ -92,6 +95,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 const pendingPhoneOtps = new Map<
   string,
   { code: string; expiresAt: number; attempts: number }
+>();
+
+const pendingPasswordResets = new Map<
+  string,
+  { uid: string; code: string; expiresAt: number; attempts: number }
 >();
 
 function hashPassword(password: string): string {
@@ -510,6 +518,131 @@ async function startServer() {
     res.json({ token: signSessionToken(user), user });
   });
 
+  app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        mode?: 'google' | 'username' | 'phone';
+        identifier?: string;
+      };
+      const mode: 'google' | 'username' | 'phone' =
+        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
+      const rawIdentifier = String(body.identifier || '').trim();
+      if (!rawIdentifier) {
+        res.status(400).json({ error: 'يرجى إدخال معرف الحساب أولاً.' });
+        return;
+      }
+
+      const found =
+        mode === 'google'
+          ? findUserByEmail(rawIdentifier.toLowerCase())
+          : mode === 'phone'
+          ? findUserByPhone(normalizePhoneNumber(rawIdentifier))
+          : findUserByUsername(rawIdentifier.toLowerCase());
+
+      if (!found) {
+        res.status(404).json({ error: 'لم يتم العثور على حساب مطابق لهذه البيانات.' });
+        return;
+      }
+
+      const code = String(crypto.randomInt(100000, 999999));
+      pendingPasswordResets.set(found.uid, {
+        uid: found.uid,
+        code,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        attempts: 0,
+      });
+
+      const maskedTarget =
+        found.email || found.phone || found.username || found.displayName;
+
+      res.json({
+        ok: true,
+        maskedTarget,
+        demoCode: process.env.SMS_PROVIDER_API_KEY ? undefined : code,
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'تعذر إرسال رمز الاستعادة.',
+      });
+    }
+  });
+
+  app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        mode?: 'google' | 'username' | 'phone';
+        identifier?: string;
+        code?: string;
+        newPassword?: string;
+      };
+      const mode: 'google' | 'username' | 'phone' =
+        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
+      const rawIdentifier = String(body.identifier || '').trim();
+      const code = String(body.code || '').trim();
+      const newPassword = String(body.newPassword || '');
+
+      if (newPassword.length < 6) {
+        res
+          .status(400)
+          .json({ error: 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل.' });
+        return;
+      }
+
+      const found =
+        mode === 'google'
+          ? findUserByEmail(rawIdentifier.toLowerCase())
+          : mode === 'phone'
+          ? findUserByPhone(normalizePhoneNumber(rawIdentifier))
+          : findUserByUsername(rawIdentifier.toLowerCase());
+
+      if (!found) {
+        res.status(404).json({ error: 'لم يتم العثور على الحساب المطلوب.' });
+        return;
+      }
+
+      const pending = pendingPasswordResets.get(found.uid);
+      if (!pending || Date.now() > pending.expiresAt) {
+        res
+          .status(400)
+          .json({ error: 'انتهت صلاحية رمز الاستعادة، اطلب رمزاً جديداً.' });
+        return;
+      }
+      if (pending.attempts >= 5) {
+        pendingPasswordResets.delete(found.uid);
+        res.status(429).json({ error: 'تم تجاوز عدد المحاولات المسموح.' });
+        return;
+      }
+      if (pending.code !== code) {
+        pending.attempts += 1;
+        res.status(401).json({ error: 'رمز التحقق غير صحيح.' });
+        return;
+      }
+
+      pendingPasswordResets.delete(found.uid);
+      const updated = updateUserPasswordHash(found.uid, hashPassword(newPassword));
+      if (!updated) {
+        res.status(500).json({ error: 'تعذر تحديث كلمة المرور.' });
+        return;
+      }
+
+      const user = {
+        uid: updated.uid,
+        provider: updated.authProvider,
+        displayName: updated.displayName,
+        email: updated.email || undefined,
+        username: updated.username || undefined,
+        phone: updated.phone || undefined,
+        avatarUrl: updated.avatarUrl || undefined,
+        role: updated.role,
+      };
+      res.json({ token: signSessionToken(user), user });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'تعذر إعادة تعيين كلمة المرور.',
+      });
+    }
+  });
+
   app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const principal = req.principal!;
@@ -546,6 +679,81 @@ async function startServer() {
       console.error('Failed to load profile:', err);
       res.status(500).json({ error: 'تعذر جلب بيانات الحساب.' });
     }
+  });
+
+  function getIntelligentAmbience(hourValue?: number) {
+    const hour =
+      typeof hourValue === 'number' && Number.isFinite(hourValue)
+        ? Math.max(0, Math.min(23, Math.floor(hourValue)))
+        : new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return {
+        period: 'morning' as const,
+        greeting: 'صباح الإشراق والتركيز',
+        sub: 'سجّل الدخول للمتابعة إلى مساحتك الخاصة',
+        glow_primary: '#f5d061',
+        glow_secondary: 'rgba(245, 208, 97, 0.28)',
+        chord: [261.63, 329.63, 392.0, 493.88],
+      };
+    }
+    if (hour >= 12 && hour < 18) {
+      return {
+        period: 'afternoon' as const,
+        greeting: 'أهلاً بك في مساحتك',
+        sub: 'سجّل الدخول للمتابعة إلى حسابك',
+        glow_primary: '#e5b842',
+        glow_secondary: 'rgba(229, 184, 66, 0.25)',
+        chord: [293.66, 349.23, 440.0, 523.25],
+      };
+    }
+    return {
+      period: 'night' as const,
+      greeting: 'مساء الهدوء والإنجاز',
+      sub: 'اسحب الخيط لإنارة مساحتك والمتابعة',
+      glow_primary: '#d4af37',
+      glow_secondary: 'rgba(212, 175, 55, 0.32)',
+      chord: [220.0, 261.63, 329.63, 392.0],
+    };
+  }
+
+  app.get('/api/context', (req: Request, res: Response) => {
+    const sound = getSoundSettings();
+    const rawHour = req.query.hour;
+    const parsedHour =
+      typeof rawHour === 'string' && rawHour.trim() !== ''
+        ? Number(rawHour)
+        : undefined;
+    res.json({
+      sound_enabled: sound.soundEnabled,
+      volume: sound.volume,
+      ambience: getIntelligentAmbience(parsedHour),
+    });
+  });
+
+  app.post('/api/settings/sound', requireAuth, (req: AuthRequest, res: Response) => {
+    const body = (req.body || {}) as {
+      sound_enabled?: unknown;
+      volume?: unknown;
+    };
+    if (typeof body.sound_enabled !== 'boolean') {
+      res.status(400).json({
+        error: 'قيمة إعداد الصوت غير صالحة.',
+      });
+      return;
+    }
+    const nextVolume =
+      typeof body.volume === 'number' && Number.isFinite(body.volume)
+        ? Math.max(0, Math.min(1, body.volume))
+        : undefined;
+    const saved = saveSoundSettings({
+      soundEnabled: body.sound_enabled,
+      volume: nextVolume,
+    });
+    res.json({
+      status: 'ok',
+      sound_enabled: saved.soundEnabled,
+      volume: saved.volume,
+    });
   });
 
   app.put('/api/user/profile', requireAuth, async (req: AuthRequest, res: Response) => {
@@ -3061,6 +3269,29 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
             : 'تعذر تحليل المرفق حالياً.',
       });
     }
+  });
+
+  app.get('/bg-music.mp3', (_req: Request, res: Response) => {
+    const publicMusicPath = path.resolve(
+      __dirname,
+      'public/assets/aistudio/bg-music_85f08a71.mp3'
+    );
+    const distMusicPath = path.resolve(
+      __dirname,
+      'dist/assets/aistudio/bg-music_85f08a71.mp3'
+    );
+    const targetPath = fs.existsSync(publicMusicPath)
+      ? publicMusicPath
+      : distMusicPath;
+
+    if (!fs.existsSync(targetPath)) {
+      res.status(404).end();
+      return;
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(targetPath);
   });
 
   if (!isProduction) {

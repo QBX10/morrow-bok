@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Camera, RefreshCw, Upload } from 'lucide-react';
 import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+} from '../../utils/backgroundMusicEngine';
+import {
   buildPermissionRecoveryGuide,
   requestCameraStreamSafe,
   type MediaPermissionGuide,
@@ -78,11 +82,16 @@ export const MorrowCameraSnapModal: React.FC<MorrowCameraSnapModalProps> = ({
 
   useEffect(() => {
     if (!open) {
+      releaseMusicPauseLock('morrow:camera-snap');
       stopStream();
       return;
     }
+    acquireMusicPauseLock('morrow:camera-snap', 'camera', 90);
     void startCamera();
-    return () => stopStream();
+    return () => {
+      releaseMusicPauseLock('morrow:camera-snap');
+      stopStream();
+    };
   }, [open]);
 
   const handleSnap = async () => {

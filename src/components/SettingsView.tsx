@@ -806,14 +806,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           },
           {
             id: 'gal_general_accessibility',
-            title: 'الراحة البصرية واليد الواحدة',
-            subtitle: 'تقليل الحركة، وضع اليد الواحدة للجوال، والتجاوب اللمسي والصوتي',
+            title: 'الصوت والإشعارات والراحة البصرية',
+            subtitle: 'صوت المصباح والموسيقى الخلفية، تقليل الحركة، وضع اليد الواحدة، والتجاوب اللمسي',
             icon: <Hand className="h-5 w-5" />,
             subAxes: [
               {
                 id: 'cap_access_ergonomics',
-                title: 'الوصولية واليد الواحدة واللمس',
-                subtitle: 'ضبط الإزاحة للأسفل، الاهتزاز، وتقليل الحركة',
+                title: 'الصوت والإشعارات والوصولية',
+                subtitle: 'التحكم في صوت المصباح والموسيقى الخلفية والاهتزاز وتقليل الحركة',
                 icon: <Hand className="h-4 w-4" />,
               },
             ],

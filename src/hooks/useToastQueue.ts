@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppToastItem } from '../types/assistant.ts';
 import { trackDelayedLoading } from '../utils/delayedLoader.ts';
+import { pauseBackgroundMusicForAlert } from '../utils/backgroundMusicEngine.ts';
+import { playTactileFeedback } from '../utils/tactileFeedback.ts';
 
 const TOAST_EVENT_NAME = 'morrow:toast';
 
@@ -73,6 +75,14 @@ export function useToastQueue() {
         tone: input.tone || 'info',
         createdAt: Date.now(),
       };
+      if (item.tone === 'success') {
+        playTactileFeedback('success', { haptic: true });
+      } else if (item.tone === 'error' || item.tone === 'warning') {
+        pauseBackgroundMusicForAlert(item.tone === 'error' ? 1550 : 1100);
+        playTactileFeedback('warn', { haptic: true });
+      } else {
+        playTactileFeedback('nav');
+      }
       setToasts((prev) => [...prev.slice(-3), item]);
       window.setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));

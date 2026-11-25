@@ -309,8 +309,9 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                 aria-label={item.label}
                 title={item.label}
                 onClick={() => {
-                  playTactileFeedback('tap', {
+                  playTactileFeedback('nav', {
                     haptic: true,
+                    sound: true,
                     reduceMotion: isReducedMotionActive,
                   });
                   onChange(item.key, idx);
@@ -568,8 +569,9 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
         title="Morrow AI — العقل المدبر"
         aria-pressed={isMorrowBrainActive}
         onClick={() => {
-          playTactileFeedback('tap', {
+          playTactileFeedback('app_open', {
             haptic: true,
+            sound: true,
             reduceMotion: isReducedMotionActive,
           });
           onOpenAssistant();

@@ -22,7 +22,7 @@ export const DEFAULT_WORKSPACE_COSMOS: WorkspaceCosmosState = {
     experienceMode: 'expert',
     reduceMotion: false,
     hapticFeedback: true,
-    soundFeedback: false,
+    soundFeedback: true,
     oneHandedMode: false,
     numeralSystem: 'western',
     calendarSystem: 'gregorian',

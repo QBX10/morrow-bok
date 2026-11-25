@@ -1,4 +1,4 @@
-import type { AppearanceProfile, AuthUser } from '../types/agency';
+import type { AppearanceProfile, AuthProviderType, AuthUser } from '../types/agency';
 import {
   getFirebaseIdToken,
   googleSignIn,
@@ -7,16 +7,27 @@ import {
 import { syncUserProfileToFirestore } from './firestoreSync';
 
 const LOCAL_AUTH_STORAGE_KEY = 'flour_agency_session_v2';
+const REMEMBERED_ACCOUNTS_KEY = 'morrow_remembered_accounts_v1';
 
 export interface StoredSession {
   token: string;
   user: AuthUser;
 }
 
-export function getStoredSession(): StoredSession | null {
+export interface RememberedAccountSummary {
+  uid: string;
+  provider: AuthProviderType;
+  displayName: string;
+  email?: string;
+  username?: string;
+  phone?: string;
+  avatarUrl?: string;
+  lastUsedAt: string;
+}
+
+function parseSessionRaw(raw: string | null): StoredSession | null {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(LOCAL_AUTH_STORAGE_KEY);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredSession;
     if (!parsed?.token || !parsed?.user?.uid) return null;
     return parsed;
@@ -25,15 +36,100 @@ export function getStoredSession(): StoredSession | null {
   }
 }
 
-export function saveSession(token: string, user: AuthUser): void {
-  localStorage.setItem(
-    LOCAL_AUTH_STORAGE_KEY,
-    JSON.stringify({ token, user })
-  );
+export function getStoredSession(): StoredSession | null {
+  try {
+    const local = parseSessionRaw(localStorage.getItem(LOCAL_AUTH_STORAGE_KEY));
+    if (local) return local;
+    if (typeof sessionStorage !== 'undefined') {
+      return parseSessionRaw(sessionStorage.getItem(LOCAL_AUTH_STORAGE_KEY));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function getRememberedAccounts(): RememberedAccountSummary[] {
+  try {
+    const raw = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is RememberedAccountSummary =>
+        Boolean(item && typeof item.uid === 'string' && typeof item.displayName === 'string')
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveRememberedAccount(user: AuthUser): void {
+  try {
+    const existing = getRememberedAccounts().filter((a) => a.uid !== user.uid);
+    const entry: RememberedAccountSummary = {
+      uid: user.uid,
+      provider: user.provider,
+      displayName: user.displayName,
+      email: user.email,
+      username: user.username,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
+      lastUsedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(
+      REMEMBERED_ACCOUNTS_KEY,
+      JSON.stringify([entry, ...existing].slice(0, 5))
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function removeRememberedAccount(uid: string): RememberedAccountSummary[] {
+  try {
+    const next = getRememberedAccounts().filter((a) => a.uid !== uid);
+    localStorage.setItem(REMEMBERED_ACCOUNTS_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return [];
+  }
+}
+
+export function saveSession(
+  token: string,
+  user: AuthUser,
+  rememberMe = true
+): void {
+  const payload = JSON.stringify({ token, user });
+  try {
+    if (rememberMe) {
+      localStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+      }
+      saveRememberedAccount(user);
+    } else {
+      localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
+      }
+    }
+  } catch {
+    // Fallback to localStorage if sessionStorage fails
+    localStorage.setItem(LOCAL_AUTH_STORAGE_KEY, payload);
+  }
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+  try {
+    localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
   void logoutFirebase().catch(() => {});
 }
 
@@ -46,6 +142,7 @@ export async function getActiveBearerToken(): Promise<string | null> {
 export async function signInWithFirebaseGoogle(options?: {
   selectAccount?: boolean;
   loginHint?: string;
+  rememberMe?: boolean;
 }): Promise<StoredSession> {
   const { user: fbUser, idToken } = await googleSignIn(options);
 
@@ -84,7 +181,7 @@ export async function signInWithFirebaseGoogle(options?: {
     avatarUrl: resolvedUser.avatarUrl,
   }).catch(() => {});
 
-  saveSession(idToken, resolvedUser);
+  saveSession(idToken, resolvedUser, options?.rememberMe ?? true);
   return { token: idToken, user: resolvedUser };
 }
 
@@ -179,15 +276,20 @@ export async function loginWithPasswordApi(params: {
   mode: 'google' | 'username' | 'phone';
   identifier: string;
   password: string;
+  rememberMe?: boolean;
 }): Promise<StoredSession> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      mode: params.mode,
+      identifier: params.identifier,
+      password: params.password,
+    }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر تسجيل الدخول.');
-  saveSession(data.token, data.user);
+  saveSession(data.token, data.user, params.rememberMe ?? true);
   return data;
 }
 
@@ -198,30 +300,42 @@ export async function registerWithPasswordApi(params: {
   username?: string;
   phone?: string;
   password: string;
+  rememberMe?: boolean;
 }): Promise<StoredSession> {
   const res = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      mode: params.mode,
+      displayName: params.displayName,
+      email: params.email,
+      username: params.username,
+      phone: params.phone,
+      password: params.password,
+    }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر إنشاء الحساب.');
-  saveSession(data.token, data.user);
+  saveSession(data.token, data.user, params.rememberMe ?? true);
   return data;
 }
 
 export async function googleQuickSignInApi(params: {
   email: string;
   displayName?: string;
+  rememberMe?: boolean;
 }): Promise<StoredSession> {
   const res = await fetch('/api/auth/google-quick', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      email: params.email,
+      displayName: params.displayName,
+    }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'تعذر تسجيل الدخول بحساب Gmail.');
-  saveSession(data.token, data.user);
+  saveSession(data.token, data.user, params.rememberMe ?? true);
   return data;
 }
 
@@ -244,14 +358,56 @@ export async function verifyPhoneOtpApi(params: {
   phone: string;
   code: string;
   displayName?: string;
+  rememberMe?: boolean;
 }): Promise<StoredSession> {
   const res = await fetch('/api/auth/phone/verify-otp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone: params.phone,
+      code: params.code,
+      displayName: params.displayName,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذر التحقق من رمز الهاتف.');
+  saveSession(data.token, data.user, params.rememberMe ?? true);
+  return data;
+}
+
+export async function requestPasswordResetApi(params: {
+  mode: 'google' | 'username' | 'phone';
+  identifier: string;
+}): Promise<{ ok: boolean; maskedTarget?: string; demoCode?: string }> {
+  const res = await fetch('/api/auth/forgot-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'تعذر التحقق من رمز الهاتف.');
-  saveSession(data.token, data.user);
+  if (!res.ok) throw new Error(data?.error || 'تعذر إرسال رمز الاستعادة.');
+  return data;
+}
+
+export async function confirmPasswordResetApi(params: {
+  mode: 'google' | 'username' | 'phone';
+  identifier: string;
+  code: string;
+  newPassword: string;
+  rememberMe?: boolean;
+}): Promise<StoredSession> {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode: params.mode,
+      identifier: params.identifier,
+      code: params.code,
+      newPassword: params.newPassword,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'تعذر إعادة تعيين كلمة المرور.');
+  saveSession(data.token, data.user, params.rememberMe ?? true);
   return data;
 }

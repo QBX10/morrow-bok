@@ -14,6 +14,10 @@ import {
 import type { AssistantToolCall } from '../../types/assistant';
 import type { MaskedCloudContext } from '../../utils/assistantPrivacy';
 import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+} from '../../utils/backgroundMusicEngine';
+import {
   buildPermissionRecoveryGuide,
   requestCameraStreamSafe,
   requestMicrophonePermission,
@@ -253,10 +257,12 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
 
   useEffect(() => {
     if (!open) {
+      releaseMusicPauseLock('morrow:live-session');
       cleanupAll();
       return;
     }
 
+    acquireMusicPauseLock('morrow:live-session', 'live', 80);
     let cancelled = false;
     setStatus('connecting');
     setErrorText(null);
@@ -405,6 +411,7 @@ export const MorrowLiveSessionModal: React.FC<MorrowLiveSessionModalProps> = ({
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      releaseMusicPauseLock('morrow:live-session');
       cleanupAll();
     };
   }, [open, appendTurnChunk, cleanupAll, play24kPcmChunk, stopQueuedOutputAudio]);

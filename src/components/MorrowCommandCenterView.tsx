@@ -74,6 +74,12 @@ import {
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic.ts';
 import type { MaskedCloudContext } from '../utils/assistantPrivacy.ts';
 import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+  stopWatchingSpeechSynthesisForMusic,
+  watchSpeechSynthesisForMusic,
+} from '../utils/backgroundMusicEngine.ts';
+import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
   type MediaPermissionGuide,
@@ -102,6 +108,7 @@ import { MorrowHistoryPage } from './morrow/MorrowHistoryPage';
 import { MorrowModelsPage } from './morrow/MorrowModelsPage';
 import { MorrowAssistantsPage } from './morrow/MorrowAssistantsPage';
 import { MorrowVoiceSettingsPage } from './morrow/MorrowVoiceSettingsPage';
+import { BackgroundMusicControl } from './audio/BackgroundMusicControl';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   TABRIX_EASE,
@@ -689,6 +696,17 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   }, [sideDrawerOpen, appDrawerOpen, plusMenuOpen]);
 
   useEffect(() => {
+    if (isRecordingVoiceMsg || isNoteRecording) {
+      acquireMusicPauseLock('morrow-center:mic', 'mic', 80);
+    } else {
+      releaseMusicPauseLock('morrow-center:mic');
+    }
+    return () => {
+      releaseMusicPauseLock('morrow-center:mic');
+    };
+  }, [isRecordingVoiceMsg, isNoteRecording]);
+
+  useEffect(() => {
     return () => {
       if (voiceTimerRef.current !== null) window.clearInterval(voiceTimerRef.current);
       cleanupVoiceAnalyser();
@@ -705,6 +723,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      releaseMusicPauseLock('morrow-center:mic');
+      stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
       if (attachedFile?.previewUrl) {
         URL.revokeObjectURL(attachedFile.previewUrl);
       }
@@ -824,6 +844,8 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
+    releaseMusicPauseLock('morrow-center:tts');
     setSpeakingMsgId(null);
   };
 
@@ -836,6 +858,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     const cleanText = rawText.trim().slice(0, 900);
     if (!cleanText) return;
     setSpeakingMsgId(msgId);
+    acquireMusicPauseLock('morrow-center:tts', 'tts', 100);
 
     try {
       const res = await fetch('/api/ucrs/tts', {
@@ -850,8 +873,17 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             `data:${json.mimeType || 'audio/wav'};base64,${json.audioBase64}`
           );
           ttsAudioRef.current = audio;
-          audio.onended = () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-          audio.onerror = () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+          audio.onended = () => {
+            releaseMusicPauseLock('morrow-center:tts');
+            setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+          };
+          audio.onerror = () => {
+            releaseMusicPauseLock('morrow-center:tts');
+            setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+          };
+          audio.onpause = () => {
+            releaseMusicPauseLock('morrow-center:tts');
+          };
           await audio.play();
           return;
         }
@@ -865,14 +897,23 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         const utter = new SpeechSynthesisUtterance(cleanText);
         utter.lang = 'ar-IQ';
         utter.rate = 0.98;
-        utter.onend = () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-        utter.onerror = () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+        utter.onend = () => {
+          stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
+          setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+        };
+        utter.onerror = () => {
+          stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
+          setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
+        };
+        watchSpeechSynthesisForMusic('morrow-center:tts');
         window.speechSynthesis.speak(utter);
         return;
       } catch {
         // ignore
       }
     }
+    stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
+    releaseMusicPauseLock('morrow-center:tts');
     setSpeakingMsgId(null);
   };
 
@@ -1788,8 +1829,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </motion.button>
           </div>
 
-          {/* Left Side (RTL End): New Chat + Morrow AI & Models Hamburger Menu */}
+          {/* Left Side (RTL End): Music Control + New Chat + Morrow AI & Models Hamburger Menu */}
           <div className="flex items-center justify-end gap-1.5 min-w-0">
+            <BackgroundMusicControl variant="topbar" />
             {isMainConversationView && onClearMessages && messages.length > 1 && (
               <button
                 type="button"

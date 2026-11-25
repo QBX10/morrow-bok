@@ -35,6 +35,7 @@ import type {
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import { BackgroundMusicControl } from './audio/BackgroundMusicControl';
 import { MotionActionButton } from './ui/TabrixMotionPrimitives';
 import {
   TABRIX_BUTTON_HOVER,
@@ -863,6 +864,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </MotionActionButton>
               </div>
             )}
+
+          {/* Background Music Smart Control */}
+          <BackgroundMusicControl variant="topbar" />
 
           {/* Operational Alerts Bell */}
           <div ref={notifWrapRef} className="relative">

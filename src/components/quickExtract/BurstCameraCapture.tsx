@@ -16,6 +16,10 @@ import {
   type BurstFusionSummary,
 } from '../../utils/ledgerImageProcessor';
 import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+} from '../../utils/backgroundMusicEngine';
+import {
   buildPermissionRecoveryGuide,
   requestCameraStreamSafe,
   type MediaPermissionGuide,
@@ -71,7 +75,16 @@ export const BurstCameraCapture: React.FC<BurstCameraCaptureProps> = ({
   };
 
   useEffect(() => {
+    if (cameraActive) {
+      acquireMusicPauseLock('quick-extract:burst-camera', 'camera', 90);
+    } else {
+      releaseMusicPauseLock('quick-extract:burst-camera');
+    }
+  }, [cameraActive]);
+
+  useEffect(() => {
     return () => {
+      releaseMusicPauseLock('quick-extract:burst-camera');
       stopCamera();
     };
   }, []);

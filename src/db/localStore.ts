@@ -25,9 +25,16 @@ export interface StoredWorkspaceSnapshot {
   updatedAt: string;
 }
 
+export interface SoundSettingsRecord {
+  soundEnabled: boolean;
+  volume: number;
+  updatedAt: string;
+}
+
 interface LocalDbFile {
   users: StoredUserRecord[];
   snapshots: StoredWorkspaceSnapshot[];
+  soundSettings?: SoundSettingsRecord;
 }
 
 const PRIMARY_DB_PATH = path.resolve(process.cwd(), 'data', 'local-db.json');
@@ -44,6 +51,18 @@ function readDb(): LocalDbFile {
     return {
       users: Array.isArray(parsed.users) ? parsed.users : [],
       snapshots: Array.isArray(parsed.snapshots) ? parsed.snapshots : [],
+      soundSettings:
+        parsed.soundSettings && typeof parsed.soundSettings.soundEnabled === 'boolean'
+          ? {
+              soundEnabled: parsed.soundSettings.soundEnabled,
+              volume:
+                typeof parsed.soundSettings.volume === 'number'
+                  ? Math.max(0, Math.min(1, parsed.soundSettings.volume))
+                  : 0.34,
+              updatedAt:
+                parsed.soundSettings.updatedAt || new Date().toISOString(),
+            }
+          : undefined,
     };
   } catch {
     return { users: [], snapshots: [] };
@@ -173,4 +192,48 @@ export function saveWorkspaceSnapshot(params: {
   else db.snapshots[idx] = entry;
   writeDb(db);
   return entry;
+}
+
+export function updateUserPasswordHash(
+  uid: string,
+  passwordHash: string
+): StoredUserRecord | null {
+  const db = readDb();
+  const idx = db.users.findIndex((u) => u.uid === uid);
+  if (idx === -1) return null;
+  db.users[idx] = {
+    ...db.users[idx],
+    passwordHash,
+  };
+  writeDb(db);
+  return db.users[idx];
+}
+
+export function getSoundSettings(): SoundSettingsRecord {
+  const existing = readDb().soundSettings;
+  if (existing) return existing;
+  return {
+    soundEnabled: true,
+    volume: 0.34,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function saveSoundSettings(patch: {
+  soundEnabled: boolean;
+  volume?: number;
+}): SoundSettingsRecord {
+  const db = readDb();
+  const prev = db.soundSettings || getSoundSettings();
+  const next: SoundSettingsRecord = {
+    soundEnabled: Boolean(patch.soundEnabled),
+    volume:
+      typeof patch.volume === 'number' && Number.isFinite(patch.volume)
+        ? Math.max(0, Math.min(1, patch.volume))
+        : prev.volume,
+    updatedAt: new Date().toISOString(),
+  };
+  db.soundSettings = next;
+  writeDb(db);
+  return next;
 }

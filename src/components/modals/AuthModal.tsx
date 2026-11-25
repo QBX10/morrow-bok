@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Camera,
+  Check,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -8,19 +9,26 @@ import {
   LogOut,
   Mail,
   Phone,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   User,
+  X,
 } from 'lucide-react';
 import {
   clearSession,
+  confirmPasswordResetApi,
+  getRememberedAccounts,
   googleQuickSignInApi,
   loginWithPasswordApi,
   registerWithPasswordApi,
+  removeRememberedAccount,
+  requestPasswordResetApi,
   requestPhoneOtpApi,
   signInWithFirebaseGoogle,
   updateUserProfileApi,
   verifyPhoneOtpApi,
+  type RememberedAccountSummary,
 } from '../../lib/authClient';
 import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
@@ -56,6 +64,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [tab, setTab] = useState<AuthTab>('google');
   const [isRegister, setIsRegister] = useState(false);
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberedAccounts, setRememberedAccounts] = useState<RememberedAccountSummary[]>(
+    () => getRememberedAccounts()
+  );
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -68,6 +81,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [demoOtpHint, setDemoOtpHint] = useState('');
+
+  const [resetIdentifier, setResetIdentifier] = useState('');
+  const [resetCodeSent, setResetCodeSent] = useState(false);
+  const [resetCode, setResetCode] = useState('');
+  const [resetDemoHint, setResetDemoHint] = useState('');
+  const [resetNewPass, setResetNewPass] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -117,7 +136,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       setLoading(true);
       setError('');
-      const session = await signInWithFirebaseGoogle();
+      const session = await signInWithFirebaseGoogle({ rememberMe });
       triggerSuccessTactile();
       onAuthenticated(session.user);
       onClose();
@@ -138,6 +157,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const session = await googleQuickSignInApi({
         email: email.trim(),
         displayName: displayName.trim(),
+        rememberMe,
       });
       triggerSuccessTactile();
       onAuthenticated(session.user);
@@ -171,11 +191,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             displayName: displayName.trim() || cleanEmail.split('@')[0],
             email: cleanEmail,
             password,
+            rememberMe,
           })
         : await loginWithPasswordApi({
             mode: 'google',
             identifier: cleanEmail,
             password,
+            rememberMe,
           });
       triggerSuccessTactile();
       onAuthenticated(session.user);
@@ -205,11 +227,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             displayName: displayName.trim() || check.normalized,
             username: check.normalized,
             password,
+            rememberMe,
           })
         : await loginWithPasswordApi({
             mode: 'username',
             identifier: check.normalized,
             password,
+            rememberMe,
           });
       triggerSuccessTactile();
       onAuthenticated(session.user);
@@ -233,11 +257,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               displayName: displayName.trim() || phone.trim(),
               phone: phone.trim(),
               password,
+              rememberMe,
             })
           : await loginWithPasswordApi({
               mode: 'phone',
               identifier: phone.trim(),
               password,
+              rememberMe,
             });
         triggerSuccessTactile();
         onAuthenticated(session.user);
@@ -254,6 +280,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           phone: phone.trim(),
           code: otpCode.trim(),
           displayName: displayName.trim(),
+          rememberMe,
         });
         triggerSuccessTactile();
         onAuthenticated(session.user);
@@ -262,6 +289,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'تعذر التحقق من رقم الهاتف.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const resetMode: 'google' | 'username' | 'phone' =
+      tab === 'phone' ? 'phone' : tab === 'email' || tab === 'google' ? 'google' : 'username';
+    const idValue = resetIdentifier.trim();
+    if (!idValue) {
+      setError('يرجى إدخال معرف الحساب أولاً.');
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      if (!resetCodeSent) {
+        const res = await requestPasswordResetApi({
+          mode: resetMode,
+          identifier: resetMode === 'username' ? normalizeUsernameInput(idValue) : idValue,
+        });
+        setResetCodeSent(true);
+        if (res.demoCode) setResetDemoHint(res.demoCode);
+      } else {
+        const session = await confirmPasswordResetApi({
+          mode: resetMode,
+          identifier: resetMode === 'username' ? normalizeUsernameInput(idValue) : idValue,
+          code: resetCode.trim(),
+          newPassword: resetNewPass,
+          rememberMe,
+        });
+        triggerSuccessTactile();
+        onAuthenticated(session.user);
+        onClose();
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر استعادة كلمة المرور.'
       );
     } finally {
       setLoading(false);
@@ -378,6 +445,101 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
+          {rememberedAccounts.length > 0 && (
+            <div
+              className="rounded-xl border p-2.5 space-y-2"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              <div className="flex items-center justify-between text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                <span>الحسابات المتصلة سابقاً</span>
+                <span className="font-mono-num tabular-nums">{rememberedAccounts.length}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {rememberedAccounts.map((acc) => (
+                  <div
+                    key={acc.uid}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+                    style={{
+                      borderColor: 'var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsResetMode(false);
+                        setError('');
+                        if (acc.provider === 'google') {
+                          setTab('google');
+                          if (acc.email) setEmail(acc.email);
+                        } else if (acc.provider === 'username') {
+                          setTab('username');
+                          if (acc.username) setUsername(acc.username);
+                        } else {
+                          setTab('phone');
+                          if (acc.phone) setPhone(acc.phone);
+                        }
+                      }}
+                      className="font-bold cursor-pointer truncate max-w-[140px]"
+                    >
+                      {acc.displayName}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`إزالة ${acc.displayName}`}
+                      onClick={() => setRememberedAccounts(removeRememberedAccount(acc.uid))}
+                      className="opacity-60 hover:opacity-100 cursor-pointer"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Remember Me & Password Recovery Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <label className="inline-flex items-center gap-2 font-semibold cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="sr-only"
+              />
+              <span
+                className="flex h-4 w-4 items-center justify-center rounded border transition-colors"
+                style={{
+                  borderColor: rememberMe ? 'var(--accent)' : 'var(--border-color)',
+                  backgroundColor: rememberMe ? 'var(--accent)' : 'var(--bg-main)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                {rememberMe && <Check className="h-3 w-3" />}
+              </span>
+              <span>تذكرني</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsResetMode((v) => !v);
+                setResetCodeSent(false);
+                setResetCode('');
+                setResetDemoHint('');
+                setError('');
+              }}
+              className="inline-flex items-center gap-1 font-bold underline cursor-pointer"
+              style={{ color: 'var(--accent)' }}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>{isResetMode ? 'العودة لتسجيل الدخول' : 'استعادة كلمة المرور'}</span>
+            </button>
+          </div>
+
           {/* 4 Multi-Login Tabs */}
           <div
             role="tablist"
@@ -419,219 +581,102 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             })}
           </div>
 
-          {tab === 'google' && (
-            <div className="space-y-3.5">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void handleFirebaseGoogleLogin()}
-                className="gsi-material-button w-full"
-              >
-                <span className="gsi-material-button-content-wrapper">
-                  <svg
-                    version="1.1"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 48 48"
-                    className="gsi-material-button-icon"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill="#EA4335"
-                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                    />
-                    <path
-                      fill="#4285F4"
-                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                    />
-                  </svg>
-                  <span>
-                    {loading
-                      ? 'جارٍ الاتصال بـ Google...'
-                      : 'تسجيل الدخول بحساب Google'}
-                  </span>
-                </span>
-              </button>
-
-              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-                <span>أو الدخول السريع ببريد Gmail</span>
-                <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-              </div>
-
-              <form onSubmit={handleGoogleSubmit} className="space-y-3">
-                <div>
-                  <label
-                    htmlFor="auth-gmail-email"
-                    className="mb-1 block text-xs font-medium"
-                  >
-                    حساب Gmail
-                  </label>
-                  <input
-                    id="auth-gmail-email"
-                    type="email"
-                    dir="ltr"
-                    required
-                    value={email}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="name@gmail.com"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="auth-gmail-name"
-                    className="mb-1 block text-xs font-medium"
-                  >
-                    الاسم الظاهر (اختياري)
-                  </label>
-                  <input
-                    id="auth-gmail-name"
-                    type="text"
-                    value={displayName}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="اكتب اسمك هنا"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                  style={{
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--accent-fg)',
-                  }}
-                >
-                  {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Google'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {tab === 'username' && (
-            <form onSubmit={handleUsernameSubmit} className="space-y-3">
-              {isRegister && (
-                <div>
-                  <label
-                    htmlFor="auth-user-display"
-                    className="mb-1 block text-xs font-medium"
-                  >
-                    الاسم الكامل
-                  </label>
-                  <input
-                    id="auth-user-display"
-                    type="text"
-                    value={displayName}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="اكتب اسمك هنا"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-              )}
-
+          {isResetMode ? (
+            <form onSubmit={handleResetSubmit} className="space-y-3">
               <div>
                 <label
-                  htmlFor="auth-username-input"
+                  htmlFor="auth-modal-reset-id"
                   className="mb-1 block text-xs font-medium"
                 >
-                  اسم المستخدم
+                  {tab === 'phone'
+                    ? 'رقم الهاتف المسجل'
+                    : tab === 'email' || tab === 'google'
+                    ? 'البريد الإلكتروني المسجل'
+                    : 'اسم المستخدم المسجل'}
                 </label>
                 <input
-                  id="auth-username-input"
+                  id="auth-modal-reset-id"
                   type="text"
                   dir="ltr"
                   required
-                  value={username}
-                  onPointerDown={triggerInputTactile}
-                  onFocus={triggerInputTactile}
-                  onChange={(e) => {
-                    setUsername(normalizeUsernameInput(e.target.value));
-                    setError('');
-                  }}
-                  placeholder="ali_agency90"
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
+                  disabled={resetCodeSent}
+                  value={resetIdentifier}
+                  onChange={(e) => setResetIdentifier(e.target.value)}
+                  placeholder={
+                    tab === 'phone'
+                      ? '07701234567'
+                      : tab === 'email' || tab === 'google'
+                      ? 'name@example.com'
+                      : 'ali_agency90'
+                  }
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
                   }}
                 />
-                <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  أحرف إنجليزية، أرقام، أو الرموز (_ . -) بدون مسافات
-                </p>
               </div>
 
-              <div>
-                <label
-                  htmlFor="auth-username-pass"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  كلمة المرور
-                </label>
-                <div className="relative">
-                  <input
-                    id="auth-username-pass"
-                    type={showPass ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="••••••"
-                    className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((v) => !v)}
-                    aria-label="إظهار أو إخفاء كلمة المرور"
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {showPass ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
+              {resetCodeSent && (
+                <>
+                  {resetDemoHint && (
+                    <div
+                      className="rounded-lg border px-3 py-2 text-xs font-semibold"
+                      style={{
+                        borderColor: 'var(--accent)',
+                        backgroundColor: 'var(--bg-nav-active)',
+                        color: 'var(--accent)',
+                      }}
+                    >
+                      رمز الاستعادة: <span className="font-data">{resetDemoHint}</span>
+                    </div>
+                  )}
+                  <div>
+                    <label
+                      htmlFor="auth-modal-reset-code"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      رمز التحقق (6 أرقام)
+                    </label>
+                    <input
+                      id="auth-modal-reset-code"
+                      type="text"
+                      dir="ltr"
+                      required
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      placeholder="123456"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-center text-base font-bold tracking-widest tabular-nums"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="auth-modal-reset-pass"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      كلمة المرور الجديدة
+                    </label>
+                    <input
+                      id="auth-modal-reset-pass"
+                      type="password"
+                      dir="ltr"
+                      required
+                      value={resetNewPass}
+                      onChange={(e) => setResetNewPass(e.target.value)}
+                      placeholder="6 أحرف فأكثر"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+                </>
+              )}
 
               <button
                 type="submit"
@@ -644,190 +689,139 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading
                   ? 'يرجى الانتظار...'
-                  : isRegister
-                  ? 'إنشاء حساب جديد'
-                  : 'تسجيل الدخول باسم المستخدم'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegister((v) => !v);
-                  setError('');
-                }}
-                className="w-full text-center text-xs font-semibold underline cursor-pointer"
-                style={{ color: 'var(--accent)' }}
-              >
-                {isRegister
-                  ? 'لديك حساب مسبقًا؟ سجّل الدخول'
-                  : 'مستخدم جديد؟ أنشئ حسابًا باسم المستخدم'}
+                  : resetCodeSent
+                  ? 'تحديث كلمة المرور والدخول'
+                  : 'إرسال رمز الاستعادة'}
               </button>
             </form>
-          )}
-
-          {tab === 'phone' && (
-            <form onSubmit={handlePhoneSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-1.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneSubMode('otp');
-                    setOtpSent(false);
-                    setError('');
-                  }}
-                  className="rounded-lg border py-1.5 font-semibold cursor-pointer"
-                  style={{
-                    borderColor:
-                      phoneSubMode === 'otp'
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    backgroundColor:
-                      phoneSubMode === 'otp'
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                  }}
-                >
-                  رمز تحقق (OTP)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneSubMode('password');
-                    setError('');
-                  }}
-                  className="rounded-lg border py-1.5 font-semibold cursor-pointer"
-                  style={{
-                    borderColor:
-                      phoneSubMode === 'password'
-                        ? 'var(--accent)'
-                        : 'var(--border-color)',
-                    backgroundColor:
-                      phoneSubMode === 'password'
-                        ? 'var(--bg-nav-active)'
-                        : 'var(--bg-main)',
-                  }}
-                >
-                  رقم + كلمة مرور
-                </button>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="auth-phone-input"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  رقم الهاتف
-                </label>
-                <input
-                  id="auth-phone-input"
-                  type="tel"
-                  dir="ltr"
-                  required
-                  disabled={phoneSubMode === 'otp' && otpSent}
-                  value={phone}
-                  onPointerDown={triggerInputTactile}
-                  onFocus={triggerInputTactile}
-                  onChange={(e) => {
-                    setPhone(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="07701234567"
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm tabular-nums transition-colors focus:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-              </div>
-
-              {phoneSubMode === 'otp' ? (
-                <>
-                  {otpSent && (
-                    <>
-                      {demoOtpHint && (
-                        <div
-                          className="rounded-lg border px-3 py-2 text-xs font-semibold"
-                          style={{
-                            borderColor: 'var(--accent)',
-                            backgroundColor: 'var(--bg-nav-active)',
-                            color: 'var(--accent)',
-                          }}
-                        >
-                          رمز التحقق المرسل:{' '}
-                          <span className="font-data">{demoOtpHint}</span>
-                        </div>
-                      )}
-                      <div>
-                        <label
-                          htmlFor="auth-otp-input"
-                          className="mb-1 block text-xs font-medium"
-                        >
-                          رمز التحقق (6 أرقام)
-                        </label>
-                        <input
-                          id="auth-otp-input"
-                          type="text"
-                          dir="ltr"
-                          required
-                          value={otpCode}
-                          onPointerDown={triggerInputTactile}
-                          onFocus={triggerInputTactile}
-                          onChange={(e) => setOtpCode(e.target.value)}
-                          placeholder="123456"
-                          className="w-full rounded-xl border px-3.5 py-2.5 text-center text-base font-bold tracking-widest tabular-nums transition-colors focus:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        />
-                      </div>
-                    </>
-                  )}
+          ) : (
+            <>
+              {tab === 'google' && (
+                <div className="space-y-3.5">
                   <button
-                    type="submit"
+                    type="button"
                     disabled={loading}
-                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                    style={{
-                      backgroundColor: 'var(--accent)',
-                      color: 'var(--accent-fg)',
-                    }}
+                    onClick={() => void handleFirebaseGoogleLogin()}
+                    className="gsi-material-button w-full"
                   >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    <span>
-                      {loading
-                        ? 'يرجى الانتظار...'
-                        : otpSent
-                        ? 'تأكيد الرمز والدخول'
-                        : 'إرسال رمز التحقق'}
+                    <span className="gsi-material-button-content-wrapper">
+                      <svg
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 48 48"
+                        className="gsi-material-button-icon"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fill="#EA4335"
+                          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                        />
+                        <path
+                          fill="#4285F4"
+                          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                        />
+                      </svg>
+                      <span>
+                        {loading
+                          ? 'جارٍ الاتصال بـ Google...'
+                          : 'تسجيل الدخول بحساب Google'}
+                      </span>
                     </span>
                   </button>
-                  {otpSent && (
+
+                  <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+                    <span>أو الدخول السريع ببريد Gmail</span>
+                    <span className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+                  </div>
+
+                  <form onSubmit={handleGoogleSubmit} className="space-y-3">
+                    <div>
+                      <label
+                        htmlFor="auth-gmail-email"
+                        className="mb-1 block text-xs font-medium"
+                      >
+                        حساب Gmail
+                      </label>
+                      <input
+                        id="auth-gmail-email"
+                        type="email"
+                        dir="ltr"
+                        required
+                        value={email}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="name@gmail.com"
+                        className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="auth-gmail-name"
+                        className="mb-1 block text-xs font-medium"
+                      >
+                        الاسم الظاهر (اختياري)
+                      </label>
+                      <input
+                        id="auth-gmail-name"
+                        type="text"
+                        value={displayName}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="اكتب اسمك هنا"
+                        className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                    </div>
+
                     <button
-                      type="button"
-                      onClick={() => {
-                        setOtpSent(false);
-                        setOtpCode('');
-                        setDemoOtpHint('');
+                      type="submit"
+                      disabled={loading}
+                      className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
                       }}
-                      className="w-full text-center text-xs underline cursor-pointer"
-                      style={{ color: 'var(--text-muted)' }}
                     >
-                      تغيير رقم الهاتف
+                      {loading ? 'جارٍ المتابعة...' : 'دخول بحساب Google'}
                     </button>
-                  )}
-                </>
-              ) : (
-                <>
+                  </form>
+                </div>
+              )}
+
+              {tab === 'username' && (
+                <form onSubmit={handleUsernameSubmit} className="space-y-3">
                   {isRegister && (
                     <div>
                       <label
-                        htmlFor="auth-phone-name"
+                        htmlFor="auth-user-display"
                         className="mb-1 block text-xs font-medium"
                       >
                         الاسم الكامل
                       </label>
                       <input
-                        id="auth-phone-name"
+                        id="auth-user-display"
                         type="text"
                         value={displayName}
                         onPointerDown={triggerInputTactile}
@@ -842,28 +836,80 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       />
                     </div>
                   )}
+
                   <div>
                     <label
-                      htmlFor="auth-phone-pass"
+                      htmlFor="auth-username-input"
                       className="mb-1 block text-xs font-medium"
                     >
-                      كلمة المرور
+                      اسم المستخدم
                     </label>
                     <input
-                      id="auth-phone-pass"
-                      type="password"
+                      id="auth-username-input"
+                      type="text"
+                      dir="ltr"
                       required
-                      value={password}
+                      value={username}
                       onPointerDown={triggerInputTactile}
                       onFocus={triggerInputTactile}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                      onChange={(e) => {
+                        setUsername(normalizeUsernameInput(e.target.value));
+                        setError('');
+                      }}
+                      placeholder="ali_agency90"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
                       style={{
                         backgroundColor: 'var(--bg-main)',
                         borderColor: 'var(--border-color)',
                       }}
                     />
+                    <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      أحرف إنجليزية، أرقام، أو الرموز (_ . -) بدون مسافات
+                    </p>
                   </div>
+
+                  <div>
+                    <label
+                      htmlFor="auth-username-pass"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      كلمة المرور
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="auth-username-pass"
+                        type={showPass ? 'text' : 'password'}
+                        required
+                        value={password}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="••••••"
+                        className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPass((v) => !v)}
+                        aria-label="إظهار أو إخفاء كلمة المرور"
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {showPass ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={loading}
@@ -873,150 +919,383 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       color: 'var(--accent-fg)',
                     }}
                   >
-                    {isRegister ? 'تسجيل رقم جديد' : 'دخول برقم الهاتف'}
+                    {loading
+                      ? 'يرجى الانتظار...'
+                      : isRegister
+                      ? 'إنشاء حساب جديد'
+                      : 'تسجيل الدخول باسم المستخدم'}
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => setIsRegister((v) => !v)}
+                    onClick={() => {
+                      setIsRegister((v) => !v);
+                      setError('');
+                    }}
                     className="w-full text-center text-xs font-semibold underline cursor-pointer"
                     style={{ color: 'var(--accent)' }}
                   >
                     {isRegister
-                      ? 'لديك حساب؟ سجّل الدخول'
-                      : 'تسجيل رقم جديد بكلمة مرور'}
+                      ? 'لديك حساب مسبقًا؟ سجّل الدخول'
+                      : 'مستخدم جديد؟ أنشئ حسابًا باسم المستخدم'}
                   </button>
-                </>
+                </form>
               )}
-            </form>
-          )}
 
-          {tab === 'email' && (
-            <form onSubmit={handleEmailPasswordSubmit} className="space-y-3">
-              {isRegister && (
-                <div>
-                  <label
-                    htmlFor="auth-email-display"
-                    className="mb-1 block text-xs font-medium"
+              {tab === 'phone' && (
+                <form onSubmit={handlePhoneSubmit} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneSubMode('otp');
+                        setOtpSent(false);
+                        setError('');
+                      }}
+                      className="rounded-lg border py-1.5 font-semibold cursor-pointer"
+                      style={{
+                        borderColor:
+                          phoneSubMode === 'otp'
+                            ? 'var(--accent)'
+                            : 'var(--border-color)',
+                        backgroundColor:
+                          phoneSubMode === 'otp'
+                            ? 'var(--bg-nav-active)'
+                            : 'var(--bg-main)',
+                      }}
+                    >
+                      رمز تحقق (OTP)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneSubMode('password');
+                        setError('');
+                      }}
+                      className="rounded-lg border py-1.5 font-semibold cursor-pointer"
+                      style={{
+                        borderColor:
+                          phoneSubMode === 'password'
+                            ? 'var(--accent)'
+                            : 'var(--border-color)',
+                        backgroundColor:
+                          phoneSubMode === 'password'
+                            ? 'var(--bg-nav-active)'
+                            : 'var(--bg-main)',
+                      }}
+                    >
+                      رقم + كلمة مرور
+                    </button>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="auth-phone-input"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      رقم الهاتف
+                    </label>
+                    <input
+                      id="auth-phone-input"
+                      type="tel"
+                      dir="ltr"
+                      required
+                      disabled={phoneSubMode === 'otp' && otpSent}
+                      value={phone}
+                      onPointerDown={triggerInputTactile}
+                      onFocus={triggerInputTactile}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="07701234567"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm tabular-nums transition-colors focus:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+
+                  {phoneSubMode === 'otp' ? (
+                    <>
+                      {otpSent && (
+                        <>
+                          {demoOtpHint && (
+                            <div
+                              className="rounded-lg border px-3 py-2 text-xs font-semibold"
+                              style={{
+                                borderColor: 'var(--accent)',
+                                backgroundColor: 'var(--bg-nav-active)',
+                                color: 'var(--accent)',
+                              }}
+                            >
+                              رمز التحقق المرسل:{' '}
+                              <span className="font-data">{demoOtpHint}</span>
+                            </div>
+                          )}
+                          <div>
+                            <label
+                              htmlFor="auth-otp-input"
+                              className="mb-1 block text-xs font-medium"
+                            >
+                              رمز التحقق (6 أرقام)
+                            </label>
+                            <input
+                              id="auth-otp-input"
+                              type="text"
+                              dir="ltr"
+                              required
+                              value={otpCode}
+                              onPointerDown={triggerInputTactile}
+                              onFocus={triggerInputTactile}
+                              onChange={(e) => setOtpCode(e.target.value)}
+                              placeholder="123456"
+                              className="w-full rounded-xl border px-3.5 py-2.5 text-center text-base font-bold tracking-widest tabular-nums transition-colors focus:border-[var(--accent)]"
+                              style={{
+                                backgroundColor: 'var(--bg-main)',
+                                borderColor: 'var(--border-color)',
+                              }}
+                            />
+                          </div>
+                        </>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                        style={{
+                          backgroundColor: 'var(--accent)',
+                          color: 'var(--accent-fg)',
+                        }}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                        <span>
+                          {loading
+                            ? 'يرجى الانتظار...'
+                            : otpSent
+                            ? 'تأكيد الرمز والدخول'
+                            : 'إرسال رمز التحقق'}
+                        </span>
+                      </button>
+                      {otpSent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOtpSent(false);
+                            setOtpCode('');
+                            setDemoOtpHint('');
+                          }}
+                          className="w-full text-center text-xs underline cursor-pointer"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          تغيير رقم الهاتف
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {isRegister && (
+                        <div>
+                          <label
+                            htmlFor="auth-phone-name"
+                            className="mb-1 block text-xs font-medium"
+                          >
+                            الاسم الكامل
+                          </label>
+                          <input
+                            id="auth-phone-name"
+                            type="text"
+                            value={displayName}
+                            onPointerDown={triggerInputTactile}
+                            onFocus={triggerInputTactile}
+                            onChange={(e) => setDisplayName(e.target.value)}
+                            placeholder="اكتب اسمك هنا"
+                            className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor: 'var(--border-color)',
+                            }}
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label
+                          htmlFor="auth-phone-pass"
+                          className="mb-1 block text-xs font-medium"
+                        >
+                          كلمة المرور
+                        </label>
+                        <input
+                          id="auth-phone-pass"
+                          type="password"
+                          required
+                          value={password}
+                          onPointerDown={triggerInputTactile}
+                          onFocus={triggerInputTactile}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                        style={{
+                          backgroundColor: 'var(--accent)',
+                          color: 'var(--accent-fg)',
+                        }}
+                      >
+                        {isRegister ? 'تسجيل رقم جديد' : 'دخول برقم الهاتف'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsRegister((v) => !v)}
+                        className="w-full text-center text-xs font-semibold underline cursor-pointer"
+                        style={{ color: 'var(--accent)' }}
+                      >
+                        {isRegister
+                          ? 'لديك حساب؟ سجّل الدخول'
+                          : 'تسجيل رقم جديد بكلمة مرور'}
+                      </button>
+                    </>
+                  )}
+                </form>
+              )}
+
+              {tab === 'email' && (
+                <form onSubmit={handleEmailPasswordSubmit} className="space-y-3">
+                  {isRegister && (
+                    <div>
+                      <label
+                        htmlFor="auth-email-display"
+                        className="mb-1 block text-xs font-medium"
+                      >
+                        الاسم الكامل
+                      </label>
+                      <input
+                        id="auth-email-display"
+                        type="text"
+                        value={displayName}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="اكتب اسمك هنا"
+                        className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label
+                      htmlFor="auth-email-input"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      البريد الإلكتروني
+                    </label>
+                    <input
+                      id="auth-email-input"
+                      type="email"
+                      dir="ltr"
+                      required
+                      value={email}
+                      onPointerDown={triggerInputTactile}
+                      onFocus={triggerInputTactile}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="name@example.com"
+                      className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="auth-email-pass"
+                      className="mb-1 block text-xs font-medium"
+                    >
+                      كلمة المرور
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="auth-email-pass"
+                        type={showPass ? 'text' : 'password'}
+                        required
+                        value={password}
+                        onPointerDown={triggerInputTactile}
+                        onFocus={triggerInputTactile}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="••••••"
+                        className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPass((v) => !v)}
+                        aria-label="إظهار أو إخفاء كلمة المرور"
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {showPass ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                    }}
                   >
-                    الاسم الكامل
-                  </label>
-                  <input
-                    id="auth-email-display"
-                    type="text"
-                    value={displayName}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="اكتب اسمك هنا"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-              )}
+                    {loading
+                      ? 'يرجى الانتظار...'
+                      : isRegister
+                      ? 'إنشاء حساب بالبريد'
+                      : 'تسجيل الدخول بالبريد الإلكتروني'}
+                  </button>
 
-              <div>
-                <label
-                  htmlFor="auth-email-input"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  البريد الإلكتروني
-                </label>
-                <input
-                  id="auth-email-input"
-                  type="email"
-                  dir="ltr"
-                  required
-                  value={email}
-                  onPointerDown={triggerInputTactile}
-                  onFocus={triggerInputTactile}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="name@example.com"
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus:border-[var(--accent)]"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="auth-email-pass"
-                  className="mb-1 block text-xs font-medium"
-                >
-                  كلمة المرور
-                </label>
-                <div className="relative">
-                  <input
-                    id="auth-email-pass"
-                    type={showPass ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onPointerDown={triggerInputTactile}
-                    onFocus={triggerInputTactile}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="••••••"
-                    className="w-full rounded-xl border px-3.5 py-2.5 pl-9 text-sm transition-colors focus:border-[var(--accent)]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
                   <button
                     type="button"
-                    onClick={() => setShowPass((v) => !v)}
-                    aria-label="إظهار أو إخفاء كلمة المرور"
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
-                    style={{ color: 'var(--text-muted)' }}
+                    onClick={() => {
+                      setIsRegister((v) => !v);
+                      setError('');
+                    }}
+                    className="w-full text-center text-xs font-semibold underline cursor-pointer"
+                    style={{ color: 'var(--accent)' }}
                   >
-                    {showPass ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {isRegister
+                      ? 'لديك حساب مسبقًا؟ سجّل الدخول'
+                      : 'مستخدم جديد؟ أنشئ حسابًا بالبريد الإلكتروني'}
                   </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                }}
-              >
-                {loading
-                  ? 'يرجى الانتظار...'
-                  : isRegister
-                  ? 'إنشاء حساب بالبريد'
-                  : 'تسجيل الدخول بالبريد الإلكتروني'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegister((v) => !v);
-                  setError('');
-                }}
-                className="w-full text-center text-xs font-semibold underline cursor-pointer"
-                style={{ color: 'var(--accent)' }}
-              >
-                {isRegister
-                  ? 'لديك حساب مسبقًا؟ سجّل الدخول'
-                  : 'مستخدم جديد؟ أنشئ حسابًا بالبريد الإلكتروني'}
-              </button>
-            </form>
+                </form>
+              )}
+            </>
           )}
 
           {error && (

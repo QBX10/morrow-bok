@@ -53,6 +53,10 @@ import type {
 } from '../types/assistant';
 import type { QuotaCheckResult } from '../utils/assistantQuota';
 import {
+  acquireMusicPauseLock,
+  releaseMusicPauseLock,
+} from '../utils/backgroundMusicEngine';
+import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
   type MediaPermissionGuide,
@@ -369,6 +373,17 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
       window.setTimeout(() => setCopiedMsgId(null), 1800);
     }
   };
+
+  useEffect(() => {
+    if (isRecording) {
+      acquireMusicPauseLock('assistant-widget:mic', 'mic', 80);
+    } else {
+      releaseMusicPauseLock('assistant-widget:mic');
+    }
+    return () => {
+      releaseMusicPauseLock('assistant-widget:mic');
+    };
+  }, [isRecording]);
 
   const toggleVoiceInput = async () => {
     if (isRecording && recognitionRef.current) {

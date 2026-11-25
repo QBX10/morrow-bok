@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Lock, Sparkles, Unlock, X } from 'lucide-react';
+import { Lock, Unlock } from 'lucide-react';
 import { AgenciesHubView } from './components/AgenciesHubView';
 import { AgencyRosterView } from './components/AgencyRosterView';
 import { FinanceWorkspaceView } from './components/FinanceWorkspaceView';
@@ -31,9 +31,7 @@ import { useAgencyStore } from './hooks/useAgencyStore';
 import { useAssistantEngine } from './hooks/useAssistantEngine';
 import { useToastQueue } from './hooks/useToastQueue';
 import { clearSession, getStoredSession } from './lib/authClient';
-import { OnboardingFlow } from './components/auth/OnboardingFlow';
 import { FlipAuthGuard } from './components/auth/FlipAuthGuard';
-import { getTenantOnboardingKey } from './services/storage/tenantStorage';
 import { Backdrop2DCanvas } from './components/motion2d/Backdrop2DCanvas';
 import { SmartModelsWorkspaceView } from './components/SmartModelsWorkspaceView';
 import { resolveSurface2DPrefs } from './utils/surface2dConfig';
@@ -81,7 +79,19 @@ import {
   useTabrixDirection,
   useTabrixReducedMotion,
 } from './utils/tabrixMotion';
-import { playTactileFeedback } from './utils/tactileFeedback';
+import {
+  installGlobalAppSoundRouter,
+  playTactileFeedback,
+  setGlobalAppSoundEnabled,
+} from './utils/tactileFeedback';
+import {
+  initBackgroundMusicEngine,
+  setBackgroundMusicAuthReady,
+  setBackgroundMusicPaused,
+  setBackgroundMusicVolume,
+} from './utils/backgroundMusicEngine';
+import { fetchServerSpaceContext } from './utils/intelligentAmbience';
+import { BackgroundMusicControl } from './components/audio/BackgroundMusicControl';
 import { computeTopBarScrollHidden } from './utils/scrollAutoHide';
 import {
   buildNextCheckpoint,
@@ -112,15 +122,6 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(
     () => getStoredSession()?.user || null
   );
-  const [onboardingDone, setOnboardingDone] = useState<boolean>(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('autostart') === '1') return true;
-      return localStorage.getItem(getTenantOnboardingKey(null)) === '1';
-    } catch {
-      return false;
-    }
-  });
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const {
@@ -276,32 +277,11 @@ export default function App() {
   }, [state.agencies, selectedAgencyId]);
 
   const handleAuthenticated = (user: AuthUser) => {
+    playTactileFeedback('success', { haptic: true, sound: true });
     setAuthUser(user);
     setAuthModalOpen(false);
     setActiveView('hub');
-    try {
-      localStorage.setItem(getTenantOnboardingKey(user.uid), '1');
-      localStorage.setItem(getTenantOnboardingKey(null), '1');
-    } catch {
-      // ignore storage failures
-    }
-    setOnboardingDone(true);
   };
-
-  const [firstLaunchWelcomeOpen, setFirstLaunchWelcomeOpen] = useState(false);
-
-  useEffect(() => {
-    if (!authUser) return;
-    try {
-      const seen = localStorage.getItem('hasSeenWelcome_v1');
-      if (seen !== '1') {
-        localStorage.setItem('hasSeenWelcome_v1', '1');
-        setFirstLaunchWelcomeOpen(true);
-      }
-    } catch {
-      // ignore storage failures
-    }
-  }, [authUser]);
 
   const handleLogout = () => {
     clearSession();
@@ -378,12 +358,15 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
+          playTactileFeedback('redo', { haptic: true });
           redo();
         } else {
+          playTactileFeedback('undo', { haptic: true });
           undo();
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
+        playTactileFeedback('redo', { haptic: true });
         redo();
       }
     };
@@ -725,6 +708,35 @@ export default function App() {
   };
 
   useEffect(() => {
+    const cleanupSound = installGlobalAppSoundRouter();
+    const cleanupMusic = initBackgroundMusicEngine();
+    void fetchServerSpaceContext().then((ctx) => {
+      setGlobalAppSoundEnabled(ctx.sound_enabled);
+      setBackgroundMusicVolume(ctx.volume);
+      if (!ctx.sound_enabled) {
+        setBackgroundMusicPaused(true);
+      }
+    });
+    return () => {
+      cleanupSound();
+      cleanupMusic();
+    };
+  }, []);
+
+  useEffect(() => {
+    setBackgroundMusicAuthReady(Boolean(authUser));
+  }, [authUser]);
+
+  useEffect(() => {
+    const hasExplicitSoundToggle = workspaceCosmos.changeLog.some(
+      (entry) => entry.settingId === 'acc_tactile'
+    );
+    if (hasExplicitSoundToggle) {
+      setGlobalAppSoundEnabled(workspaceCosmos.accessibility.soundFeedback);
+    }
+  }, [workspaceCosmos.accessibility.soundFeedback, workspaceCosmos.changeLog]);
+
+  useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -869,6 +881,70 @@ export default function App() {
     settingsScreenMode,
     settingsCapsuleId,
     assistant.activeCommandCenterTab,
+  ]);
+
+  const navSoundReadyRef = useRef(false);
+  useEffect(() => {
+    if (!navSoundReadyRef.current) {
+      navSoundReadyRef.current = true;
+      return;
+    }
+    if (!authUser) return;
+    playTactileFeedback('nav', {
+      haptic: workspaceCosmos.accessibility.hapticFeedback,
+    });
+  }, [
+    authUser,
+    activeView,
+    selectedAgencyId,
+    settingsSection,
+    settingsScreenMode,
+    settingsCapsuleId,
+    assistant.activeCommandCenterTab,
+    workspaceCosmos.accessibility.hapticFeedback,
+  ]);
+
+  const overlaySnapshot =
+    Boolean(commandPaletteOpen) ||
+    Boolean(worldSwitcherOpen) ||
+    Boolean(drawerOpen) ||
+    Boolean(authModalOpen) ||
+    Boolean(columnCustomizerOpen) ||
+    Boolean(addPersonOpen) ||
+    Boolean(editingPerson) ||
+    Boolean(assistant.isOpen);
+  const prevOverlayCountRef = useRef(0);
+  useEffect(() => {
+    const openCount =
+      (commandPaletteOpen ? 1 : 0) +
+      (worldSwitcherOpen ? 1 : 0) +
+      (drawerOpen ? 1 : 0) +
+      (authModalOpen ? 1 : 0) +
+      (columnCustomizerOpen ? 1 : 0) +
+      (addPersonOpen ? 1 : 0) +
+      (editingPerson ? 1 : 0) +
+      (assistant.isOpen ? 1 : 0);
+    if (openCount > prevOverlayCountRef.current) {
+      playTactileFeedback('app_open', {
+        haptic: workspaceCosmos.accessibility.hapticFeedback,
+      });
+    } else if (openCount < prevOverlayCountRef.current) {
+      playTactileFeedback('app_close', {
+        haptic: workspaceCosmos.accessibility.hapticFeedback,
+      });
+    }
+    prevOverlayCountRef.current = openCount;
+  }, [
+    commandPaletteOpen,
+    worldSwitcherOpen,
+    drawerOpen,
+    authModalOpen,
+    columnCustomizerOpen,
+    addPersonOpen,
+    editingPerson,
+    assistant.isOpen,
+    overlaySnapshot,
+    workspaceCosmos.accessibility.hapticFeedback,
   ]);
 
   const applyNavSnapshot = (snap: AppNavSnapshot) => {
@@ -1033,49 +1109,12 @@ export default function App() {
   if (!authUser) {
     return (
       <>
-        <AnimatePresence mode="wait" initial={false}>
-          {!onboardingDone ? (
-            <motion.div
-              key="auth-onboarding"
-              initial={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: -12 }}
-              transition={{ duration: tabrixReducedMotion ? 0.06 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="min-h-screen"
-            >
-              <OnboardingFlow
-                themeId={activeSurfacePrefs.themeId}
-                surfacePrefs={activeSurfacePrefs}
-                appShape={themePrefs.appShape}
-                onComplete={() => {
-                  try {
-                    localStorage.setItem(getTenantOnboardingKey(null), '1');
-                  } catch {
-                    // ignore storage failures
-                  }
-                  setOnboardingDone(true);
-                }}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="auth-flip-guard"
-              initial={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, y: -12 }}
-              transition={{ duration: tabrixReducedMotion ? 0.06 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="min-h-screen"
-            >
-              <FlipAuthGuard
-                themeId={activeSurfacePrefs.themeId}
-                surfacePrefs={activeSurfacePrefs}
-                appShape={themePrefs.appShape}
-                onAuthenticated={handleAuthenticated}
-                onReplayOnboarding={() => setOnboardingDone(false)}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <FlipAuthGuard
+          themeId={activeSurfacePrefs.themeId}
+          surfacePrefs={activeSurfacePrefs}
+          appShape={themePrefs.appShape}
+          onAuthenticated={handleAuthenticated}
+        />
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -1947,6 +1986,14 @@ export default function App() {
         />
       )}
 
+      {/* Floating Music Control when TopBar & Morrow Studio Header are hidden */}
+      {!isAuthGateLocked &&
+        !securityPrefs.privacyLocked &&
+        isDedicatedFullScreenView &&
+        activeView !== 'morrow_center' && (
+          <BackgroundMusicControl variant="floating" />
+        )}
+
       {/* Floating Smoked-Glass Navigation Dock (hidden in dedicated Full-Screen views) */}
       {!isAuthGateLocked && !securityPrefs.privacyLocked && !isDedicatedFullScreenView && (
         <CosmosBottomNav
@@ -1957,60 +2004,6 @@ export default function App() {
           isAssistantOpen={assistant.isOpen}
         />
       )}
-
-      {/* One-Time First-Launch Welcome Toast Banner (Persisted via hasSeenWelcome_v1) */}
-      <AnimatePresence>
-        {firstLaunchWelcomeOpen && !isAuthGateLocked && (
-          <motion.aside
-            key="first-launch-welcome-banner"
-            data-testid="first-launch-welcome-banner"
-            role="dialog"
-            aria-label="ترحيب الجلسة الأولى"
-            initial={tabrixReducedMotion ? false : { opacity: 1, y: 12, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="no-print fixed bottom-24 lg:bottom-6 left-4 right-4 sm:right-auto sm:left-6 sm:w-[400px] z-[120] rounded-2xl border p-4 shadow-2xl backdrop-blur-xl smoked-glass-elevated"
-            style={{
-              borderColor: 'color-mix(in srgb, var(--accent) 52%, var(--border-color))',
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="geo-icon-socket h-10 w-10 shrink-0">
-                <Sparkles className="h-5 w-5 text-[var(--accent-bright)]" />
-              </div>
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-display-ar text-sm font-black text-[var(--text-primary)]">
-                    مرحباً بك في مساحة Morrow
-                  </h3>
-                  <button
-                    type="button"
-                    data-testid="dismiss-first-welcome-btn"
-                    aria-label="إغلاق رسالة الترحيب"
-                    onClick={() => setFirstLaunchWelcomeOpen(false)}
-                    className="rounded-lg p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                  تم تجهيز لوحة الوكالات والسجل الشامل بنظام هندسي فائق السرعة لمتابعة الحصص والحسابات مباشرة.
-                </p>
-                <div className="pt-1 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setFirstLaunchWelcomeOpen(false)}
-                    className="obsidian-gold-cta rounded-xl px-4 py-1.5 text-[11px] font-black cursor-pointer"
-                  >
-                    ابدأ العمل الآن
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
 
       {/* Global 5-Second Delayed Animated Cargo Truck & Parcel Loader */}
       <DelayedTruckLoaderOverlay />

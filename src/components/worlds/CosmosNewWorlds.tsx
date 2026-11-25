@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
 import { motion } from 'motion/react';
 import {
   Activity,
@@ -48,7 +48,17 @@ import {
   getAppThemeById,
   MARINE_THEMES,
 } from '../../utils/themes';
-import { playTactileFeedback } from '../../utils/tactileFeedback';
+import {
+  playTactileFeedback,
+  setGlobalAppSoundEnabled,
+} from '../../utils/tactileFeedback';
+import {
+  getBackgroundMusicSnapshot,
+  setBackgroundMusicPaused,
+  setBackgroundMusicVolume,
+  subscribeBackgroundMusic,
+} from '../../utils/backgroundMusicEngine';
+import { updateServerSoundSetting } from '../../utils/intelligentAmbience';
 import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
@@ -152,6 +162,12 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
   onUpdateAccessibility,
   onNotify,
 }) => {
+  const musicSnap = useSyncExternalStore(
+    subscribeBackgroundMusic,
+    getBackgroundMusicSnapshot,
+    getBackgroundMusicSnapshot
+  );
+
   const sampleDate = formatCosmosDate(
     new Date(),
     accessibility.calendarSystem,
@@ -300,15 +316,19 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
 
       <SettingRow
         id="acc_tactile"
-        title="الحس اللمسي والأصوات الدقيقة"
-        description="اهتزاز خفيف وصوت ناعم اختياري عند تنفيذ الإجراءات"
+        title="الصوت والإشعارات · صوت المصباح والموسيقى الخلفية"
+        description="التحكم الحصري في صوت المصباح والموسيقى الخلفية الهادئة والأصوات التفاعلية"
         icon="bell"
-        isModified={accessibility.soundFeedback}
-        onResetSingle={() =>
-          onUpdateAccessibility({ hapticFeedback: true, soundFeedback: false })
-        }
+        isModified={!accessibility.soundFeedback || musicSnap.userPaused}
+        onResetSingle={() => {
+          onUpdateAccessibility({ hapticFeedback: true, soundFeedback: true });
+          setGlobalAppSoundEnabled(true);
+          setBackgroundMusicPaused(false);
+          setBackgroundMusicVolume(0.34);
+          void updateServerSoundSetting(true, 0.34);
+        }}
       >
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() =>
@@ -328,9 +348,17 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
             onClick={() => {
               const next = !accessibility.soundFeedback;
               onUpdateAccessibility({ soundFeedback: next });
+              setGlobalAppSoundEnabled(next);
+              setBackgroundMusicPaused(!next);
+              void updateServerSoundSetting(next, musicSnap.volume);
               if (next) {
                 playTactileFeedback('success', { sound: true, haptic: false });
               }
+              onNotify(
+                next
+                  ? 'تم تفعيل صوت المصباح والموسيقى الخلفية والأصوات التفاعلية.'
+                  : 'تم كتم الأصوات والموسيقى الخلفية بنجاح.'
+              );
             }}
             className="cosmos-touch-target inline-flex items-center gap-1 rounded-xl border px-2.5 text-[11px] font-bold"
             style={
@@ -340,8 +368,27 @@ export const AccessibilityCosmosPanel: React.FC<AccessibilityCosmosPanelProps> =
             }
           >
             <Volume2 className="h-3.5 w-3.5" />
-            <span>صوت</span>
+            <span>{accessibility.soundFeedback ? 'الصوت مفعّل' : 'مكتوم'}</span>
           </button>
+          <div className="flex items-center gap-2 rounded-xl border px-2.5 py-1.5" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-main)' }}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(musicSnap.volume * 100)}
+              onChange={(e) => {
+                const nextVol = Number(e.target.value) / 100;
+                setBackgroundMusicVolume(nextVol);
+                void updateServerSoundSetting(accessibility.soundFeedback, nextVol);
+              }}
+              aria-label="مستوى صوت الموسيقى الخلفية"
+              className="h-1.5 w-20 cursor-pointer accent-[var(--accent)]"
+            />
+            <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+              {Math.round(musicSnap.volume * 100)}%
+            </span>
+          </div>
         </div>
       </SettingRow>
 
