@@ -1,4 +1,5 @@
 import type {
+  AppThemeId,
   AppView,
   Spatial3DPrefs,
   Spatial3DThemeId,
@@ -7,11 +8,14 @@ import type {
   SpatialSurfaceTone,
   SpatialTiltIntensity,
 } from '../types/agency.ts';
+import { DAYLIGHT_ALABASTER_THEME, OBSIDIAN_GOLD_THEME, resolveAutoThemeTarget } from './themes.ts';
 
 export interface Spatial3DThemeDefinition {
   id: Spatial3DThemeId;
   nameAr: string;
   subtitleAr: string;
+  isDark?: boolean;
+  isAuto?: boolean;
   bgMain: string;
   bgSurface: string;
   bgHeader: string;
@@ -21,6 +25,8 @@ export interface Spatial3DThemeDefinition {
   accentDeep: string;
   accentFg: string;
   secondary: string;
+  textPrimary?: string;
+  textMuted?: string;
   borderColor: string;
   glowRgba: string;
   secondaryGlowRgba: string;
@@ -32,6 +38,7 @@ export interface Spatial3DThemeDefinition {
 
 export interface ResolvedSpatialPalette {
   themeId: Spatial3DThemeId;
+  isDark: boolean;
   accent: string;
   accentBright: string;
   accentDeep: string;
@@ -41,6 +48,8 @@ export interface ResolvedSpatialPalette {
   bgSurface: string;
   bgHeader: string;
   bgTableHeader: string;
+  textPrimary: string;
+  textMuted: string;
   borderColor: string;
   glowRgba: string;
   secondaryGlowRgba: string;
@@ -60,174 +69,240 @@ export const SURFACE_TONE_PRESETS: Record<
   SpatialSurfaceTone,
   {
     labelAr: string;
+    isDark: boolean;
     bgMain: string;
     bgSurface: string;
     bgHeader: string;
     bgTableHeader: string;
+    textPrimary: string;
+    textMuted: string;
   }
 > = {
   abyssal: {
     labelAr: 'أعماق سبجية',
-    bgMain: '#04090F',
-    bgSurface: '#091422',
-    bgHeader: '#060E18',
-    bgTableHeader: '#0E1D30',
+    isDark: true,
+    bgMain: '#050A14',
+    bgSurface: '#0C172B',
+    bgHeader: '#07101F',
+    bgTableHeader: '#12223E',
+    textPrimary: '#F3F7FC',
+    textMuted: '#9FB4CC',
   },
   midnight: {
     labelAr: 'ليل ياقوتي',
-    bgMain: '#050817',
-    bgSurface: '#0C122B',
-    bgHeader: '#070C1F',
-    bgTableHeader: '#121B3D',
+    isDark: true,
+    bgMain: '#050A18',
+    bgSurface: '#0E1935',
+    bgHeader: '#081026',
+    bgTableHeader: '#152447',
+    textPrimary: '#EFF6FF',
+    textMuted: '#96ADCF',
   },
   obsidian: {
-    labelAr: 'سبج فحمي',
-    bgMain: '#08080D',
-    bgSurface: '#12121B',
-    bgHeader: '#0C0C14',
-    bgTableHeader: '#191926',
+    labelAr: 'سبج فحمي خالص',
+    isDark: true,
+    bgMain: '#050506',
+    bgSurface: '#0E0C08',
+    bgHeader: '#090806',
+    bgTableHeader: '#17130B',
+    textPrimary: '#FAF6EE',
+    textMuted: '#BFB297',
   },
   graphite: {
     labelAr: 'تيتانيوم داكن',
+    isDark: true,
     bgMain: '#090D12',
     bgSurface: '#131A24',
     bgHeader: '#0D131B',
     bgTableHeader: '#1A2432',
+    textPrimary: '#F1F5F9',
+    textMuted: '#94A3B8',
+  },
+  alabaster: {
+    labelAr: 'مرمر نهاري فاتح',
+    isDark: false,
+    bgMain: '#F2F4F8',
+    bgSurface: '#FFFFFF',
+    bgHeader: '#F8FAFC',
+    bgTableHeader: '#E8EDF4',
+    textPrimary: '#0F172A',
+    textMuted: '#475569',
   },
 };
 
 export const CURATED_ACCENT_SWATCHES = [
-  '#10B981',
+  '#10E0A6',
+  '#D4AF37',
   '#22D3EE',
-  '#3B82F6',
+  '#60A5FA',
+  '#2DD4BF',
   '#A855F7',
   '#F43F5E',
-  '#F59E0B',
-  '#EC4899',
-  '#14B8A6',
+  '#B45309',
 ] as const;
 
 export const CURATED_SECONDARY_SWATCHES = [
-  '#06B6D4',
-  '#8B5CF6',
   '#38BDF8',
   '#F59E0B',
+  '#818CF8',
   '#34D399',
+  '#A78BFA',
   '#FB7185',
-  '#6366F1',
-  '#F97316',
+  '#059669',
+  '#06B6D4',
 ] as const;
 
 export const SPATIAL_3D_THEMES: Record<Spatial3DThemeId, Spatial3DThemeDefinition> = {
   emerald_smoked: {
     id: 'emerald_smoked',
-    nameAr: 'زمرد نيون وأعماق سبجية',
-    subtitleAr: 'سماء ليلية سبجية مع إضاءة أوروراً زمردية وسماوية',
-    bgMain: '#040814',
-    bgSurface: '#091326',
-    bgHeader: '#060D1B',
-    bgTableHeader: '#0F1E38',
+    nameAr: 'العمق الزمردي',
+    subtitleAr: 'أعماق ليلية صافية بإضاءة زمردية متوازنة (60-30-10)',
+    isDark: true,
+    bgMain: '#050A14',
+    bgSurface: '#0C172B',
+    bgHeader: '#07101F',
+    bgTableHeader: '#12223E',
     accent: '#10E0A6',
     accentBright: '#86FFDE',
     accentDeep: '#059669',
     accentFg: '#021712',
-    secondary: '#22D3EE',
-    borderColor: 'rgba(56, 239, 194, 0.25)',
-    glowRgba: 'rgba(16, 224, 166, 0.26)',
-    secondaryGlowRgba: 'rgba(34, 211, 238, 0.18)',
+    secondary: '#38BDF8',
+    textPrimary: '#F3F7FC',
+    textMuted: '#9FB4CC',
+    borderColor: 'rgba(56, 239, 194, 0.24)',
+    glowRgba: 'rgba(16, 224, 166, 0.22)',
+    secondaryGlowRgba: 'rgba(56, 189, 248, 0.16)',
     nodeColorHex: 0x10e0a6,
-    ringColorHex: 0x22d3ee,
+    ringColorHex: 0x38bdf8,
     coreColorHex: 0x86ffde,
-    swatches: ['#040814', '#10E0A6', '#22D3EE'],
+    swatches: ['#050A14', '#0C172B', '#10E0A6'],
   },
   holographic_cyan: {
     id: 'holographic_cyan',
-    nameAr: 'طيف سماوي وبنفسجي',
-    subtitleAr: 'تباين أزرق سماوي مع هالة بنفسجية عميقة',
-    bgMain: '#050918',
-    bgSurface: '#0B132B',
-    bgHeader: '#070D20',
-    bgTableHeader: '#121D3E',
+    nameAr: 'خندق ماريانا السماوي',
+    subtitleAr: 'أزرق محيطي سحيق مع توهج فيروزي وبنفسجي هادئ',
+    isDark: true,
+    bgMain: '#040914',
+    bgSurface: '#0B182E',
+    bgHeader: '#060F20',
+    bgTableHeader: '#112340',
     accent: '#22D3EE',
     accentBright: '#A5F3FC',
     accentDeep: '#0284C7',
     accentFg: '#03131A',
-    secondary: '#8B5CF6',
-    borderColor: 'rgba(34, 211, 238, 0.28)',
-    glowRgba: 'rgba(34, 211, 238, 0.24)',
-    secondaryGlowRgba: 'rgba(139, 92, 246, 0.18)',
+    secondary: '#818CF8',
+    textPrimary: '#EFFBFF',
+    textMuted: '#90AECB',
+    borderColor: 'rgba(34, 211, 238, 0.25)',
+    glowRgba: 'rgba(34, 211, 238, 0.22)',
+    secondaryGlowRgba: 'rgba(129, 140, 248, 0.16)',
     nodeColorHex: 0x22d3ee,
-    ringColorHex: 0x8b5cf6,
+    ringColorHex: 0x818cf8,
     coreColorHex: 0xa5f3fc,
-    swatches: ['#050918', '#22D3EE', '#8B5CF6'],
+    swatches: ['#040914', '#0B182E', '#22D3EE'],
   },
   crimson_obsidian: {
     id: 'crimson_obsidian',
-    nameAr: 'ياقوت قرمزي وذهبي',
-    subtitleAr: 'خلفية سبجية دافئة بحواف قرمزية وكهرمان',
-    bgMain: '#10050A',
-    bgSurface: '#1B0A13',
-    bgHeader: '#14070D',
-    bgTableHeader: '#27101C',
-    accent: '#F43F5E',
-    accentBright: '#FDA4AF',
-    accentDeep: '#BE123C',
-    accentFg: '#FFF1F2',
-    secondary: '#F59E0B',
-    borderColor: 'rgba(244, 63, 94, 0.28)',
-    glowRgba: 'rgba(244, 63, 94, 0.22)',
-    secondaryGlowRgba: 'rgba(245, 158, 11, 0.16)',
-    nodeColorHex: 0xf43f5e,
-    ringColorHex: 0xf59e0b,
-    coreColorHex: 0xfda4af,
-    swatches: ['#10050A', '#F43F5E', '#F59E0B'],
+    nameAr: 'الشعاب والأكوامارين',
+    subtitleAr: 'أكوامارين مضيء مع خلفية بحرية ليلية مريحة للعين',
+    isDark: true,
+    bgMain: '#050D17',
+    bgSurface: '#0C1B2D',
+    bgHeader: '#071322',
+    bgTableHeader: '#12263F',
+    accent: '#2DD4BF',
+    accentBright: '#99F6E4',
+    accentDeep: '#0F766E',
+    accentFg: '#041A18',
+    secondary: '#34D399',
+    textPrimary: '#F0FDFA',
+    textMuted: '#94B5BD',
+    borderColor: 'rgba(45, 212, 191, 0.24)',
+    glowRgba: 'rgba(45, 212, 191, 0.2)',
+    secondaryGlowRgba: 'rgba(52, 211, 153, 0.14)',
+    nodeColorHex: 0x2dd4bf,
+    ringColorHex: 0x34d399,
+    coreColorHex: 0x99f6e4,
+    swatches: ['#050D17', '#0C1B2D', '#2DD4BF'],
   },
   royal_amethyst: {
     id: 'royal_amethyst',
-    nameAr: 'جمشت ملكي وأزرق',
-    subtitleAr: 'بنفسجي ملكي متلألئ مع لمعان أزرق جليدي',
-    bgMain: '#090617',
-    bgSurface: '#130D2B',
-    bgHeader: '#0D0920',
-    bgTableHeader: '#1C143E',
-    accent: '#A855F7',
-    accentBright: '#D8B4FE',
-    accentDeep: '#7E22CE',
-    accentFg: '#FAF5FF',
-    secondary: '#38BDF8',
-    borderColor: 'rgba(168, 85, 247, 0.28)',
-    glowRgba: 'rgba(168, 85, 247, 0.24)',
-    secondaryGlowRgba: 'rgba(56, 189, 248, 0.18)',
-    nodeColorHex: 0xa855f7,
-    ringColorHex: 0x38bdf8,
-    coreColorHex: 0xd8b4fe,
-    swatches: ['#090617', '#A855F7', '#38BDF8'],
+    nameAr: 'العمق الياقوتي',
+    subtitleAr: 'ياقوت ملكي وأردواز نيلي بتباين حاد',
+    isDark: true,
+    bgMain: '#050A18',
+    bgSurface: '#0E1935',
+    bgHeader: '#081026',
+    bgTableHeader: '#152447',
+    accent: '#60A5FA',
+    accentBright: '#BFDBFE',
+    accentDeep: '#2563EB',
+    accentFg: '#040B1C',
+    secondary: '#A78BFA',
+    textPrimary: '#EFF6FF',
+    textMuted: '#96ADCF',
+    borderColor: 'rgba(96, 165, 250, 0.25)',
+    glowRgba: 'rgba(96, 165, 250, 0.22)',
+    secondaryGlowRgba: 'rgba(167, 139, 250, 0.16)',
+    nodeColorHex: 0x60a5fa,
+    ringColorHex: 0xa78bfa,
+    coreColorHex: 0xbfdbfe,
+    swatches: ['#050A18', '#0E1935', '#60A5FA'],
   },
   solar_obsidian_gold: {
     id: 'solar_obsidian_gold',
-    nameAr: 'ذهب سبجي وكهرمان',
-    subtitleAr: 'فخامة ذهبية دافئة على سطح داكن مصقول',
-    bgMain: '#0C0904',
-    bgSurface: '#191308',
-    bgHeader: '#120E05',
-    bgTableHeader: '#241B0B',
-    accent: '#F59E0B',
-    accentBright: '#FDE68A',
-    accentDeep: '#B45309',
-    accentFg: '#140C02',
-    secondary: '#FB7185',
-    borderColor: 'rgba(245, 158, 11, 0.28)',
-    glowRgba: 'rgba(245, 158, 11, 0.24)',
-    secondaryGlowRgba: 'rgba(251, 113, 133, 0.15)',
-    nodeColorHex: 0xf59e0b,
-    ringColorHex: 0xfb7185,
-    coreColorHex: 0xfde68a,
-    swatches: ['#0C0904', '#F59E0B', '#FB7185'],
+    nameAr: 'السبح والذهب (الثيم الخامس)',
+    subtitleAr: 'تناغم فاخر بين الأسود السبجي الخالص والذهب المصقول 24K',
+    isDark: true,
+    bgMain: '#050506',
+    bgSurface: '#0E0C08',
+    bgHeader: '#090806',
+    bgTableHeader: '#17130B',
+    accent: '#D4AF37',
+    accentBright: '#F7D774',
+    accentDeep: '#9A7418',
+    accentFg: '#0B0802',
+    secondary: '#F59E0B',
+    textPrimary: '#FAF6EE',
+    textMuted: '#BFB297',
+    borderColor: 'rgba(212, 175, 55, 0.28)',
+    glowRgba: 'rgba(212, 175, 55, 0.24)',
+    secondaryGlowRgba: 'rgba(245, 158, 11, 0.15)',
+    nodeColorHex: 0xd4af37,
+    ringColorHex: 0xf59e0b,
+    coreColorHex: 0xf7d774,
+    swatches: ['#050506', '#0E0C08', '#D4AF37'],
+  },
+  auto_adaptive: {
+    id: 'auto_adaptive',
+    nameAr: 'الثيم التلقائي (نهاري / ليلي)',
+    subtitleAr: 'المرمر النهاري الفاتح نهاراً ويتحول إلى السبح والذهب ليلاً',
+    isDark: true,
+    isAuto: true,
+    bgMain: '#F2F4F8',
+    bgSurface: '#FFFFFF',
+    bgHeader: '#F8FAFC',
+    bgTableHeader: '#E8EDF4',
+    accent: '#B45309',
+    accentBright: '#92400E',
+    accentDeep: '#78350F',
+    accentFg: '#FFFFFF',
+    secondary: '#059669',
+    textPrimary: '#0F172A',
+    textMuted: '#475569',
+    borderColor: 'rgba(15, 23, 42, 0.13)',
+    glowRgba: 'rgba(180, 83, 9, 0.14)',
+    secondaryGlowRgba: 'rgba(5, 150, 105, 0.12)',
+    nodeColorHex: 0xd4af37,
+    ringColorHex: 0x059669,
+    coreColorHex: 0xf7d774,
+    swatches: ['#F2F4F8', '#D4AF37', '#050506'],
   },
   arctic_titanium: {
     id: 'arctic_titanium',
     nameAr: 'تيتانيوم قطبي',
     subtitleAr: 'رمادي معدني فولاذي بإضاءة سماوية نقية',
+    isDark: true,
     bgMain: '#070B11',
     bgSurface: '#101823',
     bgHeader: '#0B111A',
@@ -237,15 +312,58 @@ export const SPATIAL_3D_THEMES: Record<Spatial3DThemeId, Spatial3DThemeDefinitio
     accentDeep: '#0369A1',
     accentFg: '#03131E',
     secondary: '#34D399',
-    borderColor: 'rgba(56, 189, 248, 0.28)',
-    glowRgba: 'rgba(56, 189, 248, 0.24)',
-    secondaryGlowRgba: 'rgba(52, 211, 153, 0.16)',
+    textPrimary: '#F0F9FF',
+    textMuted: '#90ACC4',
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    glowRgba: 'rgba(56, 189, 248, 0.22)',
+    secondaryGlowRgba: 'rgba(52, 211, 153, 0.15)',
     nodeColorHex: 0x38bdf8,
     ringColorHex: 0x34d399,
     coreColorHex: 0xbae6fd,
-    swatches: ['#070B11', '#38BDF8', '#34D399'],
+    swatches: ['#070B11', '#101823', '#38BDF8'],
   },
 };
+
+export function mapAppThemeToSpatialTheme(appThemeId?: string | null): Spatial3DThemeId {
+  switch (appThemeId) {
+    case 'abyssal-emerald':
+      return 'emerald_smoked';
+    case 'midnight-trench':
+      return 'holographic_cyan';
+    case 'bioluminescent-reef':
+      return 'crimson_obsidian';
+    case 'pelagic-sapphire':
+      return 'royal_amethyst';
+    case 'obsidian-gold':
+      return 'solar_obsidian_gold';
+    case 'auto':
+    case 'daylight-alabaster':
+      return 'auto_adaptive';
+    default:
+      return 'emerald_smoked';
+  }
+}
+
+export function mapSpatialThemeToAppTheme(spatialId?: Spatial3DThemeId | null): AppThemeId {
+  switch (spatialId) {
+    case 'emerald_smoked':
+      return 'abyssal-emerald';
+    case 'holographic_cyan':
+      return 'midnight-trench';
+    case 'crimson_obsidian':
+      return 'bioluminescent-reef';
+    case 'royal_amethyst':
+      return 'pelagic-sapphire';
+    case 'solar_obsidian_gold':
+      return 'obsidian-gold';
+    case 'auto_adaptive':
+      return 'auto';
+    case 'arctic_titanium':
+      return 'midnight-trench';
+    default:
+      return 'abyssal-emerald';
+  }
+}
 
 const HEX_COLOR_RE = /^#([0-9a-fA-F]{6})$/;
 
@@ -367,13 +485,49 @@ export function resolveActiveSpatialPalette(
   rawPrefs?: Partial<Spatial3DPrefs> | null
 ): ResolvedSpatialPalette {
   const prefs = resolveSpatial3DPrefs(rawPrefs);
-  const base = getSpatialThemeDef(prefs.themeId);
   const custom = prefs.customColors;
 
+  let base = getSpatialThemeDef(prefs.themeId);
+  if (prefs.themeId === 'auto_adaptive') {
+    const target = resolveAutoThemeTarget();
+    const isLight = !target.isDark;
+    base = {
+      ...base,
+      isDark: target.isDark,
+      bgMain: target.vars['--bg-main'],
+      bgSurface: target.vars['--bg-surface'],
+      bgHeader: target.vars['--bg-header'],
+      bgTableHeader: target.vars['--bg-table-header'],
+      accent: target.vars['--accent'],
+      accentBright: target.vars['--accent-bright'],
+      accentDeep: target.vars['--accent-deep'],
+      accentFg: target.vars['--accent-fg'],
+      secondary: target.vars['--spatial-secondary'],
+      textPrimary: target.vars['--text-primary'],
+      textMuted: target.vars['--text-muted'],
+      borderColor: target.vars['--border-color'],
+      glowRgba: target.vars['--marine-caustic-1'],
+      secondaryGlowRgba: target.vars['--marine-caustic-2'],
+      nodeColorHex: hexToNumber(target.vars['--accent']),
+      ringColorHex: hexToNumber(target.vars['--spatial-secondary']),
+      coreColorHex: hexToNumber(
+        isLight ? DAYLIGHT_ALABASTER_THEME.vars['--accent'] : OBSIDIAN_GOLD_THEME.vars['--accent-bright']
+      ),
+    };
+  }
+
+  const surface =
+    custom?.surfaceTone && custom.surfaceTone in SURFACE_TONE_PRESETS
+      ? SURFACE_TONE_PRESETS[custom.surfaceTone]
+      : null;
+
+  const isDark = surface ? surface.isDark : base.isDark !== false;
   const accent = custom?.accent || base.accent;
   const secondary = custom?.secondary || base.secondary;
   const accentBright = custom?.accent
-    ? mixHexWithTarget(accent, [255, 255, 255], 0.48)
+    ? isDark
+      ? mixHexWithTarget(accent, [255, 255, 255], 0.44)
+      : mixHexWithTarget(accent, [15, 23, 42], 0.25)
     : base.accentBright;
   const accentDeep = custom?.accent
     ? mixHexWithTarget(accent, [4, 10, 18], 0.45)
@@ -382,13 +536,9 @@ export function resolveActiveSpatialPalette(
     ? computeReadableForeground(accent)
     : base.accentFg;
 
-  const surface =
-    custom?.surfaceTone && custom.surfaceTone in SURFACE_TONE_PRESETS
-      ? SURFACE_TONE_PRESETS[custom.surfaceTone]
-      : null;
-
   return {
     themeId: prefs.themeId,
+    isDark,
     accent,
     accentBright,
     accentDeep,
@@ -398,10 +548,14 @@ export function resolveActiveSpatialPalette(
     bgSurface: surface ? surface.bgSurface : base.bgSurface,
     bgHeader: surface ? surface.bgHeader : base.bgHeader,
     bgTableHeader: surface ? surface.bgTableHeader : base.bgTableHeader,
-    borderColor: custom?.accent ? hexToRgba(accent, 0.28) : base.borderColor,
-    glowRgba: custom?.accent ? hexToRgba(accent, 0.24) : base.glowRgba,
+    textPrimary: surface ? surface.textPrimary : base.textPrimary || '#F3F7FC',
+    textMuted: surface ? surface.textMuted : base.textMuted || '#9FB4CC',
+    borderColor: custom?.accent
+      ? hexToRgba(accent, isDark ? 0.28 : 0.24)
+      : base.borderColor,
+    glowRgba: custom?.accent ? hexToRgba(accent, isDark ? 0.22 : 0.14) : base.glowRgba,
     secondaryGlowRgba: custom?.secondary
-      ? hexToRgba(secondary, 0.17)
+      ? hexToRgba(secondary, isDark ? 0.16 : 0.12)
       : base.secondaryGlowRgba,
     nodeColorHex: hexToNumber(accent),
     ringColorHex: hexToNumber(secondary),
@@ -448,6 +602,16 @@ export function applySpatial3DPrefsToDocument(
     delete root.dataset.spatialSurface;
   }
 
+  if (palette.isDark) {
+    root.classList.add('dark');
+    root.style.colorScheme = 'dark';
+    root.dataset.colorScheme = 'dark';
+  } else {
+    root.classList.remove('dark');
+    root.style.colorScheme = 'light';
+    root.dataset.colorScheme = 'light';
+  }
+
   root.style.setProperty('--spatial-accent', palette.accent);
   root.style.setProperty('--spatial-secondary', palette.secondary);
   root.style.setProperty('--spatial-glow', palette.glowRgba);
@@ -457,19 +621,49 @@ export function applySpatial3DPrefsToDocument(
   root.style.setProperty('--bg-surface', palette.bgSurface);
   root.style.setProperty('--bg-header', palette.bgHeader);
   root.style.setProperty('--bg-table-header', palette.bgTableHeader);
+  root.style.setProperty('--text-primary', palette.textPrimary);
+  root.style.setProperty('--text-muted', palette.textMuted);
   root.style.setProperty('--accent', palette.accent);
   root.style.setProperty('--accent-bright', palette.accentBright);
   root.style.setProperty('--accent-deep', palette.accentDeep);
   root.style.setProperty('--accent-fg', palette.accentFg);
   root.style.setProperty(
     '--bg-nav-active',
-    `color-mix(in srgb, ${palette.accent} 17%, transparent)`
+    `color-mix(in srgb, ${palette.accent} ${palette.isDark ? '16%' : '11%'}, transparent)`
   );
   root.style.setProperty(
     '--row-hover-bg',
-    `color-mix(in srgb, ${palette.accent} 12%, transparent)`
+    `color-mix(in srgb, ${palette.accent} ${palette.isDark ? '12%' : '9%'}, transparent)`
+  );
+  root.style.setProperty(
+    '--surface-well',
+    palette.isDark
+      ? 'color-mix(in srgb, var(--bg-main) 88%, #000000)'
+      : 'color-mix(in srgb, var(--bg-table-header) 86%, var(--bg-main))'
+  );
+  root.style.setProperty(
+    '--surface-subtle',
+    palette.isDark
+      ? 'color-mix(in srgb, var(--accent) 6%, transparent)'
+      : 'color-mix(in srgb, var(--text-primary) 4%, transparent)'
+  );
+  root.style.setProperty(
+    '--surface-pill',
+    palette.isDark
+      ? 'color-mix(in srgb, var(--bg-surface) 88%, transparent)'
+      : '#FFFFFF'
+  );
+  root.style.setProperty(
+    '--surface-overlay',
+    palette.isDark ? 'rgba(3, 8, 18, 0.84)' : 'rgba(15, 23, 42, 0.42)'
   );
   root.style.setProperty('--border-color', palette.borderColor);
+  root.style.setProperty(
+    '--grid-color',
+    palette.isDark
+      ? `color-mix(in srgb, ${palette.accent} 13%, transparent)`
+      : 'rgba(15, 23, 42, 0.09)'
+  );
   root.style.setProperty('--marine-caustic-1', palette.glowRgba);
   root.style.setProperty('--marine-caustic-2', palette.secondaryGlowRgba);
   root.style.setProperty('--accent-ai', palette.accent);
@@ -547,43 +741,43 @@ export function buildGradientMeshLayers(
   const orbs: GradientMeshOrbSpec[] = [
     {
       id: 'aurora-primary',
-      gradient: `radial-gradient(circle at 38% 38%, ${hexToRgba(palette.accent, 0.52 * alphaBoost)} 0%, ${hexToRgba(palette.accentDeep, 0.24 * alphaBoost)} 48%, transparent 74%)`,
-      sizeClass: 'w-[540px] h-[540px] sm:w-[700px] sm:h-[700px]',
-      initialPos: { top: '-16%', right: '-10%' },
+      gradient: `radial-gradient(closest-side at 50% 50%, ${hexToRgba(palette.accent, 0.34 * alphaBoost)} 0%, ${hexToRgba(palette.accentDeep, 0.16 * alphaBoost)} 52%, transparent 100%)`,
+      sizeClass: 'w-[560px] h-[560px] sm:w-[760px] sm:h-[760px]',
+      initialPos: { top: '-18%', right: '-12%' },
       animateX: [shiftX, shiftX - 58, shiftX + 26, shiftX],
       animateY: [shiftY, shiftY + 42, shiftY - 22, shiftY],
       animateScale: [1, 1.14, 0.94, 1],
       animateRotate: [0, 22, -14, 0],
       durationSec: 16,
-      opacity: 0.92,
+      opacity: 0.9,
     },
     {
       id: 'aurora-secondary',
-      gradient: `radial-gradient(circle at 55% 45%, ${hexToRgba(palette.secondary, 0.46 * alphaBoost)} 0%, ${hexToRgba(palette.accent, 0.18 * alphaBoost)} 52%, transparent 76%)`,
-      sizeClass: 'w-[480px] h-[480px] sm:w-[640px] sm:h-[640px]',
-      initialPos: { bottom: '-18%', left: '-12%' },
+      gradient: `radial-gradient(closest-side at 50% 50%, ${hexToRgba(palette.secondary, 0.3 * alphaBoost)} 0%, ${hexToRgba(palette.accent, 0.12 * alphaBoost)} 54%, transparent 100%)`,
+      sizeClass: 'w-[500px] h-[500px] sm:w-[700px] sm:h-[700px]',
+      initialPos: { bottom: '-20%', left: '-14%' },
       animateX: [-shiftX * 0.7, -shiftX * 0.7 + 64, -shiftX * 0.7 - 30, -shiftX * 0.7],
       animateY: [-shiftY * 0.7, -shiftY * 0.7 - 48, -shiftY * 0.7 + 28, -shiftY * 0.7],
       animateScale: [1.04, 0.92, 1.16, 1.04],
       animateRotate: [0, -28, 16, 0],
       durationSec: 19,
-      opacity: 0.88,
+      opacity: 0.85,
     },
     {
       id: 'aurora-prism-core',
-      gradient: `radial-gradient(circle at 50% 50%, ${hexToRgba(palette.accentBright, 0.34 * alphaBoost)} 0%, ${hexToRgba(palette.secondary, 0.16 * alphaBoost)} 44%, transparent 72%)`,
-      sizeClass: 'w-[380px] h-[380px] sm:w-[520px] sm:h-[520px]',
-      initialPos: { top: '24%', left: '22%' },
+      gradient: `radial-gradient(closest-side at 50% 50%, ${hexToRgba(palette.accentBright, 0.24 * alphaBoost)} 0%, ${hexToRgba(palette.secondary, 0.1 * alphaBoost)} 48%, transparent 100%)`,
+      sizeClass: 'w-[420px] h-[420px] sm:w-[560px] sm:h-[560px]',
+      initialPos: { top: '22%', left: '20%' },
       animateX: [idx * 24 - 24, idx * 24 + 48, idx * 24 - 56, idx * 24 - 24],
       animateY: [idx * -18 + 18, idx * -18 - 32, idx * -18 + 44, idx * -18 + 18],
       animateScale: [0.95, 1.18, 0.98, 0.95],
       animateRotate: [0, 35, -25, 0],
       durationSec: 14,
-      opacity: 0.8,
+      opacity: 0.75,
     },
     {
       id: 'aurora-deep-caustic',
-      gradient: `conic-gradient(from ${idx * 60}deg at 50% 50%, ${hexToRgba(palette.accent, 0.28 * alphaBoost)}, ${hexToRgba(palette.secondary, 0.24 * alphaBoost)}, transparent 58%, ${hexToRgba(palette.accentBright, 0.22 * alphaBoost)}, transparent)`,
+      gradient: `radial-gradient(closest-side at 50% 50%, ${hexToRgba(palette.accent, 0.18 * alphaBoost)} 0%, ${hexToRgba(palette.secondary, 0.1 * alphaBoost)} 56%, transparent 100%)`,
       sizeClass: 'w-[620px] h-[620px] sm:w-[820px] sm:h-[820px]',
       initialPos: { top: '8%', right: '14%' },
       animateX: [0, -34, 28, 0],
@@ -801,10 +995,12 @@ export function resolveMorrowEntityMoodState(
   };
 }
 
+export const SPATIAL_PULSE_EVENT = 'morrow:spatial-pulse';
+
 export function triggerGlobalSpatialPulse(intensity = 1): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
-    new CustomEvent('morrow:spatial-pulse', {
+    new CustomEvent(SPATIAL_PULSE_EVENT, {
       detail: { intensity: Math.max(0.2, Math.min(2, intensity)), timestamp: performance.now() },
     })
   );

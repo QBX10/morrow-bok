@@ -12,7 +12,6 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { DotMatrixPattern, GeometricRavenCrest } from '../brand/VectorMotifs';
-import { GradientMeshBackdrop } from '../spatial3d/GradientMeshBackdrop';
 import { MorrowMascot3D } from '../spatial3d/MorrowMascot3D';
 import { Spatial3DCanvas } from '../spatial3d/Spatial3DCanvas';
 import { GlassBentoCard, RecessedChannelWell } from '../spatial3d/SpatialPrimitives';
@@ -24,12 +23,13 @@ import {
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
 import { triggerGlobalSpatialPulse } from '../../utils/spatial3dConfig';
-import type { Spatial3DPrefs, Spatial3DThemeId } from '../../types/agency';
+import type { AppShapeId, Spatial3DPrefs, Spatial3DThemeId } from '../../types/agency';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
   themeId?: Spatial3DThemeId;
   spatialPrefs?: Spatial3DPrefs;
+  appShape?: AppShapeId;
 }
 
 const SLIDES = [
@@ -39,11 +39,11 @@ const SLIDES = [
     title: 'أهلاً بكم في عالم Morrow الذكي',
     subtitle:
       'منصة متكاملة وتفاعلية لقيادة الوكالات، متابعة الحصص والأفراد، وتنظيم السجلات والحسابات بسرعة وأناقة فائقة.',
-    metric: 'تصميم هندسي ثلاثي الأبعاد · تفاعل حي',
+    metric: 'تصميم هندسي ثنائي الأبعاد · تفاعل فوري',
     icon: Sparkles,
     highlights: [
       { label: 'إدارة الوكالات', value: 'توزيع وحصص', icon: Building2 },
-      { label: 'التصميم التفاعلي', value: 'فضاء 3D ذكي', icon: Layers },
+      { label: 'التصميم الهندسي', value: 'واجهة 2D دقيقة', icon: Layers },
       { label: 'الأداء الفوري', value: 'استجابة لحظية', icon: TrendingUp },
     ],
   },
@@ -81,6 +81,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   onComplete,
   themeId = 'emerald_smoked',
   spatialPrefs,
+  appShape,
 }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const reducedMotion = useTabrixReducedMotion();
@@ -97,27 +98,19 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[140] flex min-h-[100dvh] items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
-      {/* Layer 0: Framer Motion Animated Gradient Mesh & Architectural Grid */}
-      <GradientMeshBackdrop
-        themeId={themeId}
-        spatialPrefs={spatialPrefs}
-        slideIndex={stepIndex}
-        intensity="vibrant"
-        reduceMotion={reducedMotion}
-      />
-
-      {/* Layer 1: Three.js Sacred Geometry Astrolabe & Depth Lattice */}
+      {/* Autonomous 2D Sacred Geometry & Gradient Mesh Backdrop */}
       <Spatial3DCanvas
         themeId={themeId}
         spatialPrefs={spatialPrefs}
+        appShape={appShape}
         reduceMotion={reducedMotion}
       />
 
       <motion.div
-        className="relative z-10 w-full max-w-4xl my-auto tabrix-3d-stage"
-        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 24, rotateX: 4, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, rotateX: 0, scale: 1 }}
-        transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10 w-full max-w-4xl my-auto"
+        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.99 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
       >
         <GlassBentoCard
           elevated
@@ -133,9 +126,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <div className="relative z-10 flex items-center justify-between gap-4 mb-5">
             <div className="flex items-center gap-3.5">
               <motion.div
-                whileHover={reducedMotion ? undefined : { rotateY: 16, scale: 1.05 }}
+                whileHover={reducedMotion ? undefined : { scale: 1.05 }}
                 transition={TABRIX_TACTILE_SPRING}
-                className="w-12 h-12 rounded-2xl border bg-black/40 flex items-center justify-center shadow-[0_0_26px_var(--spatial-glow)]"
+                className="w-12 h-12 rounded-2xl border bg-[var(--surface-well)] flex items-center justify-center shadow-[0_0_26px_var(--spatial-glow)]"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 <GeometricRavenCrest size={38} />
@@ -164,7 +157,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               data-testid="onboarding-skip-btn"
               whileHover={reducedMotion ? undefined : { y: -1, scale: 1.02 }}
               whileTap={reducedMotion ? undefined : { scale: 0.97 }}
-              className="px-4 py-2 rounded-xl border border-[var(--border-color)] bg-white/[0.04] hover:bg-[var(--bg-nav-active)] text-xs font-bold text-[var(--text-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="px-4 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:bg-[var(--bg-nav-active)] text-xs font-bold text-[var(--text-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               دخول سريع
             </motion.button>
@@ -182,7 +175,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 0{stepIndex + 1} / 0{SLIDES.length}
               </span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1.5 w-full rounded-full bg-[var(--surface-subtle)] overflow-hidden">
               <motion.div
                 className="h-full rounded-full"
                 style={{
@@ -197,9 +190,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
             </div>
           </div>
 
-          {/* Split 3D Stage: Copy + Interactive 3D Morrow Neural Sovereign Entity */}
+          {/* Split 2D Geometric Stage: Copy + Interactive Morrow HUD Core */}
           <div className="grid grid-cols-1 lg:grid-cols-[1.12fr_0.95fr] gap-6 items-center">
-            <div className="tabrix-3d-stage">
+            <div>
               <AnimatePresence mode="wait" custom={slideDir} initial={false}>
                 <motion.div
                   key={current.id}
@@ -308,7 +301,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     style={{
                       backgroundColor: active
                         ? 'var(--accent)'
-                        : 'rgba(255,255,255,0.22)',
+                        : 'var(--border-color)',
                       boxShadow: active ? '0 0 12px var(--spatial-glow)' : 'none',
                     }}
                   />
@@ -326,7 +319,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     triggerGlobalSpatialPulse(1.1);
                     setStepIndex((prev) => Math.max(0, prev - 1));
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-white/15 bg-white/[0.04] hover:bg-white/[0.08] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:bg-[var(--bg-nav-active)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowRight size={14} />
                   <span>السابق</span>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Lock, Unlock } from 'lucide-react';
+import { Lock, Sparkles, Unlock, X } from 'lucide-react';
 import { AgenciesHubView } from './components/AgenciesHubView';
 import { AgencyRosterView } from './components/AgencyRosterView';
 import { FinanceWorkspaceView } from './components/FinanceWorkspaceView';
@@ -286,6 +286,21 @@ export default function App() {
     }
     setOnboardingDone(true);
   };
+
+  const [firstLaunchWelcomeOpen, setFirstLaunchWelcomeOpen] = useState(false);
+
+  useEffect(() => {
+    if (!authUser) return;
+    try {
+      const seen = localStorage.getItem('hasSeenWelcome_v1');
+      if (seen !== '1') {
+        localStorage.setItem('hasSeenWelcome_v1', '1');
+        setFirstLaunchWelcomeOpen(true);
+      }
+    } catch {
+      // ignore storage failures
+    }
+  }, [authUser]);
 
   const handleLogout = () => {
     clearSession();
@@ -1030,6 +1045,7 @@ export default function App() {
               <OnboardingFlow
                 themeId={activeSpatialPrefs.themeId}
                 spatialPrefs={activeSpatialPrefs}
+                appShape={themePrefs.appShape}
                 onComplete={() => {
                   try {
                     localStorage.setItem(getTenantOnboardingKey(null), '1');
@@ -1052,6 +1068,7 @@ export default function App() {
               <FlipAuthGuard
                 themeId={activeSpatialPrefs.themeId}
                 spatialPrefs={activeSpatialPrefs}
+                appShape={themePrefs.appShape}
                 onAuthenticated={handleAuthenticated}
                 onReplayOnboarding={() => setOnboardingDone(false)}
               />
@@ -1068,6 +1085,7 @@ export default function App() {
       <Spatial3DCanvas
         themeId={activeSpatialPrefs.themeId}
         spatialPrefs={activeSpatialPrefs}
+        appShape={themePrefs.appShape}
         activeView={activeView}
         reduceMotion={tabrixReducedMotion}
       />
@@ -1179,6 +1197,8 @@ export default function App() {
               calculationSettings={state.calculationSettings}
               capabilities={capabilities}
               generalPrefs={generalPrefs}
+              appShape={themePrefs.appShape}
+              onUpdateThemePrefs={setThemePrefs}
               onUpdateGeneralPrefs={setGeneralPrefs}
               onUpdateActivePeriod={updateActivePeriod}
               onUpdateCalculationSettings={(patch) =>
@@ -1738,7 +1758,7 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: tabrixReducedMotion ? 0.05 : 0.2 }}
-            className="tabrix-3d-stage fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[var(--surface-overlay)] p-4 backdrop-blur-md"
           >
             <motion.form
               onSubmit={handleUnlockPrivacy}
@@ -1943,6 +1963,60 @@ export default function App() {
           isAssistantOpen={assistant.isOpen}
         />
       )}
+
+      {/* One-Time First-Launch Welcome Toast Banner (Persisted via hasSeenWelcome_v1) */}
+      <AnimatePresence>
+        {firstLaunchWelcomeOpen && !isAuthGateLocked && (
+          <motion.aside
+            key="first-launch-welcome-banner"
+            data-testid="first-launch-welcome-banner"
+            role="dialog"
+            aria-label="ترحيب الجلسة الأولى"
+            initial={tabrixReducedMotion ? false : { opacity: 1, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={tabrixReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="no-print fixed bottom-24 lg:bottom-6 left-4 right-4 sm:right-auto sm:left-6 sm:w-[400px] z-[120] rounded-2xl border p-4 shadow-2xl backdrop-blur-xl smoked-glass-elevated"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--accent) 52%, var(--border-color))',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="geo-icon-socket h-10 w-10 shrink-0">
+                <Sparkles className="h-5 w-5 text-[var(--accent-bright)]" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-display-ar text-sm font-black text-[var(--text-primary)]">
+                    مرحباً بك في مساحة Morrow
+                  </h3>
+                  <button
+                    type="button"
+                    data-testid="dismiss-first-welcome-btn"
+                    aria-label="إغلاق رسالة الترحيب"
+                    onClick={() => setFirstLaunchWelcomeOpen(false)}
+                    className="rounded-lg p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                  تم تجهيز لوحة الوكالات والسجل الشامل بنظام هندسي فائق السرعة لمتابعة الحصص والحسابات مباشرة.
+                </p>
+                <div className="pt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setFirstLaunchWelcomeOpen(false)}
+                    className="obsidian-gold-cta rounded-xl px-4 py-1.5 text-[11px] font-black cursor-pointer"
+                  >
+                    ابدأ العمل الآن
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
       {/* Discreet Background & Stealth Execution Toast Stack */}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />

@@ -427,7 +427,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header
-      className={`nexus-glass-lite sticky top-0 z-30 border-b transition-transform duration-200 ${
+      className={`nexus-glass-lite floating-topbar-shell sticky top-0 z-30 border-b transition-transform duration-200 ${
         isAutoHidden ? '-translate-y-full pointer-events-none' : 'translate-y-0'
       }`}
       style={{
@@ -871,7 +871,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             className={`nexus-pill-btn hidden sm:inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
               activeView === 'smart_models'
                 ? 'border-[var(--accent)] bg-[var(--bg-nav-active)] text-[var(--accent-bright)]'
-                : 'border-[var(--border-color)] bg-black/35 text-[var(--text-primary)] hover:border-[var(--accent)]'
+                : 'border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-primary)] hover:border-[var(--accent)]'
             }`}
           >
             <BrainCircuit className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />

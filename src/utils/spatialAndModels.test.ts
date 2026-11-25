@@ -64,10 +64,17 @@ test('spatial3dConfig resolves defaults and rejects invalid overrides safely', (
 });
 
 test('spatial3d theme catalog, custom color palette, and WCAG contrast map cleanly', () => {
-  assert.equal(Object.keys(SPATIAL_3D_THEMES).length, 6);
+  assert.equal(Object.keys(SPATIAL_3D_THEMES).length, 7);
   const theme = getSpatialThemeDef('crimson_obsidian');
-  assert.equal(theme.accent, '#F43F5E');
-  assert.equal(theme.secondary, '#F59E0B');
+  assert.equal(theme.accent, '#2DD4BF');
+  assert.equal(theme.secondary, '#34D399');
+
+  const obsidianGold = getSpatialThemeDef('solar_obsidian_gold');
+  assert.equal(obsidianGold.accent, '#D4AF37');
+  assert.equal(obsidianGold.bgMain, '#050506');
+
+  const autoTheme = getSpatialThemeDef('auto_adaptive');
+  assert.equal(autoTheme.isAuto, true);
 
   assert.equal(normalizeHexColor('abc'), null);
   assert.equal(normalizeHexColor('#10b981'), '#10B981');
@@ -85,7 +92,7 @@ test('spatial3d theme catalog, custom color palette, and WCAG contrast map clean
   assert.equal(palette.isCustomized, true);
   assert.equal(palette.accent, '#EAB308');
   assert.equal(palette.secondary, '#EC4899');
-  assert.equal(palette.bgMain, '#08080D');
+  assert.equal(palette.bgMain, '#050506');
   assert.equal(palette.accentFg, '#041216');
   assert.equal(palette.nodeColorHex, 0xeab308);
   assert.equal(palette.ringColorHex, 0xec4899);

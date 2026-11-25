@@ -117,7 +117,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       } ${
         active
           ? 'text-[var(--accent-bright)]'
-          : 'border border-transparent hover:bg-white/[0.04]'
+          : 'border border-transparent hover:bg-[var(--surface-subtle)]'
       }`;
 
     const itemStyle = (active: boolean): React.CSSProperties => ({
@@ -170,7 +170,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 type="button"
                 onClick={onCloseMobile}
                 aria-label="إغلاق القائمة"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border-color)] bg-black/35 text-[var(--text-primary)] cursor-pointer"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-primary)] cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -180,7 +180,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 onClick={onToggleCollapse}
                 title={collapsed ? 'تثبيت التوسيع' : 'طي القائمة الجانبية'}
                 aria-label={collapsed ? 'توسيع القائمة الجانبية' : 'طي القائمة الجانبية'}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-xl border border-[var(--border-color)] bg-black/35 text-[var(--text-muted)] hover:text-[var(--accent-bright)] hover:border-[var(--accent)] transition-colors cursor-pointer"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] text-[var(--text-muted)] hover:text-[var(--accent-bright)] hover:border-[var(--accent)] transition-colors cursor-pointer"
               >
                 {compact ? (
                   <ChevronLeft className="h-3.5 w-3.5" />
@@ -277,7 +277,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                                   onOpenAgencyRoster(agency.id);
                                   onCloseMobile();
                                 }}
-                                className="relative flex w-full items-center justify-between gap-1.5 overflow-hidden rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition-all duration-150 hover:bg-white/[0.04] cursor-pointer"
+                                className="relative flex w-full items-center justify-between gap-1.5 overflow-hidden rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition-all duration-150 hover:bg-[var(--surface-subtle)] cursor-pointer"
                                 style={{
                                   color: active ? 'var(--accent-bright)' : 'var(--text-primary)',
                                 }}
@@ -481,7 +481,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                           onNavigateMorrowTab(tab);
                           onCloseMobile();
                         }}
-                        className="flex w-full items-center rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] transition-colors hover:bg-white/[0.04] hover:text-[var(--accent-bright)] cursor-pointer"
+                        className="flex w-full items-center rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--accent-bright)] cursor-pointer"
                       >
                         {label}
                       </button>
@@ -605,7 +605,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 onClick={onLogout}
                 title="تسجيل الخروج"
                 aria-label="تسجيل الخروج"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-400/50 transition-colors cursor-pointer"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors cursor-pointer"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--danger) 35%, transparent)',
+                  backgroundColor: 'var(--danger-bg)',
+                  color: 'var(--danger)',
+                }}
               >
                 <LogOut className="h-4 w-4" />
               </button>

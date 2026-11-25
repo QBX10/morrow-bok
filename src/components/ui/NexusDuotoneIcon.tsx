@@ -53,8 +53,7 @@ export const NexusDuotoneIcon: React.FC<NexusDuotoneIconProps> = ({
         background: `linear-gradient(145deg, color-mix(in srgb, ${accentColor} 26%, var(--bg-table-header, var(--bg-surface))), color-mix(in srgb, var(--bg-main) 88%, ${accentColor} 12%))`,
         borderColor: `color-mix(in srgb, ${accentColor} 42%, var(--border-color))`,
         color: accentColor,
-        transformStyle: 'preserve-3d',
-        boxShadow: `inset 0 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 -2.5px 0 rgba(2, 10, 22, 0.62), 0 3px 0 rgba(2, 8, 18, 0.45), 0 10px 22px -6px color-mix(in srgb, ${accentColor} 38%, rgba(2, 10, 22, 0.72))`,
+        boxShadow: `inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(2, 10, 22, 0.55), 0 8px 20px -8px color-mix(in srgb, ${accentColor} 38%, rgba(2, 10, 22, 0.72))`,
       }}
     >
       <span

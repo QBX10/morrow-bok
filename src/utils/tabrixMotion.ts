@@ -2,32 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion, type Variants } from 'motion/react';
 import type { AppView } from '../types/agency';
 
-/* ─── Tabrix Motion Physics Constants ─────────────────────────────────────── */
+/* ─── Pure 2D Tabrix Spring & Easing Physics ──────────────────────────────── */
 export const TABRIX_EASE = [0.22, 1, 0.36, 1] as const;
 export const TABRIX_EXIT_EASE = [0.4, 0, 0.85, 0.35] as const;
 
 export const TABRIX_SPRING = {
   type: 'spring' as const,
-  stiffness: 340,
+  stiffness: 400,
   damping: 30,
-  mass: 0.85,
+  mass: 0.8,
 };
 
 export const TABRIX_TACTILE_SPRING = {
   type: 'spring' as const,
-  stiffness: 480,
+  stiffness: 460,
   damping: 28,
   mass: 0.65,
 };
 
 export const TABRIX_3D_SPRING = {
   type: 'spring' as const,
-  stiffness: 270,
-  damping: 26,
-  mass: 0.9,
+  stiffness: 400,
+  damping: 30,
+  mass: 0.85,
 };
 
-/* ─── Spatial Route Topology (RTL-Aware Directional Axis) ─────────────────── */
+/* ─── Route Topology (RTL-Aware Directional Axis) ─────────────────────────── */
 const VIEW_ORDER: Record<AppView, number> = {
   hub: 0,
   agency_roster: 1,
@@ -69,42 +69,35 @@ export function getTabrixViewDirection(
   return toIdx > fromIdx ? 1 : -1;
 }
 
-/* ─── Tabrix 3D Framer Motion Variants ────────────────────────────────────── */
+/* ─── Pure 2D 60fps Framer Motion Variants (Compositor-Only) ─────────────── */
 
 /**
- * Primary route / page enter-exit 3D spatial transition.
- * `custom` = direction (1 forward, -1 backward). RTL-natural horizontal glide + subtle 3D depth arc.
+ * Primary route / page enter-exit 2D planar glide transition.
  */
 export const TABRIX_PAGE_VARIANTS: Variants = {
   initial: (dir: number = 1) => ({
     opacity: 0,
-    x: dir * -28,
-    y: 10,
-    scale: 0.986,
-    rotateY: dir * -2.2,
-    rotateX: 1.4,
+    x: dir * -16,
+    y: 6,
+    scale: 0.994,
   }),
   animate: {
     opacity: 1,
     x: 0,
     y: 0,
     scale: 1,
-    rotateY: 0,
-    rotateX: 0,
     transition: {
-      duration: 0.3,
+      duration: 0.17,
       ease: TABRIX_EASE,
     },
   },
   exit: (dir: number = 1) => ({
     opacity: 0,
-    x: dir * 22,
-    y: -6,
-    scale: 0.988,
-    rotateY: dir * 1.6,
-    rotateX: -1,
+    x: dir * 12,
+    y: -3,
+    scale: 0.995,
     transition: {
-      duration: 0.16,
+      duration: 0.09,
       ease: TABRIX_EXIT_EASE,
     },
   }),
@@ -116,88 +109,54 @@ export const TABRIX_PAGE_VARIANTS: Variants = {
 export const TABRIX_SUBVIEW_VARIANTS: Variants = {
   initial: (dir: number = 1) => ({
     opacity: 0,
-    x: dir * -18,
-    y: 8,
-    scale: 0.99,
-    rotateX: 1.2,
+    x: dir * -12,
+    y: 4,
+    scale: 0.994,
   }),
   animate: {
     opacity: 1,
     x: 0,
     y: 0,
     scale: 1,
-    rotateX: 0,
     transition: {
-      duration: 0.24,
+      duration: 0.15,
       ease: TABRIX_EASE,
     },
   },
   exit: (dir: number = 1) => ({
     opacity: 0,
-    x: dir * 14,
-    y: -4,
-    scale: 0.992,
+    x: dir * 10,
+    y: -2,
+    scale: 0.995,
     transition: {
-      duration: 0.14,
+      duration: 0.08,
       ease: TABRIX_EXIT_EASE,
     },
   }),
 };
 
 /**
- * FullScreenPushPage & Drawer 3D spatial depth push enter/exit.
+ * FullScreenPushPage & Drawer crisp 2D push enter/exit.
  */
 export const TABRIX_PUSH_VARIANTS: Variants = {
   initial: {
     opacity: 0,
-    y: 20,
-    scale: 0.976,
-    rotateX: 2.2,
+    y: 16,
+    scale: 0.985,
   },
   animate: {
     opacity: 1,
     y: 0,
     scale: 1,
-    rotateX: 0,
     transition: {
-      duration: 0.28,
+      duration: 0.24,
       ease: TABRIX_EASE,
     },
   },
   exit: {
     opacity: 0,
-    y: 14,
-    scale: 0.98,
-    rotateX: -1.4,
-    transition: {
-      duration: 0.17,
-      ease: TABRIX_EXIT_EASE,
-    },
-  },
-};
-
-/**
- * Floating Modal / Privacy Lock / Sync Overlay 3D card pop enter/exit.
- */
-export const TABRIX_MODAL_VARIANTS: Variants = {
-  initial: {
-    opacity: 0,
-    y: 16,
-    scale: 0.94,
-    rotateX: 4,
-  },
-  animate: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    rotateX: 0,
-    transition: TABRIX_3D_SPRING,
-  },
-  exit: {
-    opacity: 0,
     y: 10,
-    scale: 0.96,
-    rotateX: -2,
+    scale: 0.988,
     transition: {
       duration: 0.15,
       ease: TABRIX_EXIT_EASE,
@@ -206,59 +165,81 @@ export const TABRIX_MODAL_VARIANTS: Variants = {
 };
 
 /**
- * TopBar Popovers & Floating Menus 3D unfold.
+ * Floating Modal / Privacy Lock / Sync Overlay 2D spring pop enter/exit.
  */
-export const TABRIX_POPOVER_VARIANTS: Variants = {
+export const TABRIX_MODAL_VARIANTS: Variants = {
   initial: {
     opacity: 0,
-    y: -8,
+    y: 12,
     scale: 0.96,
-    rotateX: -4,
   },
   animate: {
     opacity: 1,
     y: 0,
     scale: 1,
-    rotateX: 0,
-    transition: {
-      duration: 0.2,
-      ease: TABRIX_EASE,
-    },
+    transition: TABRIX_SPRING,
   },
   exit: {
     opacity: 0,
-    y: -6,
-    scale: 0.965,
+    y: 8,
+    scale: 0.97,
     transition: {
-      duration: 0.13,
+      duration: 0.14,
       ease: TABRIX_EXIT_EASE,
     },
   },
 };
 
 /**
- * Toast Notifications 3D spring pop-in/out.
+ * TopBar Popovers & Floating Menus crisp 2D unfold.
  */
-export const TABRIX_TOAST_VARIANTS: Variants = {
+export const TABRIX_POPOVER_VARIANTS: Variants = {
   initial: {
     opacity: 0,
-    y: 18,
-    scale: 0.92,
-    rotateX: 6,
+    y: -4,
+    scale: 0.975,
   },
   animate: {
     opacity: 1,
     y: 0,
     scale: 1,
-    rotateX: 0,
-    transition: TABRIX_TACTILE_SPRING,
+    transition: {
+      duration: 0.13,
+      ease: TABRIX_EASE,
+    },
   },
   exit: {
     opacity: 0,
-    y: 10,
-    scale: 0.94,
+    y: -3,
+    scale: 0.98,
     transition: {
-      duration: 0.16,
+      duration: 0.08,
+      ease: TABRIX_EXIT_EASE,
+    },
+  },
+};
+
+/**
+ * Toast Notifications 2D spring pop-in/out.
+ */
+export const TABRIX_TOAST_VARIANTS: Variants = {
+  initial: {
+    opacity: 0,
+    y: 14,
+    scale: 0.95,
+  },
+  animate: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: TABRIX_SPRING,
+  },
+  exit: {
+    opacity: 0,
+    y: 8,
+    scale: 0.96,
+    transition: {
+      duration: 0.14,
       ease: TABRIX_EXIT_EASE,
     },
   },
@@ -332,7 +313,7 @@ export function useTabrixOrderedDirection(
   });
 }
 
-/* ─── GPU-Smooth rAF Pointer-Tracked 3D Tilt Hook ─────────────────────────── */
+/* ─── GPU-Smooth rAF 2D Specular Spotlight Hook (Zero 3D Tilt Skew) ───────── */
 export interface Tabrix3DTiltOptions {
   maxTiltX?: number;
   maxTiltY?: number;
@@ -340,8 +321,6 @@ export interface Tabrix3DTiltOptions {
 }
 
 export function useTabrix3DTilt<T extends HTMLElement = HTMLElement>({
-  maxTiltX = 5.4,
-  maxTiltY = 6.6,
   disabled = false,
 }: Tabrix3DTiltOptions = {}) {
   const elementRef = useRef<T | null>(null);
@@ -376,15 +355,11 @@ export function useTabrix3DTilt<T extends HTMLElement = HTMLElement>({
         if (!rect.width || !rect.height) return;
         const nx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         const ny = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-        const rx = ((0.5 - ny) * maxTiltX).toFixed(2);
-        const ry = ((nx - 0.5) * maxTiltY).toFixed(2);
         el.style.setProperty('--card-mx', `${(nx * 100).toFixed(1)}%`);
         el.style.setProperty('--card-my', `${(ny * 100).toFixed(1)}%`);
-        el.style.setProperty('--card-rx', `${rx}deg`);
-        el.style.setProperty('--card-ry', `${ry}deg`);
       });
     },
-    [disabled, maxTiltX, maxTiltY]
+    [disabled]
   );
 
   const onMouseLeave = useCallback(() => {
@@ -394,8 +369,8 @@ export function useTabrix3DTilt<T extends HTMLElement = HTMLElement>({
     }
     const el = elementRef.current;
     if (!el) return;
-    el.style.setProperty('--card-rx', '0deg');
-    el.style.setProperty('--card-ry', '0deg');
+    el.style.setProperty('--card-mx', '50%');
+    el.style.setProperty('--card-my', '0%');
   }, []);
 
   return {

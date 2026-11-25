@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle2,
+  Layers,
   Palette,
   RotateCcw,
   Table2,
@@ -22,10 +23,13 @@ import type {
 } from '../../../utils/hierarchyRegistry';
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
 import {
+  APP_SHAPES,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
   getAppThemeById,
-  MARINE_THEMES,
+  MODERN_APP_THEMES,
+  resolveAppShapeId,
+  resolveAutoThemeTarget,
   resolveTableThemeId,
   TABLE_THEMES,
 } from '../../../utils/themes';
@@ -37,6 +41,7 @@ import {
   Tabrix3DTiltSurface,
   TabrixSubViewTransition,
 } from '../../ui/TabrixMotionPrimitives';
+import { ShapeSilhouetteIcon } from '../../ui/ShapeSilhouetteIcon';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 
@@ -178,10 +183,12 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               </div>
               <div>
                 <div className="text-sm font-black" style={{ color: 'var(--accent-bright, var(--text-primary))' }}>
-                  الثيمات البحرية المطلقة — {currentThemeObj.name}
+                  ثيمات التطبيق (5 ثيمات + التلقائي) — {currentThemeObj.name}
                 </div>
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {currentThemeObj.description}
+                  {currentThemeObj.id === 'auto'
+                    ? `الثيم التلقائي نشط · الوضع الحالي: ${resolveAutoThemeTarget().name}`
+                    : currentThemeObj.description}
                 </div>
               </div>
             </div>
@@ -196,13 +203,16 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {MARINE_THEMES.map((theme) => {
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {MODERN_APP_THEMES.map((theme) => {
               const isSelected = currentThemeObj.id === theme.id;
+              const previewTheme =
+                theme.id === 'auto' ? resolveAutoThemeTarget() : theme;
               return (
                 <motion.button
                   key={theme.id}
                   type="button"
+                  data-testid={`settings-theme-${theme.id}`}
                   whileHover={reducedMotion ? undefined : { y: -4, scale: 1.02 }}
                   whileTap={reducedMotion ? undefined : { scale: 0.97 }}
                   transition={TABRIX_TACTILE_SPRING}
@@ -211,44 +221,44 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                       appTheme: theme.id,
                       activeProfileId: null,
                     });
-                    onNotifySuccess(`تم تفعيل ثيم "${theme.name}" البحري بنجاح.`);
+                    onNotifySuccess(`تم تفعيل ثيم "${theme.name}" بنجاح.`);
                   }}
                   aria-pressed={isSelected}
                   className="group relative flex flex-col justify-between gap-2.5 rounded-2xl border p-3 text-right cursor-pointer nexus-squircle"
                   style={{
-                    background: `linear-gradient(155deg, ${theme.vars['--bg-table-header']} 0%, ${theme.vars['--bg-main']} 100%)`,
+                    background: `linear-gradient(155deg, ${previewTheme.vars['--bg-table-header']} 0%, ${previewTheme.vars['--bg-main']} 100%)`,
                     borderColor: isSelected
-                      ? theme.vars['--accent']
-                      : theme.vars['--border-color'],
+                      ? previewTheme.vars['--accent']
+                      : previewTheme.vars['--border-color'],
                     boxShadow: isSelected
-                      ? `inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 24px -8px ${theme.vars['--marine-caustic-1']}, 0 0 0 1px ${theme.vars['--accent']}`
-                      : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px -10px rgba(2,10,22,0.75)',
+                      ? `inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 24px -8px ${previewTheme.vars['--marine-caustic-1']}, 0 0 0 1px ${previewTheme.vars['--accent']}`
+                      : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px -10px rgba(2,10,22,0.35)',
                   }}
                 >
-                  {/* 3D Miniature Marine Surface Preview */}
+                  {/* Miniature Surface Preview */}
                   <div
                     className="relative h-12 w-full overflow-hidden rounded-xl border p-2 flex flex-col justify-between"
                     style={{
-                      backgroundColor: theme.vars['--bg-surface'],
-                      borderColor: theme.vars['--border-color'],
+                      backgroundColor: previewTheme.vars['--bg-surface'],
+                      borderColor: previewTheme.vars['--border-color'],
                     }}
                   >
                     <div
                       className="h-1.5 w-2/3 rounded-full"
                       style={{
-                        background: `linear-gradient(90deg, ${theme.vars['--accent-bright']}, ${theme.vars['--accent']})`,
+                        background: `linear-gradient(90deg, ${previewTheme.vars['--accent-bright']}, ${previewTheme.vars['--accent']})`,
                       }}
                     />
                     <div className="flex items-center justify-between gap-1">
                       <span
                         className="h-2 w-8 rounded-full opacity-60"
-                        style={{ backgroundColor: theme.vars['--text-muted'] }}
+                        style={{ backgroundColor: previewTheme.vars['--text-muted'] }}
                       />
                       <span
                         className="h-3 w-3 rounded-full"
                         style={{
-                          backgroundColor: theme.vars['--accent'],
-                          boxShadow: `0 0 10px ${theme.vars['--accent']}`,
+                          backgroundColor: previewTheme.vars['--accent'],
+                          boxShadow: `0 0 10px ${previewTheme.vars['--accent']}`,
                         }}
                       />
                     </div>
@@ -258,25 +268,84 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
                     <div className="flex items-center justify-between gap-1">
                       <span
                         className="text-xs font-extrabold truncate"
-                        style={{ color: theme.vars['--text-primary'] }}
+                        style={{ color: previewTheme.vars['--text-primary'] }}
                       >
                         {theme.name}
                       </span>
                       {isSelected && (
                         <CheckCircle2
                           className="h-3.5 w-3.5 shrink-0"
-                          style={{ color: theme.vars['--accent-bright'] }}
+                          style={{ color: previewTheme.vars['--accent-bright'] }}
                         />
                       )}
                     </div>
                     <div
                       className="mt-0.5 text-[10px] truncate"
-                      style={{ color: theme.vars['--text-muted'] }}
+                      style={{ color: previewTheme.vars['--text-muted'] }}
                     >
-                      {theme.englishName}
+                      {theme.id === 'auto'
+                        ? `${theme.englishName} · ${previewTheme.name}`
+                        : theme.englishName}
                     </div>
                   </div>
                 </motion.button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 5 Distinct App Shapes Studio */}
+        <section className="chamfered-glass-card smoked-glass-elevated p-4 sm:p-5 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <Layers className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+              <div>
+                <h2 className="text-sm font-black">الأشكال الهندسية للتطبيق (5 أشكال مختلفة بالكامل)</h2>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  تغيّر انحناءات البطاقات، شطف الحواف، تصميم الأشرطة، والخلفية الهندسية لحظياً
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-extrabold" style={{ color: 'var(--accent-bright)' }}>
+              {APP_SHAPES.find((s) => s.id === resolveAppShapeId(themePrefs.appShape))?.name}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+            {APP_SHAPES.map((shape) => {
+              const active = resolveAppShapeId(themePrefs.appShape) === shape.id;
+              return (
+                <button
+                  key={shape.id}
+                  type="button"
+                  data-testid={`settings-app-shape-${shape.id}`}
+                  aria-pressed={active}
+                  onClick={() => {
+                    onUpdateThemePrefs({
+                      appShape: shape.id,
+                      activeProfileId: null,
+                    });
+                    onNotifySuccess(`تم تفعيل الشكل الهندسي "${shape.name}" بنجاح.`);
+                  }}
+                  className="flex flex-col justify-between gap-2 rounded-2xl border p-3 text-right transition-all cursor-pointer nexus-squircle"
+                  style={{
+                    backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
+                    borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <ShapeSilhouetteIcon shapeId={shape.id} active={active} />
+                    {active && (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold truncate">{shape.name}</div>
+                    <div className="text-[10px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
+                      {shape.tagline}
+                    </div>
+                  </div>
+                </button>
               );
             })}
           </div>
@@ -530,6 +599,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
         liveStatusText={`تدوير ${themePrefs.borderRadiusPx ?? 12}px`}
         onResetBranch={() => {
           onUpdateThemePrefs({
+            appShape: DEFAULT_THEME_PREFERENCES.appShape ?? 'geometric-glass',
             fontSizePx: DEFAULT_THEME_PREFERENCES.fontSizePx,
             rowHeightPx: DEFAULT_THEME_PREFERENCES.rowHeightPx,
             colWidthScale: DEFAULT_THEME_PREFERENCES.colWidthScale,
@@ -537,15 +607,55 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
             cardShadowLevel: DEFAULT_THEME_PREFERENCES.cardShadowLevel,
             glassEffect: DEFAULT_THEME_PREFERENCES.glassEffect,
           });
-          onNotifySuccess('تمت استعادة الهندسة والظلال الافتراضية فقط.');
+          onNotifySuccess('تمت استعادة الشكل الهندسي والظلال الافتراضية فقط.');
         }}
         resetBranchLabel="استعادة الهندسة الافتراضية"
       >
         <section
-          aria-label="أبعاد الواجهة والزجاجية"
+          aria-label="أبعاد الواجهة والزجاجية والأشكال"
           className="capsule-glass-card border p-5 space-y-4 text-xs"
           style={{ borderColor: 'var(--border-color)' }}
         >
+          <div className="space-y-2.5">
+            <div className="font-extrabold">الأشكال الهندسية للتطبيق (5 أشكال)</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {APP_SHAPES.map((shape) => {
+                const active = resolveAppShapeId(themePrefs.appShape) === shape.id;
+                return (
+                  <button
+                    key={shape.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() =>
+                      onUpdateThemePrefs({
+                        appShape: shape.id,
+                        activeProfileId: null,
+                      })
+                    }
+                    className="flex flex-col justify-between gap-2 rounded-2xl border p-3 text-right transition-all cursor-pointer"
+                    style={{
+                      backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <ShapeSilhouetteIcon shapeId={shape.id} active={active} />
+                      {active && (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-extrabold truncate">{shape.name}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {shape.tagline}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div
               className="rounded-2xl border p-4 space-y-2"

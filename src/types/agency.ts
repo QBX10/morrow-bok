@@ -719,15 +719,24 @@ export interface AuditIssue {
   message: string;
 }
 
+export type AppShapeId =
+  | 'geometric-glass'
+  | 'sharp-monolith'
+  | 'royal-octagram'
+  | 'swiss-editorial'
+  | 'floating-capsule';
+
 export type MarineAppThemeId =
   | 'abyssal-emerald'
   | 'midnight-trench'
   | 'bioluminescent-reef'
-  | 'arctic-fjord'
-  | 'pelagic-sapphire';
+  | 'pelagic-sapphire'
+  | 'obsidian-gold';
+
+export type AutoAppThemeId = 'auto' | 'daylight-alabaster';
 
 export type ClassicAppThemeId =
-  | 'obsidian-gold'
+  | 'arctic-fjord'
   | 'aurora'
   | 'cyberpunk'
   | 'desert-mirage'
@@ -742,7 +751,11 @@ export type ModernAppThemeId =
   | 'sage-linen'
   | 'midnight-indigo';
 
-export type AppThemeId = MarineAppThemeId | ClassicAppThemeId | ModernAppThemeId;
+export type AppThemeId =
+  | MarineAppThemeId
+  | AutoAppThemeId
+  | ClassicAppThemeId
+  | ModernAppThemeId;
 
 export type TableThemeId =
   | 'glass'
@@ -777,6 +790,7 @@ export interface AppearanceProfile {
   id: string;
   name: string;
   appTheme: AppThemeId;
+  appShape?: AppShapeId;
   tableTheme: TableThemeId;
   fontFamily: ArabicFontId;
   fontSizePx: number;
@@ -811,6 +825,7 @@ export interface CustomThemePreset {
 
 export interface ThemePreferences {
   appTheme: AppThemeId;
+  appShape?: AppShapeId;
   tableTheme: TableThemeId;
   fontFamily: ArabicFontId;
   fontSize: FontSizeStep;
@@ -906,11 +921,12 @@ export type Spatial3DThemeId =
   | 'crimson_obsidian'
   | 'royal_amethyst'
   | 'solar_obsidian_gold'
+  | 'auto_adaptive'
   | 'arctic_titanium';
 
 export type SpatialTiltIntensity = 'off' | 'subtle' | 'dynamic';
 export type SpatialCardDensity = 'compact' | 'balanced' | 'spacious';
-export type SpatialSurfaceTone = 'abyssal' | 'midnight' | 'obsidian' | 'graphite';
+export type SpatialSurfaceTone = 'abyssal' | 'midnight' | 'obsidian' | 'graphite' | 'alabaster';
 
 export interface SpatialCustomColors {
   accent?: string;
@@ -933,6 +949,7 @@ export interface GeneralAppPrefs {
   compactNumbers: boolean;
   settingsDisplayMode?: 'fullscreen' | 'contained';
   uiDensity?: UiDensity;
+  appShape?: AppShapeId;
   granularControls?: GranularControlPrefs;
   hubShortcutIds?: string[];
   quickToggleIds?: string[];

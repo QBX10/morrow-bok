@@ -88,12 +88,17 @@ import {
   applyThemePreferencesToDocument,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
+  getAppShapeById,
+  getEffectiveAppTheme,
+  resolveAppShapeId,
   resolveAppThemeId,
   resolveArabicFontId,
   resolveTableThemeId,
 } from '../utils/themes';
 import {
   applySpatial3DPrefsToDocument,
+  mapAppThemeToSpatialTheme,
+  mapSpatialThemeToAppTheme,
   resolveSpatial3DPrefs,
 } from '../utils/spatial3dConfig';
 
@@ -463,11 +468,24 @@ export function useAgencyStore(activeUid: string | null = null) {
     };
   }, [activeUid, state]);
 
+  const resolvedAppShape = resolveAppShapeId(
+    state.themePrefs?.appShape ?? state.generalPrefs?.appShape
+  );
+
+  const resolvedAppThemeId = resolveAppThemeId(state.themePrefs?.appTheme);
+  const effectiveThemeObj = getEffectiveAppTheme(resolvedAppThemeId);
+
   const activeThemePrefs: ThemePreferences = {
     ...DEFAULT_THEME_PREFERENCES,
     ...(state.themePrefs || {}),
-    appTheme: resolveAppThemeId(state.themePrefs?.appTheme),
-    themeColorMode: 'dark',
+    appTheme: resolvedAppThemeId,
+    appShape: resolvedAppShape,
+    themeColorMode:
+      resolvedAppThemeId === 'auto'
+        ? 'auto'
+        : effectiveThemeObj.isDark
+        ? 'dark'
+        : 'light',
     customBgColor: '',
     customSurfaceColor: '',
     customTextColor: '',
@@ -477,7 +495,39 @@ export function useAgencyStore(activeUid: string | null = null) {
   const activeCosmos: WorkspaceCosmosState = mergeWorkspaceCosmos(state.workspaceCosmos);
   const uiDensity = state.generalPrefs?.uiDensity || 'balanced';
 
-  const activeSpatial3dPrefs = resolveSpatial3DPrefs(state.generalPrefs?.spatial3dPrefs);
+  const activeSpatial3dPrefs = resolveSpatial3DPrefs({
+    ...(state.generalPrefs?.spatial3dPrefs || {}),
+    themeId:
+      state.generalPrefs?.spatial3dPrefs?.themeId ||
+      mapAppThemeToSpatialTheme(resolvedAppThemeId),
+  });
+
+  const [autoThemeTick, setAutoThemeTick] = useState(0);
+
+  useEffect(() => {
+    if (
+      activeThemePrefs.appTheme !== 'auto' &&
+      activeSpatial3dPrefs.themeId !== 'auto_adaptive'
+    ) {
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    const bump = () => setAutoThemeTick((t) => t + 1);
+    const mq =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-color-scheme: light)')
+        : null;
+    if (mq?.addEventListener) {
+      mq.addEventListener('change', bump);
+    }
+    const timer = window.setInterval(bump, 60000);
+    return () => {
+      if (mq?.removeEventListener) {
+        mq.removeEventListener('change', bump);
+      }
+      window.clearInterval(timer);
+    };
+  }, [activeThemePrefs.appTheme, activeSpatial3dPrefs.themeId]);
 
   useEffect(() => {
     applyThemePreferencesToDocument(activeThemePrefs, {
@@ -491,6 +541,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       document.documentElement.dataset.uiDensity = uiDensity;
     }
   }, [
+    autoThemeTick,
     uiDensity,
     activeSpatial3dPrefs.themeId,
     activeSpatial3dPrefs.tiltIntensity,
@@ -499,6 +550,7 @@ export function useAgencyStore(activeUid: string | null = null) {
     activeSpatial3dPrefs.customColors?.secondary,
     activeSpatial3dPrefs.customColors?.surfaceTone,
     activeThemePrefs.appTheme,
+    activeThemePrefs.appShape,
     activeThemePrefs.tableTheme,
     activeThemePrefs.fontFamily,
     activeThemePrefs.fontSize,
@@ -599,12 +651,30 @@ export function useAgencyStore(activeUid: string | null = null) {
 
   const setThemePrefs = useCallback((patch: Partial<ThemePreferences>) => {
     setState((prev) => {
+      const nextAppTheme = resolveAppThemeId(patch.appTheme ?? prev.themePrefs?.appTheme);
+      const nextShape = resolveAppShapeId(
+        patch.appShape ?? prev.themePrefs?.appShape ?? prev.generalPrefs?.appShape
+      );
+      const effectiveTheme = getEffectiveAppTheme(nextAppTheme);
+      const shapeObj = getAppShapeById(nextShape);
       const merged: ThemePreferences = {
         ...DEFAULT_THEME_PREFERENCES,
         ...(prev.themePrefs || {}),
         ...patch,
-        appTheme: resolveAppThemeId(patch.appTheme ?? prev.themePrefs?.appTheme),
-        themeColorMode: 'dark',
+        appTheme: nextAppTheme,
+        appShape: nextShape,
+        borderRadiusPx:
+          patch.borderRadiusPx !== undefined
+            ? patch.borderRadiusPx
+            : patch.appShape !== undefined
+            ? shapeObj.cardRadiusPx
+            : prev.themePrefs?.borderRadiusPx ?? shapeObj.cardRadiusPx,
+        themeColorMode:
+          nextAppTheme === 'auto'
+            ? 'auto'
+            : effectiveTheme.isDark
+            ? 'dark'
+            : 'light',
         customBgColor: '',
         customSurfaceColor: '',
         customTextColor: '',
@@ -614,10 +684,25 @@ export function useAgencyStore(activeUid: string | null = null) {
             ? patch.activeProfileId
             : prev.themePrefs?.activeProfileId ?? null,
       };
+      const prevSpatial = resolveSpatial3DPrefs(prev.generalPrefs?.spatial3dPrefs);
+      const nextSpatial =
+        patch.appTheme !== undefined
+          ? {
+              ...prevSpatial,
+              themeId: mapAppThemeToSpatialTheme(nextAppTheme),
+              customColors: undefined,
+            }
+          : prevSpatial;
       return {
         ...prev,
-        darkTheme: true,
+        darkTheme: effectiveTheme.isDark,
         themePrefs: merged,
+        generalPrefs: {
+          ...DEFAULT_GENERAL_PREFS,
+          ...(prev.generalPrefs || {}),
+          appShape: nextShape,
+          spatial3dPrefs: nextSpatial,
+        },
       };
     });
   }, []);
@@ -629,6 +714,7 @@ export function useAgencyStore(activeUid: string | null = null) {
       themePrefs: {
         ...DEFAULT_THEME_PREFERENCES,
         appTheme: 'abyssal-emerald',
+        appShape: 'geometric-glass',
         themeColorMode: 'dark',
         savedProfiles:
           prev.themePrefs?.savedProfiles && prev.themePrefs.savedProfiles.length > 0
@@ -636,15 +722,26 @@ export function useAgencyStore(activeUid: string | null = null) {
             : DEFAULT_APPEARANCE_PROFILES,
         customSavedThemes: [],
       },
+      generalPrefs: {
+        ...DEFAULT_GENERAL_PREFS,
+        ...(prev.generalPrefs || {}),
+        appShape: 'geometric-glass',
+        spatial3dPrefs: {
+          themeId: 'emerald_smoked',
+          tiltIntensity: 'subtle',
+          cardDensity: 'balanced',
+          customColors: undefined,
+        },
+      },
     }));
   }, []);
 
   const saveCustomThemePreset = useCallback((_preset: Omit<CustomThemePreset, 'id' | 'createdAt'>) => {
-    // Presets are anchored to the 5 curated Absolute Marine Themes
+    // Custom color overrides are synced directly via Theme & Color Studio
   }, []);
 
   const deleteCustomThemePreset = useCallback((_presetId: string) => {
-    // No-op: Theme locked to Obsidian & Gold
+    // Preserved for interface compatibility
   }, []);
 
   const updateWorkspaceCosmos = useCallback(
@@ -871,13 +968,22 @@ export function useAgencyStore(activeUid: string | null = null) {
       const list = cur.savedProfiles || DEFAULT_APPEARANCE_PROFILES;
       const found = list.find((p) => p.id === profileId);
       if (!found) return prev;
+      const nextAppTheme = resolveAppThemeId(found.appTheme);
+      const nextShape = resolveAppShapeId(found.appShape ?? cur.appShape);
+      const effectiveTheme = getEffectiveAppTheme(nextAppTheme);
       return {
         ...prev,
-        darkTheme: true,
+        darkTheme: effectiveTheme.isDark,
         themePrefs: {
           ...cur,
-          appTheme: resolveAppThemeId(found.appTheme),
-          themeColorMode: 'dark',
+          appTheme: nextAppTheme,
+          appShape: nextShape,
+          themeColorMode:
+            nextAppTheme === 'auto'
+              ? 'auto'
+              : effectiveTheme.isDark
+              ? 'dark'
+              : 'light',
           tableTheme: resolveTableThemeId(found.tableTheme),
           fontFamily: resolveArabicFontId(found.fontFamily),
           fontSizePx: found.fontSizePx,
@@ -893,6 +999,16 @@ export function useAgencyStore(activeUid: string | null = null) {
           conditionalFormatting:
             found.conditionalFormatting || cur.conditionalFormatting,
           activeProfileId: found.id,
+        },
+        generalPrefs: {
+          ...DEFAULT_GENERAL_PREFS,
+          ...(prev.generalPrefs || {}),
+          appShape: nextShape,
+          spatial3dPrefs: {
+            ...resolveSpatial3DPrefs(prev.generalPrefs?.spatial3dPrefs),
+            themeId: mapAppThemeToSpatialTheme(nextAppTheme),
+            customColors: undefined,
+          },
         },
       };
     });
@@ -1126,8 +1242,33 @@ export function useAgencyStore(activeUid: string | null = null) {
         ...DEFAULT_GENERAL_PREFS,
         ...(prev.generalPrefs || {}),
       };
+      const nextThemePrefs = {
+        ...DEFAULT_THEME_PREFERENCES,
+        ...(prev.themePrefs || {}),
+      };
+      let themePrefsModified = false;
+      if (patch.appShape !== undefined) {
+        const nextShape = resolveAppShapeId(patch.appShape);
+        nextThemePrefs.appShape = nextShape;
+        nextThemePrefs.borderRadiusPx = getAppShapeById(nextShape).cardRadiusPx;
+        themePrefsModified = true;
+      }
+      if (patch.spatial3dPrefs?.themeId !== undefined) {
+        const mappedAppTheme = mapSpatialThemeToAppTheme(patch.spatial3dPrefs.themeId);
+        nextThemePrefs.appTheme = mappedAppTheme;
+        nextThemePrefs.themeColorMode =
+          mappedAppTheme === 'auto'
+            ? 'auto'
+            : getEffectiveAppTheme(mappedAppTheme).isDark
+            ? 'dark'
+            : 'light';
+        themePrefsModified = true;
+      }
+      const nextDark = getEffectiveAppTheme(nextThemePrefs.appTheme).isDark;
+
       return {
         ...prev,
+        ...(themePrefsModified ? { darkTheme: nextDark, themePrefs: nextThemePrefs } : {}),
         generalPrefs: {
           ...cur,
           ...patch,

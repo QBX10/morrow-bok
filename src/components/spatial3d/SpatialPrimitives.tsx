@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import type { SpatialCardDensity, SpatialTiltIntensity } from '../../types/agency';
-import { getDensityPaddingClass, getTiltConfig } from '../../utils/spatial3dConfig';
+import { getDensityPaddingClass } from '../../utils/spatial3dConfig';
 
 interface GlassBentoCardProps {
   children: React.ReactNode;
@@ -16,15 +16,15 @@ interface GlassBentoCardProps {
 }
 
 /**
- * Layer 2 Multi-Layered 3D Glassmorphic Bento Card:
- * - Translucent surface with 1px directional specular bevel
- * - High-FPS rAF pointer-tracking radial spotlight & subtle 3D perspective tilt (zero React re-renders)
+ * Pure 2D Multi-Layered Glassmorphic Bento Card:
+ * - Smoked translucent surface with 1px directional specular rim
+ * - Architectural corner brackets on elevated panels
+ * - High-FPS rAF pointer-tracking radial spotlight (zero 3D skew, zero React re-renders)
  */
 export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
   children,
   className = '',
   elevated = false,
-  tiltIntensity,
   density,
   spotlight = true,
   accentGlow,
@@ -35,19 +35,12 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const resolvedTilt: SpatialTiltIntensity =
-    tiltIntensity ||
-    (typeof document !== 'undefined'
-      ? ((document.documentElement.dataset.spatialTilt as SpatialTiltIntensity) || 'subtle')
-      : 'subtle');
-
   const resolvedDensity: SpatialCardDensity =
     density ||
     (typeof document !== 'undefined'
       ? ((document.documentElement.dataset.spatialDensity as SpatialCardDensity) || 'balanced')
       : 'balanced');
 
-  const tiltCfg = getTiltConfig(resolvedTilt);
   const padClass = noPadding ? '' : getDensityPaddingClass(resolvedDensity);
 
   useEffect(() => {
@@ -58,7 +51,7 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!spotlight && !tiltCfg.enabled) return;
+      if (!spotlight) return;
       const el = cardRef.current;
       if (!el) return;
       if (
@@ -79,22 +72,12 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
         const nx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         const ny = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
 
-        if (spotlight) {
-          el.style.setProperty('--spot-x', `${Math.round(nx * 100)}%`);
-          el.style.setProperty('--spot-y', `${Math.round(ny * 100)}%`);
-          el.style.setProperty('--spot-opacity', '1');
-        }
-
-        if (tiltCfg.enabled) {
-          const ry = ((nx - 0.5) * 2 * tiltCfg.maxDeg).toFixed(2);
-          const rx = (-(ny - 0.5) * 2 * tiltCfg.maxDeg).toFixed(2);
-          el.style.setProperty('--tilt-rx', `${rx}deg`);
-          el.style.setProperty('--tilt-ry', `${ry}deg`);
-          el.style.setProperty('--tilt-scale', String(tiltCfg.scaleHover));
-        }
+        el.style.setProperty('--spot-x', `${Math.round(nx * 100)}%`);
+        el.style.setProperty('--spot-y', `${Math.round(ny * 100)}%`);
+        el.style.setProperty('--spot-opacity', '1');
       });
     },
-    [spotlight, tiltCfg.enabled, tiltCfg.maxDeg, tiltCfg.scaleHover]
+    [spotlight]
   );
 
   const handlePointerLeave = useCallback(() => {
@@ -105,9 +88,6 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
     const el = cardRef.current;
     if (!el) return;
     el.style.setProperty('--spot-opacity', '0');
-    el.style.setProperty('--tilt-rx', '0deg');
-    el.style.setProperty('--tilt-ry', '0deg');
-    el.style.setProperty('--tilt-scale', '1');
   }, []);
 
   return (
@@ -116,7 +96,7 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
       data-testid={testId ?? dataTestId}
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
-      className={`glass-bento-card relative overflow-hidden rounded-[24px] ${
+      className={`glass-bento-card relative overflow-hidden rounded-[22px] ${
         elevated ? 'glass-bento-card-elevated' : ''
       } ${padClass} ${className}`}
     >
@@ -154,7 +134,7 @@ export const GlassBentoCard: React.FC<GlassBentoCardProps> = ({
           className="pointer-events-none absolute inset-0 transition-opacity duration-200"
           style={{
             opacity: 'var(--spot-opacity, 0)' as unknown as number,
-            background: `radial-gradient(440px circle at var(--spot-x, 50%) var(--spot-y, 50%), ${
+            background: `radial-gradient(420px circle at var(--spot-x, 50%) var(--spot-y, 50%), ${
               accentGlow || 'var(--spatial-glow, rgba(16, 224, 166, 0.16))'
             }, transparent 68%)`,
           }}
@@ -172,7 +152,7 @@ interface RecessedChannelWellProps {
 }
 
 /**
- * Layer 1 Recessed Structural Well for numeric telemetry, metric housings, and recessed controls.
+ * Recessed Structural Well for numeric telemetry, metric housings, and segmented tabs.
  */
 export const RecessedChannelWell: React.FC<RecessedChannelWellProps> = ({
   children,
@@ -207,15 +187,7 @@ export const GeometricSectionHeader: React.FC<GeometricSectionHeaderProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           {icon && (
-            <div
-              className="w-11 h-11 rounded-2xl shrink-0 flex items-center justify-center border border-white/15"
-              style={{
-                background:
-                  'radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent-bright) 28%, transparent), color-mix(in srgb, var(--bg-table-header) 92%, #020810))',
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 20px -10px var(--spatial-glow, rgba(16,185,129,0.5))',
-              }}
-            >
+            <div className="geo-icon-socket w-11 h-11 shrink-0">
               {icon}
             </div>
           )}
@@ -224,7 +196,7 @@ export const GeometricSectionHeader: React.FC<GeometricSectionHeaderProps> = ({
               {title}
             </h2>
             {subtitle && (
-              <p className="text-xs font-medium text-[var(--text-muted)] truncate mt-0.5">
+              <p className="geo-subtitle text-xs truncate mt-0.5">
                 {subtitle}
               </p>
             )}

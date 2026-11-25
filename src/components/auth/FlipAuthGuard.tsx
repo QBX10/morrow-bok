@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react';
 import type {
+  AppShapeId,
   AuthUser,
   Spatial3DPrefs,
   Spatial3DThemeId,
@@ -26,7 +27,6 @@ import {
   verifyPhoneOtpApi,
 } from '../../lib/authClient';
 import { DotMatrixPattern, GeometricRavenCrest } from '../brand/VectorMotifs';
-import { GradientMeshBackdrop } from '../spatial3d/GradientMeshBackdrop';
 import { Spatial3DCanvas } from '../spatial3d/Spatial3DCanvas';
 import {
   TABRIX_POPOVER_VARIANTS,
@@ -49,6 +49,7 @@ interface FlipAuthGuardProps {
   onReplayOnboarding?: () => void;
   themeId?: Spatial3DThemeId;
   spatialPrefs?: Spatial3DPrefs;
+  appShape?: AppShapeId;
 }
 
 type AuthInputMode = 'google' | 'username' | 'phone' | 'email';
@@ -70,6 +71,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   onReplayOnboarding,
   themeId = 'emerald_smoked',
   spatialPrefs,
+  appShape,
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFlippingCrest, setIsFlippingCrest] = useState(false);
@@ -403,7 +405,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     <div
       role="tablist"
       aria-label="طرق الدخول"
-      className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-2xl recessed-well border border-white/10 mb-4"
+      className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-2xl recessed-well border border-[var(--border-color)] mb-4"
     >
       {AUTH_METHOD_OPTIONS.map((opt) => {
         const Icon = opt.icon;
@@ -443,7 +445,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
         transition={TABRIX_TACTILE_SPRING}
         onClick={() => void handleGooglePopup()}
-        className="w-full py-3 px-4 rounded-xl border bg-white/[0.06] hover:bg-white/[0.11] text-xs font-extrabold text-[var(--text-primary)] flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60"
+        className="w-full py-3 px-4 rounded-xl border bg-[var(--surface-pill)] hover:bg-[var(--bg-nav-active)] text-xs font-extrabold text-[var(--text-primary)] flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60"
         style={{ borderColor: 'var(--border-color)' }}
       >
         <svg viewBox="0 0 48 48" className="w-4 h-4 shrink-0" aria-hidden="true">
@@ -468,9 +470,9 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       </motion.button>
 
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-white/10" />
+        <div className="h-px flex-1 bg-[var(--border-color)]" />
         <span className="text-[11px] text-[var(--text-muted)]">أو أدخل بريد Gmail مباشرة</span>
-        <div className="h-px flex-1 bg-white/10" />
+        <div className="h-px flex-1 bg-[var(--border-color)]" />
       </div>
 
       <div>
@@ -494,7 +496,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
             value={googleQuickEmail}
             onChange={(e) => setGoogleQuickEmail(e.target.value)}
             placeholder="name@gmail.com"
-            className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
       </div>
@@ -537,7 +539,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
               borderColor:
                 phoneFlow === 'otp' ? 'var(--accent)' : 'var(--border-color)',
               backgroundColor:
-                phoneFlow === 'otp' ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                phoneFlow === 'otp' ? 'var(--bg-nav-active)' : 'var(--surface-well)',
               color:
                 phoneFlow === 'otp' ? 'var(--accent-bright)' : 'var(--text-muted)',
             }}
@@ -556,7 +558,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
               borderColor:
                 phoneFlow === 'password' ? 'var(--accent)' : 'var(--border-color)',
               backgroundColor:
-                phoneFlow === 'password' ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                phoneFlow === 'password' ? 'var(--bg-nav-active)' : 'var(--surface-well)',
               color:
                 phoneFlow === 'password' ? 'var(--accent-bright)' : 'var(--text-muted)',
             }}
@@ -587,7 +589,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
               value={phoneValue}
               onChange={(e) => setPhoneValue(e.target.value)}
               placeholder="07701234567"
-              className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 tabular-nums focus:outline-none focus:border-[var(--accent)]"
+              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 tabular-nums focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
         </div>
@@ -626,7 +628,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
                     placeholder="123456"
-                    className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 px-3 py-2.5 text-center text-base font-black tracking-[0.25em] text-[var(--text-primary)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
+                    className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3 py-2.5 text-center text-base font-black tracking-[0.25em] text-[var(--text-primary)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
                   />
                 </div>
               </div>
@@ -686,7 +688,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   value={passValue}
                   onChange={(e) => setPassValue(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                 />
                 <button
                   type="button"
@@ -725,17 +727,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[135] flex min-h-[100dvh] items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
-      <GradientMeshBackdrop
-        themeId={themeId}
-        spatialPrefs={spatialPrefs}
-        slideIndex={isFlipped ? 1 : 0}
-        intensity="medium"
-        reduceMotion={reducedMotion}
-      />
-
       <Spatial3DCanvas
         themeId={themeId}
         spatialPrefs={spatialPrefs}
+        appShape={appShape}
         reduceMotion={reducedMotion}
       />
 
@@ -743,15 +738,15 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         className="relative z-10 w-full max-w-[500px] my-auto"
         initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
       >
         <AnimatePresence>
           {isFlippingCrest && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.7 }}
-              animate={{ opacity: 1, scale: 1.08 }}
-              exit={{ opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.28 }}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1.06 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.22 }}
               className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
             >
               <div className="p-4 rounded-full bg-[var(--bg-main)]/90 border border-[var(--accent)]/50 shadow-[0_0_40px_var(--marine-caustic-1)]">
@@ -761,9 +756,9 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
           )}
         </AnimatePresence>
 
-        {/* 3D Flip Container */}
+        {/* Pure 2D Animated Auth Switcher Container */}
         <div
-          className="flip-perspective w-full"
+          className="w-full"
           onPointerDownCapture={(e) => {
             if ((e.target as HTMLElement)?.tagName === 'INPUT') {
               triggerFieldTactile();
@@ -775,13 +770,17 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
             }
           }}
         >
-          <div
-            className={`flip-card-inner relative w-full min-h-[630px] ${
-              isFlipped ? 'is-flipped' : ''
-            }`}
-          >
-            {/* FRONT FACE: Sign In */}
-            <div className="flip-card-face w-full min-h-[630px] chamfered-glass-card smoked-glass-elevated p-6 sm:p-8 flex flex-col justify-between">
+          <AnimatePresence mode="wait" initial={false}>
+            {!isFlipped ? (
+              /* SIGN IN PANEL */
+              <motion.div
+                key="auth-face-login"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -18, scale: 0.99 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 18, scale: 0.99 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                className="w-full min-h-[580px] chamfered-glass-card smoked-glass-elevated p-6 sm:p-8 flex flex-col justify-between"
+              >
               <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
                 <DotMatrixPattern />
               </div>
@@ -851,7 +850,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                                 setLoginUsername(normalizeUsernameInput(e.target.value))
                               }
                               placeholder="ali_agency90"
-                              className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                             />
                           </div>
                           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
@@ -881,7 +880,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                               value={loginEmail}
                               onChange={(e) => setLoginEmail(e.target.value)}
                               placeholder="name@example.com"
-                              className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                             />
                           </div>
                         </div>
@@ -909,7 +908,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             value={loginPassword}
                             onChange={(e) => setLoginPassword(e.target.value)}
                             placeholder="••••••••"
-                            className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                           />
                           <button
                             type="button"
@@ -957,7 +956,12 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         animate="animate"
                         exit="exit"
                         role="alert"
-                        className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
+                        className="rounded-xl border px-3.5 py-2.5 text-xs font-semibold"
+                        style={{
+                          borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)',
+                          backgroundColor: 'var(--danger-bg)',
+                          color: 'var(--danger)',
+                        }}
                       >
                         {errorMsg}
                       </motion.div>
@@ -979,10 +983,17 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <span>إنشاء حساب جديد</span>
                 </button>
               </div>
-            </div>
-
-            {/* BACK FACE: Create Account */}
-            <div className="flip-card-face flip-card-face-back absolute inset-0 w-full min-h-[630px] chamfered-glass-card smoked-glass-elevated p-6 sm:p-8 flex flex-col justify-between overflow-y-auto">
+              </motion.div>
+            ) : (
+              /* CREATE ACCOUNT PANEL */
+              <motion.div
+                key="auth-face-register"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 18, scale: 0.99 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -18, scale: 0.99 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                className="w-full min-h-[580px] chamfered-glass-card smoked-glass-elevated p-6 sm:p-8 flex flex-col justify-between"
+              >
               <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
                 <DotMatrixPattern />
               </div>
@@ -1029,7 +1040,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                           value={regName}
                           onChange={(e) => setRegName(e.target.value)}
                           placeholder="اكتب اسمك هنا"
-                          className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                         />
                       </div>
                     </div>
@@ -1066,7 +1077,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                                 setRegUsername(normalizeUsernameInput(e.target.value))
                               }
                               placeholder="ali_agency90"
-                              className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                             />
                           </div>
                           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
@@ -1095,7 +1106,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                               value={regEmail}
                               onChange={(e) => setRegEmail(e.target.value)}
                               placeholder="user@example.com"
-                              className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                             />
                           </div>
                         </div>
@@ -1123,7 +1134,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             value={regPassword}
                             onChange={(e) => setRegPassword(e.target.value)}
                             placeholder="6 أحرف فأكثر"
-                            className="w-full rounded-xl border border-[var(--border-color)] bg-black/40 pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+                            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                           />
                           <button
                             type="button"
@@ -1167,7 +1178,12 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                         animate="animate"
                         exit="exit"
                         role="alert"
-                        className="rounded-xl border border-red-500/35 bg-red-500/15 px-3.5 py-2.5 text-xs font-medium text-red-200"
+                        className="rounded-xl border px-3.5 py-2.5 text-xs font-semibold"
+                        style={{
+                          borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)',
+                          backgroundColor: 'var(--danger-bg)',
+                          color: 'var(--danger)',
+                        }}
                       >
                         {errorMsg}
                       </motion.div>
@@ -1189,8 +1205,9 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                   <span>العودة لتسجيل الدخول</span>
                 </button>
               </div>
-            </div>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
     </div>

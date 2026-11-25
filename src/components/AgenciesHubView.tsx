@@ -9,25 +9,24 @@ import {
   BarChart3,
   Bell,
   Bot,
-  Box,
   Building2,
   Calculator,
   Calendar,
   Camera,
+  Check,
   CheckCircle2,
-  Cpu,
+  Copy,
   Eye,
   EyeOff,
   FileSpreadsheet,
   GripVertical,
   HardHat,
+  Layers,
   ListChecks,
   Lock,
   Package,
   Palette,
-  Pause,
   Pencil,
-  Play,
   Plus,
   RotateCcw,
   ScanLine,
@@ -46,6 +45,7 @@ import {
 import type {
   Agency,
   AgencyExpense,
+  AppShapeId,
   AppView,
   CalculationSettings,
   ExpenseCategory,
@@ -62,6 +62,7 @@ import type {
   SpatialCardDensity,
   SpatialSurfaceTone,
   SpatialTiltIntensity,
+  ThemePreferences,
 } from '../types/agency';
 import {
   auditAgencyPersons,
@@ -79,6 +80,7 @@ import { SmartDashboardCard } from './ui/SmartDashboardCard';
 import { BottomSheet } from './cosmos/BottomSheet';
 import { FullScreenPushPage } from './ui/FullScreenPushPage';
 import { NexusDuotoneIcon } from './ui/NexusDuotoneIcon';
+import { ShapeSilhouetteIcon } from './ui/ShapeSilhouetteIcon';
 import {
   Tabrix3DTiltSurface,
   TabrixPillIndicator,
@@ -86,8 +88,6 @@ import {
 import { DotMatrixPattern, GeometricGoldCube } from './brand/VectorMotifs';
 import { RecessedChannelWell } from './spatial3d/SpatialPrimitives';
 import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
-import { MorrowMascot3D } from './spatial3d/MorrowMascot3D';
-import morrowWelcomePoster from '../assets/images/morrow_welcome_poster_1795554011605.jpg';
 import {
   CURATED_ACCENT_SWATCHES,
   CURATED_SECONDARY_SWATCHES,
@@ -95,8 +95,12 @@ import {
   SURFACE_TONE_PRESETS,
   resolveActiveSpatialPalette,
   resolveSpatial3DPrefs,
-  triggerGlobalSpatialPulse,
 } from '../utils/spatial3dConfig';
+import {
+  APP_SHAPES,
+  resolveAppShapeId,
+  resolveAutoThemeTarget,
+} from '../utils/themes';
 import { BrainCircuit, Download } from 'lucide-react';
 
 interface AgenciesHubViewProps {
@@ -109,6 +113,8 @@ interface AgenciesHubViewProps {
   calculationSettings: CalculationSettings;
   capabilities: ModeCapabilities;
   generalPrefs?: GeneralAppPrefs;
+  appShape?: AppShapeId;
+  onUpdateThemePrefs?: (patch: Partial<ThemePreferences>) => void;
   onUpdateGeneralPrefs?: (patch: Partial<GeneralAppPrefs>) => void;
   onUpdateActivePeriod?: (patch: Partial<PeriodQuotaMeta>) => void;
   onUpdateCalculationSettings?: (patch: Partial<CalculationSettings>) => void;
@@ -222,6 +228,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   calculationSettings,
   capabilities,
   generalPrefs,
+  appShape,
+  onUpdateThemePrefs,
   onUpdateGeneralPrefs,
   onUpdateActivePeriod,
   onUpdateCalculationSettings,
@@ -257,7 +265,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
   // Mini-Widgets Local Interactive State
   const [miniCalcIndividuals, setMiniCalcIndividuals] = useState('5');
+  const [miniCalcCopied, setMiniCalcCopied] = useState(false);
   const [miniLookupQuery, setMiniLookupQuery] = useState('');
+  const [miniExpAgencyId, setMiniExpAgencyId] = useState<number>(agencies[0]?.id ?? 1);
   const [quickExpTitle, setQuickExpTitle] = useState('');
   const [quickExpAmount, setQuickExpAmount] = useState('');
   const [quickExpCategory, setQuickExpCategory] =
@@ -273,23 +283,6 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('🌾');
   const logoFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Morrow Welcome Video & 3D Interactive Stage State
-  const [morrowStageMode, setMorrowStageMode] = useState<'video' | '3d'>('video');
-  const [welcomeVideoPlaying, setWelcomeVideoPlaying] = useState(true);
-  const welcomeVideoRef = useRef<HTMLVideoElement | null>(null);
-
-  const toggleWelcomeVideoPlayback = () => {
-    const vid = welcomeVideoRef.current;
-    if (!vid) return;
-    if (vid.paused) {
-      void vid.play().catch(() => {});
-      setWelcomeVideoPlaying(true);
-    } else {
-      vid.pause();
-      setWelcomeVideoPlaying(false);
-    }
-  };
 
   const spatialPrefs = useMemo(
     () => resolveSpatial3DPrefs(generalPrefs?.spatial3dPrefs),
@@ -920,7 +913,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           <div className="pointer-events-none absolute top-0 left-0 w-36 h-36 opacity-20">
             <DotMatrixPattern />
           </div>
-          <div className="relative z-10 mx-auto w-16 h-16 flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-black/30">
+          <div className="relative z-10 mx-auto w-16 h-16 flex items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)]">
             <GeometricGoldCube size={52} />
           </div>
           <div className="relative z-10 space-y-2 max-w-md mx-auto">
@@ -949,7 +942,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               <button
                 type="button"
                 onClick={onLoadStarterData}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white/[0.04] hover:bg-[var(--bg-nav-active)] px-5 py-2.5 text-xs sm:text-sm font-bold text-[var(--accent-bright)] transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] hover:bg-[var(--bg-nav-active)] px-5 py-2.5 text-xs sm:text-sm font-bold text-[var(--accent-bright)] transition-all cursor-pointer"
               >
                 <Sparkles className="h-4 w-4 text-[var(--accent)]" />
                 <span>تحميل بيانات تجريبية جاهزة</span>
@@ -1739,16 +1732,20 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 <input
                   type="number"
                   min={0}
+                  aria-label="عدد الأفراد في الحاسبة السريعة"
                   value={miniCalcIndividuals}
-                  onChange={(e) => setMiniCalcIndividuals(e.target.value)}
-                  className="h-9 w-24 rounded-xl border px-3 text-sm font-black tabular-nums"
+                  onChange={(e) => {
+                    setMiniCalcIndividuals(e.target.value);
+                    setMiniCalcCopied(false);
+                  }}
+                  className="h-9 w-20 rounded-xl border px-2.5 text-sm font-black tabular-nums"
                   style={{
                     backgroundColor: 'var(--bg-main)',
                     borderColor: 'var(--border-color)',
                   }}
                 />
-                <div className="flex-1 text-xs">
-                  <div className="font-black tabular-nums" style={{ color: 'var(--accent)' }}>
+                <div className="flex-1 min-w-0 text-xs">
+                  <div className="font-black tabular-nums truncate" style={{ color: 'var(--accent)' }}>
                     {miniCalcPreview.quota}
                   </div>
                   <div className="tabular-nums font-bold" style={{ color: 'var(--success)' }}>
@@ -1757,6 +1754,52 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       : '—'}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const summary = `${miniCalcIndividuals || 0} أفراد: ${miniCalcPreview.quota} — ${
+                      miniCalcPreview.alloc ? formatIqd(miniCalcPreview.alloc.priceIqd) : '—'
+                    }`;
+                    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                      void navigator.clipboard.writeText(summary);
+                    }
+                    setMiniCalcCopied(true);
+                    setTimeout(() => setMiniCalcCopied(false), 1800);
+                  }}
+                  aria-label="نسخ نتيجة حاسبة الحصص"
+                  className="h-9 px-2.5 rounded-xl border text-[11px] font-bold inline-flex items-center gap-1 shrink-0 cursor-pointer hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: miniCalcCopied ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                    borderColor: miniCalcCopied ? 'var(--accent)' : 'var(--border-color)',
+                    color: miniCalcCopied ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                >
+                  {miniCalcCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span>{miniCalcCopied ? 'نُسخ' : 'نسخ'}</span>
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(['4', '6', '8', '10'] as const).map((preset) => {
+                  const activePreset = miniCalcIndividuals === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setMiniCalcIndividuals(preset);
+                        setMiniCalcCopied(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border text-[10px] font-black tabular-nums cursor-pointer transition"
+                      style={{
+                        backgroundColor: activePreset ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                        borderColor: activePreset ? 'var(--accent)' : 'var(--border-color)',
+                        color: activePreset ? 'var(--accent)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {preset} أفراد
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1805,69 +1848,99 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               </div>
 
               {onAddExpense && capabilities.canManageFinance && agencies[0] && (
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={quickExpCategory}
-                    onChange={(e) =>
-                      setQuickExpCategory(e.target.value as ExpenseCategory)
-                    }
-                    className="h-8 rounded-lg border px-1.5 text-[11px] font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <option value="worker_wages">أجور</option>
-                    <option value="packaging">تعبئة</option>
-                    <option value="hospitality">ضيافة</option>
-                    <option value="custom">خاص</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={quickExpTitle}
-                    onChange={(e) => setQuickExpTitle(e.target.value)}
-                    placeholder="البيان..."
-                    className="h-8 min-w-0 flex-1 rounded-lg border px-2 text-[11px]"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={quickExpAmount}
-                    onChange={(e) => setQuickExpAmount(e.target.value)}
-                    placeholder="المبلغ"
-                    className="h-8 w-20 rounded-lg border px-2 text-[11px] tabular-nums"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const amt = Number(quickExpAmount);
-                      if (!quickExpTitle.trim() || !Number.isFinite(amt) || amt <= 0)
-                        return;
-                      onAddExpense({
-                        agencyId: agencies[0].id,
-                        description: quickExpTitle.trim(),
-                        amountIqd: amt,
-                        category: quickExpCategory,
-                      });
-                      setQuickExpTitle('');
-                      setQuickExpAmount('');
-                    }}
-                    className="nexus-pill-btn min-h-[34px] h-8 px-3.5 text-[11px] font-extrabold"
-                    style={{
-                      backgroundColor: 'var(--accent)',
-                      color: 'var(--accent-fg)',
-                    }}
-                  >
-                    حفظ
-                  </button>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    {agencies.length > 1 && (
+                      <select
+                        aria-label="اختيار الوكالة للمصروف الفوري"
+                        value={
+                          agencies.some((a) => a.id === miniExpAgencyId)
+                            ? miniExpAgencyId
+                            : agencies[0].id
+                        }
+                        onChange={(e) => setMiniExpAgencyId(Number(e.target.value))}
+                        className="h-8 max-w-[115px] rounded-lg border px-1.5 text-[11px] font-bold truncate"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        {agencies.map((ag) => (
+                          <option key={ag.id} value={ag.id}>
+                            {ag.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <select
+                      aria-label="تصنيف المصروف الفوري"
+                      value={quickExpCategory}
+                      onChange={(e) =>
+                        setQuickExpCategory(e.target.value as ExpenseCategory)
+                      }
+                      className="h-8 rounded-lg border px-1.5 text-[11px] font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <option value="worker_wages">أجور</option>
+                      <option value="packaging">تعبئة</option>
+                      <option value="hospitality">ضيافة</option>
+                      <option value="custom">خاص</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      value={quickExpAmount}
+                      onChange={(e) => setQuickExpAmount(e.target.value)}
+                      placeholder="المبلغ"
+                      className="h-8 min-w-0 flex-1 rounded-lg border px-2 text-[11px] tabular-nums"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={quickExpTitle}
+                      onChange={(e) => setQuickExpTitle(e.target.value)}
+                      placeholder="البيان..."
+                      className="h-8 min-w-0 flex-1 rounded-lg border px-2 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = Number(quickExpAmount);
+                        if (!quickExpTitle.trim() || !Number.isFinite(amt) || amt <= 0)
+                          return;
+                        const targetAgencyId = agencies.some((a) => a.id === miniExpAgencyId)
+                          ? miniExpAgencyId
+                          : agencies[0].id;
+                        onAddExpense({
+                          agencyId: targetAgencyId,
+                          description: quickExpTitle.trim(),
+                          amountIqd: amt,
+                          category: quickExpCategory,
+                        });
+                        setQuickExpTitle('');
+                        setQuickExpAmount('');
+                      }}
+                      className="nexus-pill-btn min-h-[34px] h-8 px-3.5 text-[11px] font-extrabold cursor-pointer"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      حفظ
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2020,276 +2093,102 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-4 pb-24 sm:px-6 lg:pb-10">
-      {/* 1. Architectural 3D Hero Header Card */}
-      <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-5 sm:p-6 flex flex-wrap items-center justify-between gap-5">
+      {/* 1. Pure 2D Architectural Hero Header Card */}
+      <section className="chamfered-glass-card smoked-glass-elevated relative overflow-hidden p-5 sm:p-6">
         <div className="pointer-events-none absolute top-0 left-0 w-44 h-44 opacity-20">
           <DotMatrixPattern />
         </div>
+        {/* 1px Architectural Corner Reticles */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-2.5 right-2.5 w-3.5 h-3.5 border-t border-r rounded-tr-md opacity-45"
+          style={{ borderColor: 'var(--accent-bright, #86FFDE)' }}
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-2.5 left-2.5 w-3.5 h-3.5 border-b border-l rounded-bl-md opacity-45"
+          style={{ borderColor: 'var(--accent-bright, #86FFDE)' }}
+        />
 
-        <div className="relative z-10 flex items-center gap-4 min-w-0 flex-1">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15"
-            style={{
-              background:
-                'radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent-bright) 28%, transparent), color-mix(in srgb, var(--bg-table-header) 92%, #020810))',
-              boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 24px -10px var(--spatial-glow, rgba(16,185,129,0.55))',
-            }}
-          >
-            <Building2 className="h-6 w-6 text-[var(--accent-bright)]" />
-          </div>
-          <div className="space-y-1 min-w-0">
-            {activePeriod && (
-              <p className="editorial-eyebrow font-mono-num truncate">
-                <span className="text-[var(--accent-bright)]">{activePeriod.quotaName}</span>
-                {' · '}
-                <span>
-                  {activePeriod.monthName} {activePeriod.year}
-                </span>
-                {' · '}
-                <span className="tabular-nums">{agencies.length} وكالة</span>
-              </p>
-            )}
-            <h1 className="font-display-ar text-xl font-black tracking-tight sm:text-2xl gold-gradient-text">
-              الوكالات والتوزيع
-            </h1>
-            <p className="text-xs sm:text-sm text-[var(--text-muted)] leading-relaxed">
-              مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
-              {previousArchiveDelta && (
-                <span className="mr-2 font-mono-num font-bold text-[var(--accent-bright)]">
-                  ({previousArchiveDelta.diff >= 0 ? '+' : ''}
-                  {previousArchiveDelta.diff} فرد مقارنة بأرشيف{' '}
-                  {previousArchiveDelta.archiveLabel})
-                </span>
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+          <div className="flex items-start gap-4 min-w-0 flex-1">
+            <div className="geo-icon-socket h-12 w-12 shrink-0">
+              <Building2 className="h-6 w-6 text-[var(--accent-bright)]" />
+            </div>
+            <div className="space-y-1.5 min-w-0 flex-1">
+              {activePeriod && (
+                <p className="editorial-eyebrow font-mono-num truncate">
+                  <span className="text-[var(--accent-bright)]">{activePeriod.quotaName}</span>
+                  {' · '}
+                  <span className="tabular-nums">
+                    {activePeriod.monthName} {activePeriod.year}
+                  </span>
+                  {' · '}
+                  <span className="tabular-nums">{agencies.length} وكالة</span>
+                </p>
               )}
-            </p>
+              <h1 className="geo-display-title text-xl sm:text-[26px]">
+                الوكالات والتوزيع
+              </h1>
+              <div aria-hidden="true" className="laser-divider max-w-md opacity-75" />
+              <p className="geo-subtitle text-xs sm:text-sm">
+                مركز قيادة الوكالات — متابعة الحصص، تدقيق السجلات، والأداء المالي لحظة بلحظة.
+                {previousArchiveDelta && (
+                  <span className="mr-2 font-mono-num font-bold text-[var(--accent-bright)] tabular-nums">
+                    ({previousArchiveDelta.diff >= 0 ? '+' : ''}
+                    {previousArchiveDelta.diff} فرد مقارنة بأرشيف{' '}
+                    {previousArchiveDelta.archiveLabel})
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Interactive 3D Sculpted Crystal Orb + Symmetric 2-Column Hero Action Grid */}
-        <div className="relative z-10 flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
-          <div className="hidden md:flex shrink-0">
-            <MorrowHubOrb3D
-              spatialPrefs={spatialPrefs}
-              agencyCount={agencies.length}
-              activeIndividuals={masterMetrics.activeIndividuals}
-              issueCount={smartAgencySignals.length}
-            />
-          </div>
+          {/* 2D Geometric Telemetry Dial + Symmetric 2-Column Hero Action Controls */}
+          <div className="flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
+            <div className="hidden md:flex shrink-0">
+              <MorrowHubOrb3D
+                spatialPrefs={spatialPrefs}
+                agencyCount={agencies.length}
+                activeIndividuals={masterMetrics.activeIndividuals}
+                issueCount={smartAgencySignals.length}
+              />
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[420px]">
-            <button
-              type="button"
-              data-testid="hero-master-roster-btn"
-              onClick={onOpenMasterRoster}
-              className="h-[52px] w-full rounded-2xl border border-[var(--border-color)] bg-black/45 hover:bg-black/65 hover:border-[var(--accent)] px-3 sm:px-4 text-xs sm:text-[13px] font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_24px_-12px_rgba(0,0,0,0.85)] transition-all cursor-pointer whitespace-nowrap"
-            >
-              <span className="w-8 h-8 rounded-xl bg-[var(--bg-nav-active)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
-                <Table2 className="h-4 w-4 text-[var(--accent-bright)]" />
-              </span>
-              <span className="truncate">السجل الشامل للوكالات</span>
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[420px]">
+              <button
+                type="button"
+                data-testid="hero-master-roster-btn"
+                onClick={onOpenMasterRoster}
+                className="h-[52px] w-full rounded-2xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)] active:scale-[0.97] px-3 sm:px-4 text-xs sm:text-[13px] font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 transition-all cursor-pointer whitespace-nowrap"
+              >
+                <span className="w-8 h-8 rounded-xl bg-[var(--bg-nav-active)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
+                  <Table2 className="h-4 w-4 text-[var(--accent-bright)]" />
+                </span>
+                <span className="truncate">السجل الشامل للوكالات</span>
+              </button>
 
-            <button
-              type="button"
-              data-testid="home-customizer-btn"
-              onClick={() => {
-                setHubNotice('');
-                setQuotaDraftName(activePeriod?.quotaName || 'الوجبة الحالية');
-                setKgPerIndDraft(String(calculationSettings.kgPerIndividual));
-                setFeePerIndDraft(String(calculationSettings.feePerIndividualIqd));
-                setCustomizerOpen(true);
-              }}
-              className="obsidian-gold-cta h-[52px] w-full rounded-2xl px-3 sm:px-4 text-xs sm:text-[13px] font-black inline-flex items-center justify-center gap-2.5 cursor-pointer whitespace-nowrap"
-            >
-              <span className="w-8 h-8 rounded-xl bg-black/20 border border-white/25 flex items-center justify-center shrink-0">
-                <SlidersHorizontal className="h-4 w-4" />
-              </span>
-              <span className="truncate">إدارة الواجهة الرئيسية</span>
-            </button>
+              <button
+                type="button"
+                data-testid="home-customizer-btn"
+                onClick={() => {
+                  setHubNotice('');
+                  setQuotaDraftName(activePeriod?.quotaName || 'الوجبة الحالية');
+                  setKgPerIndDraft(String(calculationSettings.kgPerIndividual));
+                  setFeePerIndDraft(String(calculationSettings.feePerIndividualIqd));
+                  setCustomizerOpen(true);
+                }}
+                className="obsidian-gold-cta h-[52px] w-full rounded-2xl px-3 sm:px-4 text-xs sm:text-[13px] font-black inline-flex items-center justify-center gap-2.5 cursor-pointer whitespace-nowrap"
+              >
+                <span className="w-8 h-8 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
+                  <SlidersHorizontal className="h-4 w-4" />
+                </span>
+                <span className="truncate">إدارة الواجهة الرئيسية</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
-
-      {/* 2. Morrow 2D–3D Welcome Video & Interactive Spatial Stage */}
-      <Tabrix3DTiltSurface
-        as="section"
-        aria-label="الترحيب التفاعلي بشخصية Morrow"
-        className="morrow-showcase-frame overflow-hidden p-4 sm:p-6"
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
-          {/* Right (RTL Start): Intelligent Welcome Summary + Mode Controls */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="editorial-eyebrow flex flex-wrap items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-[var(--accent-bright)]" />
-              <span className="font-extrabold text-[var(--accent-bright)]">Morrow</span>
-              <span aria-hidden="true">·</span>
-              <span>الذكاء التفاعلي 2D ~ 3D</span>
-              <span aria-hidden="true">·</span>
-              <span>مشهد تفاعلي حي</span>
-            </div>
-
-            <div className="space-y-1.5">
-              <h2 className="font-display-ar text-lg sm:text-xl font-black tracking-tight text-[var(--text-primary)]">
-                أهلاً بك مع{' '}
-                <span className="marine-gradient-text">Morrow</span>
-                {' '}في مساحة إدارة الوكالات
-              </h2>
-              <p className="text-xs sm:text-[13px] leading-relaxed text-[var(--text-muted)]">
-                شخصية Morrow الذكية تراقب سجلات المستفيدين، الأوزان المالية، والتنبيهات الفورية ضمن مشهد هجين ثنائي وثلاثي الأبعاد متكامل.
-              </p>
-            </div>
-
-            {/* 2D Video vs Live 3D Entity Segmented Switcher */}
-            <div
-              role="tablist"
-              aria-label="نمط عرض شخصية Morrow"
-              className="inline-flex w-full sm:w-auto items-center gap-1 rounded-2xl border p-1 recessed-well"
-              style={{ borderColor: 'var(--morrow-soft-border)' }}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={morrowStageMode === 'video'}
-                data-testid="morrow-stage-mode-video"
-                onClick={() => setMorrowStageMode('video')}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all cursor-pointer"
-                style={{
-                  backgroundColor:
-                    morrowStageMode === 'video' ? 'var(--accent)' : 'transparent',
-                  color:
-                    morrowStageMode === 'video' ? 'var(--accent-fg)' : 'var(--text-muted)',
-                }}
-              >
-                <Play className="h-3.5 w-3.5" />
-                <span>فيديو ترحيبي</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={morrowStageMode === '3d'}
-                data-testid="morrow-stage-mode-3d"
-                onClick={() => {
-                  setMorrowStageMode('3d');
-                  triggerGlobalSpatialPulse(1.25);
-                }}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all cursor-pointer"
-                style={{
-                  backgroundColor:
-                    morrowStageMode === '3d' ? 'var(--accent)' : 'transparent',
-                  color:
-                    morrowStageMode === '3d' ? 'var(--accent-fg)' : 'var(--text-muted)',
-                }}
-              >
-                <Box className="h-3.5 w-3.5" />
-                <span>تفاعل 3D حي</span>
-              </button>
-            </div>
-
-            {/* Primary Stage Actions */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              {onNavigateView && (
-                <button
-                  type="button"
-                  data-testid="hub-open-morrow-center-btn"
-                  onClick={() => {
-                    triggerGlobalSpatialPulse(1.3);
-                    onNavigateView('morrow_center');
-                  }}
-                  className="obsidian-gold-cta inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black cursor-pointer"
-                >
-                  <Cpu className="h-4 w-4" />
-                  <span>فتح مركز أوامر Morrow</span>
-                </button>
-              )}
-
-              {morrowStageMode === 'video' && (
-                <button
-                  type="button"
-                  data-testid="morrow-welcome-video-toggle"
-                  onClick={toggleWelcomeVideoPlayback}
-                  aria-label={welcomeVideoPlaying ? 'إيقاف الفيديو الترحيبي مؤقتاً' : 'تشغيل الفيديو الترحيبي'}
-                  className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2.5 text-xs font-bold cursor-pointer"
-                  style={{
-                    backgroundColor: 'rgba(4, 9, 22, 0.72)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  {welcomeVideoPlaying ? (
-                    <>
-                      <Pause className="h-3.5 w-3.5 text-[var(--accent)]" />
-                      <span>إيقاف مؤقت</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-3.5 w-3.5 text-[var(--accent)]" />
-                      <span>تشغيل</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Left (RTL End): 16:9 Morrow Welcome Video OR Live 3D Interactive Entity */}
-          <div className="lg:col-span-7">
-            <div
-              className="relative aspect-video w-full overflow-hidden rounded-2xl border bg-[#040916]"
-              style={{
-                borderColor: 'var(--morrow-soft-border)',
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.16), 0 24px 52px -18px rgba(2, 8, 22, 0.92)',
-              }}
-            >
-              {morrowStageMode === 'video' ? (
-                <>
-                  <video
-                    ref={welcomeVideoRef}
-                    data-testid="morrow-welcome-video"
-                    poster={morrowWelcomePoster}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                    onPlay={() => setWelcomeVideoPlaying(true)}
-                    onPause={() => setWelcomeVideoPlaying(false)}
-                    className="h-full w-full object-cover"
-                    aria-label="فيديو ترحيبي ثلاثي الأبعاد لشخصية Morrow"
-                  >
-                    <source src="/assets/morrow-welcome.webm" type="video/webm" />
-                    <source src="/assets/morrow-welcome.mp4" type="video/mp4" />
-                  </video>
-                  <div
-                    className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
-                    style={{
-                      background:
-                        'linear-gradient(to top, rgba(4, 9, 22, 0.9) 0%, rgba(4, 9, 22, 0.35) 55%, transparent 100%)',
-                    }}
-                  />
-                  <div className="pointer-events-none absolute bottom-3 right-3.5 left-3.5 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="font-extrabold text-[var(--accent-bright)] whitespace-nowrap truncate">
-                      Morrow · 3D Motion
-                    </span>
-                    <span className="font-mono-num font-bold text-[var(--text-primary)]/80 whitespace-nowrap shrink-0 tabular-nums">
-                      {agencies.length} وكالة · {masterMetrics.activeIndividuals.toLocaleString('en-US')} فرد
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="h-full w-full" data-testid="hub-morrow-mascot-3d-wrap">
-                  <MorrowMascot3D
-                    spatialPrefs={spatialPrefs}
-                    onGreetClick={() => triggerGlobalSpatialPulse(1.4)}
-                    className="!min-h-full !h-full !border-0 !rounded-none"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </Tabrix3DTiltSurface>
 
       {/* Create New Agency — Full-Screen Push Page */}
       {capabilities.canManageAgencies && (
@@ -2383,7 +2282,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
         open={customizerOpen}
         onClose={() => setCustomizerOpen(false)}
         title="إدارة الواجهة الرئيسية"
-        subtitle="تعديل أسماء الوكالات والحصص، إضافة وكالة، ترتيب الواجهة، وتخصيص الفضاء ثلاثي الأبعاد"
+        subtitle="تعديل أسماء الوكالات والحصص، إضافة وكالة، ترتيب الواجهة، وتخصيص المظهر الهندسي"
         icon={<SlidersHorizontal className="h-5 w-5" />}
       >
         <div className="space-y-5" data-testid="home-control-hub">
@@ -2391,13 +2290,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           <div
             role="tablist"
             aria-label="أقسام إدارة الواجهة الرئيسية"
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1.5 rounded-2xl recessed-well border border-white/10"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1.5 rounded-2xl recessed-well border border-[var(--border-color)]"
           >
             {(
               [
                 ['agencies', 'الوكالات والحصص'],
                 ['layout', 'ترتيب الواجهة'],
-                ['spatial3d', 'الألوان والثيم'],
+                ['spatial3d', 'الألوان والأشكال'],
                 ['smart', 'إضافات ذكية'],
               ] as const
             ).map(([tId, tLabel]) => {
@@ -2426,7 +2325,12 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           {hubNotice && (
             <div
               role="status"
-              className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-200 flex items-center gap-2"
+              className="rounded-xl border px-3.5 py-2 text-xs font-bold flex items-center gap-2"
+              style={{
+                backgroundColor: 'var(--success-bg)',
+                borderColor: 'color-mix(in srgb, var(--success) 45%, transparent)',
+                color: 'var(--success)',
+              }}
             >
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               <span>{hubNotice}</span>
@@ -2444,7 +2348,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-12 h-12 rounded-2xl border border-white/15 bg-black/35 flex items-center justify-center shrink-0">
+                      <div className="w-12 h-12 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] flex items-center justify-center shrink-0">
                         <GeometricGoldCube size={40} />
                       </div>
                       <div className="min-w-0">
@@ -2469,7 +2373,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         setCustomizerOpen(false);
                         setAddOpen(true);
                       }}
-                      className="nexus-pill-btn inline-flex items-center gap-1.5 border border-white/15 bg-black/40 hover:border-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-bright)] cursor-pointer"
+                      className="nexus-pill-btn inline-flex items-center gap-1.5 border border-[var(--border-color)] bg-[var(--surface-pill)] hover:border-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-bright)] cursor-pointer"
                     >
                       <Building2 className="h-3.5 w-3.5" />
                       <span>فتح المنشئ المتقدم</span>
@@ -2484,7 +2388,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       value={hubNewAgencyName}
                       onChange={(e) => setHubNewAgencyName(e.target.value)}
                       placeholder="اكتب اسم وكالتك الأولى أو وكالة جديدة (مثال: وكالة النور التموينية)..."
-                      className="flex-1 min-w-[200px] h-10 rounded-xl border border-white/15 bg-black/45 px-3.5 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                      className="flex-1 min-w-[200px] h-10 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3.5 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
                     />
                     <div className="flex items-center gap-1">
                       {['🌾', '🏪', '📦', '🏢'].map((ic) => (
@@ -2496,7 +2400,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           className={`w-9 h-9 rounded-xl border text-base cursor-pointer transition ${
                             hubNewAgencyIcon === ic
                               ? 'border-[var(--accent)] bg-[var(--bg-nav-active)] scale-105'
-                              : 'border-white/10 bg-black/30 hover:border-white/25'
+                              : 'border-[var(--border-color)] bg-[var(--surface-well)] hover:border-[var(--accent)]'
                           }`}
                         >
                           {ic}
@@ -2535,9 +2439,9 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       return (
                         <div
                           key={ag.id}
-                          className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-black/35 p-2.5"
+                          className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-2.5"
                         >
-                          <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">
+                          <span className="w-9 h-9 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center justify-center text-lg shrink-0">
                             {isUrlOrDataUri(ag.icon) ? '🏢' : ag.icon || '🌾'}
                           </span>
                           <input
@@ -2551,7 +2455,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                                 [ag.id]: e.target.value,
                               }))
                             }
-                            className="flex-1 min-w-[160px] h-9 rounded-xl border border-white/10 bg-black/40 px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                            className="flex-1 min-w-[160px] h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
                           />
                           <button
                             type="button"
@@ -2580,7 +2484,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                                   : `تم قفل وكالة «${ag.name}»`
                               );
                             }}
-                            className="h-9 px-2.5 rounded-xl border border-white/15 bg-white/5 text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                            className="h-9 px-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] text-[11px] font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
                           >
                             {ag.isLocked ? 'فتح' : 'قفل'}
                           </button>
@@ -2592,7 +2496,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               )}
 
               {/* Module 2: Edit Active Batch / Ration Quota */}
-              <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+              <div className="space-y-2.5 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3.5">
                 <h3 className="text-xs font-black text-[var(--text-primary)]">
                   تعديل الوجبة والحصص والرسوم
                 </h3>
@@ -2605,7 +2509,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       type="text"
                       value={quotaDraftName}
                       onChange={(e) => setQuotaDraftName(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-bold text-[var(--text-primary)]"
+                      className="w-full h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-bold text-[var(--text-primary)]"
                     />
                   </div>
                   <div>
@@ -2619,7 +2523,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       dir="ltr"
                       value={kgPerIndDraft}
                       onChange={(e) => setKgPerIndDraft(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
+                      className="w-full h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
                     />
                   </div>
                   <div>
@@ -2633,7 +2537,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       dir="ltr"
                       value={feePerIndDraft}
                       onChange={(e) => setFeePerIndDraft(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-white/10 bg-black/45 px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
+                      className="w-full h-9 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] px-3 text-xs font-mono-num font-bold text-[var(--text-primary)]"
                     />
                   </div>
                 </div>
@@ -2791,17 +2695,74 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             </div>
           )}
 
-          {/* TAB 3: 6 Curated Themes + Live Custom Color Studio */}
+          {/* TAB 3: 7 Themes (incl. السبح والذهب + التلقائي) + 5 App Shapes + Live Custom Color Studio */}
           {hubTab === 'spatial3d' && (
             <div className="space-y-5">
+              {/* App Shapes Studio (5 distinct structural shapes) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-black flex items-center gap-1.5">
+                    <Layers className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span>الأشكال الهندسية للتطبيق (5 أشكال مختلفة كلياً)</span>
+                  </h3>
+                  <span className="text-[11px] font-bold" style={{ color: 'var(--accent-bright)' }}>
+                    {APP_SHAPES.find((s) => s.id === resolveAppShapeId(appShape))?.name}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+                  {APP_SHAPES.map((shape) => {
+                    const active = resolveAppShapeId(appShape) === shape.id;
+                    return (
+                      <button
+                        key={shape.id}
+                        type="button"
+                        data-testid={`app-shape-${shape.id}`}
+                        onClick={() => {
+                          onUpdateThemePrefs?.({ appShape: shape.id });
+                          setHubNotice(`تم تفعيل الشكل الهندسي: ${shape.name}`);
+                        }}
+                        aria-pressed={active}
+                        className="rounded-2xl border p-3 text-right transition-all cursor-pointer flex flex-col justify-between gap-2"
+                        style={{
+                          borderColor: active ? 'var(--accent)' : 'var(--border-color)',
+                          backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--surface-well)',
+                          boxShadow: active ? '0 8px 20px -10px var(--spatial-glow)' : 'none',
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <ShapeSilhouetteIcon shapeId={shape.id} active={active} />
+                          {active && (
+                            <span className="text-[10px] font-black" style={{ color: 'var(--accent-bright)' }}>
+                              مفعّل
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-xs font-black text-[var(--text-primary)] truncate">
+                            {shape.name}
+                          </div>
+                          <div className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-snug">
+                            {shape.tagline}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="space-y-2.5">
                 <h3 className="text-xs font-black">
-                  الثيمات والمظهر العام
+                  الثيمات والمظهر العام (بضمنها السبح والذهب + التلقائي)
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {(Object.keys(SPATIAL_3D_THEMES) as Spatial3DThemeId[]).map((tId) => {
                     const def = SPATIAL_3D_THEMES[tId];
                     const active = spatialPrefs.themeId === tId && !spatialPrefs.customColors;
+                    const resolvedAutoLabel =
+                      tId === 'auto_adaptive'
+                        ? resolveAutoThemeTarget().name
+                        : null;
                     return (
                       <button
                         key={tId}
@@ -2814,7 +2775,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         className="rounded-2xl border p-3.5 text-right transition-all cursor-pointer"
                         style={{
                           borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                          backgroundColor: active ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.35)',
+                          backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--surface-well)',
                           boxShadow: active ? '0 10px 24px -12px var(--spatial-glow)' : 'none',
                         }}
                       >
@@ -2823,7 +2784,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             {def.swatches.map((hex) => (
                               <span
                                 key={hex}
-                                className="w-4 h-4 rounded-full border border-white/25"
+                                className="w-4 h-4 rounded-full border border-[var(--border-color)]"
                                 style={{ backgroundColor: hex }}
                               />
                             ))}
@@ -2841,7 +2802,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           {def.nameAr}
                         </div>
                         <div className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-snug">
-                          {def.subtitleAr}
+                          {resolvedAutoLabel ? `الوضع النشط الآن: ${resolvedAutoLabel}` : def.subtitleAr}
                         </div>
                       </button>
                     );
@@ -2850,7 +2811,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               </div>
 
               {/* Live Custom Color Studio */}
-              <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-black/35 p-4">
+              <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-xs font-black text-[var(--text-primary)] flex items-center gap-1.5">
@@ -2858,7 +2819,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       <span>تخصيص الألوان يدوياً</span>
                     </div>
                     <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                      عدّل اللون الأساسي، الإضاءة الثانوية، وخلفية التطبيق بشكل فوري متزامن مع المجسمات ثلاثية الأبعاد
+                      عدّل اللون الأساسي، الإضاءة الثانوية، وخلفية التطبيق بشكل فوري متزامن مع جميع العناصر الهندسية
                     </p>
                   </div>
                   {spatialPrefs.customColors && (
@@ -2869,7 +2830,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         updateSpatialPrefs({ customColors: undefined });
                         setHubNotice('تمت استعادة ألوان الثيم الأصلية.');
                       }}
-                      className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--surface-subtle)] hover:bg-[var(--bg-nav-active)] px-3 py-1.5 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer"
                     >
                       <RotateCcw className="h-3 w-3" />
                       <span>استعادة ألوان الثيم</span>
@@ -2879,7 +2840,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Primary Accent Color Picker + Swatches */}
-                  <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="space-y-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-extrabold">اللون الأساسي</span>
                       <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -2902,7 +2863,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                               },
                             })
                           }
-                          className="h-7 w-9 cursor-pointer rounded-lg border border-white/20 bg-transparent p-0.5"
+                          className="h-7 w-9 cursor-pointer rounded-lg border border-[var(--border-color)] bg-transparent p-0.5"
                         />
                       </label>
                     </div>
@@ -2926,7 +2887,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             className="w-6 h-6 rounded-full border transition-transform hover:scale-110 cursor-pointer"
                             style={{
                               backgroundColor: hex,
-                              borderColor: sel ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+                              borderColor: sel ? 'var(--text-primary)' : 'var(--border-color)',
                               boxShadow: sel ? `0 0 12px ${hex}` : 'none',
                               transform: sel ? 'scale(1.12)' : undefined,
                             }}
@@ -2937,7 +2898,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   </div>
 
                   {/* Secondary Glow Color Picker + Swatches */}
-                  <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="space-y-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-extrabold">لون الإضاءة الثانوي</span>
                       <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -2960,7 +2921,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                               },
                             })
                           }
-                          className="h-7 w-9 cursor-pointer rounded-lg border border-white/20 bg-transparent p-0.5"
+                          className="h-7 w-9 cursor-pointer rounded-lg border border-[var(--border-color)] bg-transparent p-0.5"
                         />
                       </label>
                     </div>
@@ -2984,7 +2945,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             className="w-6 h-6 rounded-full border transition-transform hover:scale-110 cursor-pointer"
                             style={{
                               backgroundColor: hex,
-                              borderColor: sel ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+                              borderColor: sel ? 'var(--text-primary)' : 'var(--border-color)',
                               boxShadow: sel ? `0 0 12px ${hex}` : 'none',
                               transform: sel ? 'scale(1.12)' : undefined,
                             }}
@@ -3020,13 +2981,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           }
                           className="flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold cursor-pointer transition-all"
                           style={{
-                            borderColor: activeTone ? 'var(--accent)' : 'rgba(255,255,255,0.12)',
+                            borderColor: activeTone ? 'var(--accent)' : 'var(--border-color)',
                             backgroundColor: activeTone ? 'var(--bg-nav-active)' : preset.bgSurface,
-                            color: activeTone ? 'var(--accent-bright)' : 'var(--text-primary)',
+                            color: activeTone ? 'var(--accent-bright)' : preset.textPrimary,
                           }}
                         >
                           <span
-                            className="w-3.5 h-3.5 rounded-full border border-white/25 shrink-0"
+                            className="w-3.5 h-3.5 rounded-full border border-[var(--border-color)] shrink-0"
                             style={{ backgroundColor: preset.bgMain }}
                           />
                           <span className="truncate">{preset.labelAr}</span>
@@ -3038,8 +2999,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
-                  <div className="text-xs font-black">شدة الإمالة التفاعلية</div>
+                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3.5">
+                  <div className="text-xs font-black">حيوية الحركة والتفاعل</div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(
                       [
@@ -3056,8 +3017,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           onClick={() => updateSpatialPrefs({ tiltIntensity: mode })}
                           className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
                           style={{
-                            borderColor: activeTilt ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-                            backgroundColor: activeTilt ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                            borderColor: activeTilt ? 'var(--accent)' : 'var(--border-color)',
+                            backgroundColor: activeTilt ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
                             color: activeTilt ? 'var(--accent-bright)' : 'var(--text-muted)',
                           }}
                         >
@@ -3068,7 +3029,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-black/30 p-3.5">
+                <div className="space-y-2 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3.5">
                   <div className="text-xs font-black">كثافة البطاقات</div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(
@@ -3086,8 +3047,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           onClick={() => updateSpatialPrefs({ cardDensity: density })}
                           className="py-2 rounded-xl text-xs font-bold border cursor-pointer transition-all"
                           style={{
-                            borderColor: activeDensity ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-                            backgroundColor: activeDensity ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.3)',
+                            borderColor: activeDensity ? 'var(--accent)' : 'var(--border-color)',
+                            backgroundColor: activeDensity ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
                             color: activeDensity ? 'var(--accent-bright)' : 'var(--text-muted)',
                           }}
                         >
@@ -3134,7 +3095,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         onExportBackupFile();
                         setHubNotice('تم تصدير النسخة الاحتياطية المنظمة.');
                       }}
-                      className="rounded-xl border border-[var(--border-color)] bg-black/35 p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
+                      className="rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
                     >
                       <div className="flex items-center gap-2 text-xs font-black text-[var(--text-primary)]">
                         <Download className="h-4 w-4 text-[var(--accent)]" />
@@ -3155,9 +3116,10 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                         cardDensity: 'balanced',
                         customColors: undefined,
                       });
-                      setHubNotice('تمت استعادة التخطيط والألوان الافتراضية.');
+                      onUpdateThemePrefs?.({ appShape: 'geometric-glass' });
+                      setHubNotice('تمت استعادة التخطيط والألوان والشكل الافتراضي.');
                     }}
-                    className="rounded-xl border border-[var(--border-color)] bg-black/35 p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
+                    className="rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] p-3 text-right hover:border-[var(--accent)] transition cursor-pointer"
                   >
                     <div className="flex items-center gap-2 text-xs font-black text-[var(--text-primary)]">
                       <RotateCcw className="h-4 w-4 text-[var(--accent)]" />

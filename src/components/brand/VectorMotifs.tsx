@@ -6,7 +6,7 @@ interface MotifProps {
 }
 
 /**
- * 3D Faceted Morrow Core Prism Crest inside interlocking gyroscopic orbital rings.
+ * Crisp 2D Architectural Morrow Prism Crest inside calibrated concentric vector rings.
  */
 export const GeometricRavenCrest: React.FC<MotifProps> = ({
   className = '',
@@ -29,7 +29,7 @@ export const GeometricRavenCrest: React.FC<MotifProps> = ({
       </linearGradient>
       <linearGradient id="marineRingGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
         <stop offset="0%" stopColor="var(--accent-bright, #86FFDE)" stopOpacity="0.88" />
-        <stop offset="100%" stopColor="var(--spatial-secondary, #22D3EE)" stopOpacity="0.25" />
+        <stop offset="100%" stopColor="var(--spatial-secondary, #22D3EE)" stopOpacity="0.28" />
       </linearGradient>
     </defs>
 
@@ -39,30 +39,36 @@ export const GeometricRavenCrest: React.FC<MotifProps> = ({
       cy="32"
       r="27"
       stroke="url(#marineRingGrad)"
-      strokeWidth="1.25"
+      strokeWidth="1.2"
       strokeDasharray="6 3"
     />
-    {/* Interlocking tilted 3D gyro ring */}
-    <ellipse
+    {/* Precision cardinal reticle ticks */}
+    <path
+      d="M32 2V7M32 57V62M2 32H7M57 32H62"
+      stroke="var(--accent-bright, #86FFDE)"
+      strokeOpacity="0.55"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+    />
+    {/* Inner geometric precision ring */}
+    <circle
       cx="32"
       cy="32"
-      rx="23"
-      ry="13.5"
-      transform="rotate(-24 32 32)"
+      r="21"
       stroke="url(#marineCrestGrad)"
-      strokeWidth="1.35"
-      strokeOpacity="0.72"
+      strokeWidth="1"
+      strokeOpacity="0.48"
     />
     {/* Chamfered obsidian prism core */}
     <polygon
-      points="32,10 50,20.5 50,43.5 32,54 14,43.5 14,20.5"
+      points="32,11 49,21 49,43 32,53 15,43 15,21"
       fill="var(--bg-surface, #091326)"
       stroke="url(#marineCrestGrad)"
-      strokeWidth="1.45"
+      strokeWidth="1.4"
     />
     {/* Top specular facet */}
     <polygon
-      points="32,14 46,22.5 32,31 18,22.5"
+      points="32,14 45.5,22 32,30 18.5,22"
       fill="var(--accent-bright, #86FFDE)"
       fillOpacity="0.16"
     />
@@ -72,15 +78,15 @@ export const GeometricRavenCrest: React.FC<MotifProps> = ({
       fill="url(#marineCrestGrad)"
     />
     {/* Luminous neural optical core node */}
-    <circle cx="32" cy="22" r="2.2" fill="var(--accent-bright, #86FFDE)" />
-    <circle cx="32" cy="22" r="4.2" stroke="var(--accent, #10E0A6)" strokeOpacity="0.45" strokeWidth="1" />
+    <circle cx="32" cy="22" r="2.1" fill="var(--accent-bright, #86FFDE)" />
+    <circle cx="32" cy="22" r="4" stroke="var(--accent, #10E0A6)" strokeOpacity="0.45" strokeWidth="1" />
   </svg>
 );
 
 export const MorrowCoreCrest = GeometricRavenCrest;
 
 /**
- * 3D Isometric chamfered Marine Crystal Cube for Hero Header and Onboarding anchors.
+ * Pure 2D Architectural Hexagonal Prism Emblem for Workspace Studio & Onboarding anchors.
  */
 export const GeometricGoldCube: React.FC<MotifProps> = ({
   className = '',
@@ -101,7 +107,7 @@ export const GeometricGoldCube: React.FC<MotifProps> = ({
         <stop offset="100%" stopColor="var(--accent, #10B981)" />
       </linearGradient>
       <linearGradient id="marineCubeLeft" x1="20" y1="38" x2="60" y2="104" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor="var(--accent, #10B981)" stopOpacity="0.92" />
+        <stop offset="0%" stopColor="var(--accent, #10B981)" stopOpacity="0.88" />
         <stop offset="100%" stopColor="var(--accent-deep, #047857)" stopOpacity="0.95" />
       </linearGradient>
       <linearGradient id="marineCubeRight" x1="60" y1="38" x2="100" y2="104" gradientUnits="userSpaceOnUse">
@@ -110,69 +116,64 @@ export const GeometricGoldCube: React.FC<MotifProps> = ({
       </linearGradient>
     </defs>
 
-    {/* Outer oceanic halo polygon */}
-    <polygon
-      points="60,7 107,34 107,86 60,113 13,86 13,34"
+    {/* Outer calibrated circular reticle */}
+    <circle
+      cx="60"
+      cy="60"
+      r="52"
       stroke="var(--accent, #10B981)"
-      strokeOpacity="0.3"
-      strokeWidth="1.15"
+      strokeOpacity="0.28"
+      strokeWidth="1"
+      strokeDasharray="6 4"
     />
-    {/* Secondary orbital bevel ring */}
+    {/* Secondary geometric hex boundary */}
     <polygon
-      points="60,13 101,37 101,83 60,107 19,83 19,37"
+      points="60,12 102,36 102,84 60,108 18,84 18,36"
       stroke="var(--accent-bright, #6EE7B7)"
-      strokeOpacity="0.18"
-      strokeWidth="0.9"
-      strokeDasharray="4 3"
+      strokeOpacity="0.25"
+      strokeWidth="1"
     />
     {/* Top specular face */}
     <polygon
-      points="60,18 95,38 60,58 25,38"
+      points="60,20 93,39 60,58 27,39"
       fill="url(#marineCubeTop)"
       fillOpacity="0.9"
       stroke="var(--accent-bright, #6EE7B7)"
       strokeWidth="1.15"
     />
-    {/* Left luminous face */}
+    {/* Left geometric facet */}
     <polygon
-      points="25,38 60,58 60,100 25,80"
+      points="27,39 60,58 60,98 27,79"
       fill="url(#marineCubeLeft)"
       stroke="var(--accent-bright, #6EE7B7)"
       strokeOpacity="0.5"
       strokeWidth="1.05"
     />
-    {/* Right deep abyssal face */}
+    {/* Right deep facet */}
     <polygon
-      points="95,38 60,58 60,100 95,80"
+      points="93,39 60,58 60,98 93,79"
       fill="url(#marineCubeRight)"
       stroke="var(--accent, #10B981)"
       strokeOpacity="0.5"
       strokeWidth="1.05"
     />
-    {/* Inner 3D suspended core prism */}
-    <polygon
-      points="60,31 79,42 60,53 41,42"
+    {/* Inner precision node */}
+    <circle
+      cx="60"
+      cy="58"
+      r="5"
       fill="var(--bg-main, #040B14)"
-      fillOpacity="0.28"
       stroke="var(--accent-bright, #6EE7B7)"
-      strokeOpacity="0.65"
-      strokeWidth="0.9"
+      strokeWidth="1.25"
     />
-    {/* Wireframe volumetric lattice */}
-    <polyline
-      points="42,28 77,48 77,90"
-      stroke="var(--accent-bright, #6EE7B7)"
-      strokeOpacity="0.45"
-      strokeWidth="1"
-      strokeDasharray="3 3"
-    />
+    <circle cx="60" cy="58" r="2" fill="var(--accent-bright, #6EE7B7)" />
   </svg>
 );
 
 export const GeometricMarinePrism = GeometricGoldCube;
 
 /**
- * Subtle geometric marine caustic dot-matrix pattern for 3D glass surfaces.
+ * Crisp 2D architectural dot-matrix texture for smoked glass surfaces.
  */
 export const DotMatrixPattern: React.FC<{ className?: string }> = ({
   className = '',

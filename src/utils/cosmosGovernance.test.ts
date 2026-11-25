@@ -124,10 +124,10 @@ test('natural Arabic & Iraqi dialect search ("وين هذا؟") finds key worlds
   }
 });
 
-test('preserves 5 Absolute Marine themes, 8 table themes, 6 fonts, and safe migration/default settings', () => {
+test('preserves 5 core themes + Auto Adaptive, 8 table themes, 6 fonts, and safe migration/default settings', () => {
   assert.equal(APP_THEMES.length, 5);
-  assert.equal(MODERN_APP_THEMES.length, 5);
-  assert.equal(ALL_APP_THEMES.length, 5);
+  assert.equal(MODERN_APP_THEMES.length, 6);
+  assert.equal(ALL_APP_THEMES.length, 6);
   assert.equal(TABLE_THEMES.length, 8);
   assert.equal(ARABIC_FONTS.length, 6);
 

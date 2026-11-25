@@ -212,7 +212,7 @@ test('themes registry exposes 5 Absolute Marine themes, 8 table themes, and 6 Ar
     assert.ok(theme.vars['--danger-fg']);
   }
   assert.equal(getAppThemeById('abyssal-emerald').isDark, true);
-  assert.equal(getAppThemeById('desert-mirage').id, 'abyssal-emerald');
+  assert.equal(getAppThemeById('desert-mirage').id, 'obsidian-gold');
   assert.equal(getAppThemeById('midnight-slate').id, 'pelagic-sapphire');
   assert.equal(DEFAULT_THEME_PREFERENCES.tabularNumerals, true);
 });

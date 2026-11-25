@@ -272,12 +272,10 @@ textarea {
   animation: cosmosSheetUp 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Smart Living 3D Spatial Cards & Sub-Icon Micro-Motion */
+/* Smart Living 2D Spatial Cards & Sub-Icon Micro-Motion */
 .smart-living-card {
   --card-mx: 50%;
   --card-my: 0%;
-  --card-rx: 0deg;
-  --card-ry: 0deg;
   --card-ty: 0px;
   position: relative;
   border-radius: var(--card-radius);
@@ -288,19 +286,15 @@ textarea {
     color-mix(in srgb, var(--bg-main) 95%, transparent) 100%
   );
   border-color: var(--border-color);
-  transform-style: preserve-3d;
-  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  transform: translate3d(0, var(--card-ty), 0);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 22%, rgba(255, 255, 255, 0.12)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.55),
-    var(--card-shadow),
-    0 18px 36px -20px rgba(2, 10, 22, 0.82);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.12)),
+    var(--card-shadow);
   transition:
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .smart-living-card::before {
@@ -373,18 +367,15 @@ textarea {
 /* Tactile Liquid-Glass & Living Motion Language */
 .living-glass {
   position: relative;
-  background-color: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+  background-color: color-mix(in srgb, var(--bg-surface) 95%, transparent);
   border-color: color-mix(in srgb, var(--border-color) 88%, var(--accent) 12%);
-  backdrop-filter: blur(16px) saturate(145%);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #ffffff 28%, transparent),
-    0 10px 30px -18px rgba(2, 6, 23, 0.35),
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.14)),
     var(--card-shadow);
   transition:
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .living-glass-interactive:hover {
@@ -446,12 +437,12 @@ textarea {
 }
 
 .living-dock {
-  background-color: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  background-color: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
-    0 12px 32px -12px rgba(2, 6, 23, 0.32);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.16)),
+    var(--card-shadow, 0 12px 32px -12px rgba(2, 6, 23, 0.32));
 }
 
 .living-progress-fill {
@@ -514,27 +505,26 @@ textarea {
 .morrow-composer-pill {
   background: linear-gradient(
     145deg,
-    color-mix(in srgb, var(--bg-table-header, #10203F) 80%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0A1429) 86%, transparent) 60%,
-    color-mix(in srgb, var(--bg-main, #040916) 92%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #10203F) 86%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0A1429) 90%, transparent) 60%,
+    color-mix(in srgb, var(--bg-main, #040916) 94%, transparent) 100%
   );
-  border-color: color-mix(in srgb, var(--accent, #12E5AD) 34%, color-mix(in srgb, var(--spatial-secondary, #38BDF8) 22%, rgba(255, 255, 255, 0.12)));
-  backdrop-filter: blur(22px) saturate(168%);
-  -webkit-backdrop-filter: blur(22px) saturate(168%);
+  border-color: color-mix(in srgb, var(--accent, #12E5AD) 34%, var(--border-color));
+  backdrop-filter: blur(12px) saturate(145%);
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 26%, rgba(255, 255, 255, 0.14)),
-    0 22px 54px rgba(2, 8, 22, 0.62),
-    0 0 36px -14px color-mix(in srgb, var(--accent, #12E5AD) 24%, transparent);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.14)),
+    var(--card-shadow, 0 22px 54px rgba(2, 8, 22, 0.52)),
+    0 0 28px -14px color-mix(in srgb, var(--accent, #12E5AD) 22%, transparent);
   transition: border-color 180ms ease, box-shadow 200ms ease;
 }
 
 .morrow-composer-pill:focus-within {
-  border-color: color-mix(in srgb, var(--accent, #12E5AD) 70%, rgba(255, 255, 255, 0.25));
+  border-color: color-mix(in srgb, var(--accent, #12E5AD) 70%, var(--border-color));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 38%, rgba(255, 255, 255, 0.22)),
-    0 22px 54px rgba(2, 8, 22, 0.68),
-    0 0 0 2px color-mix(in srgb, var(--accent, #12E5AD) 30%, transparent),
-    0 0 42px -10px color-mix(in srgb, var(--accent, #12E5AD) 38%, transparent);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.2)),
+    var(--card-shadow, 0 22px 54px rgba(2, 8, 22, 0.58)),
+    0 0 0 2px color-mix(in srgb, var(--accent, #12E5AD) 30%, transparent);
 }
 
 .morrow-composer-pill textarea:focus-visible {
@@ -542,37 +532,30 @@ textarea {
 }
 
 .morrow-studio-surface {
-  background-color: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  background-color: color-mix(in srgb, var(--bg-surface) 96%, transparent);
   border-color: color-mix(in srgb, var(--border-color) 85%, transparent);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
 
 .capsule-glass-card,
 .cosmos-glass-panel {
   --card-mx: 50%;
   --card-my: 0%;
-  --card-rx: 0deg;
-  --card-ry: 0deg;
   --card-ty: 0px;
   border-radius: var(--capsule-radius);
   background: linear-gradient(
     158deg,
-    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.86) * 100%), transparent) 0%,
-    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.86) * 100%), transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 92%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) 96%, transparent) 100%
   );
-  backdrop-filter: blur(18px) saturate(155%);
-  -webkit-backdrop-filter: blur(18px) saturate(155%);
-  transform-style: preserve-3d;
-  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  transform: translate3d(0, var(--card-ty), 0);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 20%, rgba(255, 255, 255, 0.12)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.55),
-    0 20px 40px -20px rgba(2, 10, 22, 0.78);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.12)),
+    var(--glass-bevel-bottom, inset 0 -1px 0 rgba(2, 10, 22, 0.4)),
+    var(--card-shadow, 0 16px 32px -18px rgba(2, 10, 22, 0.65));
   transition:
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cosmos-touch-target {
@@ -873,7 +856,7 @@ html[data-glass="1"] .glass-surface {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-/* Morrow Modern Soft Aurora Depth */
+/* Morrow Modern Soft Aurora Depth (no fixed-attachment repaint lag) */
 html[data-glass="1"] body,
 html[data-app-theme] body,
 body {
@@ -881,14 +864,12 @@ body {
   background-image:
     radial-gradient(1040px circle at 88% -8%, var(--marine-caustic-1, rgba(18, 229, 173, 0.2)), transparent 62%),
     radial-gradient(840px circle at 10% 106%, var(--marine-caustic-2, rgba(56, 189, 248, 0.14)), transparent 58%),
-    radial-gradient(660px circle at 48% 42%, var(--marine-caustic-3, rgba(99, 102, 241, 0.08)), transparent 66%),
     linear-gradient(
       165deg,
       var(--bg-main) 0%,
-      color-mix(in srgb, var(--bg-surface) 90%, var(--spatial-aurora, #6366F1) 6%) 55%,
+      color-mix(in srgb, var(--bg-surface) 92%, var(--spatial-aurora, #6366F1) 5%) 55%,
       var(--bg-surface) 100%
     );
-  background-attachment: fixed;
 }
 
 /* Legacy Fallback Classes (for seamless transition) */
@@ -934,37 +915,32 @@ body {
 .nexus-squircle {
   --card-mx: 50%;
   --card-my: 0%;
-  --card-rx: 0deg;
-  --card-ry: 0deg;
   --card-ty: 0px;
   border-radius: var(--card-radius);
   background: linear-gradient(
     152deg,
-    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) calc(var(--glass-opacity, 0.76) * 100%), var(--accent) 3%) 0%,
-    color-mix(in srgb, var(--bg-surface) calc(var(--glass-opacity, 0.76) * 100%), var(--spatial-secondary, #38BDF8) 3%) 56%,
-    color-mix(in srgb, var(--bg-main) calc(var(--glass-opacity, 0.84) * 100%), transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, var(--bg-surface)) 92%, var(--accent) 3%) 0%,
+    color-mix(in srgb, var(--bg-surface) 95%, var(--spatial-secondary, #38BDF8) 2%) 56%,
+    color-mix(in srgb, var(--bg-main) 97%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  transform-style: preserve-3d;
-  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
+  border: 1px solid var(--border-color);
+  transform: translate3d(0, var(--card-ty), 0);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 20%, rgba(255, 255, 255, 0.12)),
-    0 18px 40px -20px rgba(2, 10, 22, 0.82);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.12)),
+    var(--card-shadow, 0 14px 32px -18px rgba(2, 10, 22, 0.7));
   transition:
-    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nexus-squircle-interactive:hover {
   --card-ty: -3px;
   border-color: color-mix(in srgb, var(--accent) 52%, var(--spatial-secondary, #38BDF8) 20%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 30%, rgba(255, 255, 255, 0.16)),
-    0 24px 48px -20px rgba(2, 10, 22, 0.86),
-    0 0 28px -14px color-mix(in srgb, var(--accent) 28%, transparent);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.16)),
+    var(--card-shadow, 0 20px 40px -18px rgba(2, 10, 22, 0.78)),
+    0 0 24px -14px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .morrow-showcase-frame {
@@ -972,67 +948,59 @@ body {
   border-radius: calc(var(--card-radius, 20px) + 2px);
   background: linear-gradient(
     144deg,
-    color-mix(in srgb, var(--accent) 11%, var(--bg-table-header)) 0%,
-    color-mix(in srgb, var(--spatial-secondary, #38BDF8) 8%, var(--bg-surface)) 50%,
-    color-mix(in srgb, var(--spatial-aurora, #6366F1) 9%, var(--bg-main)) 100%
+    color-mix(in srgb, var(--accent) 10%, var(--bg-table-header)) 0%,
+    color-mix(in srgb, var(--spatial-secondary, #38BDF8) 7%, var(--bg-surface)) 50%,
+    color-mix(in srgb, var(--spatial-aurora, #6366F1) 8%, var(--bg-main)) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, color-mix(in srgb, var(--spatial-secondary, #38BDF8) 24%, rgba(255, 255, 255, 0.1)));
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border-color));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 24px 56px -24px rgba(2, 8, 22, 0.88),
-    0 0 42px -22px var(--spatial-glow, rgba(18, 229, 173, 0.28));
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.16)),
+    var(--card-shadow, 0 22px 48px -22px rgba(2, 8, 22, 0.8));
 }
 
 .nexus-glass-lite {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--bg-table-header) 80%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface) 78%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header) 86%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) 84%, transparent) 100%
   );
   border-color: var(--border-color);
-  backdrop-filter: blur(22px) saturate(168%);
-  -webkit-backdrop-filter: blur(22px) saturate(168%);
+  backdrop-filter: blur(12px) saturate(145%);
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #98FFE5) 22%, rgba(255, 255, 255, 0.14)),
-    inset 0 -1px 0 rgba(2, 10, 22, 0.45),
-    0 16px 36px -14px rgba(2, 10, 22, 0.76);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.12)),
+    var(--glass-bevel-bottom, inset 0 -1px 0 rgba(2, 10, 22, 0.35)),
+    var(--card-shadow, 0 14px 32px -14px rgba(2, 10, 22, 0.65));
 }
 
 .nexus-pill-btn {
   border-radius: 9999px;
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 22%, rgba(255, 255, 255, 0.14)),
-    inset 0 -2px 0 rgba(2, 8, 18, 0.5),
-    0 2px 0 rgba(2, 8, 18, 0.55),
-    0 8px 18px -8px rgba(2, 10, 22, 0.62);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.14)),
+    var(--glass-bevel-bottom, inset 0 -1px 0 rgba(2, 8, 18, 0.35)),
+    0 6px 14px -8px rgba(2, 10, 22, 0.42);
   transition:
-    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 160ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nexus-pill-btn:hover:not(:disabled) {
   transform: translate3d(0, -1.5px, 0);
   border-color: color-mix(in srgb, var(--accent) 58%, var(--border-color));
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 30%, rgba(255, 255, 255, 0.18)),
-    inset 0 -2px 0 rgba(2, 8, 18, 0.5),
-    0 3px 0 rgba(2, 8, 18, 0.55),
-    0 12px 22px -8px color-mix(in srgb, var(--accent) 28%, rgba(2, 10, 22, 0.65));
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.18)),
+    0 10px 20px -8px color-mix(in srgb, var(--accent) 26%, rgba(2, 10, 22, 0.45));
 }
 
 .nexus-pill-btn:active:not(:disabled) {
   transform: translate3d(0, 1.5px, 0) scale(0.975);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 1px 0 rgba(2, 8, 18, 0.5),
-    0 3px 8px -4px rgba(2, 10, 22, 0.55);
 }
 
 .nexus-progress-track {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--surface-subtle, rgba(255, 255, 255, 0.08));
   border-radius: 9999px;
   overflow: hidden;
 }
@@ -1104,21 +1072,19 @@ body {
 
 .agency-table.nexus-slab-table thead th {
   border-bottom: 1px solid var(--border-color);
-  background-color: color-mix(in srgb, var(--bg-table-header) 86%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: var(--bg-table-header);
 }
 
 .agency-table.nexus-slab-table tbody tr td {
   background-color: var(--bg-surface);
   border-top: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.05));
   transition:
-    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .agency-table.nexus-slab-table tbody tr td:first-child {
@@ -1138,20 +1104,16 @@ body {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border-color));
   transform: translateY(-1px);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #6EE7B7) 18%, transparent),
-    0 8px 18px -12px rgba(2, 10, 22, 0.7);
+    var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.14)),
+    var(--card-shadow, 0 8px 18px -12px rgba(2, 10, 22, 0.4));
 }
 
-/* SmartDashboardCard 3D Spatial Model, Perspective Tilt & Oceanic Sheen */
+/* SmartDashboardCard Pure 2D Specular Model & Cursor Sheen */
 .smart-dashboard-card {
   --card-mx: 50%;
   --card-my: 0%;
-  --card-rx: 0deg;
-  --card-ry: 0deg;
   --card-ty: 0px;
-  transform-style: preserve-3d;
-  transform: perspective(1100px) rotateX(var(--card-rx)) rotateY(var(--card-ry)) translateY(var(--card-ty));
-  will-change: transform;
+  transform: translate3d(0, var(--card-ty), 0);
 }
 
 .smart-dashboard-card::before {
@@ -1263,6 +1225,118 @@ html[data-reduce-motion="1"] .smart-dashboard-subicon-glyph {
   .smart-dashboard-subicon-glyph {
     transition: none !important;
     transform: none !important;
+  }
+}
+
+html[data-color-scheme="light"] .nexus-squircle,
+html[data-color-scheme="light"] .smart-living-card,
+html[data-color-scheme="light"] .smart-dashboard-card,
+html[data-color-scheme="light"] .capsule-glass-card,
+html[data-color-scheme="light"] .cosmos-glass-panel,
+html[data-color-scheme="light"] .morrow-showcase-frame {
+  background: #FFFFFF;
+  border-color: var(--border-color);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    var(--card-shadow, 0 8px 24px -10px rgba(15, 23, 42, 0.1));
+}
+
+html[data-color-scheme="light"] .smart-living-card:hover,
+html[data-color-scheme="light"] .smart-dashboard-card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    0 16px 32px -12px rgba(15, 23, 42, 0.16),
+    0 8px 20px -12px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+html[data-color-scheme="light"] .nexus-glass-lite {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: var(--border-color);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 10px 26px -12px rgba(15, 23, 42, 0.12);
+}
+
+html[data-color-scheme="light"] .morrow-studio-shell,
+html[data-color-scheme="light"] .morrow-obsidian-shell {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  background-image:
+    radial-gradient(840px circle at 88% -4%, rgba(180, 83, 9, 0.08), transparent 62%),
+    radial-gradient(760px circle at 10% 102%, rgba(2, 132, 199, 0.06), transparent 60%);
+}
+
+html[data-color-scheme="light"] .morrow-composer-pill {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 14px 32px -14px rgba(15, 23, 42, 0.16),
+    0 0 0 1px var(--border-color);
+}
+
+html[data-color-scheme="light"] .nexus-pill-btn {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 4px 12px -6px rgba(15, 23, 42, 0.14);
+}
+
+@keyframes orbitalSpinCW {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orbitalSpinCCW {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes ambientOrbDriftA {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(24px, -16px, 0) scale(1.04);
+  }
+}
+
+@keyframes ambientOrbDriftB {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-22px, 18px, 0) scale(0.96);
+  }
+}
+
+.spin-orbital-cw {
+  animation: orbitalSpinCW 42s linear infinite;
+}
+
+.spin-orbital-ccw {
+  animation: orbitalSpinCCW 32s linear infinite;
+}
+
+.ambient-orb-drift-a {
+  animation: ambientOrbDriftA 22s ease-in-out infinite;
+}
+
+.ambient-orb-drift-b {
+  animation: ambientOrbDriftB 26s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin-orbital-cw,
+  .spin-orbital-ccw,
+  .ambient-orb-drift-a,
+  .ambient-orb-drift-b {
+    animation: none !important;
   }
 }
 

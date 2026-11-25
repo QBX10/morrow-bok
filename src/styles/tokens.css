@@ -1,32 +1,50 @@
-/* ─── Absolute Marine Identity Tokens + 3D Spatial Glassmorphism ─────────── */
+/* ─── Pure 2D Geometric Identity Tokens + 5 Architectural Shapes ─────────── */
 :root {
   color-scheme: dark;
 
-  /* Dynamic Marine Palette Aliases (driven by active Marine Theme in themes.ts) */
-  --obsidian-bg: var(--bg-main, #040814);
-  --obsidian-surface: var(--bg-surface, #091326);
-  --obsidian-surface-elevated: var(--bg-table-header, #0F1E38);
+  /* Dynamic Palette Aliases */
+  --obsidian-bg: var(--bg-main, #050A14);
+  --obsidian-surface: var(--bg-surface, #0C172B);
+  --obsidian-surface-elevated: var(--bg-table-header, #12223E);
   --gold-primary: var(--accent, #10E0A6);
   --gold-bright: var(--accent-bright, #86FFDE);
   --gold-amber: var(--accent, #10E0A6);
-  --gold-border: var(--border-color, rgba(56, 239, 194, 0.25));
+  --gold-border: var(--border-color, rgba(56, 239, 194, 0.24));
   --gold-border-strong: color-mix(in srgb, var(--accent, #10E0A6) 48%, transparent);
   --gold-glow: var(--marine-caustic-1, rgba(16, 224, 166, 0.18));
 
-  /* 3D Oceanic Smoked Glassmorphism */
-  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #091326) 72%, transparent);
-  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #091326) 86%, transparent);
-  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #86FFDE) 24%, rgba(255, 255, 255, 0.16));
-  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.62);
-  --glass-blur: blur(22px) saturate(165%);
+  /* Semantic Surface Tokens */
+  --surface-well: rgba(4, 10, 22, 0.72);
+  --surface-subtle: rgba(255, 255, 255, 0.04);
+  --surface-pill: rgba(12, 23, 43, 0.85);
+  --surface-overlay: rgba(3, 8, 18, 0.82);
 
-  /* Motion Timing */
+  /* Layered Smoked Surface & Specular Rim Lighting (Lightweight for 60fps) */
+  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #0C172B) 90%, var(--bg-main, #050A14));
+  --glass-bg-smoked-strong: color-mix(in srgb, var(--bg-surface, #0C172B) 94%, transparent);
+  --glass-specular-top: inset 0 1px 0 color-mix(in srgb, var(--accent-bright, #86FFDE) 24%, rgba(255, 255, 255, 0.14));
+  --glass-bevel-bottom: inset 0 -1px 0 rgba(2, 8, 18, 0.42);
+  --chrome-blur: blur(12px) saturate(140%);
+
+  /* 60fps Motion Timing */
   --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* Typography Families */
+  /* Intelligent Geometric Typography Families */
   --font-display: 'Cairo', 'Readex Pro', system-ui, sans-serif;
   --font-body: 'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif;
   --font-mono-num: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+}
+
+html[data-color-scheme="light"] {
+  color-scheme: light;
+  --surface-well: #E9EEF5;
+  --surface-subtle: rgba(15, 23, 42, 0.055);
+  --surface-pill: rgba(255, 255, 255, 0.92);
+  --surface-overlay: rgba(15, 23, 42, 0.42);
+  --glass-bg-smoked: color-mix(in srgb, var(--bg-surface, #FFFFFF) 96%, var(--bg-main, #F2F4F8));
+  --glass-bg-smoked-strong: rgba(255, 255, 255, 0.96);
+  --glass-specular-top: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glass-bevel-bottom: inset 0 -1px 0 rgba(15, 23, 42, 0.07);
 }
 
 /* Display Headings & Hero Titles */
@@ -35,6 +53,61 @@ h1,
 h2 {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* Intelligent Geometric Typography Framing */
+.geo-display-title {
+  font-family: var(--font-display);
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  background: linear-gradient(
+    135deg,
+    var(--text-primary, #ffffff) 0%,
+    var(--accent-bright, #6EE7B7) 58%,
+    var(--accent, #10E0A6) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+html[data-color-scheme="light"] .geo-display-title {
+  background: linear-gradient(
+    135deg,
+    var(--text-primary, #0F172A) 0%,
+    var(--accent, #B45309) 70%,
+    var(--accent-deep, #78350F) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.geo-subtitle {
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: var(--text-muted, #9FB4CC);
+  line-height: 1.6;
+}
+
+.geo-icon-socket {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--capsule-radius, 18px) - 2px);
+  border: 1px solid color-mix(in srgb, var(--accent, #10E0A6) 34%, var(--border-color));
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent, #10E0A6) 18%, var(--bg-table-header, #12223E)) 0%,
+    color-mix(in srgb, var(--bg-surface, #0C172B) 94%, transparent) 100%
+  );
+  box-shadow:
+    var(--glass-specular-top),
+    0 8px 18px -12px var(--spatial-glow, rgba(16, 224, 166, 0.35));
 }
 
 /* Numerical Figures & Data Columns */
@@ -44,96 +117,89 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Micro-Labels & Badges (11px - 12px SemiBold) */
+/* Micro-Labels (11px - 12px SemiBold) */
 .micro-label-ar {
   font-size: 11.5px;
   font-weight: 600;
   line-height: 1.35;
 }
 
-/* Luminous Marine Gradient Text */
+/* Luminous Specular Gradient Text */
 .gold-gradient-text,
 .marine-gradient-text {
   background: linear-gradient(
     135deg,
-    var(--accent-bright, #86FFDE) 0%,
-    var(--accent, #10E0A6) 54%,
-    var(--spatial-secondary, #22D3EE) 100%
+    var(--text-primary, #ffffff) 0%,
+    var(--accent-bright, #86FFDE) 48%,
+    var(--accent, #10E0A6) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* 3D Spatial Perspective Stage */
 .tabrix-3d-stage {
-  perspective: 1400px;
-  transform-style: preserve-3d;
+  position: relative;
 }
 
-/* 3D Marine Smoked Glass Card Surface + Specular Bevel Rim */
+/* 2D Layered Surface (No scroll-blocking backdrop-filter on content boxes) */
 .smoked-glass {
   background: var(--glass-bg-smoked);
   border: 1px solid var(--border-color);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  transform-style: preserve-3d;
   box-shadow:
     var(--glass-specular-top),
     var(--glass-bevel-bottom),
-    0 22px 48px -20px rgba(2, 10, 22, 0.85),
-    0 2px 0 0 color-mix(in srgb, var(--accent-deep, #047857) 18%, rgba(2, 8, 18, 0.7));
+    var(--card-shadow, 0 12px 28px -16px rgba(2, 10, 22, 0.52));
 }
 
+/* Floating Popovers / Overlay Chrome (keeps subtle blur only on overlays) */
 .smoked-glass-elevated {
   background: linear-gradient(
     158deg,
-    color-mix(in srgb, var(--bg-table-header, #0E1F33) 84%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0A1726) 90%, transparent) 55%,
-    color-mix(in srgb, var(--bg-main, #040B14) 94%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #12223E) 92%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 60%,
+    color-mix(in srgb, var(--bg-main, #050A14) 98%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border-color));
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
-  transform-style: preserve-3d;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 30%, rgba(255, 255, 255, 0.2)),
-    inset 0 -2px 0 rgba(2, 10, 22, 0.7),
-    0 30px 68px -20px rgba(2, 10, 22, 0.92),
-    0 3px 0 0 color-mix(in srgb, var(--accent-deep) 26%, rgba(2, 8, 18, 0.78)),
-    0 0 48px -16px var(--marine-caustic-1, rgba(16, 185, 129, 0.28));
+    var(--glass-specular-top),
+    var(--glass-bevel-bottom),
+    0 18px 42px -18px rgba(2, 10, 22, 0.48),
+    0 0 30px -18px var(--marine-caustic-1, rgba(16, 224, 166, 0.2));
 }
 
-/* Sculpted 3D Chamfered Glass Card for Auth, Hero & Spatial Surfaces */
+/* Architectural 2D Chamfered Hero / Auth Card (scrolls smoothly without heavy blur) */
 .chamfered-glass-card {
   position: relative;
-  border-radius: calc(var(--card-radius, 22px) + 2px);
+  border-radius: var(--card-radius, 20px);
   background: linear-gradient(
     148deg,
-    color-mix(in srgb, var(--bg-table-header, #0E1F33) 86%, transparent) 0%,
-    color-mix(in srgb, var(--bg-surface, #0A1726) 90%, transparent) 52%,
-    color-mix(in srgb, var(--bg-main, #040B14) 95%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #12223E) 88%, var(--bg-surface)) 0%,
+    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 55%,
+    color-mix(in srgb, var(--bg-main, #050A14) 98%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-color));
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  transform-style: preserve-3d;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-color));
   box-shadow:
-    inset 0 1.5px 0 color-mix(in srgb, var(--accent-bright) 34%, rgba(255, 255, 255, 0.22)),
-    inset 0 -2.5px 0 rgba(2, 10, 22, 0.78),
-    0 36px 76px -20px rgba(2, 10, 22, 0.95),
-    0 4px 0 0 color-mix(in srgb, var(--accent-deep) 28%, rgba(2, 8, 18, 0.82)),
-    0 0 60px -20px var(--marine-caustic-1, rgba(16, 185, 129, 0.34));
+    var(--glass-specular-top),
+    var(--glass-bevel-bottom),
+    var(--card-shadow, 0 16px 36px -18px rgba(2, 10, 22, 0.56));
 }
 
-/* Abyssal Marine Atmosphere & Flowing Caustic Orbs */
+html[data-color-scheme="light"] .chamfered-glass-card,
+html[data-color-scheme="light"] .smoked-glass-elevated {
+  background: linear-gradient(
+    158deg,
+    #FFFFFF 0%,
+    color-mix(in srgb, var(--bg-table-header, #E8EDF4) 45%, #FFFFFF) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 12px 32px -14px rgba(15, 23, 42, 0.14);
+}
+
+/* Canvas without fixed-attachment repaint lag */
 .ambient-obsidian-canvas {
-  background-color: var(--bg-main, #040B14);
-  background-image:
-    radial-gradient(960px circle at 86% -6%, var(--marine-caustic-1, rgba(16, 185, 129, 0.16)), transparent 60%),
-    radial-gradient(800px circle at 10% 106%, var(--marine-caustic-2, rgba(6, 182, 212, 0.13)), transparent 58%),
-    radial-gradient(580px circle at 50% 45%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 65%);
-  background-attachment: fixed;
+  background-color: var(--bg-main, #050A14);
 }
 
 @keyframes marineCausticDrift {
@@ -142,7 +208,7 @@ h2 {
     transform: translate3d(0, 0, 0) scale(1);
   }
   50% {
-    transform: translate3d(-14px, 12px, 0) scale(1.045);
+    transform: translate3d(-12px, 10px, 0) scale(1.03);
   }
 }
 
@@ -153,64 +219,37 @@ h2 {
   border-radius: 9999px;
   background: radial-gradient(
     circle,
-    var(--marine-caustic-1, rgba(16, 185, 129, 0.22)) 0%,
-    var(--marine-caustic-2, rgba(6, 182, 212, 0.1)) 46%,
+    var(--marine-caustic-1, rgba(16, 224, 166, 0.18)) 0%,
+    var(--marine-caustic-2, rgba(56, 189, 248, 0.08)) 48%,
     transparent 74%
   );
-  filter: blur(44px);
-  animation: marineCausticDrift 14s ease-in-out infinite;
+  animation: marineCausticDrift 16s ease-in-out infinite;
 }
 
 .ambient-orb-gold-1 {
   top: -120px;
   right: -90px;
-  width: 440px;
-  height: 440px;
+  width: 420px;
+  height: 420px;
 }
 
 .ambient-orb-gold-2 {
   bottom: -140px;
   left: -100px;
-  width: 400px;
-  height: 400px;
-  opacity: 0.78;
-  animation-delay: -7s;
+  width: 380px;
+  height: 380px;
+  opacity: 0.72;
+  animation-delay: -8s;
 }
 
 html[data-reduce-motion="1"] .ambient-orb-gold {
   animation: none !important;
 }
 
-/* 3D Flip Card Architecture (Perspective + Backface Culling) */
-.flip-perspective {
-  perspective: 1400px;
-}
-
-.flip-card-inner {
-  position: relative;
-  width: 100%;
-  transform-style: preserve-3d;
-  transition: transform 680ms var(--ease-luxury);
-}
-
-.flip-card-inner.is-flipped {
-  transform: rotateY(180deg);
-}
-
-.flip-card-face {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.flip-card-face-back {
-  position: absolute;
-  inset: 0;
-  transform: rotateY(180deg);
-}
-
-/* 3D Sculpted Bioluminescent Marine CTA Button */
+/* Tactile Primary CTA Button */
 .obsidian-gold-cta,
 .marine-3d-cta {
+  border-radius: calc(var(--btn-radius, 14px) * 0.25 + 10px);
   background: linear-gradient(
     135deg,
     var(--accent-bright, #6EE7B7) 0%,
@@ -219,91 +258,92 @@ html[data-reduce-motion="1"] .ambient-orb-gold {
   );
   color: var(--accent-fg, #031510);
   font-weight: 800;
-  border: 1px solid color-mix(in srgb, var(--accent-bright) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 52%, transparent);
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -2px 0 color-mix(in srgb, var(--accent-deep) 65%, rgba(0, 0, 0, 0.35)),
-    0 3px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
-    0 12px 28px -10px color-mix(in srgb, var(--accent) 62%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    0 8px 20px -10px color-mix(in srgb, var(--accent) 55%, transparent);
   transition:
-    transform 180ms var(--ease-luxury),
-    filter 180ms var(--ease-luxury),
-    box-shadow 180ms var(--ease-luxury);
+    transform 150ms var(--ease-luxury),
+    filter 150ms var(--ease-luxury),
+    box-shadow 160ms var(--ease-luxury);
+}
+
+html[data-color-scheme="light"] .obsidian-gold-cta,
+html[data-color-scheme="light"] .marine-3d-cta {
+  background: linear-gradient(
+    135deg,
+    var(--accent, #B45309) 0%,
+    var(--accent-deep, #78350F) 100%
+  );
+  color: var(--accent-fg, #FFFFFF);
 }
 
 .obsidian-gold-cta:hover:not(:disabled),
 .marine-3d-cta:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translate3d(0, -1.5px, 0);
   filter: brightness(1.06);
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.56),
-    inset 0 -2px 0 color-mix(in srgb, var(--accent-deep) 65%, rgba(0, 0, 0, 0.35)),
-    0 5px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
-    0 16px 34px -10px color-mix(in srgb, var(--accent) 75%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 12px 26px -10px color-mix(in srgb, var(--accent) 68%, transparent);
 }
 
 .obsidian-gold-cta:active:not(:disabled),
 .marine-3d-cta:active:not(:disabled) {
-  transform: translateY(1.5px) scale(0.985);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    0 1px 0 color-mix(in srgb, var(--accent-deep) 80%, #020810),
-    0 6px 14px -8px color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: scale(0.97);
 }
 
-/* Curved RTL 3D Glass Sidebar Edge */
+/* Curved RTL Glass Sidebar Edge (lightweight chrome blur) */
 .curved-glass-sidebar {
-  border-top-left-radius: 30px;
-  border-bottom-left-radius: 30px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg-surface) 84%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main) 88%, transparent) 100%
-  );
+  border-top-left-radius: var(--card-radius, 24px);
+  border-bottom-left-radius: var(--card-radius, 24px);
+  background: color-mix(in srgb, var(--bg-surface) 92%, var(--bg-main));
   border-left: 1px solid var(--border-color);
-  backdrop-filter: blur(22px) saturate(165%);
-  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
   box-shadow:
-    inset 1.5px 0 0 color-mix(in srgb, var(--accent-bright) 14%, rgba(255, 255, 255, 0.08)),
-    -14px 0 40px -22px rgba(2, 10, 22, 0.88);
+    inset 1px 0 0 color-mix(in srgb, var(--accent-bright) 14%, rgba(255, 255, 255, 0.06)),
+    -12px 0 32px -20px rgba(2, 10, 22, 0.45);
 }
 
-/* Top Glow Cap for Floating Nav */
+html[data-color-scheme="light"] .curved-glass-sidebar {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: -8px 0 28px -18px rgba(15, 23, 42, 0.14);
+}
+
+/* Top Glow Cap */
 .nav-top-glow-cap {
   background: linear-gradient(90deg, transparent 5%, var(--accent-bright, #6EE7B7) 50%, transparent 95%);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent, #10B981) 85%, transparent);
 }
 
-/* 3D Spatial Floating Sculpture Animation */
-@keyframes marineFloat3D {
+@keyframes marineFloat2D {
   0%,
   100% {
-    transform: translate3d(0, 0, 0) rotateX(0deg);
+    transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translate3d(0, -5px, 0) rotateX(4deg);
+    transform: translate3d(0, -4px, 0);
   }
 }
 
 .marine-float-3d {
-  transform-style: preserve-3d;
-  animation: marineFloat3D 5.5s ease-in-out infinite;
+  animation: marineFloat2D 5.2s ease-in-out infinite;
 }
 
 html[data-reduce-motion="1"] .marine-float-3d {
   animation: none !important;
 }
 
-/* ─── Spatial 3D Skeleton Layers 1 & 2 ────────────────────────────────────── */
+/* ─── Pure 2D Geometric Structural Wells, Dividers & Bento Cards ──────────── */
 .recessed-well {
-  background: linear-gradient(
-    180deg,
-    rgba(2, 7, 14, 0.78) 0%,
-    color-mix(in srgb, var(--bg-main, #040B14) 92%, #000000) 100%
-  );
+  background: var(--surface-well, rgba(4, 10, 22, 0.72));
   box-shadow:
-    inset 0 2px 12px rgba(0, 0, 0, 0.85),
-    inset 0 1px 1px rgba(255, 255, 255, 0.06);
+    inset 0 1px 6px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-color-scheme="light"] .recessed-well {
+  background: var(--surface-well, #E9EEF5);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .laser-divider {
@@ -318,46 +358,48 @@ html[data-reduce-motion="1"] .marine-float-3d {
   );
 }
 
+/* Zero heavy scroll blur on repeatable Bento cards for buttery 60fps scrolling */
 .glass-bento-card {
   --spot-x: 50%;
   --spot-y: 50%;
   --spot-opacity: 0;
-  --tilt-rx: 0deg;
-  --tilt-ry: 0deg;
   --tilt-scale: 1;
+  border-radius: var(--card-radius, 20px);
   background: linear-gradient(
     152deg,
-    color-mix(in srgb, var(--bg-surface, #091326) 76%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main, #040814) 86%, transparent) 100%
+    color-mix(in srgb, var(--bg-surface, #0C172B) 94%, var(--bg-table-header)) 0%,
+    color-mix(in srgb, var(--bg-main, #050A14) 97%, var(--bg-surface)) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--border-color, rgba(56, 239, 194, 0.25)) 92%, rgba(255, 255, 255, 0.1));
-  backdrop-filter: blur(22px) saturate(165%);
-  -webkit-backdrop-filter: blur(22px) saturate(165%);
-  transform-style: preserve-3d;
-  transform: perspective(1200px) rotateX(var(--tilt-rx)) rotateY(var(--tilt-ry)) scale3d(var(--tilt-scale), var(--tilt-scale), 1);
-  transition: transform 180ms var(--ease-luxury), border-color 220ms var(--ease-luxury), box-shadow 220ms var(--ease-luxury);
+  border: 1px solid var(--border-color);
+  transform: scale3d(var(--tilt-scale), var(--tilt-scale), 1);
+  transition:
+    transform 160ms var(--ease-luxury),
+    border-color 180ms var(--ease-luxury),
+    box-shadow 180ms var(--ease-luxury);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.52),
-    0 22px 48px -20px rgba(0, 0, 0, 0.9);
-  will-change: transform;
+    var(--glass-specular-top),
+    var(--card-shadow, 0 14px 32px -18px rgba(0, 0, 0, 0.6));
 }
 
 .glass-bento-card-elevated {
   background: linear-gradient(
     148deg,
-    color-mix(in srgb, var(--bg-table-header, #0F1E38) 82%, transparent) 0%,
-    color-mix(in srgb, var(--bg-main, #040814) 90%, transparent) 100%
+    color-mix(in srgb, var(--bg-table-header, #12223E) 92%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface, #0C172B) 96%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10E0A6)) 36%, rgba(255, 255, 255, 0.12));
+  border: 1px solid color-mix(in srgb, var(--spatial-accent, var(--accent, #10E0A6)) 36%, var(--border-color));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    0 24px 54px -22px rgba(2, 8, 22, 0.88),
-    0 0 38px -18px var(--spatial-glow, rgba(16, 224, 166, 0.24));
+    var(--glass-specular-top),
+    var(--card-shadow, 0 18px 40px -20px rgba(2, 8, 22, 0.65)),
+    0 0 28px -18px var(--spatial-glow, rgba(16, 224, 166, 0.22));
 }
 
-/* Editorial Eyebrow Metadata & Recessed Single-Elevation Metric Wells */
+html[data-color-scheme="light"] .glass-bento-card,
+html[data-color-scheme="light"] .glass-bento-card-elevated {
+  background: #FFFFFF;
+  box-shadow: 0 8px 24px -12px rgba(15, 23, 42, 0.12);
+}
+
 .editorial-eyebrow {
   font-size: 11.5px;
   font-weight: 700;
@@ -366,15 +408,201 @@ html[data-reduce-motion="1"] .marine-float-3d {
 }
 
 .metric-well {
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-main, #040916) 58%, rgba(255, 255, 255, 0.02));
-  border: 1px solid color-mix(in srgb, var(--border-color) 65%, rgba(255, 255, 255, 0.06));
-  transition: border-color 180ms var(--ease-luxury), background-color 180ms var(--ease-luxury);
+  border-radius: calc(var(--capsule-radius, 18px) * 0.78);
+  background: var(--surface-well, rgba(4, 10, 22, 0.72));
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  transition: border-color 160ms var(--ease-luxury), background-color 160ms var(--ease-luxury);
 }
 
 .metric-well:hover {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-color));
-  background: color-mix(in srgb, var(--bg-main, #040916) 46%, var(--accent) 4%);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-color));
+  background: color-mix(in srgb, var(--surface-well) 82%, var(--accent) 5%);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 ARCHITECTURAL APP SHAPES (1 Default + 4 Radically Different Shapes)
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+/* SHAPE 1: Sharp Monolith (المعماري الحاد — 2px brutalist corners, double technical lines) */
+html[data-app-shape="sharp-monolith"] .nexus-squircle,
+html[data-app-shape="sharp-monolith"] .smart-living-card,
+html[data-app-shape="sharp-monolith"] .smart-dashboard-card,
+html[data-app-shape="sharp-monolith"] .chamfered-glass-card,
+html[data-app-shape="sharp-monolith"] .capsule-glass-card,
+html[data-app-shape="sharp-monolith"] .cosmos-glass-panel,
+html[data-app-shape="sharp-monolith"] .glass-bento-card,
+html[data-app-shape="sharp-monolith"] .smoked-glass,
+html[data-app-shape="sharp-monolith"] .smoked-glass-elevated,
+html[data-app-shape="sharp-monolith"] .morrow-showcase-frame {
+  border-radius: 3px !important;
+  border-width: 1.5px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent),
+    4px 4px 0 color-mix(in srgb, var(--accent) 18%, rgba(0, 0, 0, 0.35)) !important;
+}
+
+html[data-app-shape="sharp-monolith"] .nexus-pill-btn,
+html[data-app-shape="sharp-monolith"] .obsidian-gold-cta,
+html[data-app-shape="sharp-monolith"] .marine-3d-cta,
+html[data-app-shape="sharp-monolith"] .geo-icon-socket,
+html[data-app-shape="sharp-monolith"] .metric-well,
+html[data-app-shape="sharp-monolith"] .smart-dashboard-subicon,
+html[data-app-shape="sharp-monolith"] .smart-living-subicon {
+  border-radius: 3px !important;
+}
+
+html[data-app-shape="sharp-monolith"] .curved-glass-sidebar {
+  border-radius: 0 !important;
+  border-left: 2px solid var(--accent);
+}
+
+html[data-app-shape="sharp-monolith"] .cosmos-bottom-pill {
+  border-radius: 6px !important;
+}
+
+html[data-app-shape="sharp-monolith"] .cosmos-bottom-orb {
+  border-radius: 6px !important;
+}
+
+/* SHAPE 2: Royal Octagram (الملكي المثمّن — 45-degree chamfered octagonal bevels + engraved double trim) */
+html[data-app-shape="royal-octagram"] .smart-living-card,
+html[data-app-shape="royal-octagram"] .smart-dashboard-card,
+html[data-app-shape="royal-octagram"] .chamfered-glass-card,
+html[data-app-shape="royal-octagram"] .glass-bento-card,
+html[data-app-shape="royal-octagram"] .morrow-showcase-frame {
+  border-radius: 2px !important;
+  clip-path: polygon(
+    14px 0,
+    calc(100% - 14px) 0,
+    100% 14px,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    14px 100%,
+    0 calc(100% - 14px),
+    0 14px
+  );
+  outline: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: -5px;
+}
+
+html[data-app-shape="royal-octagram"] .nexus-squircle,
+html[data-app-shape="royal-octagram"] .capsule-glass-card,
+html[data-app-shape="royal-octagram"] .cosmos-glass-panel {
+  border-radius: 12px !important;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  outline: 1px solid color-mix(in srgb, var(--accent-bright) 14%, transparent);
+  outline-offset: -4px;
+}
+
+html[data-app-shape="royal-octagram"] .obsidian-gold-cta,
+html[data-app-shape="royal-octagram"] .marine-3d-cta,
+html[data-app-shape="royal-octagram"] .nexus-pill-btn {
+  border-radius: 4px !important;
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+}
+
+html[data-app-shape="royal-octagram"] .geo-icon-socket {
+  border-radius: 4px !important;
+  transform: rotate(45deg);
+}
+
+html[data-app-shape="royal-octagram"] .geo-icon-socket > * {
+  transform: rotate(-45deg);
+}
+
+html[data-app-shape="royal-octagram"] .curved-glass-sidebar {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border-color));
+}
+
+html[data-app-shape="royal-octagram"] .cosmos-bottom-pill {
+  border-radius: 12px !important;
+}
+
+/* SHAPE 3: Swiss Editorial (التحريري السويسري — zero blur, flat matte ultra-crisp 1.5px hairlines) */
+html[data-app-shape="swiss-editorial"] *,
+html[data-app-shape="swiss-editorial"] .smoked-glass-elevated,
+html[data-app-shape="swiss-editorial"] .curved-glass-sidebar,
+html[data-app-shape="swiss-editorial"] .living-dock,
+html[data-app-shape="swiss-editorial"] .cosmos-bottom-pill {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-app-shape="swiss-editorial"] .nexus-squircle,
+html[data-app-shape="swiss-editorial"] .smart-living-card,
+html[data-app-shape="swiss-editorial"] .smart-dashboard-card,
+html[data-app-shape="swiss-editorial"] .chamfered-glass-card,
+html[data-app-shape="swiss-editorial"] .capsule-glass-card,
+html[data-app-shape="swiss-editorial"] .cosmos-glass-panel,
+html[data-app-shape="swiss-editorial"] .glass-bento-card {
+  background: var(--bg-surface) !important;
+  border-radius: 10px !important;
+  border: 1.5px solid color-mix(in srgb, var(--text-primary) 16%, var(--border-color)) !important;
+  box-shadow: none !important;
+}
+
+html[data-app-shape="swiss-editorial"] .chamfered-glass-card {
+  border-inline-start: 4px solid var(--accent) !important;
+}
+
+html[data-app-shape="swiss-editorial"] .nexus-pill-btn,
+html[data-app-shape="swiss-editorial"] .obsidian-gold-cta,
+html[data-app-shape="swiss-editorial"] .marine-3d-cta {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+html[data-app-shape="swiss-editorial"] .curved-glass-sidebar {
+  border-radius: 0 !important;
+  background: var(--bg-surface) !important;
+  box-shadow: none !important;
+}
+
+/* SHAPE 4: Floating Capsule (الجُزر الكبسولية المرنة — detached floating islands & 30px super-curves) */
+html[data-app-shape="floating-capsule"] .nexus-squircle,
+html[data-app-shape="floating-capsule"] .smart-living-card,
+html[data-app-shape="floating-capsule"] .smart-dashboard-card,
+html[data-app-shape="floating-capsule"] .chamfered-glass-card,
+html[data-app-shape="floating-capsule"] .capsule-glass-card,
+html[data-app-shape="floating-capsule"] .cosmos-glass-panel,
+html[data-app-shape="floating-capsule"] .glass-bento-card {
+  border-radius: 30px !important;
+}
+
+html[data-app-shape="floating-capsule"] .metric-well,
+html[data-app-shape="floating-capsule"] .smart-dashboard-subicon,
+html[data-app-shape="floating-capsule"] .smart-living-subicon {
+  border-radius: 20px !important;
+}
+
+html[data-app-shape="floating-capsule"] .obsidian-gold-cta,
+html[data-app-shape="floating-capsule"] .marine-3d-cta,
+html[data-app-shape="floating-capsule"] .nexus-pill-btn {
+  border-radius: 9999px !important;
+}
+
+@media (min-width: 1024px) {
+  html[data-app-shape="floating-capsule"] header.floating-topbar-shell {
+    margin: 10px 18px 0;
+    border-radius: 9999px;
+    border: 1px solid var(--border-color);
+  }
+
+  html[data-app-shape="floating-capsule"] .curved-glass-sidebar {
+    margin: 12px 14px 12px 0;
+    border-radius: 32px !important;
+    border: 1px solid var(--border-color) !important;
+    height: calc(100vh - 6rem);
+  }
+}

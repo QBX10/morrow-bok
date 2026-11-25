@@ -179,9 +179,9 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div
-                  className="w-12 h-12 rounded-2xl border border-white/15 flex items-center justify-center shrink-0"
+                  className="w-12 h-12 rounded-2xl border border-[var(--border-color)] flex items-center justify-center shrink-0"
                   style={{
-                    background: `radial-gradient(circle at 30% 25%, ${activeModel.accentHex}44, rgba(4, 10, 18, 0.92))`,
+                    background: `radial-gradient(circle at 30% 25%, ${activeModel.accentHex}33, var(--surface-well))`,
                     boxShadow: `0 10px 26px -10px ${activeModel.accentHex}`,
                   }}
                 >
@@ -204,7 +204,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                 <button
                   type="button"
                   onClick={() => onNavigateView('hub')}
-                  className="px-3.5 py-2 rounded-xl border border-[var(--border-color)] bg-black/40 hover:border-[var(--accent)] text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:border-[var(--accent)] text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>العودة للرئيسية</span>
                   <ArrowUpRight className="h-3.5 w-3.5" />
@@ -229,7 +229,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                   {activeModel.shortTitleAr}
                 </div>
               </div>
-              <div className="border-x border-white/10">
+              <div className="border-x border-[var(--border-color)]">
                 <div className="text-[10px] font-bold text-[var(--text-muted)]">
                   السجلات المشمولة
                 </div>
@@ -260,11 +260,11 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
         </div>
       </GlassBentoCard>
 
-      {/* 3.2 Specialized 3D Bento Model Cards */}
+      {/* 3.2 Specialized 2D Bento Model Cards */}
       <section aria-label="اختيار النموذج الذكي">
         <GeometricSectionHeader
           title="النماذج الذكية المتخصصة"
-          subtitle="اختر المحرك الهندسي المناسب لمهمتك ليتم تكييف النواة ثلاثية الأبعاد ومعاملات الدقة"
+          subtitle="اختر المحرك الهندسي المناسب لمهمتك ليتم تكييف النواة التفاعلية ومعاملات الدقة"
           icon={<Layers className="h-5 w-5 text-[var(--accent-bright)]" />}
           className="mb-4"
         />
@@ -292,7 +292,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div
-                      className="w-10 h-10 rounded-xl border border-white/15 flex items-center justify-center shrink-0"
+                      className="w-10 h-10 rounded-xl border border-[var(--border-color)] flex items-center justify-center shrink-0"
                       style={{
                         background: `${model.accentHex}22`,
                         color: model.accentHex,
@@ -301,7 +301,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                       <Sparkles className="h-4 w-4" />
                     </div>
                     <span
-                      className="text-[10px] font-black px-2 py-0.5 rounded-lg border border-white/10 bg-black/45"
+                      className="text-[10px] font-black px-2 py-0.5 rounded-lg border border-[var(--border-color)] bg-[var(--surface-well)]"
                       style={{ color: model.accentHex }}
                     >
                       {model.precisionBadgeAr}
@@ -317,7 +317,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                     </p>
                   </div>
 
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-bold">
+                  <div className="pt-2 border-t border-[var(--border-color)] flex items-center justify-between text-[10px] font-bold">
                     <span className="text-[var(--text-muted)]">
                       {model.shortTitleAr}
                     </span>
@@ -352,7 +352,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                 }
               }}
               placeholder="اكتب أمر التحليل أو التدقيق المطلوب (مثال: قارن أرباح الوكالات واكشف التكرارات)..."
-              className="w-full h-12 rounded-2xl border border-[var(--border-color)] bg-black/45 px-4 text-xs sm:text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
+              className="w-full h-12 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] px-4 text-xs sm:text-sm font-semibold text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
           <button
@@ -382,7 +382,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                 className="h-9 px-3.5 rounded-xl border text-xs font-extrabold transition-all cursor-pointer"
                 style={{
                   borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                  backgroundColor: active ? 'var(--bg-nav-active)' : 'rgba(0,0,0,0.35)',
+                  backgroundColor: active ? 'var(--bg-nav-active)' : 'var(--surface-pill)',
                   color: active ? 'var(--accent-bright)' : 'var(--text-muted)',
                   boxShadow: active ? '0 6px 16px -8px var(--spatial-glow)' : 'none',
                 }}
@@ -394,7 +394,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
         </div>
 
         {/* Geometric Parameter Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-white/10">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[var(--border-color)]">
           <RecessedChannelWell className="p-3 space-y-2">
             <div className="flex items-center gap-1.5 text-[11px] font-black text-[var(--text-muted)]">
               <Sliders className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
@@ -416,7 +416,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                     onClick={() => setParams((p) => ({ ...p, precisionLevel: val }))}
                     className="py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all"
                     style={{
-                      backgroundColor: isSel ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
+                      backgroundColor: isSel ? 'var(--accent)' : 'var(--surface-subtle)',
                       color: isSel ? 'var(--accent-fg)' : 'var(--text-muted)',
                     }}
                   >
@@ -448,7 +448,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                     onClick={() => setParams((p) => ({ ...p, speedMode: val }))}
                     className="py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all"
                     style={{
-                      backgroundColor: isSel ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
+                      backgroundColor: isSel ? 'var(--accent)' : 'var(--surface-subtle)',
                       color: isSel ? 'var(--accent-fg)' : 'var(--text-muted)',
                     }}
                   >
@@ -480,7 +480,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                     onClick={() => setParams((p) => ({ ...p, outputFormat: val }))}
                     className="py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all"
                     style={{
-                      backgroundColor: isSel ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
+                      backgroundColor: isSel ? 'var(--accent)' : 'var(--surface-subtle)',
                       color: isSel ? 'var(--accent-fg)' : 'var(--text-muted)',
                     }}
                   >
@@ -515,7 +515,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
               type="button"
               data-testid="smart-output-copy-btn"
               onClick={() => void handleCopyMarkdown()}
-              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-black/40 hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Copy className="h-3.5 w-3.5 text-[var(--accent)]" />
               <span>نسخ</span>
@@ -540,7 +540,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
               type="button"
               data-testid="smart-output-export-btn"
               onClick={handleExportCsv}
-              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-black/40 hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Download className="h-3.5 w-3.5 text-[var(--accent)]" />
               <span>تصدير CSV</span>
@@ -550,7 +550,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
               type="button"
               data-testid="smart-output-regen-btn"
               onClick={() => runTask()}
-              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-black/40 hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
+              className="h-9 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-pill)] hover:border-[var(--accent)] text-xs font-bold text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="h-3.5 w-3.5 text-[var(--accent)]" />
               <span>إعادة توليد</span>
@@ -585,7 +585,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
           <div className="overflow-x-auto rounded-2xl border border-[var(--border-color)] recessed-well">
             <table className="w-full text-right text-xs">
               <thead>
-                <tr className="border-b border-white/10 text-[var(--text-muted)] bg-white/[0.03]">
+                <tr className="border-b border-[var(--border-color)] text-[var(--text-muted)] bg-[var(--surface-subtle)]">
                   <th className="py-2.5 px-3 font-black">الوكالة</th>
                   <th className="py-2.5 px-3 font-black">العوائل</th>
                   <th className="py-2.5 px-3 font-black">الأفراد المستحقون</th>
@@ -609,7 +609,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
                   result.comparisonRows.map((row) => (
                     <tr
                       key={row.agencyId}
-                      className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]"
+                      className="border-b border-[var(--border-color)]/60 last:border-b-0 hover:bg-[var(--surface-subtle)]"
                     >
                       <td className="py-2.5 px-3 font-extrabold text-[var(--text-primary)]">
                         {onOpenAgencyRoster ? (
@@ -672,20 +672,28 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
               {result.findings.map((f) => (
                 <div
                   key={f.id}
-                  className="rounded-xl border border-white/10 bg-black/35 p-3 space-y-1"
+                  className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] p-3 space-y-1"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-[var(--text-primary)]">
                       {f.title}
                     </span>
                     <span
-                      className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${
-                        f.severity === 'high'
-                          ? 'bg-rose-500/20 text-rose-300'
-                          : f.severity === 'medium'
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-emerald-500/20 text-emerald-300'
-                      }`}
+                      className="text-[10px] font-black px-2 py-0.5 rounded-lg"
+                      style={{
+                        backgroundColor:
+                          f.severity === 'high'
+                            ? 'var(--danger-bg)'
+                            : f.severity === 'medium'
+                            ? 'var(--warning-bg)'
+                            : 'var(--success-bg)',
+                        color:
+                          f.severity === 'high'
+                            ? 'var(--danger)'
+                            : f.severity === 'medium'
+                            ? 'var(--warning)'
+                            : 'var(--success)',
+                      }}
                     >
                       {f.severity === 'high'
                         ? 'أولوية قصوى'
@@ -704,7 +712,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
 
           <RecessedChannelWell className="p-4 space-y-3">
             <h3 className="text-xs font-black text-[var(--text-primary)] flex items-center gap-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <ShieldCheck className="h-4 w-4 text-[var(--success)]" />
               <span>مسار الاستنتاج وخطة العمل التنفيذية</span>
             </h3>
             <div className="space-y-1.5">
@@ -722,7 +730,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
               {result.actionPlanSteps.map((action, idx) => (
                 <div
                   key={idx}
-                  className="flex items-start gap-2 rounded-xl border border-white/10 bg-black/35 p-2.5 text-xs font-semibold text-[var(--text-primary)]"
+                  className="flex items-start gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-surface)] p-2.5 text-xs font-semibold text-[var(--text-primary)]"
                 >
                   <CheckCircle2 className="h-4 w-4 text-[var(--accent)] shrink-0 mt-0.5" />
                   <span>{action}</span>

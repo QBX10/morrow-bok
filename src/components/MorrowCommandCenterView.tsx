@@ -119,7 +119,6 @@ import {
 } from './ui/TabrixMotionPrimitives';
 import { MorrowHubOrb3D } from './spatial3d/MorrowHubOrb3D';
 import { MorrowMascot3D } from './spatial3d/MorrowMascot3D';
-import morrowCommandStageBg from '../assets/images/morrow_command_stage_1795554012568.jpg';
 import {
   resolveSpatial3DPrefs,
   triggerGlobalSpatialPulse,
@@ -1879,27 +1878,20 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 aria-label="شاشة بداية Morrow"
                 className="my-auto mx-auto flex w-full max-w-2xl flex-col items-center justify-center py-3 sm:py-4 text-center space-y-4"
               >
-                {/* 2D–3D Integrated Spatial Welcome Stage */}
+                {/* Pure 2D Architectural Command Stage */}
                 <div
                   className="morrow-showcase-frame relative w-full overflow-hidden p-4 sm:p-5 space-y-4"
                 >
-                  <img
-                    src={morrowCommandStageBg}
-                    alt=""
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.22]"
-                  />
-
-                  {/* Top 2D–3D Mode Eyebrow & Switcher */}
+                  {/* Top Mode Eyebrow & Switcher */}
                   <div className="relative z-10 flex flex-wrap items-center justify-between gap-2">
                     <span className="editorial-eyebrow inline-flex items-center gap-1.5 text-[var(--accent-bright)]">
                       <Sparkles className="h-3.5 w-3.5 shrink-0" />
-                      <span>Morrow · Spatial 3D Command</span>
+                      <span>Morrow · مركز القيادة الهندسي</span>
                     </span>
 
                     <div
                       role="tablist"
-                      aria-label="وضع العرض ثلاثي الأبعاد في مركز Morrow"
+                      aria-label="وضع العرض الهندسي في مركز Morrow"
                       className="inline-flex items-center gap-1 rounded-xl border p-0.5 bg-black/50"
                       style={{ borderColor: 'var(--border-color)' }}
                     >
@@ -1919,7 +1911,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         }}
                       >
                         <Cpu className="h-3 w-3" />
-                        <span>نواة Morrow 3D</span>
+                        <span>مؤشر Morrow الذكي</span>
                       </button>
                       <button
                         type="button"
@@ -1937,12 +1929,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                         }}
                       >
                         <Box className="h-3 w-3" />
-                        <span>المجسم التفاعلي</span>
+                        <span>النواة الهندسية</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Interactive 3D Stage Surface (Zero backdrop-blur over WebGL canvas) */}
+                  {/* Interactive 2D Stage Surface */}
                   <div className="relative z-10 flex flex-col items-center justify-center">
                     {commandHeroMode === 'orb' ? (
                       <div className="flex flex-col items-center gap-3 py-1">

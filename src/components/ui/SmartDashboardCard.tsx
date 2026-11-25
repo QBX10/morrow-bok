@@ -51,23 +51,18 @@ export const SmartDashboardCard: React.FC<SmartDashboardCardProps> = ({
     const el = cardRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
     const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
     el.style.setProperty('--card-mx', `${(nx * 100).toFixed(1)}%`);
     el.style.setProperty('--card-my', `${(ny * 100).toFixed(1)}%`);
-    if (document.documentElement.dataset.reduceMotion !== '1') {
-      const rx = ((0.5 - ny) * 5.2).toFixed(2);
-      const ry = ((nx - 0.5) * 6.4).toFixed(2);
-      el.style.setProperty('--card-rx', `${rx}deg`);
-      el.style.setProperty('--card-ry', `${ry}deg`);
-    }
   };
 
   const handleMouseLeave = () => {
     const el = cardRef.current;
     if (!el) return;
-    el.style.setProperty('--card-rx', '0deg');
-    el.style.setProperty('--card-ry', '0deg');
+    el.style.setProperty('--card-mx', '50%');
+    el.style.setProperty('--card-my', '0%');
   };
 
   return (

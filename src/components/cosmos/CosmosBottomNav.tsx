@@ -292,14 +292,14 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
         {/* Separate clipped glassmorphic surface layer with synchronized internal optical glow */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 overflow-hidden rounded-full"
+          className="cosmos-bottom-pill pointer-events-none absolute inset-0 overflow-hidden rounded-full"
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-surface, #0A1726) 64%, #020812)',
-            backdropFilter: 'blur(20px) saturate(165%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(165%)',
-            border: '1px solid color-mix(in srgb, var(--accent-bright, #6EE7B7) 26%, rgba(255, 255, 255, 0.18))',
+            backgroundColor: 'color-mix(in srgb, var(--bg-surface, #0A1726) 86%, var(--bg-main, #020812))',
+            backdropFilter: 'blur(14px) saturate(145%)',
+            WebkitBackdropFilter: 'blur(14px) saturate(145%)',
+            border: '1px solid var(--border-color)',
             boxShadow:
-              'inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(2, 10, 22, 0.55), 0 14px 32px -6px rgba(2, 10, 22, 0.65), 0 4px 14px -2px rgba(2, 10, 22, 0.35)',
+              'var(--glass-specular-top, inset 0 1px 0 rgba(255, 255, 255, 0.22)), var(--card-shadow, 0 14px 32px -6px rgba(2, 10, 22, 0.5))',
           }}
         >
           {/* Gliding subsurface marine-emerald aura tracking the active orb */}
@@ -356,8 +356,6 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   height: BADGE_DIAMETER,
                   x: springX,
                   y: aeroLiftY,
-                  perspective: 900,
-                  transformStyle: 'preserve-3d',
                 }}
               >
                 {/* Arrival / re-tap geometric concentric ring pulse */}
@@ -505,8 +503,8 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-x-1.5 inset-y-1.5 rounded-full"
                     style={{
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      backgroundColor: 'var(--surface-subtle, rgba(255, 255, 255, 0.08))',
+                      border: '1px solid var(--border-color)',
                     }}
                   />
                 )}
@@ -530,8 +528,8 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   }`}
                   style={{
                     color: isHovered
-                      ? 'rgba(255, 255, 255, 0.98)'
-                      : 'rgba(245, 245, 245, 0.88)',
+                      ? 'var(--accent, #10E0A6)'
+                      : 'var(--text-primary)',
                   }}
                 >
                   {item.icon({
@@ -544,14 +542,14 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
                   <motion.span
                     animate={{
                       y: isActive ? 0 : isHovered ? -0.5 : 0,
-                      opacity: isActive ? 1 : isHovered ? 0.95 : 0.78,
+                      opacity: isActive ? 1 : isHovered ? 0.96 : 0.82,
                     }}
                     transition={{ duration: 0.18 }}
                     className="pointer-events-none absolute bottom-[5px] inset-x-1 truncate text-center text-[10px] leading-none"
                     style={{
                       color: isActive
-                        ? 'var(--accent-bright, #A7F3D0)'
-                        : 'rgba(245, 245, 245, 0.84)',
+                        ? 'var(--accent, #10E0A6)'
+                        : 'var(--text-primary)',
                       fontWeight: isActive ? 700 : 600,
                     }}
                   >
@@ -580,8 +578,8 @@ export const FloatingGlassBottomNav: React.FC<FloatingGlassBottomNavProps> = ({
       {showHomeIndicator && (
         <div
           aria-hidden="true"
-          className="mt-1.5 h-[4px] w-[120px] rounded-full pointer-events-none md:hidden"
-          style={{ backgroundColor: 'rgba(255, 255, 255, 0.65)' }}
+          className="mt-1.5 h-[4px] w-[120px] rounded-full pointer-events-none md:hidden opacity-45"
+          style={{ backgroundColor: 'var(--text-muted)' }}
         />
       )}
     </nav>
@@ -779,20 +777,20 @@ export const CosmosBottomNav: React.FC<CosmosBottomNavProps> = ({
         aria-label="النماذج الذكية"
         title="النماذج الذكية"
         onClick={() => onNavigateView('smart_models')}
-        className={`pointer-events-auto flex mb-2 md:mb-0 h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full border backdrop-blur-xl transition-all cursor-pointer ${
+        className={`cosmos-bottom-orb pointer-events-auto flex mb-2 md:mb-0 h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full border backdrop-blur-md transition-all cursor-pointer ${
           hiddenByScroll ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'
         }`}
         style={{
-          borderColor: activeView === 'smart_models' ? 'var(--accent-bright)' : 'var(--border-color)',
+          borderColor: activeView === 'smart_models' ? 'var(--accent)' : 'var(--border-color)',
           backgroundColor:
             activeView === 'smart_models'
               ? 'var(--accent)'
-              : 'color-mix(in srgb, var(--bg-surface, #0A1726) 76%, #020812)',
-          color: activeView === 'smart_models' ? 'var(--accent-fg)' : 'var(--accent-bright)',
+              : 'color-mix(in srgb, var(--bg-surface) 92%, var(--bg-main))',
+          color: activeView === 'smart_models' ? 'var(--accent-fg)' : 'var(--accent)',
           boxShadow:
             activeView === 'smart_models'
               ? '0 10px 28px var(--spatial-glow)'
-              : '0 12px 28px rgba(0,0,0,0.65)',
+              : 'var(--card-shadow, 0 12px 24px rgba(0,0,0,0.35))',
         }}
       >
         <BrainCircuit className="h-5 w-5" />
