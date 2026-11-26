@@ -148,46 +148,6 @@
         }
       },
       "required": ["ownerUid", "name", "appTheme", "tableTheme", "fontFamily", "createdAt", "updatedAt"]
-    },
-    "UserNotificationSettings": {
-      "title": "UserNotificationSettings",
-      "description": "Synced notification channel preferences, quiet hours, master sound, and volumes per user.",
-      "type": "object",
-      "properties": {
-        "channels": {
-          "type": "object",
-          "description": "Per-channel enabled/sound/haptic/push toggles keyed by security, reminders, sync, news."
-        },
-        "quietHours": {
-          "type": "object",
-          "description": "Quiet hours configuration { enabled, start, end }."
-        },
-        "masterSound": {
-          "type": "boolean"
-        },
-        "volumes": {
-          "type": "object",
-          "description": "Audio mixer volumes { music, sfx }."
-        },
-        "activeTheme": {
-          "type": "string",
-          "enum": ["quantum_glass", "terminal_brutalist", "solar_paper", "aurora_bento"]
-        },
-        "activeMode": {
-          "type": "string",
-          "enum": ["focus", "creative", "audit", "night"]
-        },
-        "updatedByDevice": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["channels", "quietHours", "masterSound", "volumes", "updatedByDevice", "updatedAt"]
     }
   },
   "firestore": {
@@ -206,10 +166,6 @@
     "/users/{userId}/appearanceProfiles/{profileId}": {
       "schema": { "$ref": "#/entities/AppearanceProfileDoc" },
       "description": "User-owned Appearance Studio saved profiles."
-    },
-    "/users/{userId}/settings/{settingId}": {
-      "schema": { "$ref": "#/entities/UserNotificationSettings" },
-      "description": "User-owned notification channels, audio mixer, theme, and mode preferences synced across devices."
     }
   }
 }

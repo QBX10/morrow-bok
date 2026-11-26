@@ -7,7 +7,6 @@
 4. **Server Temporal Integrity**: `createdAt == request.time` on create; `updatedAt == request.time` on create and update.
 5. **Strict Key Allowlists & Size Bounds**: Every `isValid*` helper enforces `keys().hasAll(...)` and `keys().hasOnly(...)` on create, `affectedKeys().hasOnly(...)` on update, and `.size()` limits on every string and document ID (`isValidId`).
 6. **No Self-Assigned Roles & Valid Providers**: Users creating `/users/{userId}/private/info` can only set `role == 'viewer'` or `'manager'` for their own personal workspace metadata, never `'admin'` or `'superadmin'`, cannot escalate privileges via client writes, and `provider` must be one of `['google', 'github', 'username']`.
-7. **Notification & Audio Settings Isolation**: `/users/{userId}/settings/{settingId}` allows reads and writes strictly by the owning user (`isOwner` / `isVerifiedOwner`) or verified admin, enforcing map size bounds, boolean flags, `[0..1]` float/number volume limits, valid `updatedByDevice` string, and `updatedAt == request.time`.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads
 1. **Identity Spoofing**: Creating `/users/userB/workspaces/main` while authenticated as `userA` (`ownerUid: 'userB'`). -> **DENIED**
@@ -20,5 +19,5 @@
 8. **Immutable Field Mutation**: Updating `createdAt` or `ownerUid` on an existing `AppearanceProfileDoc`. -> **DENIED**
 9. **Cross-User PII Read**: `userB` calling `get` on `/users/userA/private/info`. -> **DENIED**
 10. **Blanket List Query**: Non-owner calling `list` on `/users/userA/private` or `/users/userA/workspaces`. -> **DENIED**
-11. **Value Poisoning**: Updating whitelisted `fontSizePx` with a string `"18px"` or negative number `-5`, or setting notification `volumes.music > 1`. -> **DENIED**
+11. **Value Poisoning**: Updating whitelisted `fontSizePx` with a string `"18px"` or negative number `-5`. -> **DENIED**
 12. **Privilege Escalation on /admins**: Regular user attempting to write `/admins/{uid}`. -> **DENIED**

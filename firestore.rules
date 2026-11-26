@@ -91,44 +91,6 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    function isValidChannelConfig(ch) {
-      return ch is map
-        && ch.keys().hasAll(['enabled', 'sound', 'haptic', 'push'])
-        && ch.keys().hasOnly(['enabled', 'sound', 'haptic', 'push'])
-        && ch.enabled is bool
-        && ch.sound is bool
-        && ch.haptic is bool
-        && ch.push is bool;
-    }
-
-    function isValidNotificationSettings(data) {
-      return data.keys().hasAll(['channels', 'quietHours', 'masterSound', 'volumes', 'updatedByDevice', 'updatedAt'])
-        && data.keys().hasOnly(['channels', 'quietHours', 'masterSound', 'volumes', 'activeTheme', 'activeMode', 'updatedByDevice', 'updatedAt'])
-        && data.channels is map
-        && data.channels.keys().hasAll(['security', 'reminders', 'sync', 'news'])
-        && data.channels.keys().hasOnly(['security', 'reminders', 'sync', 'news'])
-        && isValidChannelConfig(data.channels.security)
-        && isValidChannelConfig(data.channels.reminders)
-        && isValidChannelConfig(data.channels.sync)
-        && isValidChannelConfig(data.channels.news)
-        && data.quietHours is map
-        && data.quietHours.keys().hasAll(['enabled', 'start', 'end'])
-        && data.quietHours.keys().hasOnly(['enabled', 'start', 'end'])
-        && data.quietHours.enabled is bool
-        && data.quietHours.start is string && data.quietHours.start.size() >= 4 && data.quietHours.start.size() <= 5
-        && data.quietHours.end is string && data.quietHours.end.size() >= 4 && data.quietHours.end.size() <= 5
-        && data.masterSound is bool
-        && data.volumes is map
-        && data.volumes.keys().hasAll(['music', 'sfx'])
-        && data.volumes.keys().hasOnly(['music', 'sfx'])
-        && data.volumes.music is number && data.volumes.music >= 0 && data.volumes.music <= 1
-        && data.volumes.sfx is number && data.volumes.sfx >= 0 && data.volumes.sfx <= 1
-        && (!('activeTheme' in data) || data.activeTheme in ['quantum_glass', 'terminal_brutalist', 'solar_paper', 'aurora_bento'])
-        && (!('activeMode' in data) || data.activeMode in ['focus', 'creative', 'audit', 'night'])
-        && data.updatedByDevice is string && data.updatedByDevice.size() >= 1 && data.updatedByDevice.size() <= 128
-        && data.updatedAt == request.time;
-    }
-
     // Admin registry is strictly read-only from client SDK
     match /admins/{adminUid} {
       allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
@@ -208,20 +170,6 @@ service cloud.firestore {
           && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'appTheme', 'tableTheme', 'fontFamily', 'fontSizePx', 'rowHeightPx', 'glassEffect', 'updatedAt'])
         ));
       allow delete: if isValidId(userId) && isValidId(profileId) && (isVerifiedOwner(userId) || isAdmin());
-    }
-
-    match /users/{userId}/settings/{settingId} {
-      allow get: if isValidId(userId) && isValidId(settingId) && (isOwner(userId) || isAdmin());
-      allow list: if false;
-      allow create: if isValidId(userId) && isValidId(settingId) && isVerifiedOwner(userId)
-        && isValidNotificationSettings(incoming());
-      allow update: if isValidId(userId) && isValidId(settingId)
-        && isValidNotificationSettings(incoming())
-        && (isAdmin() || (
-          isVerifiedOwner(userId)
-          && incoming().diff(existing()).affectedKeys().hasOnly(['channels', 'quietHours', 'masterSound', 'volumes', 'activeTheme', 'activeMode', 'updatedByDevice', 'updatedAt'])
-        ));
-      allow delete: if isValidId(userId) && isValidId(settingId) && (isVerifiedOwner(userId) || isAdmin());
     }
   }
 }
