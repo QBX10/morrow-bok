@@ -1,17 +1,23 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
   CalendarPlus,
   CheckCircle2,
   CheckSquare,
+  Download,
   Edit3,
   ExternalLink,
+  FileText,
+  FolderOpen,
+  HardDrive,
   ListPlus,
   LogOut,
   RefreshCw,
+  Search,
   Square,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { signInWithFirebaseGoogle } from '../lib/authClient';
@@ -20,16 +26,21 @@ import {
   createCalendarEvent,
   createTask,
   deleteCalendarEvent,
+  deleteDriveBackupFile,
   deleteTask,
+  downloadDriveBackupFile,
   listCalendarEvents,
   listCalendars,
+  listDriveFiles,
   listTaskLists,
   listTasks,
   updateCalendarEvent,
   updateTask,
+  uploadDriveBackupFile,
   WorkspaceAuthRequiredError,
   type GoogleCalendarEvent,
   type GoogleCalendarSummary,
+  type GoogleDriveBackupFile,
   type GoogleTaskItem,
   type GoogleTaskList,
 } from '../lib/googleWorkspace';
@@ -53,6 +64,7 @@ interface GoogleWorkspaceViewProps {
   activePeriod: PeriodQuotaMeta;
   relations: RelationEntry[];
   onAuthenticatedUser?: (user: AuthUser) => void;
+  onExportMemoryVaultJson?: () => { jsonText: string };
 }
 
 type PendingWorkspaceConfirm =
@@ -82,6 +94,18 @@ type PendingWorkspaceConfirm =
       taskListId: string;
       taskId: string;
       title: string;
+    }
+  | {
+      kind: 'delete_drive_file';
+      fileId: string;
+      name: string;
+    }
+  | {
+      kind: 'overwrite_drive_file';
+      existingFileId: string;
+      name: string;
+      blob: Blob;
+      description?: string;
     };
 
 const GoogleGsiSvg: React.FC = () => (
@@ -115,8 +139,9 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
   activePeriod,
   relations,
   onAuthenticatedUser,
+  onExportMemoryVaultJson,
 }) => {
-  const [workspaceTab, setWorkspaceTab] = useState<'calendar' | 'tasks'>(
+  const [workspaceTab, setWorkspaceTab] = useState<'calendar' | 'tasks' | 'drive'>(
     'calendar'
   );
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
@@ -163,12 +188,23 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
   const [newTaskDue, setNewTaskDue] = useState('');
   const [newTaskNotes, setNewTaskNotes] = useState('');
 
+  // Google Drive state
+  const [driveFiles, setDriveFiles] = useState<GoogleDriveBackupFile[]>([]);
+  const [driveQuery, setDriveQuery] = useState('');
+  const [driveOnlyBackups, setDriveOnlyBackups] = useState(false);
+  const driveUploadInputRef = useRef<HTMLInputElement | null>(null);
+
   // Mandatory explicit user confirmation before any update/delete API call
   const [pendingConfirm, setPendingConfirm] =
     useState<PendingWorkspaceConfirm | null>(null);
 
   const loadWorkspaceData = useCallback(
-    async (calId = selectedCalendarId, tListId = selectedTaskListId) => {
+    async (
+      calId = selectedCalendarId,
+      tListId = selectedTaskListId,
+      dQuery = driveQuery,
+      dOnlyBackups = driveOnlyBackups
+    ) => {
       try {
         setLoading(true);
         setError('');
@@ -183,6 +219,21 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
         setTaskLists(tLists);
         setTasks(tItems);
         setNeedsAuth(false);
+
+        try {
+          const files = await listDriveFiles({
+            query: dQuery,
+            onlyBackupsFolder: dOnlyBackups,
+            pageSize: 30,
+          });
+          setDriveFiles(files);
+        } catch (driveErr) {
+          if (driveErr instanceof WorkspaceAuthRequiredError) {
+            setDriveFiles([]);
+          } else {
+            setDriveFiles([]);
+          }
+        }
       } catch (err) {
         if (err instanceof WorkspaceAuthRequiredError) {
           setNeedsAuth(true);
@@ -191,14 +242,14 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
           setError(
             err instanceof Error
               ? err.message
-              : 'تعذر تحميل بيانات تقويم ومهام Google.'
+              : 'تعذر تحميل بيانات تقويم ومهام وملفات Google.'
           );
         }
       } finally {
         setLoading(false);
       }
     },
-    [selectedCalendarId, selectedTaskListId]
+    [selectedCalendarId, selectedTaskListId, driveQuery, driveOnlyBackups]
   );
 
   useEffect(() => {
@@ -233,7 +284,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
       setConnectedEmail(session.user.email || session.user.displayName);
       setNeedsAuth(false);
       onAuthenticatedUser?.(session.user);
-      setStatusMessage('تم ربط حساب Google والتقويم والمهام بنجاح.');
+      setStatusMessage('تم ربط حساب Google والتقويم والمهام و Google Drive بنجاح.');
       await loadWorkspaceData();
     } catch (err) {
       setError(
@@ -252,6 +303,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
     setNeedsAuth(true);
     setEvents([]);
     setTasks([]);
+    setDriveFiles([]);
     setStatusMessage('تم فصل جلسة Google Workspace الحالية.');
   };
 
@@ -302,6 +354,129 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
     }
   };
 
+  const handleSearchDrive = async (
+    nextQuery = driveQuery,
+    nextOnlyBackups = driveOnlyBackups
+  ) => {
+    try {
+      setLoading(true);
+      setError('');
+      const files = await listDriveFiles({
+        query: nextQuery,
+        onlyBackupsFolder: nextOnlyBackups,
+        pageSize: 30,
+      });
+      setDriveFiles(files);
+    } catch (err) {
+      if (err instanceof WorkspaceAuthRequiredError) {
+        setNeedsAuth(true);
+      }
+      setError(
+        err instanceof Error ? err.message : 'تعذر البحث في ملفات Google Drive.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadMemoryVaultToDrive = async () => {
+    if (!onExportMemoryVaultJson) return;
+    const { jsonText } = onExportMemoryVaultJson();
+    const dateSlug = new Date().toISOString().slice(0, 10);
+    const fileName = `morrow-vault-backup-${dateSlug}.json`;
+    const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+    const description = `نسخة احتياطية كاملة Memory Vault من تطبيق Morrow (${dateSlug})`;
+    const existing = driveFiles.find((f) => f.name === fileName);
+    if (existing) {
+      setPendingConfirm({
+        kind: 'overwrite_drive_file',
+        existingFileId: existing.id,
+        name: fileName,
+        blob,
+        description,
+      });
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      const uploaded = await uploadDriveBackupFile({
+        blob,
+        fileName,
+        folderName: 'Morrow_Drive_Backups',
+        description,
+      });
+      setStatusMessage(`تم رفع لقطة Memory Vault إلى Google Drive (${uploaded.name}).`);
+      await handleSearchDrive(driveQuery, driveOnlyBackups);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر رفع النسخة إلى Google Drive.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadCustomDriveFile = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const existing = driveFiles.find((f) => f.name === file.name);
+    if (existing) {
+      setPendingConfirm({
+        kind: 'overwrite_drive_file',
+        existingFileId: existing.id,
+        name: file.name,
+        blob: file,
+        description: 'ملف مرفوع من تطبيق Morrow',
+      });
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      const uploaded = await uploadDriveBackupFile({
+        blob: file,
+        fileName: file.name,
+        folderName: 'Morrow_Drive_Backups',
+        description: 'ملف مرفوع من تطبيق Morrow',
+      });
+      setStatusMessage(`تم رفع الملف «${uploaded.name}» إلى Google Drive بنجاح.`);
+      await handleSearchDrive(driveQuery, driveOnlyBackups);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر رفع الملف إلى Google Drive.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadDriveFile = async (file: GoogleDriveBackupFile) => {
+    try {
+      setLoading(true);
+      setError('');
+      const blob = await downloadDriveBackupFile(file.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name || 'drive-file';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatusMessage(`تم تنزيل «${file.name}» من Google Drive.`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر تنزيل الملف من Google Drive.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const executeConfirmedWorkspaceAction = async () => {
     if (!pendingConfirm) return;
     const action = pendingConfirm;
@@ -342,6 +517,17 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
           taskId: action.taskId,
         });
         setStatusMessage(`تم حذف المهمة «${action.title}» من Google Tasks.`);
+      } else if (action.kind === 'delete_drive_file') {
+        await deleteDriveBackupFile(action.fileId);
+        setStatusMessage(`تم حذف الملف «${action.name}» من Google Drive.`);
+      } else if (action.kind === 'overwrite_drive_file') {
+        const updated = await uploadDriveBackupFile({
+          blob: action.blob,
+          fileName: action.name,
+          existingFileId: action.existingFileId,
+          description: action.description,
+        });
+        setStatusMessage(`تم تحديث الملف «${updated.name}» على Google Drive بنجاح.`);
       }
       await loadWorkspaceData(selectedCalendarId, selectedTaskListId);
     } catch (err) {
@@ -361,6 +547,7 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
   const workspaceTabDir = useTabrixOrderedDirection(workspaceTab, {
     calendar: 0,
     tasks: 1,
+    drive: 2,
   });
 
   return (
@@ -374,10 +561,10 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
           <NexusDuotoneIcon icon={Calendar} size="lg" className="hidden sm:inline-flex" />
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold sm:text-xl">
-              تقويم ومهام Google — جدولة الحصص والمتابعة
+              تقويم ومهام و Google Drive — جدولة وملفات الوكالة
             </h1>
             <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-              مزامنة مباشرة مع Google Calendar و Google Tasks لجدولة مواعيد الحصص الغذائية ومهام التوصيل
+              مزامنة مباشرة مع Google Calendar و Google Tasks و Google Drive لجدولة الحصص وحفظ وتصفح النسخ والملفات
             </p>
           </div>
         </div>
@@ -488,13 +675,13 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
           </div>
           <div className="space-y-1.5">
             <h2 className="text-base font-bold">
-              ربط حساب Google للتقويم والمهام
+              ربط حساب Google للتقويم والمهام و Google Drive
             </h2>
             <p
               className="text-xs leading-relaxed"
               style={{ color: 'var(--text-muted)' }}
             >
-              سجّل الدخول بحسابك في Google لمنح صلاحية الوصول الآمن إلى تقويمك وقوائم المهام في الجلسة الحالية فقط دون تخزين أي مفاتيح دائمة.
+              سجّل الدخول بحسابك في Google لمنح صلاحية الوصول الآمن إلى تقويمك وقوائم المهام وملفات Google Drive في الجلسة الحالية فقط دون تخزين أي مفاتيح دائمة.
             </p>
           </div>
 
@@ -529,7 +716,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
             </div>
             <div>• جدولة مواعيد «{activePeriod.quotaName}» في تقويم Google بنقرة.</div>
             <div>• تحويل تذكيرات قسم العلاقات إلى مهام مؤرخة في Google Tasks.</div>
-            <div>• تعديل المواعيد أو شطب المهام المنجزة مع تأكيد صريح قبل كل تغيير.</div>
+            <div>• تصفح ملفات Google Drive ورفع لقطات Memory Vault والنسخ الاحتياطية وتنزيلها بأمان.</div>
+            <div>• تعديل المواعيد أو الملفات أو شطب المهام المنجزة مع تأكيد صريح قبل كل تغيير.</div>
           </div>
         </section>
       ) : (
@@ -588,6 +776,29 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
                 )}
                 <CheckSquare className="relative z-10 h-4 w-4" />
                 <span className="relative z-10">مهام Google ({tasks.length})</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="workspace-tab-drive"
+                aria-selected={workspaceTab === 'drive'}
+                onClick={() => setWorkspaceTab('drive')}
+                className="relative inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold"
+                style={{
+                  color:
+                    workspaceTab === 'drive'
+                      ? 'var(--accent)'
+                      : 'var(--text-primary)',
+                }}
+              >
+                {workspaceTab === 'drive' && (
+                  <TabrixPillIndicator
+                    layoutId="google-workspace-tab-pill"
+                    className="rounded-lg"
+                  />
+                )}
+                <HardDrive className="relative z-10 h-4 w-4" />
+                <span className="relative z-10">Google Drive ({driveFiles.length})</span>
               </button>
             </div>
 
@@ -1176,6 +1387,271 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* GOOGLE DRIVE TAB */}
+          {workspaceTab === 'drive' && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+              <div className="space-y-4 lg:col-span-5">
+                <div
+                  className="capsule-glass-card space-y-3 border p-4 text-xs"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <HardDrive
+                      className="h-4 w-4"
+                      style={{ color: 'var(--accent)' }}
+                    />
+                    <span>البحث والتصفية في Google Drive</span>
+                  </div>
+
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleSearchDrive(driveQuery, driveOnlyBackups);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={driveQuery}
+                      onChange={(e) => setDriveQuery(e.target.value)}
+                      placeholder="ابحث باسم الملف أو النسخة..."
+                      className="flex-1 rounded-lg border px-3 py-2"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="inline-flex items-center gap-1 rounded-lg px-3 py-2 font-bold disabled:opacity-50"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      <span>بحث</span>
+                    </button>
+                  </form>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriveOnlyBackups(false);
+                        void handleSearchDrive(driveQuery, false);
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-bold"
+                      style={{
+                        backgroundColor: !driveOnlyBackups
+                          ? 'var(--bg-nav-active)'
+                          : 'var(--bg-main)',
+                        borderColor: !driveOnlyBackups
+                          ? 'var(--accent)'
+                          : 'var(--border-color)',
+                        color: !driveOnlyBackups
+                          ? 'var(--accent)'
+                          : 'var(--text-primary)',
+                      }}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>كل الملفات</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriveOnlyBackups(true);
+                        void handleSearchDrive(driveQuery, true);
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-bold"
+                      style={{
+                        backgroundColor: driveOnlyBackups
+                          ? 'var(--bg-nav-active)'
+                          : 'var(--bg-main)',
+                        borderColor: driveOnlyBackups
+                          ? 'var(--accent)'
+                          : 'var(--border-color)',
+                        color: driveOnlyBackups
+                          ? 'var(--accent)'
+                          : 'var(--text-primary)',
+                      }}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      <span>مجلد النسخ الاحتياطي</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="capsule-glass-card space-y-3 border p-4 text-xs"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <Upload
+                      className="h-4 w-4"
+                      style={{ color: 'var(--accent)' }}
+                    />
+                    <span>رفع لقطات وملفات إلى Drive</span>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)' }}>
+                    احفظ لقطة Memory Vault الكاملة بصيغة JSON أو أي مستند من جهازك مباشرة داخل مجلد Morrow_Drive_Backups على Google Drive.
+                  </p>
+
+                  {onExportMemoryVaultJson && (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => void handleUploadMemoryVaultToDrive()}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-bold disabled:opacity-50"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--accent-fg)',
+                      }}
+                    >
+                      <Upload className="h-4 w-4" />
+                      <span>رفع لقطة Memory Vault إلى Drive</span>
+                    </button>
+                  )}
+
+                  <input
+                    ref={driveUploadInputRef}
+                    type="file"
+                    onChange={handleUploadCustomDriveFile}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => driveUploadInputRef.current?.click()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 font-bold disabled:opacity-50"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <Upload className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span>رفع ملف من الجهاز إلى Drive</span>
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className="capsule-glass-card space-y-3 border p-4 lg:col-span-7"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold">
+                    {driveOnlyBackups
+                      ? 'ملفات مجلد النسخ الاحتياطي (Morrow_Drive_Backups)'
+                      : 'ملفات Google Drive الحديثة'}
+                  </h2>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                    {driveFiles.length} ملف
+                  </span>
+                </div>
+
+                {driveFiles.length === 0 ? (
+                  <div
+                    className="rounded-lg border p-6 text-center text-xs"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    لا توجد ملفات مطابقة في Google Drive حالياً.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 text-xs">
+                    {driveFiles.map((file) => {
+                      const sizeNum = file.size ? Number(file.size) : 0;
+                      const formattedSize =
+                        sizeNum > 0
+                          ? sizeNum >= 1024 * 1024
+                            ? `${(sizeNum / (1024 * 1024)).toFixed(2)} MB`
+                            : `${Math.max(1, Math.round(sizeNum / 1024))} KB`
+                          : '—';
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex flex-wrap items-start justify-between gap-3 rounded-xl border p-3"
+                          style={{
+                            backgroundColor: 'var(--bg-main)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="font-bold text-sm break-all">{file.name}</div>
+                            <div
+                              className="flex flex-wrap items-center gap-3 text-[11px]"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              <span dir="ltr" className="tabular-nums">
+                                {file.modifiedTime ? file.modifiedTime.slice(0, 16).replace('T', ' ') : '—'}
+                              </span>
+                              <span dir="ltr" className="tabular-nums">
+                                {formattedSize}
+                              </span>
+                            </div>
+                            {file.description && (
+                              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                {file.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {file.webViewLink && (
+                              <a
+                                href={file.webViewLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={`فتح ${file.name} في Google Drive`}
+                                className="rounded-lg border p-1.5 hover:opacity-80"
+                                style={{ borderColor: 'var(--border-color)' }}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`تنزيل ${file.name}`}
+                              onClick={() => void handleDownloadDriveFile(file)}
+                              className="rounded-lg border p-1.5 hover:opacity-80"
+                              style={{ borderColor: 'var(--border-color)' }}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`حذف ${file.name}`}
+                              onClick={() =>
+                                setPendingConfirm({
+                                  kind: 'delete_drive_file',
+                                  fileId: file.id,
+                                  name: file.name,
+                                })
+                              }
+                              className="rounded-lg border p-1.5 hover:opacity-80"
+                              style={{
+                                borderColor: 'var(--danger)',
+                                color: 'var(--danger)',
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           </TabrixSubViewTransition>
         </>
       )}
@@ -1186,14 +1662,15 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
         open={Boolean(pendingConfirm)}
         onClose={() => setPendingConfirm(null)}
         title="تأكيد تنفيذ العملية في Google Workspace"
-        subtitle="مراجعة صريحة قبل تعديل أو حذف بيانات تقويم أو مهام Google"
+        subtitle="مراجعة صريحة قبل تعديل أو حذف بيانات تقويم أو مهام أو ملفات Google"
         icon={
           <AlertTriangle
             className="h-4 w-4"
             style={{
               color:
                 pendingConfirm?.kind === 'delete_event' ||
-                pendingConfirm?.kind === 'delete_task'
+                pendingConfirm?.kind === 'delete_task' ||
+                pendingConfirm?.kind === 'delete_drive_file'
                   ? 'var(--danger)'
                   : 'var(--warning)',
             }}
@@ -1209,7 +1686,8 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
                 style={{
                   color:
                     pendingConfirm.kind === 'delete_event' ||
-                    pendingConfirm.kind === 'delete_task'
+                    pendingConfirm.kind === 'delete_task' ||
+                    pendingConfirm.kind === 'delete_drive_file'
                       ? 'var(--danger)'
                       : 'var(--warning)',
                 }}
@@ -1230,6 +1708,10 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
                 }»؟`}
               {pendingConfirm.kind === 'delete_task' &&
                 `هل تؤكد حذف المهمة «${pendingConfirm.title}» نهائياً من Google Tasks؟`}
+              {pendingConfirm.kind === 'delete_drive_file' &&
+                `هل تؤكد حذف الملف «${pendingConfirm.name}» نهائياً من Google Drive؟`}
+              {pendingConfirm.kind === 'overwrite_drive_file' &&
+                `يوجد ملف بنفس الاسم «${pendingConfirm.name}» في Google Drive. هل تؤكد استبداله بالنسخة الجديدة؟`}
             </p>
 
             <div className="flex items-center justify-end gap-2 text-xs">
@@ -1248,12 +1730,14 @@ export const GoogleWorkspaceView: React.FC<GoogleWorkspaceViewProps> = ({
                 style={{
                   backgroundColor:
                     pendingConfirm.kind === 'delete_event' ||
-                    pendingConfirm.kind === 'delete_task'
+                    pendingConfirm.kind === 'delete_task' ||
+                    pendingConfirm.kind === 'delete_drive_file'
                       ? 'var(--danger)'
                       : 'var(--accent)',
                   color:
                     pendingConfirm.kind === 'delete_event' ||
-                    pendingConfirm.kind === 'delete_task'
+                    pendingConfirm.kind === 'delete_task' ||
+                    pendingConfirm.kind === 'delete_drive_file'
                       ? 'var(--danger-fg)'
                       : 'var(--accent-fg)',
                 }}

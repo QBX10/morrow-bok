@@ -16,11 +16,20 @@ import {
   CORE_SIX_SPECIALIZED_MODELS,
   SAFETY_FALLBACK_MODELS,
   classifyPromptSpecialtyAndPriority,
+  detectWeakAssistantPayload,
   executeWithSmartFallback,
   getModelHealthSnapshot,
   markModelSuccess,
   resetModelHealthRegistry,
 } from '../lib/aiConfig';
+import {
+  applyServerHealthOrdering,
+  detectModelOutputWeakness,
+  markServerModelFailure,
+  markServerModelSuccess,
+  resetServerModelHealth,
+} from '../server/aiOrchestrator';
+import { evaluateZeroTrustCell } from './zeroTrustExtract';
 import type { AssistantUiContext } from '../types/assistant';
 import {
   buildAssistantCacheKey,
@@ -1355,3 +1364,119 @@ test('buildLiveWorkspaceContext includes extended counts for relations, ready li
   assert.equal(live.ucrsSessionsCount, 1);
   assert.equal(live.ucrsLearningRulesCount, 1);
 });
+
+test('server AI orchestrator detects comprehension failures and orders healthy models first', () => {
+  resetServerModelHealth();
+
+  // Weak refusal without tool call triggers comprehension failure switch
+  assert.equal(
+    detectModelOutputWeakness({
+      text: 'عذراً، لم أفهم طلبك بدقة، هل يمكنك التوضيح؟',
+      toolCalls: [],
+      detectComprehensionFailure: true,
+    }),
+    'model_comprehension_or_refusal'
+  );
+
+  // Valid structured tool call bypasses text weakness check
+  assert.equal(
+    detectModelOutputWeakness({
+      text: 'عذراً',
+      toolCalls: [{ name: 'navigate_focus', args: { view: 'dashboard' } }],
+      detectComprehensionFailure: true,
+    }),
+    null
+  );
+
+  // Invalid JSON for JSON mode is rejected for instant failover
+  assert.equal(
+    detectModelOutputWeakness({
+      text: 'ليس بصيغة JSON صالحة',
+      toolCalls: [],
+      responseMimeType: 'application/json',
+    }),
+    'malformed_json_output'
+  );
+
+  assert.equal(
+    detectModelOutputWeakness({
+      text: '{"ok":true}',
+      toolCalls: [],
+      responseMimeType: 'application/json',
+    }),
+    null
+  );
+
+  // Server health ordering pushes cooled-down/weak model behind healthy backup
+  const baseChain = [
+    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+  ];
+  markServerModelFailure(AI_FREE_MODELS.GEMINI_3_8_FLASH, 'weak_reply', 1000);
+  const reordered = applyServerHealthOrdering(baseChain, 1500);
+  assert.equal(reordered[0], AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL);
+  assert.equal(reordered[reordered.length - 1], AI_FREE_MODELS.GEMINI_3_8_FLASH);
+
+  // Recovering resets cooldown immediately
+  markServerModelSuccess(AI_FREE_MODELS.GEMINI_3_8_FLASH, 420, 2000);
+  const recovered = applyServerHealthOrdering(baseChain, 2100);
+  assert.equal(recovered[0], AI_FREE_MODELS.GEMINI_3_8_FLASH);
+  resetServerModelHealth();
+});
+
+test('executeWithSmartFallback switches immediately on weak HTTP-200 replies and falls back gracefully if all weak', async () => {
+  resetModelHealthRegistry();
+  const calls: string[] = [];
+
+  const result = await executeWithSmartFallback<{ text: string }>({
+    priorityModels: [
+      AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+    ],
+    executor: async (modelId) => {
+      calls.push(modelId);
+      if (modelId === AI_FREE_MODELS.GEMINI_3_8_FLASH) {
+        return {
+          value: { text: 'لم أفهم طلبك، أعتذر لا أستطيع المساعدة في ذلك.' },
+          usedModelId: modelId,
+        };
+      }
+      return {
+        value: { text: 'تم تحليل الوكالات المطلوبة وعرض النتائج جاهزة.' },
+        usedModelId: modelId,
+      };
+    },
+    isWeakResult: (v) => detectWeakAssistantPayload({ text: v.text }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(result.usedModelId, AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL);
+  assert.equal(result.fallbackUsed, true);
+
+  // When every model produces a weak reply, bestWeakOutcome still resolves safely instead of failing hard
+  const allWeak = await executeWithSmartFallback<{ text: string }>({
+    priorityModels: [
+      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
+    ],
+    executor: async (modelId) => ({
+      value: { text: 'I cannot help with that request.' },
+      usedModelId: modelId,
+    }),
+    isWeakResult: (v) => detectWeakAssistantPayload({ text: v.text }),
+  });
+  assert.equal(allWeak.ok, true);
+  assert.ok(allWeak.data?.text);
+});
+
+test('zeroTrustExtract module imports cleanly in Node without browser dependencies', () => {
+  const cell = evaluateZeroTrustCell({
+    valueDisplay: 'علي كريم حسن',
+    confidence: 0.995,
+    fieldLabel: 'الاسم',
+  });
+  assert.equal(cell.status, 'verified');
+});
+

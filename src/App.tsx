@@ -963,195 +963,59 @@ export default function App() {
     );
   };
 
-  // --- Smart Signature Loader Wrappers for App-Wide Changes & Milestone Operations ---
+  // --- Instant State Handlers (Zero Fake Loader Delay) + Genuine Async Loaders ---
   const handleChangeModeTier = async (tier: typeof state.modeTier) => {
     if (tier === state.modeTier) return;
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تكييف وضع وصلاحيات التطبيق بالكامل...',
-        subtitle: 'يتم إعادة ضبط الأدوات والأقسام والصلاحيات حسب المستوى المختار...',
-      },
-      () => {
-        setModeTier(tier);
-      }
-    );
+    setModeTier(tier);
   };
 
   const handleToggleDarkTheme = async (dark: boolean) => {
     if (dark === state.darkTheme) return;
-    await runWithSignatureLoader(
-      {
-        label: dark
-          ? 'جاري تفعيل المظهر الليلي للتطبيق...'
-          : 'جاري تفعيل المظهر النهاري للتطبيق...',
-        subtitle: 'يتم تحديث ألوان الواجهة والبطاقات والجداول بالكامل...',
-      },
-      () => {
-        setDarkTheme(dark);
-      }
-    );
+    setDarkTheme(dark);
   };
 
   const handleUpdateThemePrefs = async (patch: Partial<typeof themePrefs>) => {
-    const isStructuralChange =
-      (patch.appTheme !== undefined && patch.appTheme !== themePrefs.appTheme) ||
-      (patch.appShape !== undefined && patch.appShape !== themePrefs.appShape) ||
-      (patch.tableTheme !== undefined && patch.tableTheme !== themePrefs.tableTheme) ||
-      (patch.fontFamily !== undefined && patch.fontFamily !== themePrefs.fontFamily);
-
-    if (!isStructuralChange) {
-      setThemePrefs(patch);
-      return;
-    }
-
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تطبيق المظهر والهوية الجديدة على التطبيق...',
-        subtitle: 'يتم تحديث الثيم والأشكال والخطوط في كافة الشاشات...',
-      },
-      () => {
-        setThemePrefs(patch);
-      }
-    );
+    setThemePrefs(patch);
   };
 
   const handleUpdateGeneralPrefs = async (patch: Partial<typeof generalPrefs>) => {
-    const isSurfaceThemeSwitch =
-      patch.surface2dPrefs?.themeId !== undefined &&
-      patch.surface2dPrefs.themeId !== activeSurfacePrefs.themeId;
-
-    if (!isSurfaceThemeSwitch) {
-      setGeneralPrefs(patch);
-      return;
-    }
-
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تغيير لوحة الألوان والمشهد البصري للتطبيق...',
-        subtitle: 'يتم إعادة رسم الخلفية الهندسية والسطوح الزجاجية بالكامل...',
-      },
-      () => {
-        setGeneralPrefs(patch);
-      }
-    );
+    setGeneralPrefs(patch);
   };
 
   const handleResetThemePrefs = async () => {
-    await runWithSignatureLoader(
-      {
-        label: 'جاري استعادة مظهر التطبيق الافتراضي...',
-        subtitle: 'يتم إرجاع الثيم والخطوط والأشكال إلى وضعها القياسي...',
-      },
-      () => {
-        resetThemePrefs();
-      }
-    );
+    resetThemePrefs();
   };
 
   const handleApplyAppearanceProfile = async (profileId: string) => {
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تطبيق ملف المظهر المتكامل...',
-        subtitle: 'يتم تبديل الألوان والخطوط وإعدادات الجداول عبر التطبيق بالكامل...',
-      },
-      () => {
-        applyAppearanceProfile(profileId);
-      }
-    );
+    applyAppearanceProfile(profileId);
   };
 
   const handleResetExpertTableConfig = async () => {
-    await runWithSignatureLoader(
-      {
-        label: 'جاري استعادة تخطيط الجداول الافتراضي...',
-        subtitle: 'يتم إعادة ضبط الأعمدة والعرض والخصائص القياسية...',
-      },
-      () => {
-        resetExpertTableConfig();
-      }
-    );
+    resetExpertTableConfig();
   };
 
   const handleRestoreMigrationSnapshot = async (): Promise<boolean> => {
-    return runWithSignatureLoader(
-      {
-        label: 'جاري استعادة نسخة ما قبل الترحيل...',
-        subtitle: 'يتم إرجاع بنية الواجهة والإعدادات المحفوظة بدقة...',
-      },
-      () => restorePreMigrationSnapshot()
-    );
+    return restorePreMigrationSnapshot();
   };
 
   const handleSaveCalculationSettings = async (
     next: typeof state.calculationSettings
   ) => {
-    const cur = state.calculationSettings;
-    const changed =
-      next.feePerIndividualIqd !== cur.feePerIndividualIqd ||
-      next.kgPerIndividual !== cur.kgPerIndividual ||
-      next.kgPerBag !== cur.kgPerBag ||
-      next.fixedCardFeeIqd !== cur.fixedCardFeeIqd ||
-      next.calculationMode !== cur.calculationMode ||
-      next.includeBlockedInFees !== cur.includeBlockedInFees ||
-      next.roundingStepIqd !== cur.roundingStepIqd ||
-      next.discountPercent !== cur.discountPercent;
-
-    if (!changed) {
-      setCalculationSettings(next);
-      return;
-    }
-
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تحديث معادلة الحصص والرسوم عبر التطبيق...',
-        subtitle: 'يتم إعادة احتساب الأوزان والأكياس والمبالغ في كافة الوكالات...',
-      },
-      () => {
-        setCalculationSettings(next);
-      }
-    );
+    setCalculationSettings(next);
   };
 
   const handleUpdateAccessibilityPrefs = async (
     patch: Partial<typeof workspaceCosmos.accessibility>
   ) => {
-    const cur = workspaceCosmos.accessibility;
-    const isMajorChange =
-      (patch.oneHandedMode !== undefined && patch.oneHandedMode !== cur.oneHandedMode) ||
-      (patch.numeralSystem !== undefined && patch.numeralSystem !== cur.numeralSystem) ||
-      (patch.calendarSystem !== undefined && patch.calendarSystem !== cur.calendarSystem) ||
-      (patch.experienceMode !== undefined && patch.experienceMode !== cur.experienceMode);
-
-    if (!isMajorChange) {
-      updateAccessibilityPrefs(patch);
-      return;
-    }
-
-    await runWithSignatureLoader(
-      {
-        label: 'جاري تطبيق التخصيص الشامل على واجهة التطبيق...',
-        subtitle: 'يتم إعادة تكييف العرض والأرقام ونمط التفاعل في جميع الأقسام...',
-      },
-      () => {
-        updateAccessibilityPrefs(patch);
-      }
-    );
+    updateAccessibilityPrefs(patch);
   };
 
   const handleAddAgency = async (name: string, icon: string) => {
     const clean = name.trim();
     if (!clean) return;
     const nextId = state.agencies.reduce((m, a) => Math.max(m, a.id), 0) + 1;
-    await runWithSignatureLoader(
-      {
-        label: `جاري إنشاء وتجهيز وكالة «${clean}»...`,
-        subtitle: 'يتم بناء سجل الوكالة وحساباتها وربطها بمحفظة العمل...',
-      },
-      () => {
-        addAgencyDirect(clean, icon);
-        setSelectedAgencyId(nextId);
-      }
-    );
+    addAgencyDirect(clean, icon);
+    setSelectedAgencyId(nextId);
   };
 
   const handleTransferAgencyRecords = async (
@@ -1159,38 +1023,16 @@ export default function App() {
     toAgencyId: number
   ) => {
     if (fromAgencyId === toAgencyId) return;
-    const fromName =
-      state.agencies.find((a) => a.id === fromAgencyId)?.name || 'الوكالة';
-    const toName =
-      state.agencies.find((a) => a.id === toAgencyId)?.name || 'الوكالة المستهدفة';
-    await runWithSignatureLoader(
-      {
-        label: `جاري نقل سجلات «${fromName}» إلى «${toName}»...`,
-        subtitle: 'يتم تحويل المستفيدين والقوائم والمصروفات والعلاقات بأمان...',
-      },
-      () => {
-        transferAgencyRecordsConfirmed(fromAgencyId, toAgencyId);
-        setSelectedAgencyId(toAgencyId);
-      }
-    );
+    transferAgencyRecordsConfirmed(fromAgencyId, toAgencyId);
+    setSelectedAgencyId(toAgencyId);
   };
 
   const handleDeleteAgency = async (agencyId: number) => {
-    const targetName =
-      state.agencies.find((a) => a.id === agencyId)?.name || 'الوكالة';
-    await runWithSignatureLoader(
-      {
-        label: `جاري حذف وكالة «${targetName}»...`,
-        subtitle: 'يتم حفظ كافة سجلاتها في سلة الأمان قبل الإزالة النهائية من المحفظة...',
-      },
-      () => {
-        deleteAgencyConfirmed(agencyId);
-        if (selectedAgencyId === agencyId) {
-          const remaining = state.agencies.find((a) => a.id !== agencyId);
-          setSelectedAgencyId(remaining?.id ?? 0);
-        }
-      }
-    );
+    deleteAgencyConfirmed(agencyId);
+    if (selectedAgencyId === agencyId) {
+      const remaining = state.agencies.find((a) => a.id !== agencyId);
+      setSelectedAgencyId(remaining?.id ?? 0);
+    }
   };
 
   const handleMovePersonsToAgency = async (
@@ -1198,17 +1040,7 @@ export default function App() {
     targetAgencyId: number
   ) => {
     if (personIds.length === 0) return;
-    const targetName =
-      state.agencies.find((a) => a.id === targetAgencyId)?.name || 'الوكالة';
-    await runWithSignatureLoader(
-      {
-        label: `جاري نقل ${personIds.length} سجل إلى «${targetName}»...`,
-        subtitle: 'يتم تحديث جداول الوكالات وإعادة احتساب الإجماليات...',
-      },
-      () => {
-        movePersonsToAgencyConfirmed(personIds, targetAgencyId);
-      }
-    );
+    movePersonsToAgencyConfirmed(personIds, targetAgencyId);
   };
 
   const handleImportWorkspaceJson = async (rawJson: string) => {
@@ -1256,13 +1088,7 @@ export default function App() {
   };
 
   const handleApplyAutoFixes = async () => {
-    return runWithSignatureLoader(
-      {
-        label: 'جاري تنفيذ الإصلاحات الذكية التلقائية...',
-        subtitle: 'يتم تدقيق وتنظيف السجلات وتصحيح التناقضات عبر المحفظة...',
-      },
-      () => applyAssistantAutoFixes()
-    );
+    return applyAssistantAutoFixes();
   };
 
   const focusedPersonName = useMemo(
@@ -2279,6 +2105,7 @@ export default function App() {
           activePeriod={activePeriod}
           relations={state.relations}
           onAuthenticatedUser={handleAuthenticated}
+          onExportMemoryVaultJson={exportMemoryVaultJson}
         />
       )}
 
@@ -2302,7 +2129,9 @@ export default function App() {
           onPurgeRecycleBinItem={purgeRecycleBinItem}
           onClearRecycleBin={clearRecycleBin}
           onImportWorkspaceJson={handleImportWorkspaceJson}
-          onSyncServer={syncWorkspaceToServer}
+          onSyncServer={async () => {
+            await syncWorkspaceToServer();
+          }}
           onRestoreServer={restoreWorkspaceFromServer}
           onNotifySuccess={(msg) =>
             pushToast({ title: msg, tone: 'success' })
@@ -2501,7 +2330,9 @@ export default function App() {
           onPurgeRecycleBinItem={purgeRecycleBinItem}
           onClearRecycleBin={clearRecycleBin}
           onImportWorkspaceJson={handleImportWorkspaceJson}
-          onSyncServer={syncWorkspaceToServer}
+          onSyncServer={async () => {
+            await syncWorkspaceToServer();
+          }}
           onRestoreServer={restoreWorkspaceFromServer}
           onOpenAuth={() => setAuthModalOpen(true)}
           assistantSettings={assistant.assistantSettings}

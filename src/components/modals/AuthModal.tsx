@@ -5,36 +5,26 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  KeyRound,
   LogOut,
   Mail,
-  Phone,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   User,
   X,
 } from 'lucide-react';
-import type { ConfirmationResult } from 'firebase/auth';
 import {
   confirmPasswordResetApi,
-  exchangeFirebaseIdTokenApi,
   getRememberedAccounts,
   loginWithPasswordApi,
   registerWithPasswordApi,
   removeRememberedAccount,
   requestPasswordResetApi,
-  requestPhoneOtpApi,
   signInWithFirebaseGoogle,
+  signInWithGithubPopup,
   updateUserProfileApi,
-  verifyPhoneOtpApi,
   type RememberedAccountSummary,
 } from '../../lib/authClient';
-import {
-  confirmFirebasePhoneSignIn,
-  isFirebasePhoneAuthConfigured,
-  startFirebasePhoneSignIn,
-} from '../../lib/firebase';
 import { compressImageFileToDataUrl } from '../../lib/imageUpload';
 import type { AuthUser } from '../../types/agency';
 import { FullScreenPushPage } from '../ui/FullScreenPushPage';
@@ -57,7 +47,7 @@ interface AuthModalProps {
   onLoggedOut: () => void;
 }
 
-type AuthTab = 'google' | 'username' | 'phone' | 'email';
+type AuthTab = 'google' | 'username' | 'email';
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   open,
@@ -80,13 +70,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-
-  const [phoneSubMode, setPhoneSubMode] = useState<'otp' | 'password'>('otp');
-  const [phone, setPhone] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [demoOtpHint, setDemoOtpHint] = useState('');
-  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
 
   const [resetIdentifier, setResetIdentifier] = useState('');
   const [resetCodeSent, setResetCodeSent] = useState(false);
@@ -112,10 +95,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [error]);
 
   useEffect(() => {
-    if (otpSent || resetCodeSent) {
+    if (resetCodeSent) {
       playTactileFeedback('notify', { sound: true, haptic: true });
     }
-  }, [otpSent, resetCodeSent]);
+  }, [resetCodeSent]);
 
   useEffect(() => {
     if (avatarNotice) {
@@ -170,6 +153,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'تعذر إتمام تسجيل الدخول بحساب Google.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGithubLogin = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const session = await signInWithGithubPopup({ rememberMe });
+      triggerSuccessTactile();
+      onAuthenticated(session.user);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'تعذر إتمام تسجيل الدخول بحساب GitHub.'
       );
     } finally {
       setLoading(false);
@@ -250,92 +250,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      setError('');
-      if (phoneSubMode === 'password') {
-        const session = isRegister
-          ? await registerWithPasswordApi({
-              mode: 'phone',
-              displayName: displayName.trim() || phone.trim(),
-              phone: phone.trim(),
-              password,
-              rememberMe,
-            })
-          : await loginWithPasswordApi({
-              mode: 'phone',
-              identifier: phone.trim(),
-              password,
-              rememberMe,
-            });
-        triggerSuccessTactile();
-        onAuthenticated(session.user);
-        onClose();
-        return;
-      }
-
-      if (!otpSent) {
-        const cleanPhone = phone.trim();
-        fbPhoneConfirmationRef.current = null;
-        if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
-          try {
-            const conf = await startFirebasePhoneSignIn(
-              cleanPhone,
-              'modal-firebase-phone-recaptcha'
-            );
-            fbPhoneConfirmationRef.current = conf;
-            setOtpSent(true);
-            setDemoOtpHint('');
-            return;
-          } catch {
-            fbPhoneConfirmationRef.current = null;
-          }
-        }
-        const res = await requestPhoneOtpApi(cleanPhone);
-        setOtpSent(true);
-        if (res.demoCode) setDemoOtpHint(res.demoCode);
-      } else {
-        if (fbPhoneConfirmationRef.current) {
-          const { idToken } = await confirmFirebasePhoneSignIn(
-            fbPhoneConfirmationRef.current,
-            otpCode.trim()
-          );
-          const session = await exchangeFirebaseIdTokenApi({
-            idToken,
-            rememberMe,
-            displayName: displayName.trim() || undefined,
-          });
-          fbPhoneConfirmationRef.current = null;
-          triggerSuccessTactile();
-          onAuthenticated(session.user);
-          onClose();
-          return;
-        }
-        const session = await verifyPhoneOtpApi({
-          phone: phone.trim(),
-          code: otpCode.trim(),
-          displayName: displayName.trim(),
-          rememberMe,
-        });
-        triggerSuccessTactile();
-        onAuthenticated(session.user);
-        onClose();
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'تعذر التحقق من رقم الهاتف.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const resetMode: 'google' | 'username' | 'phone' =
-      tab === 'phone' ? 'phone' : tab === 'email' || tab === 'google' ? 'google' : 'username';
+    const resetMode: 'google' | 'username' =
+      tab === 'email' || tab === 'google' ? 'google' : 'username';
     const idValue = resetIdentifier.trim();
     if (!idValue) {
       setError('يرجى إدخال معرف الحساب أولاً.');
@@ -382,13 +300,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           ? 'إدارة الحساب وتبديل تسجيل الدخول — Morrow'
           : 'تسجيل الدخول إلى Morrow'
       }
-      subtitle="حساب Google، اسم المستخدم، رقم الهاتف، أو البريد الإلكتروني"
+      subtitle="حساب Google، GitHub، اسم المستخدم، أو البريد الإلكتروني"
       icon={<ShieldCheck className="h-4 w-4" />}
       ariaLabel="تسجيل الدخول المتعدد"
       maxWidthClass="max-w-lg"
     >
       <div className="nexus-squircle overflow-hidden">
-        <div id="modal-firebase-phone-recaptcha" className="hidden" />
         <div className="space-y-4 p-5 sm:p-6">
           {currentUser && (
             <div
@@ -430,8 +347,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div className="truncate" style={{ color: 'var(--text-muted)' }}>
                       {currentUser.provider === 'google'
                         ? `البريد: ${currentUser.email}`
-                        : currentUser.provider === 'phone'
-                        ? `الهاتف: ${currentUser.phone}`
+                        : currentUser.provider === 'github'
+                        ? `GitHub: ${currentUser.username ? `@${currentUser.username}` : currentUser.email || currentUser.displayName}`
                         : `اسم المستخدم: ${currentUser.username}`}
                     </div>
                   </div>
@@ -509,15 +426,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onClick={() => {
                         setIsResetMode(false);
                         setError('');
-                        if (acc.provider === 'google') {
+                        if (acc.provider === 'google' || acc.provider === 'github') {
                           setTab('google');
                           if (acc.email) setEmail(acc.email);
-                        } else if (acc.provider === 'username') {
+                        } else {
                           setTab('username');
                           if (acc.username) setUsername(acc.username);
-                        } else {
-                          setTab('phone');
-                          if (acc.phone) setPhone(acc.phone);
                         }
                       }}
                       className="font-bold cursor-pointer truncate max-w-[140px]"
@@ -577,18 +491,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </div>
 
-          {/* 4 Multi-Login Tabs */}
+          {/* 3 Multi-Login Tabs */}
           <div
             role="tablist"
             aria-label="طرق تسجيل الدخول"
-            className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl p-1"
+            className="grid grid-cols-3 gap-1 rounded-xl p-1"
             style={{ backgroundColor: 'var(--bg-main)' }}
           >
             {(
               [
-                ['google', 'Google', Sparkles],
+                ['google', 'Google / GitHub', Sparkles],
                 ['username', 'اسم المستخدم', User],
-                ['phone', 'رقم الهاتف', Phone],
                 ['email', 'البريد', Mail],
               ] as Array<[AuthTab, string, React.FC<{ className?: string }>]>
             ).map(([key, label, Icon]) => {
@@ -625,9 +538,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   htmlFor="auth-modal-reset-id"
                   className="mb-1 block text-xs font-medium"
                 >
-                  {tab === 'phone'
-                    ? 'رقم الهاتف المسجل'
-                    : tab === 'email' || tab === 'google'
+                  {tab === 'email' || tab === 'google'
                     ? 'البريد الإلكتروني المسجل'
                     : 'اسم المستخدم المسجل'}
                 </label>
@@ -640,9 +551,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={resetIdentifier}
                   onChange={(e) => setResetIdentifier(e.target.value)}
                   placeholder={
-                    tab === 'phone'
-                      ? '07701234567'
-                      : tab === 'email' || tab === 'google'
+                    tab === 'email' || tab === 'google'
                       ? 'name@example.com'
                       : 'ali_agency90'
                   }
@@ -771,6 +680,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           ? 'جارٍ الاتصال بـ Google...'
                           : 'تسجيل الدخول بحساب Google'}
                       </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={loading}
+                    data-testid="modal-github-login-btn"
+                    onClick={() => void handleGithubLogin()}
+                    className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-xs font-extrabold transition-colors hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4 shrink-0 fill-current"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18.92-.26 1.9-.39 2.88-.39.98 0 1.96.13 2.88.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.79.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+                    </svg>
+                    <span>
+                      {loading
+                        ? 'جارٍ الاتصال بـ GitHub...'
+                        : 'تسجيل الدخول بحساب GitHub'}
                     </span>
                   </button>
 
@@ -981,231 +916,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       ? 'لديك حساب مسبقًا؟ سجّل الدخول'
                       : 'مستخدم جديد؟ أنشئ حسابًا باسم المستخدم'}
                   </button>
-                </form>
-              )}
-
-              {tab === 'phone' && (
-                <form onSubmit={handlePhoneSubmit} className="space-y-3">
-                  <div className="grid grid-cols-2 gap-1.5 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPhoneSubMode('otp');
-                        setOtpSent(false);
-                        setError('');
-                      }}
-                      className="rounded-lg border py-1.5 font-semibold cursor-pointer"
-                      style={{
-                        borderColor:
-                          phoneSubMode === 'otp'
-                            ? 'var(--accent)'
-                            : 'var(--border-color)',
-                        backgroundColor:
-                          phoneSubMode === 'otp'
-                            ? 'var(--bg-nav-active)'
-                            : 'var(--bg-main)',
-                      }}
-                    >
-                      رمز تحقق (OTP)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPhoneSubMode('password');
-                        setError('');
-                      }}
-                      className="rounded-lg border py-1.5 font-semibold cursor-pointer"
-                      style={{
-                        borderColor:
-                          phoneSubMode === 'password'
-                            ? 'var(--accent)'
-                            : 'var(--border-color)',
-                        backgroundColor:
-                          phoneSubMode === 'password'
-                            ? 'var(--bg-nav-active)'
-                            : 'var(--bg-main)',
-                      }}
-                    >
-                      رقم + كلمة مرور
-                    </button>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="auth-phone-input"
-                      className="mb-1 block text-xs font-medium"
-                    >
-                      رقم الهاتف
-                    </label>
-                    <input
-                      id="auth-phone-input"
-                      type="tel"
-                      dir="ltr"
-                      required
-                      disabled={phoneSubMode === 'otp' && otpSent}
-                      value={phone}
-                      onPointerDown={triggerInputTactile}
-                      onFocus={triggerInputTactile}
-                      onChange={(e) => {
-                        setPhone(e.target.value);
-                        setError('');
-                      }}
-                      placeholder="07701234567"
-                      className="w-full rounded-xl border px-3.5 py-2.5 text-left text-sm tabular-nums transition-colors focus:border-[var(--accent)]"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                  </div>
-
-                  {phoneSubMode === 'otp' ? (
-                    <>
-                      {otpSent && (
-                        <>
-                          {demoOtpHint && (
-                            <div
-                              className="rounded-lg border px-3 py-2 text-xs font-semibold"
-                              style={{
-                                borderColor: 'var(--accent)',
-                                backgroundColor: 'var(--bg-nav-active)',
-                                color: 'var(--accent)',
-                              }}
-                            >
-                              رمز التحقق المرسل:{' '}
-                              <span className="font-data">{demoOtpHint}</span>
-                            </div>
-                          )}
-                          <div>
-                            <label
-                              htmlFor="auth-otp-input"
-                              className="mb-1 block text-xs font-medium"
-                            >
-                              رمز التحقق (6 أرقام)
-                            </label>
-                            <input
-                              id="auth-otp-input"
-                              type="text"
-                              dir="ltr"
-                              required
-                              value={otpCode}
-                              onPointerDown={triggerInputTactile}
-                              onFocus={triggerInputTactile}
-                              onChange={(e) => setOtpCode(e.target.value)}
-                              placeholder="123456"
-                              className="w-full rounded-xl border px-3.5 py-2.5 text-center text-base font-bold tracking-widest tabular-nums transition-colors focus:border-[var(--accent)]"
-                              style={{
-                                backgroundColor: 'var(--bg-main)',
-                                borderColor: 'var(--border-color)',
-                              }}
-                            />
-                          </div>
-                        </>
-                      )}
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                        style={{
-                          backgroundColor: 'var(--accent)',
-                          color: 'var(--accent-fg)',
-                        }}
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                        <span>
-                          {loading
-                            ? 'يرجى الانتظار...'
-                            : otpSent
-                            ? 'تأكيد الرمز والدخول'
-                            : 'إرسال رمز التحقق'}
-                        </span>
-                      </button>
-                      {otpSent && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOtpSent(false);
-                            setOtpCode('');
-                            setDemoOtpHint('');
-                          }}
-                          className="w-full text-center text-xs underline cursor-pointer"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          تغيير رقم الهاتف
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {isRegister && (
-                        <div>
-                          <label
-                            htmlFor="auth-phone-name"
-                            className="mb-1 block text-xs font-medium"
-                          >
-                            الاسم الكامل
-                          </label>
-                          <input
-                            id="auth-phone-name"
-                            type="text"
-                            value={displayName}
-                            onPointerDown={triggerInputTactile}
-                            onFocus={triggerInputTactile}
-                            onChange={(e) => setDisplayName(e.target.value)}
-                            placeholder="اكتب اسمك هنا"
-                            className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
-                            style={{
-                              backgroundColor: 'var(--bg-main)',
-                              borderColor: 'var(--border-color)',
-                            }}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <label
-                          htmlFor="auth-phone-pass"
-                          className="mb-1 block text-xs font-medium"
-                        >
-                          كلمة المرور
-                        </label>
-                        <input
-                          id="auth-phone-pass"
-                          type="password"
-                          required
-                          value={password}
-                          onPointerDown={triggerInputTactile}
-                          onFocus={triggerInputTactile}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:border-[var(--accent)]"
-                          style={{
-                            backgroundColor: 'var(--bg-main)',
-                            borderColor: 'var(--border-color)',
-                          }}
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full rounded-lg px-4 py-2.5 text-xs font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                        style={{
-                          backgroundColor: 'var(--accent)',
-                          color: 'var(--accent-fg)',
-                        }}
-                      >
-                        {isRegister ? 'تسجيل رقم جديد' : 'دخول برقم الهاتف'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsRegister((v) => !v)}
-                        className="w-full text-center text-xs font-semibold underline cursor-pointer"
-                        style={{ color: 'var(--accent)' }}
-                      >
-                        {isRegister
-                          ? 'لديك حساب؟ سجّل الدخول'
-                          : 'تسجيل رقم جديد بكلمة مرور'}
-                      </button>
-                    </>
-                  )}
                 </form>
               )}
 

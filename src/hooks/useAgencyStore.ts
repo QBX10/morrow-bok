@@ -8,6 +8,7 @@ import {
   DEFAULT_SECURITY_PREFS,
   DEFAULT_WORKSPACE_COSMOS,
 } from '../data/seedData';
+import { emitAppToast } from './useToastQueue';
 import {
   deleteServerAppearanceProfile,
   fetchStorageStatusApi,
@@ -430,22 +431,62 @@ export function useAgencyStore(activeUid: string | null = null) {
   const syncInFlightRef = useRef<boolean>(false);
   const lastCloudSyncedUpdatedAtRef = useRef<string>('');
   const suppressNextAutoQueueRef = useRef<boolean>(false);
+  const hadOfflineOrErrorPendingRef = useRef<boolean>(false);
+  const autoRetryCountRef = useRef<number>(0);
 
-  // Track online/offline network status dynamically
+  // Track online/offline network status dynamically + verify reachability on reconnect/focus
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const handleOnline = () => setIsOnline(true);
+    let lastProbeAt = 0;
+
+    const probeConnectivity = async (force = false) => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setIsOnline(false);
+        return;
+      }
+      const now = Date.now();
+      if (!force && now - lastProbeAt < 4000) return;
+      lastProbeAt = now;
+      try {
+        const res = await fetch('/api/health', { cache: 'no-store' });
+        if (res.ok) {
+          setIsOnline(true);
+          autoRetryCountRef.current = 0;
+        }
+      } catch {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          setIsOnline(false);
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      autoRetryCountRef.current = 0;
+      void probeConnectivity(true);
+    };
     const handleOffline = () => {
       setIsOnline(false);
+      hadOfflineOrErrorPendingRef.current = true;
       setSyncStatus((prev) =>
         prev === 'syncing' || prev === 'cloud_synced' ? 'pending_offline' : prev
       );
     };
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void probeConnectivity(false);
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
     };
   }, []);
 
@@ -592,14 +633,21 @@ export function useAgencyStore(activeUid: string | null = null) {
             }
           } catch {
             if (!cancelled) {
-              setSyncStatus(
-                typeof navigator !== 'undefined' && navigator.onLine === false
-                  ? 'pending_offline'
-                  : 'local_only'
-              );
+              const hasUnsyncedLocal =
+                pendingOps.length > 0 ||
+                workingState.agencies.length > 0 ||
+                workingState.persons.length > 0 ||
+                (typeof navigator !== 'undefined' && navigator.onLine === false);
+              if (hasUnsyncedLocal) {
+                hadOfflineOrErrorPendingRef.current = true;
+              }
+              setSyncStatus(hasUnsyncedLocal ? 'pending_offline' : 'local_only');
             }
           }
         } else if (!cancelled) {
+          if (pendingOps.length > 0) {
+            hadOfflineOrErrorPendingRef.current = true;
+          }
           setSyncStatus(pendingOps.length > 0 ? 'pending_offline' : 'local_only');
         }
 
@@ -655,9 +703,11 @@ export function useAgencyStore(activeUid: string | null = null) {
           updatedAt: state.updatedAt,
           deviceId: state.deviceId || getOrCreateDeviceId(),
         });
+        autoRetryCountRef.current = 0;
         if (!cancelled) {
           setSyncQueue(nextQ);
           if (!isOnline) {
+            hadOfflineOrErrorPendingRef.current = true;
             setSyncStatus('pending_offline');
           }
         }
@@ -3082,6 +3132,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         return null;
       }
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        hadOfflineOrErrorPendingRef.current = true;
         setSyncStatus('pending_offline');
         if (!options?.silent) {
           throw new Error('لا يوجد اتصال بالإنترنت حالياً؛ تم حفظ تغييراتك في طابور المزامنة.');
@@ -3122,6 +3173,7 @@ export function useAgencyStore(activeUid: string | null = null) {
             lastSyncedAt: new Date().toISOString(),
             auditLog: appendAuditCheckpointEvents(remoteNormalized.auditLog, conflictAudit),
           };
+          lastCloudSyncedUpdatedAtRef.current = hydrated.updatedAt || '';
           suppressNextAutoQueueRef.current = true;
           setState(hydrated);
           setLastConflictNotice('تم حل تعارض زمني تلقائياً واعتماد النسخة الأحدث من السحابة.');
@@ -3171,6 +3223,16 @@ export function useAgencyStore(activeUid: string | null = null) {
 
         setSyncQueue(pruneSyncedQueueOperations(activeUid, 12));
         setSyncStatus('cloud_synced');
+        autoRetryCountRef.current = 0;
+
+        if (hadOfflineOrErrorPendingRef.current) {
+          hadOfflineOrErrorPendingRef.current = false;
+          emitAppToast({
+            title: 'عاد الاتصال وتمت المزامنة تلقائياً',
+            description: 'حُفظت كافة تعديلاتك وبياناتك في السحابة بنجاح دون أي فقدان.',
+            tone: 'success',
+          });
+        }
 
         void syncWorkspaceSummaryToFirestore({
           uid: sess.user.uid,
@@ -3182,23 +3244,30 @@ export function useAgencyStore(activeUid: string | null = null) {
 
         return data;
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : 'sync_error';
+        const lowerErr = errMsg.toLowerCase();
+        const isOfflineErr =
+          (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+          lowerErr.includes('failed to fetch') ||
+          lowerErr.includes('networkerror') ||
+          lowerErr.includes('network request failed');
         const queue = loadSyncQueue(activeUid);
-        const pendingOps = queue.filter((q) => q.status === 'pending');
+        const pendingOps = queue.filter((q) => q.status === 'pending' || q.status === 'failed');
         if (pendingOps.length > 0) {
           setSyncQueue(
             markSyncQueueStatus(
               activeUid,
               pendingOps.map((o) => o.id),
               'failed',
-              err instanceof Error ? err.message : 'sync_error'
+              errMsg
             )
           );
         }
-        setSyncStatus(
-          typeof navigator !== 'undefined' && navigator.onLine === false
-            ? 'pending_offline'
-            : 'error'
-        );
+        hadOfflineOrErrorPendingRef.current = true;
+        if (isOfflineErr && typeof navigator !== 'undefined' && navigator.onLine === false) {
+          setIsOnline(false);
+        }
+        setSyncStatus(isOfflineErr ? 'pending_offline' : 'error');
         if (!options?.silent) throw err;
         return null;
       } finally {
@@ -3208,21 +3277,43 @@ export function useAgencyStore(activeUid: string | null = null) {
     [activeUid]
   );
 
-  // Automatic background cloud sync flush (debounced + online reconnect)
+  // Automatic background cloud sync flush (debounced + online reconnect + unsynced local drift)
   useEffect(() => {
     if (!activeUid || loadedUidRef.current !== activeUid || !isOnline) return;
     const sess = getStoredSession();
     if (!sess?.user) return;
-    const hasPending = syncQueue.some(
+
+    const hasPendingQueue = syncQueue.some(
       (q) => q.status === 'pending' || q.status === 'failed'
     );
-    if (!hasPending) return;
+    const snap = latestStateRef.current;
+    const hasUnsyncedDrift =
+      syncStatus === 'pending_offline' ||
+      (Boolean(snap.updatedAt) &&
+        snap.updatedAt !== lastCloudSyncedUpdatedAtRef.current &&
+        (snap.agencies.length > 0 ||
+          snap.persons.length > 0 ||
+          (snap.monthlyArchives?.length || 0) > 0 ||
+          (snap.ucrsSessions?.length || 0) > 0));
 
+    if (!hasPendingQueue && !hasUnsyncedDrift) return;
+
+    if (syncStatus === 'error') {
+      if (autoRetryCountRef.current >= 4) return;
+      const backoffMs = Math.min(30_000, 4_000 * Math.pow(2, autoRetryCountRef.current));
+      const retryTimer = window.setTimeout(() => {
+        autoRetryCountRef.current += 1;
+        void forceSyncNow({ silent: true });
+      }, backoffMs);
+      return () => window.clearTimeout(retryTimer);
+    }
+
+    const delayMs = syncStatus === 'pending_offline' ? 500 : 1200;
     const timer = window.setTimeout(() => {
       void forceSyncNow({ silent: true });
-    }, 1500);
+    }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [activeUid, isOnline, syncQueue, forceSyncNow]);
+  }, [activeUid, isOnline, syncQueue, syncStatus, state.updatedAt, forceSyncNow]);
 
   const syncWorkspaceToServer = useCallback(async () => {
     return runWithSignatureLoader(

@@ -19,7 +19,7 @@ export interface AuthenticatedPrincipal {
   displayName: string;
   email?: string;
   username?: string;
-  phone?: string;
+  githubId?: string;
   avatarUrl?: string;
 }
 
@@ -134,13 +134,15 @@ export function verifySessionToken(
     if (!parsed.uid || (parsed.exp && Date.now() > parsed.exp)) {
       return null;
     }
+    const rawProvider = String(parsed.provider || 'username');
+    const safeProvider: AuthProviderType =
+      rawProvider === 'google' || rawProvider === 'github' ? rawProvider : 'username';
     return {
       uid: parsed.uid,
-      provider: parsed.provider,
+      provider: safeProvider,
       displayName: parsed.displayName,
       email: parsed.email,
       username: parsed.username,
-      phone: parsed.phone,
       avatarUrl: parsed.avatarUrl,
     };
   } catch {
@@ -162,20 +164,13 @@ export async function verifyAuthToken(token: string): Promise<{
 
   try {
     const decodedToken = await adminAuth.verifyIdToken(trimmed);
-    const phone =
-      typeof decodedToken.phone_number === 'string' && decodedToken.phone_number
-        ? decodedToken.phone_number
-        : undefined;
-    const provider: AuthProviderType = phone && !decodedToken.email ? 'phone' : 'google';
+    const provider: AuthProviderType = 'google';
     const email = decodedToken.email
       ? decodedToken.email.toLowerCase()
-      : phone
-      ? undefined
       : `${decodedToken.uid}@firebase.local`;
     const displayName =
       decodedToken.name ||
       (email ? email.split('@')[0] : undefined) ||
-      phone ||
       'مستخدم Google';
     const avatarUrl =
       typeof decodedToken.picture === 'string'
@@ -188,7 +183,6 @@ export async function verifyAuthToken(token: string): Promise<{
         provider,
         displayName,
         email,
-        phone,
         avatarUrl,
       },
       decodedFirebaseToken: decodedToken,
@@ -198,6 +192,10 @@ export async function verifyAuthToken(token: string): Promise<{
   }
 }
 
+function normalizeProvider(raw: unknown, fallback: AuthProviderType): AuthProviderType {
+  return raw === 'google' || raw === 'github' || raw === 'username' ? raw : fallback;
+}
+
 export async function resolveCanonicalPrincipal(
   principal: AuthenticatedPrincipal
 ): Promise<AuthenticatedPrincipal> {
@@ -205,23 +203,23 @@ export async function resolveCanonicalPrincipal(
     try {
       const canonical = await getOrCreateUser({
         uid: principal.uid,
+        githubId: principal.githubId ?? null,
         email: principal.email || `${principal.uid}@tabrex.local`,
         username: principal.username ?? null,
-        phone: principal.phone ?? null,
         displayName: principal.displayName,
         avatarUrl: principal.avatarUrl ?? null,
         authProvider: principal.provider,
       });
       return {
         uid: canonical.uid,
-        provider: (canonical.authProvider as AuthProviderType) || principal.provider,
+        provider: normalizeProvider(canonical.authProvider, principal.provider),
         displayName: canonical.displayName || principal.displayName,
         email:
           canonical.email && !canonical.email.endsWith('.local')
             ? canonical.email
             : principal.email,
         username: canonical.username || principal.username,
-        phone: canonical.phone || principal.phone,
+        githubId: canonical.githubId || principal.githubId,
         avatarUrl: canonical.avatarUrl || principal.avatarUrl,
       };
     } catch (err) {
@@ -231,20 +229,20 @@ export async function resolveCanonicalPrincipal(
 
   const localCanonical = resolveOrCreateLocalCanonicalUser({
     uid: principal.uid,
+    githubId: principal.githubId ?? null,
     authProvider: principal.provider,
     displayName: principal.displayName,
     email: principal.email ?? null,
-    phone: principal.phone ?? null,
     username: principal.username ?? null,
     avatarUrl: principal.avatarUrl ?? null,
   });
   return {
     uid: localCanonical.uid,
-    provider: localCanonical.authProvider,
+    provider: normalizeProvider(localCanonical.authProvider, principal.provider),
     displayName: localCanonical.displayName,
     email: localCanonical.email || principal.email,
     username: localCanonical.username || principal.username,
-    phone: localCanonical.phone || principal.phone,
+    githubId: localCanonical.githubId || principal.githubId,
     avatarUrl: localCanonical.avatarUrl || principal.avatarUrl,
   };
 }

@@ -45,7 +45,7 @@
         },
         "provider": {
           "type": "string",
-          "enum": ["google", "username", "phone"]
+          "enum": ["google", "github", "username"]
         },
         "role": {
           "type": "string",

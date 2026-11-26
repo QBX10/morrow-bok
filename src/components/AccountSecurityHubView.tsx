@@ -20,13 +20,11 @@ import {
   HardDrive,
   History,
   Info,
-  KeyRound,
   Lightbulb,
   Lock,
   LogOut,
   Mail,
   MessageSquarePlus,
-  Phone,
   Pin,
   PinOff,
   Plus,
@@ -45,24 +43,18 @@ import {
   User,
   WifiOff,
 } from 'lucide-react';
-import type { ConfirmationResult } from 'firebase/auth';
 import {
-  exchangeFirebaseIdTokenApi,
   linkUsernameApi,
   loginWithPasswordApi,
   registerWithPasswordApi,
-  requestPhoneOtpApi,
   signInWithFirebaseGoogle,
+  signInWithGithubPopup,
   updateUserProfileApi,
-  verifyPhoneOtpApi,
 } from '../lib/authClient';
 import {
-  confirmFirebasePhoneSignIn,
   getAccessToken,
   googleSignIn,
   initWorkspaceAuth,
-  isFirebasePhoneAuthConfigured,
-  startFirebasePhoneSignIn,
 } from '../lib/firebase';
 import {
   deleteDriveBackupFile,
@@ -268,19 +260,13 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   });
 
   // Account login inline panel state
-  const [loginMethod, setLoginMethod] = useState<'google' | 'username' | 'phone'>('google');
+  const [loginMethod, setLoginMethod] = useState<'google' | 'username'>('google');
   const [isRegister, setIsRegister] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [phoneSubMode, setPhoneSubMode] = useState<'otp' | 'password'>('otp');
-  const [phoneInput, setPhoneInput] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [demoOtpHint, setDemoOtpHint] = useState('');
-  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -515,86 +501,6 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
     }
   };
 
-  const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setAuthBusy(true);
-      setAuthError('');
-      if (phoneSubMode === 'password') {
-        const session = isRegister
-          ? await registerWithPasswordApi({
-              mode: 'phone',
-              displayName: displayNameInput.trim() || phoneInput.trim(),
-              phone: phoneInput.trim(),
-              password: passwordInput,
-            })
-          : await loginWithPasswordApi({
-              mode: 'phone',
-              identifier: phoneInput.trim(),
-              password: passwordInput,
-            });
-        onAuthenticated(session.user);
-        setPasswordInput('');
-        onNotifySuccess('تم الدخول برقم الهاتف بنجاح.');
-        return;
-      }
-
-      if (!otpSent) {
-        const cleanPhone = phoneInput.trim();
-        fbPhoneConfirmationRef.current = null;
-        if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
-          try {
-            const conf = await startFirebasePhoneSignIn(
-              cleanPhone,
-              'hub-firebase-phone-recaptcha'
-            );
-            fbPhoneConfirmationRef.current = conf;
-            setOtpSent(true);
-            setDemoOtpHint('');
-            return;
-          } catch {
-            fbPhoneConfirmationRef.current = null;
-          }
-        }
-        const res = await requestPhoneOtpApi(cleanPhone);
-        setOtpSent(true);
-        if (res.demoCode) setDemoOtpHint(res.demoCode);
-      } else {
-        if (fbPhoneConfirmationRef.current) {
-          const { idToken } = await confirmFirebasePhoneSignIn(
-            fbPhoneConfirmationRef.current,
-            otpCode.trim()
-          );
-          const session = await exchangeFirebaseIdTokenApi({
-            idToken,
-            displayName: displayNameInput.trim() || undefined,
-          });
-          fbPhoneConfirmationRef.current = null;
-          onAuthenticated(session.user);
-          setOtpSent(false);
-          setOtpCode('');
-          setDemoOtpHint('');
-          onNotifySuccess('تم التحقق من رقم الهاتف عبر Firebase وتسجيل الدخول.');
-          return;
-        }
-        const session = await verifyPhoneOtpApi({
-          phone: phoneInput.trim(),
-          code: otpCode.trim(),
-          displayName: displayNameInput.trim(),
-        });
-        onAuthenticated(session.user);
-        setOtpSent(false);
-        setOtpCode('');
-        setDemoOtpHint('');
-        onNotifySuccess('تم التحقق من رقم الهاتف وتسجيل الدخول.');
-      }
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'تعذر التحقق من رقم الهاتف.');
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
   const handleLinkUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authUser) return;
@@ -687,6 +593,27 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'تعذر تسجيل الدخول عبر Google.';
+      setAuthError(msg);
+      onNotifyError(msg);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleConnectGithubAccount = async () => {
+    try {
+      setAuthBusy(true);
+      setAuthError('');
+      const session = await signInWithGithubPopup({ rememberMe: true });
+      onAuthenticated(session.user);
+      onNotifySuccess(
+        `تم تسجيل الدخول بحساب GitHub (${session.user.displayName}) بنجاح.`
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'تعذر تسجيل الدخول عبر GitHub.';
       setAuthError(msg);
       onNotifyError(msg);
     } finally {
@@ -1395,7 +1322,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 <div>
                   <h2 className="text-sm font-black">حساب التطبيق وتسجيل الدخول</h2>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    تسجيل الدخول عبر الهاتف أو اليوزر أو البريد الإلكتروني
+                    تسجيل الدخول عبر Google أو GitHub أو اليوزر أو البريد الإلكتروني
                   </p>
                 </div>
               </div>
@@ -1426,8 +1353,8 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   <div className="min-w-0">
                     <div className="font-black truncate">{authUser.displayName}</div>
                     <div className="truncate" style={{ color: 'var(--text-muted)' }}>
-                      {authUser.email || authUser.phone || authUser.username}
-                      {authUser.username && (authUser.email || authUser.phone)
+                      {authUser.email || authUser.username}
+                      {authUser.username && authUser.email
                         ? ` · @${authUser.username}`
                         : ''}
                     </div>
@@ -1484,7 +1411,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                     )}
                   </div>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    اربط اسم مستخدم فريد (مثل ali_90) لتتمكن من الدخول إلى نفس البيانات من أي جهاز حتى بدون Google أو الهاتف.
+                    اربط اسم مستخدم فريد (مثل ali_90) لتتمكن من الدخول إلى نفس البيانات من أي جهاز حتى بدون Google أو GitHub.
                   </p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <input
@@ -1532,18 +1459,15 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 </form>
               </div>
             )}
-            <div id="hub-firebase-phone-recaptcha" className="hidden" />
-
             {/* Login / Switch Tabs */}
             <div
-              className="grid grid-cols-3 gap-1 rounded-2xl p-1 text-xs"
+              className="grid grid-cols-2 gap-1 rounded-2xl p-1 text-xs"
               style={{ backgroundColor: 'var(--bg-main)' }}
             >
               {(
                 [
-                  ['google', 'البريد / Gmail', Mail],
+                  ['google', 'Google / GitHub / البريد', Mail],
                   ['username', 'اسم المستخدم', User],
-                  ['phone', 'رقم الهاتف', Phone],
                 ] as const
               ).map(([key, label, Icon]) => {
                 const active = loginMethod === key;
@@ -1588,6 +1512,28 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 >
                   <GoogleGsiSvg />
                   <span>Sign in with Google · تسجيل الدخول بحساب Google</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="hub-github-login-btn"
+                  disabled={authBusy}
+                  onClick={() => void handleConnectGithubAccount()}
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-xl border px-4 py-2 font-extrabold transition-colors hover:opacity-95"
+                  style={{
+                    backgroundColor: '#161b22',
+                    borderColor: '#30363d',
+                    color: '#f0f6fc',
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4 shrink-0 fill-current"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+                  </svg>
+                  <span>Sign in with GitHub · تسجيل الدخول بحساب GitHub</span>
                 </button>
 
                 <div
@@ -1729,121 +1675,6 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   style={{ color: 'var(--accent)' }}
                 >
                   {isRegister ? 'لديك حساب؟ تسجيل الدخول' : 'إنشاء حساب يوزر جديد'}
-                </button>
-              </form>
-            )}
-
-            {loginMethod === 'phone' && (
-              <form onSubmit={handlePhoneSubmit} className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhoneSubMode('otp');
-                      setOtpSent(false);
-                    }}
-                    className="rounded-xl border py-1.5 font-bold"
-                    style={{
-                      borderColor:
-                        phoneSubMode === 'otp' ? 'var(--accent)' : 'var(--border-color)',
-                      backgroundColor:
-                        phoneSubMode === 'otp' ? 'var(--bg-nav-active)' : 'var(--bg-main)',
-                    }}
-                  >
-                    رمز تحقق (OTP)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPhoneSubMode('password')}
-                    className="rounded-xl border py-1.5 font-bold"
-                    style={{
-                      borderColor:
-                        phoneSubMode === 'password'
-                          ? 'var(--accent)'
-                          : 'var(--border-color)',
-                      backgroundColor:
-                        phoneSubMode === 'password'
-                          ? 'var(--bg-nav-active)'
-                          : 'var(--bg-main)',
-                    }}
-                  >
-                    رقم + كلمة مرور
-                  </button>
-                </div>
-
-                <input
-                  type="tel"
-                  dir="ltr"
-                  required
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  placeholder="07701234567"
-                  className="w-full rounded-xl border px-3 py-2 text-left text-sm tabular-nums"
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-
-                {phoneSubMode === 'otp' && otpSent && (
-                  <>
-                    {demoOtpHint && (
-                      <div
-                        className="rounded-xl border px-3 py-2 font-bold"
-                        style={{
-                          borderColor: 'var(--accent)',
-                          backgroundColor: 'var(--bg-nav-active)',
-                          color: 'var(--accent)',
-                        }}
-                      >
-                        رمز التحقق: <span className="font-mono">{demoOtpHint}</span>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      dir="ltr"
-                      required
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      placeholder="123456"
-                      className="w-full rounded-xl border px-3 py-2 text-center font-bold tracking-widest"
-                      style={{
-                        backgroundColor: 'var(--bg-main)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                  </>
-                )}
-
-                {phoneSubMode === 'password' && (
-                  <input
-                    type="password"
-                    required
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="كلمة المرور"
-                    className="w-full rounded-xl border px-3 py-2 text-sm"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                )}
-
-                <button
-                  type="submit"
-                  disabled={authBusy}
-                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 font-extrabold"
-                  style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
-                >
-                  <KeyRound className="h-3.5 w-3.5" />
-                  <span>
-                    {phoneSubMode === 'otp'
-                      ? otpSent
-                        ? 'تأكيد الرمز والدخول'
-                        : 'إرسال رمز التحقق'
-                      : 'دخول برقم الهاتف'}
-                  </span>
                 </button>
               </form>
             )}

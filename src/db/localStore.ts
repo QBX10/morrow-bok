@@ -7,11 +7,11 @@ import type { AuthProviderType } from '../types/agency.ts';
 export interface StoredUserRecord {
   id: number;
   uid: string;
+  githubId?: string | null;
   authProvider: AuthProviderType;
   displayName: string;
   email: string | null;
   username: string | null;
-  phone: string | null;
   avatarUrl?: string | null;
   passwordHash: string | null;
   role: 'manager' | 'viewer';
@@ -134,23 +134,23 @@ export function findUserByUsername(username: string): StoredUserRecord | null {
   );
 }
 
-export function findUserByPhone(phone: string): StoredUserRecord | null {
-  const norm = phone.trim();
-  if (!norm) return null;
-  return readDb().users.find((u) => u.phone === norm) || null;
-}
-
 export function findUserByUid(uid: string): StoredUserRecord | null {
   return readDb().users.find((u) => u.uid === uid) || null;
 }
 
+export function findUserByGithubId(githubId: string): StoredUserRecord | null {
+  const norm = githubId.trim();
+  if (!norm) return null;
+  return readDb().users.find((u) => u.githubId === norm) || null;
+}
+
 export function createUserRecord(params: {
   uid: string;
+  githubId?: string | null;
   authProvider: AuthProviderType;
   displayName: string;
   email?: string | null;
   username?: string | null;
-  phone?: string | null;
   avatarUrl?: string | null;
   passwordHash?: string | null;
 }): StoredUserRecord {
@@ -160,11 +160,11 @@ export function createUserRecord(params: {
   const created: StoredUserRecord = {
     id: nextId,
     uid: params.uid,
+    githubId: params.githubId ? params.githubId.trim() : null,
     authProvider: params.authProvider,
     displayName: params.displayName,
     email: params.email ? params.email.trim().toLowerCase() : null,
     username: params.username ? params.username.trim().toLowerCase() : null,
-    phone: params.phone ? params.phone.trim() : null,
     avatarUrl: params.avatarUrl ?? null,
     passwordHash: params.passwordHash ?? null,
     role: 'manager',
@@ -178,29 +178,29 @@ export function createUserRecord(params: {
 
 /**
  * Unifies returning users across providers/devices: matches uid first, then
- * verified email or normalized phone so Google/Phone/Email logins never spin up
- * a second empty account when the identity already exists.
+ * githubId, verified email, or username so cross-provider
+ * logins resolve cleanly to the existing canonical workspace account.
  */
 export function resolveOrCreateLocalCanonicalUser(params: {
   uid: string;
+  githubId?: string | null;
   authProvider: AuthProviderType;
   displayName: string;
   email?: string | null;
-  phone?: string | null;
   username?: string | null;
   avatarUrl?: string | null;
 }): StoredUserRecord {
   const db = readDb();
+  const normGithubId = params.githubId ? params.githubId.trim() : null;
   const normEmail = params.email ? params.email.trim().toLowerCase() : null;
-  const normPhone = params.phone ? params.phone.trim() : null;
   const normUsername = params.username ? params.username.trim().toLowerCase() : null;
 
   let idx = db.users.findIndex((u) => u.uid === params.uid);
+  if (idx === -1 && normGithubId) {
+    idx = db.users.findIndex((u) => u.githubId === normGithubId);
+  }
   if (idx === -1 && normEmail && !normEmail.endsWith('.local')) {
     idx = db.users.findIndex((u) => (u.email || '').toLowerCase() === normEmail);
-  }
-  if (idx === -1 && normPhone) {
-    idx = db.users.findIndex((u) => u.phone === normPhone);
   }
   if (idx === -1 && normUsername) {
     idx = db.users.findIndex((u) => (u.username || '').toLowerCase() === normUsername);
@@ -211,9 +211,9 @@ export function resolveOrCreateLocalCanonicalUser(params: {
     const existing = db.users[idx];
     db.users[idx] = {
       ...existing,
+      githubId: existing.githubId || normGithubId,
       displayName: existing.displayName || params.displayName,
       email: existing.email || normEmail,
-      phone: existing.phone || normPhone,
       username: existing.username || normUsername,
       avatarUrl: params.avatarUrl ?? existing.avatarUrl ?? null,
       lastLoginAt: nowIso,
@@ -224,10 +224,10 @@ export function resolveOrCreateLocalCanonicalUser(params: {
 
   return createUserRecord({
     uid: params.uid,
+    githubId: normGithubId,
     authProvider: params.authProvider,
     displayName: params.displayName,
     email: normEmail,
-    phone: normPhone,
     username: normUsername,
     avatarUrl: params.avatarUrl,
   });
@@ -238,7 +238,6 @@ export function upsertLocalProfile(params: {
   authProvider: AuthProviderType;
   displayName: string;
   email?: string | null;
-  phone?: string | null;
   username?: string | null;
   avatarUrl?: string | null;
 }): StoredUserRecord {
@@ -249,7 +248,6 @@ export function upsertLocalProfile(params: {
       ...db.users[idx],
       displayName: params.displayName || db.users[idx].displayName,
       email: params.email ?? db.users[idx].email,
-      phone: params.phone ?? db.users[idx].phone,
       username: params.username ?? db.users[idx].username,
       ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
     };

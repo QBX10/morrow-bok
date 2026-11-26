@@ -57,10 +57,12 @@ import {
 import {
   AI_FREE_MODELS,
   classifyPromptSpecialtyAndPriority,
+  detectWeakAssistantPayload,
   executeWithSmartFallback,
   getAllModelHealthSnapshots,
   markModelFailure,
   markModelSuccess,
+  syncServerHealthSnapshot,
   type ApprovedCloudModelId,
 } from '../lib/aiConfig.ts';
 import {
@@ -544,32 +546,79 @@ export function useAssistantEngine(params: {
     };
   }, []);
 
+  const wasCloudReadyRef = useRef<boolean>(browserOnline && cloudConfigured);
   useEffect(() => {
-    const checkStatus = async () => {
-      const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    let lastCheckedAt = 0;
+    const checkStatus = async (forceCheck = false) => {
+      const now = Date.now();
+      if (!forceCheck && now - lastCheckedAt < 3000) return;
+      lastCheckedAt = now;
+
+      const online = typeof navigator !== 'undefined' ? navigator.onLine !== false : true;
       setBrowserOnline(online);
-      if (!online) return;
+      if (!online) {
+        wasCloudReadyRef.current = false;
+        return;
+      }
       try {
-        const res = await fetch('/api/assistant/status');
+        const res = await fetch('/api/assistant/status', { cache: 'no-store' });
         if (!res.ok) {
           setCloudConfigured(false);
+          wasCloudReadyRef.current = false;
           return;
         }
-        const data = (await res.json()) as { cloudConfigured?: boolean };
-        setCloudConfigured(Boolean(data.cloudConfigured));
+        const data = (await res.json()) as {
+          cloudConfigured?: boolean;
+          models?: Array<{
+            id?: string;
+            healthStatus?: 'healthy' | 'cooldown';
+            avgLatencyMs?: number | null;
+            consecutiveFailures?: number;
+            cooldownUntilMs?: number;
+          }>;
+        };
+        const cloudOk = Boolean(data.cloudConfigured);
+        setCloudConfigured(cloudOk);
+        syncServerHealthSnapshot(data.models);
+        setHealthTick((t) => t + 1);
+
+        if (cloudOk && !wasCloudReadyRef.current) {
+          const pendingCount = latestAssistantSnapshotRef.current.queuedTasks.length;
+          if (pendingCount > 0) {
+            emitAppToast({
+              title: 'عاد الاتصال بالسحابة الذكية',
+              description: `لديك ${pendingCount} طلب مؤجل من وضع الأوفلاين جاهز للتنفيذ الآن في المساعد.`,
+              tone: 'info',
+            });
+          }
+        }
+        wasCloudReadyRef.current = cloudOk;
       } catch {
         setCloudConfigured(false);
+        wasCloudReadyRef.current = false;
       }
     };
-    void checkStatus();
+    void checkStatus(true);
 
-    const onOnline = () => void checkStatus();
-    const onOffline = () => setBrowserOnline(false);
+    const onOnline = () => void checkStatus(true);
+    const onOffline = () => {
+      setBrowserOnline(false);
+      wasCloudReadyRef.current = false;
+    };
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void checkStatus(false);
+      }
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
     };
   }, []);
 
@@ -1680,14 +1729,25 @@ export function useAssistantEngine(params: {
           priorityModels: fallbackChain,
           externalSignal: requestController.signal,
           perModelTimeoutMs: specialtyDecision.recommendedTimeoutMs,
-          onFallbackSwitch: ({ toModelId }) => {
+          attemptTimeoutMs: (_candidateId, attemptIdx) =>
+            attemptIdx === 0 && fallbackChain.length > 1
+              ? Math.max(specialtyDecision.recommendedTimeoutMs + 10_000, 24_000)
+              : Math.max(specialtyDecision.recommendedTimeoutMs, 14_000),
+          isWeakResult: (payload) => {
+            if (!payload || !payload.ok || payload.fallbackToOffline) return null;
+            return detectWeakAssistantPayload(payload);
+          },
+          onFallbackSwitch: ({ toModelId, reason }) => {
             if (!notifiedFallback) {
               notifiedFallback = true;
               const nextSpec = getEngineDisplayMeta(mapModelIdToEngineSource(toModelId), toModelId);
+              const isComprehensionSwitch =
+                reason.includes('لم يفهم') || reason.includes('فارغة');
               emitAppToast({
                 title: `تحويل تلقائي ذكي إلى ${nextSpec.shortLabel}`,
-                description:
-                  'واجه النموذج الأول ضغطاً مؤقتاً — تم التوجيه تلقائياً للنموذج البديل.',
+                description: isComprehensionSwitch
+                  ? 'تم التبديل فوراً للنموذج البديل لضمان فهم أدق وإجابة أشمل.'
+                  : 'واجه النموذج الأول ضغطاً مؤقتاً — تم التوجيه تلقائياً للنموذج البديل.',
                 tone: 'info',
               });
             }
@@ -1920,6 +1980,22 @@ export function useAssistantEngine(params: {
               tone: 'success',
             });
           }
+        }
+
+        // Local hybrid rescue: if cloud returned no tools AND gave a confused/weak reply while local brain understood accurately
+        if (
+          validatedTools.length === 0 &&
+          localProbe.handled &&
+          localProbe.confidence >= 0.72 &&
+          detectWeakAssistantPayload(data)
+        ) {
+          presentOfflineOutcome(
+            localProbe,
+            cleanPrompt,
+            `أكمل ${engineMeta.shortLabel} بالتعاون مع محرك Morrow المحلي تنفيذ طلبك بدقة:`,
+            options
+          );
+          return;
         }
 
         const replyText =

@@ -6,10 +6,8 @@ import {
   Check,
   Eye,
   EyeOff,
-  KeyRound,
   Lock,
   Mail,
-  Phone,
   RotateCcw,
   User,
   UserPlus,
@@ -21,25 +19,17 @@ import type {
   Surface2DPrefs,
   Surface2DThemeId,
 } from '../../types/agency';
-import type { ConfirmationResult } from 'firebase/auth';
 import {
   confirmPasswordResetApi,
-  exchangeFirebaseIdTokenApi,
   getRememberedAccounts,
   loginWithPasswordApi,
   registerWithPasswordApi,
   removeRememberedAccount,
   requestPasswordResetApi,
-  requestPhoneOtpApi,
   signInWithFirebaseGoogle,
-  verifyPhoneOtpApi,
+  signInWithGithubPopup,
   type RememberedAccountSummary,
 } from '../../lib/authClient';
-import {
-  confirmFirebasePhoneSignIn,
-  isFirebasePhoneAuthConfigured,
-  startFirebasePhoneSignIn,
-} from '../../lib/firebase';
 import { getTenantLocalFallbackKey } from '../../services/storage/tenantStorage';
 import { GeometricRavenCrest } from '../brand/VectorMotifs';
 import { Backdrop2DCanvas } from '../motion2d/Backdrop2DCanvas';
@@ -82,9 +72,8 @@ interface FlipAuthGuardProps {
 }
 
 type ConsoleActionMode = 'login' | 'register' | 'reset';
-type LoginChannel = 'username' | 'email' | 'phone';
-type RegisterChannel = 'username' | 'email' | 'phone';
-type PhoneFlowMode = 'otp' | 'password';
+type LoginChannel = 'username' | 'email';
+type RegisterChannel = 'username' | 'email';
 
 function readAccountAgencyHint(uid: string): number | null {
   try {
@@ -117,7 +106,6 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [loginChannel, setLoginChannel] = useState<LoginChannel>('username');
   const [registerChannel, setRegisterChannel] =
     useState<RegisterChannel>('username');
-  const [phoneFlow, setPhoneFlow] = useState<PhoneFlowMode>('otp');
   const [rememberMe, setRememberMe] = useState(true);
   const reducedMotion = useTabrixReducedMotion();
 
@@ -128,21 +116,13 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   // Unified Login State separated cleanly per method
   const [loginUsername, setLoginUsername] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
-  const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPass, setShowLoginPass] = useState(false);
-
-  // Phone OTP State
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [demoOtpHint, setDemoOtpHint] = useState('');
-  const fbPhoneConfirmationRef = useRef<ConfirmationResult | null>(null);
 
   // Register State
   const [regName, setRegName] = useState('');
   const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPass, setShowRegPass] = useState(false);
 
@@ -171,10 +151,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   }, [errorMsg]);
 
   useEffect(() => {
-    if (otpSent || resetCodeSent) {
+    if (resetCodeSent) {
       playTactileFeedback('notify', { sound: true, haptic: true });
     }
-  }, [otpSent, resetCodeSent]);
+  }, [resetCodeSent]);
 
   const lastTactileRef = useRef(0);
   const lampApertureRef = useRef<HTMLSpanElement | null>(null);
@@ -244,7 +224,6 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
         setActionMode('login');
         setErrorMsg('');
         setStatusNotice('');
-        setOtpSent(false);
         setResetCodeSent(false);
         if (serverSoundEnabledRef.current) {
           playLampHumAndChord(ambience.chord);
@@ -262,17 +241,12 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     playTactileFeedback('tap', { sound: true, haptic: true });
     setErrorMsg('');
     setStatusNotice('');
-    setOtpSent(false);
-    setOtpCode('');
-    setDemoOtpHint('');
     setResetCodeSent(false);
     setResetCode('');
     setResetDemoHint('');
     if (nextMode === 'reset') {
       const prefill =
-        loginChannel === 'phone'
-          ? loginPhone.trim()
-          : loginChannel === 'email'
+        loginChannel === 'email'
           ? loginEmail.trim()
           : loginUsername.trim();
       if (prefill && !resetIdentifier) {
@@ -289,11 +263,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     setStatusNotice('');
     setActionMode('login');
 
-    if (acc.provider === 'phone' && acc.phone) {
-      setLoginChannel('phone');
-      setLoginPhone(acc.phone);
+    if (acc.provider === 'github') {
+      setLoginChannel('username');
       setStatusNotice(
-        `تم تعبئة رقم الهاتف (${acc.phone}). اختر رمز التحقق أو كلمة المرور.`
+        `تم اختيار حساب GitHub (${acc.displayName}). اضغط على «حساب GitHub» للمتابعة.`
       );
       return;
     }
@@ -345,84 +318,28 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     }
   };
 
+  const handleGithubPopup = async () => {
+    setErrorMsg('');
+    setStatusNotice('');
+    setBusy(true);
+    try {
+      const session = await signInWithGithubPopup({ rememberMe });
+      onAuthenticated(session.user);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'تعذر إتمام تسجيل الدخول بحساب GitHub.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setStatusNotice('');
-
-    if (loginChannel === 'phone') {
-      const cleanPhone = loginPhone.trim();
-      if (cleanPhone.length < 7) {
-        setErrorMsg('يرجى إدخال رقم هاتف صحيح.');
-        return;
-      }
-      setBusy(true);
-      try {
-        if (phoneFlow === 'password') {
-          if (!loginPassword) {
-            setErrorMsg('يرجى إدخال كلمة المرور.');
-            setBusy(false);
-            return;
-          }
-          const session = await loginWithPasswordApi({
-            mode: 'phone',
-            identifier: cleanPhone,
-            password: loginPassword,
-            rememberMe,
-          });
-          onAuthenticated(session.user);
-          return;
-        }
-
-        if (!otpSent) {
-          fbPhoneConfirmationRef.current = null;
-          if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
-            try {
-              const conf = await startFirebasePhoneSignIn(
-                cleanPhone,
-                'flip-firebase-phone-recaptcha'
-              );
-              fbPhoneConfirmationRef.current = conf;
-              setOtpSent(true);
-              setDemoOtpHint('');
-              return;
-            } catch {
-              fbPhoneConfirmationRef.current = null;
-            }
-          }
-          const res = await requestPhoneOtpApi(cleanPhone);
-          setOtpSent(true);
-          if (res.demoCode) setDemoOtpHint(res.demoCode);
-        } else {
-          if (fbPhoneConfirmationRef.current) {
-            const { idToken } = await confirmFirebasePhoneSignIn(
-              fbPhoneConfirmationRef.current,
-              otpCode.trim()
-            );
-            const session = await exchangeFirebaseIdTokenApi({
-              idToken,
-              rememberMe,
-            });
-            fbPhoneConfirmationRef.current = null;
-            onAuthenticated(session.user);
-            return;
-          }
-          const session = await verifyPhoneOtpApi({
-            phone: cleanPhone,
-            code: otpCode.trim(),
-            rememberMe,
-          });
-          onAuthenticated(session.user);
-        }
-      } catch (err) {
-        setErrorMsg(
-          err instanceof Error ? err.message : 'تعذر التحقق من رقم الهاتف.'
-        );
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
 
     const rawId = (
       loginChannel === 'email' ? loginEmail : loginUsername
@@ -535,83 +452,6 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       return;
     }
 
-    if (registerChannel === 'phone') {
-      const cleanPhone = regPhone.trim();
-      if (cleanPhone.length < 7) {
-        setErrorMsg('يرجى إدخال رقم هاتف صحيح.');
-        return;
-      }
-      setBusy(true);
-      try {
-        if (phoneFlow === 'password') {
-          if (regPassword.length < 6) {
-            setErrorMsg('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
-            setBusy(false);
-            return;
-          }
-          const session = await registerWithPasswordApi({
-            mode: 'phone',
-            displayName: cleanName || cleanPhone,
-            phone: cleanPhone,
-            password: regPassword,
-            rememberMe,
-          });
-          onAuthenticated(session.user);
-          return;
-        }
-
-        if (!otpSent) {
-          fbPhoneConfirmationRef.current = null;
-          if (isFirebasePhoneAuthConfigured() && cleanPhone.startsWith('+')) {
-            try {
-              const conf = await startFirebasePhoneSignIn(
-                cleanPhone,
-                'flip-firebase-phone-recaptcha'
-              );
-              fbPhoneConfirmationRef.current = conf;
-              setOtpSent(true);
-              setDemoOtpHint('');
-              return;
-            } catch {
-              fbPhoneConfirmationRef.current = null;
-            }
-          }
-          const res = await requestPhoneOtpApi(cleanPhone);
-          setOtpSent(true);
-          if (res.demoCode) setDemoOtpHint(res.demoCode);
-        } else {
-          if (fbPhoneConfirmationRef.current) {
-            const { idToken } = await confirmFirebasePhoneSignIn(
-              fbPhoneConfirmationRef.current,
-              otpCode.trim()
-            );
-            const session = await exchangeFirebaseIdTokenApi({
-              idToken,
-              rememberMe,
-              displayName: cleanName || undefined,
-            });
-            fbPhoneConfirmationRef.current = null;
-            onAuthenticated(session.user);
-            return;
-          }
-          const session = await verifyPhoneOtpApi({
-            phone: cleanPhone,
-            code: otpCode.trim(),
-            displayName: cleanName || undefined,
-            rememberMe,
-          });
-          onAuthenticated(session.user);
-        }
-      } catch (err) {
-        setErrorMsg(
-          err instanceof Error ? err.message : 'تعذر تسجيل رقم الهاتف.'
-        );
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-
     // registerChannel === 'email'
     const cleanEmail = regEmail.trim();
     if (!cleanName) {
@@ -652,7 +492,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     const identifier = resetIdentifier.trim();
 
     if (!identifier) {
-      setErrorMsg('يرجى إدخال اسم المستخدم أو البريد أو رقم الهاتف.');
+      setErrorMsg('يرجى إدخال اسم المستخدم أو البريد الإلكتروني.');
       return;
     }
 
@@ -731,278 +571,11 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     </label>
   );
 
-  const renderPhonePanel = (face: 'login' | 'register') => {
-    const phoneValue = face === 'login' ? loginPhone : regPhone;
-    const setPhoneValue = face === 'login' ? setLoginPhone : setRegPhone;
-    const passValue = face === 'login' ? loginPassword : regPassword;
-    const setPassValue = face === 'login' ? setLoginPassword : setRegPassword;
-    const showPass = face === 'login' ? showLoginPass : showRegPass;
-    const setShowPass = face === 'login' ? setShowLoginPass : setShowRegPass;
-
-    return (
-      <div className="space-y-3.5">
-        <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-          <button
-            type="button"
-            data-testid={`${face}-phone-flow-otp`}
-            onClick={() => {
-              setPhoneFlow('otp');
-              setOtpSent(false);
-              setErrorMsg('');
-            }}
-            className="rounded-xl border py-2 font-extrabold transition-colors cursor-pointer"
-            style={{
-              borderColor:
-                phoneFlow === 'otp' ? 'var(--accent)' : 'var(--border-color)',
-              backgroundColor:
-                phoneFlow === 'otp'
-                  ? 'var(--bg-nav-active)'
-                  : 'var(--surface-well)',
-              color:
-                phoneFlow === 'otp'
-                  ? 'var(--accent-bright)'
-                  : 'var(--text-muted)',
-            }}
-          >
-            رمز تحقق (OTP)
-          </button>
-          <button
-            type="button"
-            data-testid={`${face}-phone-flow-password`}
-            onClick={() => {
-              setPhoneFlow('password');
-              setErrorMsg('');
-            }}
-            className="rounded-xl border py-2 font-extrabold transition-colors cursor-pointer"
-            style={{
-              borderColor:
-                phoneFlow === 'password'
-                  ? 'var(--accent)'
-                  : 'var(--border-color)',
-              backgroundColor:
-                phoneFlow === 'password'
-                  ? 'var(--bg-nav-active)'
-                  : 'var(--surface-well)',
-              color:
-                phoneFlow === 'password'
-                  ? 'var(--accent-bright)'
-                  : 'var(--text-muted)',
-            }}
-          >
-            رقم + كلمة مرور
-          </button>
-        </div>
-
-        <div>
-          <label
-            htmlFor={`flip-${face}-phone`}
-            className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
-          >
-            رقم الهاتف
-          </label>
-          <div className="relative">
-            <Phone
-              size={16}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2"
-              style={{ color: 'var(--accent)' }}
-            />
-            <input
-              id={`flip-${face}-phone`}
-              data-testid={`${face}-phone-input`}
-              type="tel"
-              dir="ltr"
-              disabled={phoneFlow === 'otp' && otpSent}
-              value={phoneValue}
-              onChange={(e) => setPhoneValue(e.target.value)}
-              placeholder="07701234567"
-              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 tabular-nums focus:outline-none focus:border-[var(--accent)]"
-            />
-          </div>
-        </div>
-
-        {phoneFlow === 'otp' ? (
-          <>
-            {otpSent && (
-              <div className="space-y-2.5">
-                {demoOtpHint && (
-                  <div
-                    className="rounded-xl border px-3 py-2 text-xs font-bold flex items-center justify-between"
-                    style={{
-                      borderColor: 'var(--accent)',
-                      backgroundColor: 'var(--bg-nav-active)',
-                      color: 'var(--accent-bright)',
-                    }}
-                  >
-                    <span>رمز التحقق المرسل:</span>
-                    <span
-                      dir="ltr"
-                      className="font-mono-num tracking-widest text-sm tabular-nums"
-                    >
-                      {demoOtpHint}
-                    </span>
-                  </div>
-                )}
-                <div>
-                  <label
-                    htmlFor={`flip-${face}-otp`}
-                    className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
-                  >
-                    أدخل رمز التحقق (6 أرقام)
-                  </label>
-                  <input
-                    id={`flip-${face}-otp`}
-                    data-testid={`${face}-otp-input`}
-                    type="text"
-                    dir="ltr"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="123456"
-                    className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3 py-2.5 text-center text-base font-black tracking-[0.25em] text-[var(--text-primary)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-3 pt-0.5">
-              {renderRememberMeCheckbox()}
-              {face === 'login' && (
-                <button
-                  type="button"
-                  onClick={() => switchActionMode('register')}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--accent-bright)] cursor-pointer"
-                >
-                  <UserPlus size={13} />
-                  <span>إنشاء حساب جديد</span>
-                </button>
-              )}
-            </div>
-
-            <motion.button
-              type="submit"
-              disabled={busy}
-              data-testid={`${face}-submit-btn`}
-              whileHover={
-                reducedMotion || busy ? undefined : { y: -2, scale: 1.01 }
-              }
-              whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
-              transition={TABRIX_TACTILE_SPRING}
-              className="obsidian-gold-cta w-full py-3 rounded-xl text-sm font-black inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 min-h-[44px]"
-            >
-              <KeyRound size={15} />
-              <span>
-                {busy
-                  ? 'جارٍ المعالجة...'
-                  : otpSent
-                  ? 'تأكيد الرمز والدخول'
-                  : 'إرسال رمز التحقق'}
-              </span>
-            </motion.button>
-            {otpSent && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOtpSent(false);
-                  setOtpCode('');
-                  setDemoOtpHint('');
-                }}
-                className="w-full text-center text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--accent-bright)] cursor-pointer"
-              >
-                تغيير رقم الهاتف
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <div>
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <label
-                  htmlFor={`flip-${face}-phone-pass`}
-                  className="text-xs font-bold text-[var(--text-primary)]/90"
-                >
-                  كلمة المرور
-                </label>
-                {face === 'login' && (
-                  <button
-                    type="button"
-                    data-testid="forgot-password-link"
-                    onClick={() => switchActionMode('reset')}
-                    className="text-xs font-bold hover:underline cursor-pointer whitespace-nowrap"
-                    style={{ color: 'var(--accent-bright)' }}
-                  >
-                    نسيت كلمة المرور؟
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2"
-                  style={{ color: 'var(--accent)' }}
-                />
-                <input
-                  id={`flip-${face}-phone-pass`}
-                  data-testid={`${face}-password-input`}
-                  type={showPass ? 'text' : 'password'}
-                  dir="ltr"
-                  value={passValue}
-                  onChange={(e) => setPassValue(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] pr-10 pl-10 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass((v) => !v)}
-                  aria-label="إظهار أو إخفاء كلمة المرور"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                >
-                  {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-0.5">
-              {renderRememberMeCheckbox()}
-              {face === 'login' && (
-                <button
-                  type="button"
-                  onClick={() => switchActionMode('register')}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--accent-bright)] cursor-pointer"
-                >
-                  <UserPlus size={13} />
-                  <span>إنشاء حساب جديد</span>
-                </button>
-              )}
-            </div>
-
-            <motion.button
-              type="submit"
-              disabled={busy}
-              data-testid={`${face}-submit-btn`}
-              whileHover={
-                reducedMotion || busy ? undefined : { y: -2, scale: 1.01 }
-              }
-              whileTap={reducedMotion || busy ? undefined : { scale: 0.98 }}
-              transition={TABRIX_TACTILE_SPRING}
-              className="obsidian-gold-cta w-full py-3 rounded-xl text-sm font-black cursor-pointer disabled:opacity-60 min-h-[44px]"
-            >
-              {busy
-                ? 'جارٍ التحقق...'
-                : face === 'register'
-                ? 'تسجيل برقم الهاتف'
-                : 'دخول برقم الهاتف'}
-            </motion.button>
-          </>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div
       dir="rtl"
       className="ambient-obsidian-canvas fixed inset-0 z-[135] flex min-h-[100dvh] flex-col p-4 sm:p-6 overflow-y-auto"
     >
-      <div id="flip-firebase-phone-recaptcha" className="hidden" />
       <Backdrop2DCanvas
         themeId={themeId}
         surfacePrefs={surfacePrefs}
@@ -1374,7 +947,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                     {rememberedAccounts.map((acc) => {
                       const agencyCount = accountAgencyCounts.get(acc.uid);
                       const handleLabel =
-                        acc.username || acc.email || acc.phone || acc.provider;
+                        acc.username || acc.email || acc.provider;
                       return (
                         <div
                           key={acc.uid}
@@ -1447,17 +1020,16 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                       }
                       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                     >
-                      {/* Architectural 3-Channel Login Method Selector */}
+                      {/* Architectural 2-Channel Login Method Selector */}
                       <div
                         role="tablist"
                         aria-label="طريقة تسجيل الدخول"
-                        className="mb-4 grid grid-cols-3 gap-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-1"
+                        className="mb-4 grid grid-cols-2 gap-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-1"
                       >
                         {(
                           [
                             ['username', 'اسم المستخدم', AtSign],
-                            ['email', 'البريد / Google', Mail],
-                            ['phone', 'رقم الهاتف', Phone],
+                            ['email', 'البريد / Google / GitHub', Mail],
                           ] as Array<
                             [LoginChannel, string, React.FC<{ size?: number }>]
                           >
@@ -1472,7 +1044,6 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                               data-testid={`login-channel-${id}`}
                               onClick={() => {
                                 setLoginChannel(id);
-                                setOtpSent(false);
                                 setErrorMsg('');
                                 setStatusNotice('');
                               }}
@@ -1494,54 +1065,81 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                       </div>
 
                       <form onSubmit={handleLoginSubmit} className="space-y-4">
-                        {loginChannel === 'phone' ? (
-                          renderPhonePanel('login')
-                        ) : (
-                          <>
+                        <>
                             {loginChannel === 'email' && (
                               <div className="space-y-3">
-                                <motion.button
-                                  type="button"
-                                  disabled={busy}
-                                  data-testid="login-google-popup-btn"
-                                  whileHover={
-                                    reducedMotion || busy
-                                      ? undefined
-                                      : { y: -1, scale: 1.008 }
-                                  }
-                                  whileTap={
-                                    reducedMotion || busy
-                                      ? undefined
-                                      : { scale: 0.985 }
-                                  }
-                                  transition={TABRIX_TACTILE_SPRING}
-                                  onClick={() => void handleGooglePopup()}
-                                  className="w-full py-2.5 px-4 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
-                                >
-                                  <svg
-                                    viewBox="0 0 48 48"
-                                    className="w-4 h-4 shrink-0"
-                                    aria-hidden="true"
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <motion.button
+                                    type="button"
+                                    disabled={busy}
+                                    data-testid="login-google-popup-btn"
+                                    whileHover={
+                                      reducedMotion || busy
+                                        ? undefined
+                                        : { y: -1, scale: 1.008 }
+                                    }
+                                    whileTap={
+                                      reducedMotion || busy
+                                        ? undefined
+                                        : { scale: 0.985 }
+                                    }
+                                    transition={TABRIX_TACTILE_SPRING}
+                                    onClick={() => void handleGooglePopup()}
+                                    className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
                                   >
-                                    <path
-                                      fill="#EA4335"
-                                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                                    />
-                                    <path
-                                      fill="#4285F4"
-                                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                                    />
-                                    <path
-                                      fill="#FBBC05"
-                                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                                    />
-                                    <path
-                                      fill="#34A853"
-                                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                                    />
-                                  </svg>
-                                  <span>المتابعة بحساب Google</span>
-                                </motion.button>
+                                    <svg
+                                      viewBox="0 0 48 48"
+                                      className="w-4 h-4 shrink-0"
+                                      aria-hidden="true"
+                                    >
+                                      <path
+                                        fill="#EA4335"
+                                        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                                      />
+                                      <path
+                                        fill="#4285F4"
+                                        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                                      />
+                                      <path
+                                        fill="#FBBC05"
+                                        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                                      />
+                                      <path
+                                        fill="#34A853"
+                                        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                                      />
+                                    </svg>
+                                    <span>حساب Google</span>
+                                  </motion.button>
+
+                                  <motion.button
+                                    type="button"
+                                    disabled={busy}
+                                    data-testid="login-email-github-popup-btn"
+                                    whileHover={
+                                      reducedMotion || busy
+                                        ? undefined
+                                        : { y: -1, scale: 1.008 }
+                                    }
+                                    whileTap={
+                                      reducedMotion || busy
+                                        ? undefined
+                                        : { scale: 0.985 }
+                                    }
+                                    transition={TABRIX_TACTILE_SPRING}
+                                    onClick={() => void handleGithubPopup()}
+                                    className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
+                                  >
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      className="w-4 h-4 shrink-0 fill-current"
+                                      aria-hidden="true"
+                                    >
+                                      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18.92-.26 1.9-.39 2.88-.39.98 0 1.96.13 2.88.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.79.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+                                    </svg>
+                                    <span>حساب GitHub</span>
+                                  </motion.button>
+                                </div>
 
                                 <div className="flex items-center gap-3">
                                   <div className="h-px flex-1 bg-[var(--border-color)]" />
@@ -1688,8 +1286,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             >
                               {busy ? 'جارٍ التحقق...' : 'تسجيل الدخول'}
                             </motion.button>
-                          </>
-                        )}
+                        </>
                       </form>
 
                       {loginChannel !== 'email' && (
@@ -1702,48 +1299,78 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             <div className="h-px flex-1 bg-[var(--border-color)]" />
                           </div>
 
-                          <motion.button
-                            type="button"
-                            disabled={busy}
-                            data-testid="login-google-popup-btn"
-                            whileHover={
-                              reducedMotion || busy
-                                ? undefined
-                                : { y: -1, scale: 1.008 }
-                            }
-                            whileTap={
-                              reducedMotion || busy
-                                ? undefined
-                                : { scale: 0.985 }
-                            }
-                            transition={TABRIX_TACTILE_SPRING}
-                            onClick={() => void handleGooglePopup()}
-                            className="mt-3 w-full py-2.5 px-4 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
-                          >
-                            <svg
-                              viewBox="0 0 48 48"
-                              className="w-4 h-4 shrink-0"
-                              aria-hidden="true"
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <motion.button
+                              type="button"
+                              disabled={busy}
+                              data-testid="login-google-popup-btn"
+                              whileHover={
+                                reducedMotion || busy
+                                  ? undefined
+                                  : { y: -1, scale: 1.008 }
+                              }
+                              whileTap={
+                                reducedMotion || busy
+                                  ? undefined
+                                  : { scale: 0.985 }
+                              }
+                              transition={TABRIX_TACTILE_SPRING}
+                              onClick={() => void handleGooglePopup()}
+                              className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
                             >
-                              <path
-                                fill="#EA4335"
-                                d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                              />
-                              <path
-                                fill="#4285F4"
-                                d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                              />
-                              <path
-                                fill="#FBBC05"
-                                d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                              />
-                              <path
-                                fill="#34A853"
-                                d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                              />
-                            </svg>
-                            <span>حساب Google</span>
-                          </motion.button>
+                              <svg
+                                viewBox="0 0 48 48"
+                                className="w-4 h-4 shrink-0"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  fill="#EA4335"
+                                  d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                                />
+                                <path
+                                  fill="#4285F4"
+                                  d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                                />
+                                <path
+                                  fill="#FBBC05"
+                                  d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                                />
+                                <path
+                                  fill="#34A853"
+                                  d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                                />
+                              </svg>
+                              <span>حساب Google</span>
+                            </motion.button>
+
+                            <motion.button
+                              type="button"
+                              disabled={busy}
+                              data-testid="login-github-popup-btn"
+                              whileHover={
+                                reducedMotion || busy
+                                  ? undefined
+                                  : { y: -1, scale: 1.008 }
+                              }
+                              whileTap={
+                                reducedMotion || busy
+                                  ? undefined
+                                  : { scale: 0.985 }
+                              }
+                              transition={TABRIX_TACTILE_SPRING}
+                              onClick={() => void handleGithubPopup()}
+                              className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="w-4 h-4 shrink-0 fill-current"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18.92-.26 1.9-.39 2.88-.39.98 0 1.96.13 2.88.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.79.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+                              </svg>
+                              <span>حساب GitHub</span>
+                            </motion.button>
+                          </div>
                         </div>
                       )}
                     </motion.div>
@@ -1768,13 +1395,12 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                       <div
                         role="tablist"
                         aria-label="طريقة إنشاء الحساب"
-                        className="mb-4 grid grid-cols-3 gap-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-1"
+                        className="mb-4 grid grid-cols-2 gap-1.5 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-1"
                       >
                         {(
                           [
                             ['username', 'اسم المستخدم', AtSign],
-                            ['email', 'البريد', Mail],
-                            ['phone', 'الهاتف', Phone],
+                            ['email', 'البريد الإلكتروني', Mail],
                           ] as Array<
                             [RegisterChannel, string, React.FC<{ size?: number }>]
                           >
@@ -1788,7 +1414,6 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                               aria-selected={active}
                               onClick={() => {
                                 setRegisterChannel(id);
-                                setOtpSent(false);
                                 setErrorMsg('');
                               }}
                               className="inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-2 text-[11px] font-extrabold whitespace-nowrap transition-colors cursor-pointer"
@@ -1817,8 +1442,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             htmlFor="flip-register-name"
                             className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
                           >
-                            الاسم الكامل{' '}
-                            {registerChannel === 'phone' ? '(اختياري)' : ''}
+                            الاسم الكامل
                           </label>
                           <div className="relative">
                             <User
@@ -1838,10 +1462,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                           </div>
                         </div>
 
-                        {registerChannel === 'phone' ? (
-                          renderPhonePanel('register')
-                        ) : (
-                          <>
+                        <>
                             {registerChannel === 'username' ? (
                               <div>
                                 <label
@@ -1967,8 +1588,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                                 ? 'جارٍ إنشاء الحساب...'
                                 : 'إنشاء الحساب والدخول'}
                             </motion.button>
-                          </>
-                        )}
+                        </>
                       </form>
 
                       <div className="mt-4">
@@ -1980,48 +1600,78 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                           <div className="h-px flex-1 bg-[var(--border-color)]" />
                         </div>
 
-                        <motion.button
-                          type="button"
-                          disabled={busy}
-                          data-testid="register-google-popup-btn"
-                          whileHover={
-                            reducedMotion || busy
-                              ? undefined
-                              : { y: -1, scale: 1.008 }
-                          }
-                          whileTap={
-                            reducedMotion || busy
-                              ? undefined
-                              : { scale: 0.985 }
-                          }
-                          transition={TABRIX_TACTILE_SPRING}
-                          onClick={() => void handleGooglePopup()}
-                          className="mt-3 w-full py-2.5 px-4 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
-                        >
-                          <svg
-                            viewBox="0 0 48 48"
-                            className="w-4 h-4 shrink-0"
-                            aria-hidden="true"
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <motion.button
+                            type="button"
+                            disabled={busy}
+                            data-testid="register-google-popup-btn"
+                            whileHover={
+                              reducedMotion || busy
+                                ? undefined
+                                : { y: -1, scale: 1.008 }
+                            }
+                            whileTap={
+                              reducedMotion || busy
+                                ? undefined
+                                : { scale: 0.985 }
+                            }
+                            transition={TABRIX_TACTILE_SPRING}
+                            onClick={() => void handleGooglePopup()}
+                            className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
                           >
-                            <path
-                              fill="#EA4335"
-                              d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                            />
-                            <path
-                              fill="#4285F4"
-                              d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                            />
-                            <path
-                              fill="#FBBC05"
-                              d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                            />
-                            <path
-                              fill="#34A853"
-                              d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                            />
-                          </svg>
-                          <span>التسجيل بحساب Google</span>
-                        </motion.button>
+                            <svg
+                              viewBox="0 0 48 48"
+                              className="w-4 h-4 shrink-0"
+                              aria-hidden="true"
+                            >
+                              <path
+                                fill="#EA4335"
+                                d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                              />
+                              <path
+                                fill="#4285F4"
+                                d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                              />
+                              <path
+                                fill="#FBBC05"
+                                d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                              />
+                              <path
+                                fill="#34A853"
+                                d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                              />
+                            </svg>
+                            <span>حساب Google</span>
+                          </motion.button>
+
+                          <motion.button
+                            type="button"
+                            disabled={busy}
+                            data-testid="register-github-popup-btn"
+                            whileHover={
+                              reducedMotion || busy
+                                ? undefined
+                                : { y: -1, scale: 1.008 }
+                            }
+                            whileTap={
+                              reducedMotion || busy
+                                ? undefined
+                                : { scale: 0.985 }
+                            }
+                            transition={TABRIX_TACTILE_SPRING}
+                            onClick={() => void handleGithubPopup()}
+                            className="w-full py-2.5 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] hover:bg-[var(--bg-nav-active)] hover:border-[var(--accent)]/60 text-xs font-extrabold text-[var(--text-primary)] inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 min-h-[42px]"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="w-4 h-4 shrink-0 fill-current"
+                              aria-hidden="true"
+                            >
+                              <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18.92-.26 1.9-.39 2.88-.39.98 0 1.96.13 2.88.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.79.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+                            </svg>
+                            <span>حساب GitHub</span>
+                          </motion.button>
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -2051,7 +1701,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             htmlFor="flip-reset-identifier"
                             className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
                           >
-                            اسم المستخدم أو البريد الإلكتروني أو رقم الهاتف
+                            اسم المستخدم أو البريد الإلكتروني
                           </label>
                           <input
                             id="flip-reset-identifier"
@@ -2061,7 +1711,7 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             disabled={resetCodeSent}
                             value={resetIdentifier}
                             onChange={(e) => setResetIdentifier(e.target.value)}
-                            placeholder="username / email@example.com / 0770..."
+                            placeholder="username / email@example.com"
                             className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]/60 focus:outline-none focus:border-[var(--accent)]"
                           />
                         </div>

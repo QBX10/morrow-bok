@@ -7,13 +7,14 @@ import type {
   CardShadowLevel,
   FontSizeStep,
   FontWeightStep,
+  HeavyAppThemeId,
   MarineAppThemeId,
   RowDensityStep,
   TableThemeId,
   ThemePreferences,
 } from '../types/agency';
 
-export type ThemeCapsuleGroupId = 'marine' | 'auto' | 'classic';
+export type ThemeCapsuleGroupId = 'marine' | 'heavy' | 'auto' | 'classic';
 
 export interface AppShapeDefinition {
   id: AppShapeId;
@@ -464,12 +465,203 @@ export const AUTO_ADAPTIVE_THEME: AppThemeDefinition = {
   vars: OBSIDIAN_GOLD_THEME.vars,
 };
 
+export const VELVET_GARNET_THEME: AppThemeDefinition = {
+  id: 'velvet-garnet',
+  name: 'العنابي المخملي والذهب الوردي',
+  englishName: 'Velvet Garnet & Rose Gold',
+  mood: 'فخامة عنابية ثقيلة مع إضاءة وردية ذهبية دافئة',
+  description:
+    'خلفية مخملية داكنة بعمق العناب الداكن مع إبراز ياقوتي دافئ وذهب وردي هادئ للقراءة الطويلة.',
+  isDark: true,
+  capsuleGroup: 'heavy',
+  swatches: ['#090406', '#1F0F15', '#E14B6B'],
+  vars: {
+    '--bg-main': '#090406',
+    '--bg-surface': '#14090D',
+    '--bg-header': '#0D0508',
+    '--bg-table-header': '#1F0F15',
+    '--bg-nav-active': 'rgba(225, 75, 107, 0.14)',
+    '--bg-zebra': 'rgba(253, 164, 175, 0.032)',
+    '--bg-numeric': 'rgba(225, 75, 107, 0.08)',
+    '--row-hover-bg': 'rgba(225, 75, 107, 0.12)',
+    '--surface-well': '#11070B',
+    '--surface-subtle': 'rgba(253, 164, 175, 0.04)',
+    '--surface-pill': '#1D0D13',
+    '--surface-overlay': 'rgba(9, 4, 6, 0.78)',
+    '--text-primary': '#FDF2F4',
+    '--text-muted': '#C49AA6',
+    '--border-color': 'rgba(225, 75, 107, 0.24)',
+    '--grid-color': 'rgba(225, 75, 107, 0.13)',
+    '--accent': '#E14B6B',
+    '--accent-bright': '#FDA4AF',
+    '--accent-deep': '#9F1239',
+    '--accent-fg': '#FFFFFF',
+    '--spatial-secondary': '#E5B869',
+    '--spatial-aurora': '#F4A261',
+    '--marine-caustic-1': 'rgba(225, 75, 107, 0.18)',
+    '--marine-caustic-2': 'rgba(229, 184, 105, 0.12)',
+    '--success': '#34D399',
+    '--success-fg': '#041A12',
+    '--success-bg': 'rgba(52, 211, 153, 0.14)',
+    '--warning': '#FBBF24',
+    '--warning-bg': 'rgba(251, 191, 36, 0.14)',
+    '--danger': '#FB7185',
+    '--danger-fg': '#1D040A',
+    '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+  },
+};
+
+export const ESPRESSO_BRONZE_THEME: AppThemeDefinition = {
+  id: 'espresso-bronze',
+  name: 'الإسبرسو الداكن والنحاس المعتّق',
+  englishName: 'Espresso & Aged Bronze',
+  mood: 'دفء نحاسي معتّق مع خشب إسبرسو داكن رصين',
+  description:
+    'ثيم ثقيل بدرجات البنّي الإسبريسو الفاخر مع لمسات النحاس المعتّق وتباين مريح للغاية للأرقام الطويلة.',
+  isDark: true,
+  capsuleGroup: 'heavy',
+  swatches: ['#090604', '#211710', '#C87D4B'],
+  vars: {
+    '--bg-main': '#090604',
+    '--bg-surface': '#140E0A',
+    '--bg-header': '#0D0906',
+    '--bg-table-header': '#211710',
+    '--bg-nav-active': 'rgba(200, 125, 75, 0.15)',
+    '--bg-zebra': 'rgba(240, 185, 138, 0.03)',
+    '--bg-numeric': 'rgba(200, 125, 75, 0.08)',
+    '--row-hover-bg': 'rgba(200, 125, 75, 0.13)',
+    '--surface-well': '#110B08',
+    '--surface-subtle': 'rgba(240, 185, 138, 0.042)',
+    '--surface-pill': '#1D140E',
+    '--surface-overlay': 'rgba(9, 6, 4, 0.78)',
+    '--text-primary': '#F7EFE7',
+    '--text-muted': '#B5A08F',
+    '--border-color': 'rgba(200, 125, 75, 0.24)',
+    '--grid-color': 'rgba(200, 125, 75, 0.13)',
+    '--accent': '#C87D4B',
+    '--accent-bright': '#F0B98A',
+    '--accent-deep': '#8C4E26',
+    '--accent-fg': '#0F0905',
+    '--spatial-secondary': '#D4AF37',
+    '--spatial-aurora': '#EA580C',
+    '--marine-caustic-1': 'rgba(200, 125, 75, 0.18)',
+    '--marine-caustic-2': 'rgba(212, 175, 55, 0.12)',
+    '--success': '#34D399',
+    '--success-fg': '#041A12',
+    '--success-bg': 'rgba(52, 211, 153, 0.14)',
+    '--warning': '#F59E0B',
+    '--warning-bg': 'rgba(245, 158, 11, 0.15)',
+    '--danger': '#F87171',
+    '--danger-fg': '#1F0606',
+    '--danger-bg': 'rgba(248, 113, 113, 0.16)',
+  },
+};
+
+export const ROYAL_PLUM_THEME: AppThemeDefinition = {
+  id: 'royal-plum',
+  name: 'الأرجوان الإمبراطوري والشمبانيا',
+  englishName: 'Imperial Plum & Champagne',
+  mood: 'عمق أرجواني ملكي مع إضاءة جمشتية وذهبية ناعمة',
+  description:
+    'خلفية ليلية داكنة بنبض الجمشت الإمبراطوري مع لمسات الشمبانيا الذهبية لتجربة قيادية فاخرة.',
+  isDark: true,
+  capsuleGroup: 'heavy',
+  swatches: ['#08050E', '#1D1530', '#B374F7'],
+  vars: {
+    '--bg-main': '#08050E',
+    '--bg-surface': '#130D20',
+    '--bg-header': '#0C0815',
+    '--bg-table-header': '#1D1530',
+    '--bg-nav-active': 'rgba(179, 116, 247, 0.14)',
+    '--bg-zebra': 'rgba(233, 213, 255, 0.03)',
+    '--bg-numeric': 'rgba(179, 116, 247, 0.08)',
+    '--row-hover-bg': 'rgba(179, 116, 247, 0.12)',
+    '--surface-well': '#100A1B',
+    '--surface-subtle': 'rgba(233, 213, 255, 0.04)',
+    '--surface-pill': '#1B132C',
+    '--surface-overlay': 'rgba(8, 5, 14, 0.78)',
+    '--text-primary': '#F6F2FF',
+    '--text-muted': '#A89BC2',
+    '--border-color': 'rgba(179, 116, 247, 0.24)',
+    '--grid-color': 'rgba(179, 116, 247, 0.13)',
+    '--accent': '#B374F7',
+    '--accent-bright': '#E9D5FF',
+    '--accent-deep': '#7E22CE',
+    '--accent-fg': '#0B0514',
+    '--spatial-secondary': '#E8C587',
+    '--spatial-aurora': '#38BDF8',
+    '--marine-caustic-1': 'rgba(179, 116, 247, 0.18)',
+    '--marine-caustic-2': 'rgba(232, 197, 135, 0.12)',
+    '--success': '#34D399',
+    '--success-fg': '#041A12',
+    '--success-bg': 'rgba(52, 211, 153, 0.14)',
+    '--warning': '#FBBF24',
+    '--warning-bg': 'rgba(251, 191, 36, 0.14)',
+    '--danger': '#FB7185',
+    '--danger-fg': '#1D040A',
+    '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+  },
+};
+
+export const PLATINUM_GRAPHITE_THEME: AppThemeDefinition = {
+  id: 'platinum-graphite',
+  name: 'الجرافيت البلاتيني الثقيل',
+  englishName: 'Heavy Platinum Graphite',
+  mood: 'وقار معماري بلاتيني مع وضوح تنفيذي عالي التباين',
+  description:
+    'سطح جرافيتي ثقيل مكسو بالبلاتين المصقول ولمعة فولاذية باردة مناسب لجلسات الجرد والحسابات المكثفة.',
+  isDark: true,
+  capsuleGroup: 'heavy',
+  swatches: ['#080A0D', '#1A212B', '#CBD5E1'],
+  vars: {
+    '--bg-main': '#080A0D',
+    '--bg-surface': '#11161D',
+    '--bg-header': '#0B0E13',
+    '--bg-table-header': '#1A212B',
+    '--bg-nav-active': 'rgba(203, 213, 225, 0.12)',
+    '--bg-zebra': 'rgba(248, 250, 252, 0.03)',
+    '--bg-numeric': 'rgba(203, 213, 225, 0.07)',
+    '--row-hover-bg': 'rgba(203, 213, 225, 0.11)',
+    '--surface-well': '#0E1218',
+    '--surface-subtle': 'rgba(248, 250, 252, 0.04)',
+    '--surface-pill': '#181F29',
+    '--surface-overlay': 'rgba(8, 10, 13, 0.80)',
+    '--text-primary': '#F1F5F9',
+    '--text-muted': '#94A3B8',
+    '--border-color': 'rgba(203, 213, 225, 0.22)',
+    '--grid-color': 'rgba(203, 213, 225, 0.12)',
+    '--accent': '#CBD5E1',
+    '--accent-bright': '#F8FAFC',
+    '--accent-deep': '#64748B',
+    '--accent-fg': '#080A0D',
+    '--spatial-secondary': '#38BDF8',
+    '--spatial-aurora': '#94A3B8',
+    '--marine-caustic-1': 'rgba(203, 213, 225, 0.16)',
+    '--marine-caustic-2': 'rgba(56, 189, 248, 0.12)',
+    '--success': '#34D399',
+    '--success-fg': '#041A12',
+    '--success-bg': 'rgba(52, 211, 153, 0.14)',
+    '--warning': '#FBBF24',
+    '--warning-bg': 'rgba(251, 191, 36, 0.14)',
+    '--danger': '#FB7185',
+    '--danger-fg': '#1D040A',
+    '--danger-bg': 'rgba(251, 113, 133, 0.16)',
+  },
+};
+
 export const CORE_FIVE_THEMES: AppThemeDefinition[] = [
   OBSIDIAN_GOLD_THEME,
   ABYSSAL_EMERALD_THEME,
   MIDNIGHT_TRENCH_THEME,
   BIOLUMINESCENT_REEF_THEME,
   PELAGIC_SAPPHIRE_THEME,
+];
+
+export const HEAVY_FOUR_THEMES: AppThemeDefinition[] = [
+  VELVET_GARNET_THEME,
+  ESPRESSO_BRONZE_THEME,
+  ROYAL_PLUM_THEME,
+  PLATINUM_GRAPHITE_THEME,
 ];
 
 export const MARINE_THEMES: AppThemeDefinition[] = CORE_FIVE_THEMES;
@@ -480,6 +672,11 @@ export const MODERN_APP_THEMES: AppThemeDefinition[] = [
 ];
 export const ALL_APP_THEMES: AppThemeDefinition[] = [
   ...CORE_FIVE_THEMES,
+  AUTO_ADAPTIVE_THEME,
+];
+export const CURATED_APP_THEMES: AppThemeDefinition[] = [
+  ...CORE_FIVE_THEMES,
+  ...HEAVY_FOUR_THEMES,
   AUTO_ADAPTIVE_THEME,
 ];
 
@@ -494,6 +691,12 @@ export const APP_THEME_CAPSULES: Array<{
     title: 'الثيمات الأساسية (السبح والذهب + 4 ثيمات هادئة)',
     subtitle: 'ألوان متزنة بنظام 60-30-10 مع تباين مريح وواضح لكل الشاشات',
     themes: CORE_FIVE_THEMES,
+  },
+  {
+    id: 'heavy',
+    title: 'الثيمات الفاخرة الثقيلة (4 ثيمات إضافية راقية)',
+    subtitle: 'عنابي مخملي، إسبرسو نحاسي، أرجوان إمبراطوري، وجرافيت بلاتيني عالي التباين',
+    themes: HEAVY_FOUR_THEMES,
   },
   {
     id: 'auto',
@@ -518,8 +721,12 @@ const LEGACY_APP_THEME_MAP: Record<string, AppThemeId> = {
   'midnight-indigo': 'pelagic-sapphire',
   cyberpunk: 'midnight-trench',
   'obsidian-gold': 'obsidian-gold',
-  'desert-mirage': 'obsidian-gold',
-  'royal-crimson': 'obsidian-gold',
+  'desert-mirage': 'espresso-bronze',
+  'royal-crimson': 'velvet-garnet',
+  'velvet-garnet': 'velvet-garnet',
+  'espresso-bronze': 'espresso-bronze',
+  'royal-plum': 'royal-plum',
+  'platinum-graphite': 'platinum-graphite',
   'zen-minimal': 'auto',
   'warm-paper': 'auto',
   'crisp-daylight': 'auto',
@@ -529,13 +736,16 @@ const LEGACY_APP_THEME_MAP: Record<string, AppThemeId> = {
 
 export function resolveAppThemeId(
   rawId?: string | null
-): MarineAppThemeId | AutoAppThemeId {
+): MarineAppThemeId | HeavyAppThemeId | AutoAppThemeId {
   if (!rawId) return 'obsidian-gold';
   if (rawId === 'auto' || rawId === 'daylight-alabaster') return rawId;
   if (CORE_FIVE_THEMES.some((t) => t.id === rawId)) {
     return rawId as MarineAppThemeId;
   }
-  return (LEGACY_APP_THEME_MAP[rawId] as MarineAppThemeId | AutoAppThemeId) || 'obsidian-gold';
+  if (HEAVY_FOUR_THEMES.some((t) => t.id === rawId)) {
+    return rawId as HeavyAppThemeId;
+  }
+  return (LEGACY_APP_THEME_MAP[rawId] as MarineAppThemeId | HeavyAppThemeId | AutoAppThemeId) || 'obsidian-gold';
 }
 
 /**
@@ -574,7 +784,11 @@ export function getEffectiveAppTheme(
   if (resolvedId === 'daylight-alabaster') {
     return DAYLIGHT_ALABASTER_THEME;
   }
-  return CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || OBSIDIAN_GOLD_THEME;
+  return (
+    CORE_FIVE_THEMES.find((t) => t.id === resolvedId) ||
+    HEAVY_FOUR_THEMES.find((t) => t.id === resolvedId) ||
+    OBSIDIAN_GOLD_THEME
+  );
 }
 
 export function getAppThemeById(id?: string | null): AppThemeDefinition {
@@ -582,7 +796,9 @@ export function getAppThemeById(id?: string | null): AppThemeDefinition {
   if (resolvedId === 'auto') return AUTO_ADAPTIVE_THEME;
   if (resolvedId === 'daylight-alabaster') return DAYLIGHT_ALABASTER_THEME;
   return (
-    CORE_FIVE_THEMES.find((t) => t.id === resolvedId) || OBSIDIAN_GOLD_THEME
+    CORE_FIVE_THEMES.find((t) => t.id === resolvedId) ||
+    HEAVY_FOUR_THEMES.find((t) => t.id === resolvedId) ||
+    OBSIDIAN_GOLD_THEME
   );
 }
 

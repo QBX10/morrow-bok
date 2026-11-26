@@ -82,7 +82,7 @@ export const AI_PROVIDER_CONFIGS: Record<AiProviderId, AiProviderRuntimeConfig> 
     id: 'google',
     displayName: 'Google AI Studio',
     envKeyName: 'GEMINI_API_KEY',
-    defaultTimeoutMs: 14_000,
+    defaultTimeoutMs: 12_000,
     maxRetries: 1,
     supportsDirectBrowserWs: true,
   },
@@ -90,21 +90,21 @@ export const AI_PROVIDER_CONFIGS: Record<AiProviderId, AiProviderRuntimeConfig> 
     id: 'groq',
     displayName: 'Groq Cloud (STT)',
     envKeyName: 'GROQ_API_KEY',
-    defaultTimeoutMs: 12_000,
+    defaultTimeoutMs: 10_000,
     maxRetries: 1,
   },
   openrouter: {
     id: 'openrouter',
     displayName: 'OpenRouter Free Network',
     envKeyName: 'OPENROUTER_API_KEY',
-    defaultTimeoutMs: 16_000,
+    defaultTimeoutMs: 13_000,
     maxRetries: 1,
   },
   local: {
     id: 'local',
     displayName: 'Morrow Local Engine',
     envKeyName: null,
-    defaultTimeoutMs: 150,
+    defaultTimeoutMs: 120,
     maxRetries: 0,
   },
 };
@@ -316,6 +316,51 @@ export function resetModelHealthRegistry(): void {
   modelHealthMap.clear();
 }
 
+export function syncServerHealthSnapshot(
+  serverModels?: Array<{
+    id?: string;
+    healthStatus?: 'healthy' | 'cooldown';
+    avgLatencyMs?: number | null;
+    consecutiveFailures?: number;
+    cooldownUntilMs?: number;
+  }>,
+  nowMs: number = Date.now()
+): void {
+  if (!Array.isArray(serverModels)) return;
+  for (const item of serverModels) {
+    if (!item?.id || item.id === MORROW_LOCAL_MODEL_ID) continue;
+    const modelId = item.id as ApprovedCloudModelId;
+    const rec = getOrCreateHealthRecord(modelId);
+    if (typeof item.avgLatencyMs === 'number' && item.avgLatencyMs > 0) {
+      rec.avgLatencyMs = item.avgLatencyMs;
+    }
+    if (item.healthStatus === 'cooldown' && typeof item.cooldownUntilMs === 'number') {
+      rec.cooldownUntilMs = Math.max(rec.cooldownUntilMs, item.cooldownUntilMs);
+      rec.consecutiveFailures = Math.max(rec.consecutiveFailures, item.consecutiveFailures || 1);
+    } else if (item.healthStatus === 'healthy' && rec.cooldownUntilMs <= nowMs) {
+      rec.cooldownUntilMs = 0;
+      rec.consecutiveFailures = 0;
+    }
+  }
+}
+
+const CLIENT_WEAK_REPLY_PATTERN =
+  /(?:لم [اأ]فهم طلبك|لم [اأ]تمكن من فهم|عذر[اًا][،,]?\s*(?:لا [اأ]ستطيع|لا يمكنني)|لا [اأ]ستطيع مساعدتك|لا تتوفر لدي (?:معلومات|بيانات)|غير قادر على (?:فهم|معالجة)|بصفتي نموذج ذكاء|وصلتني الفكرة، تقدر توضح لي أكثر|as an ai(?: language model)?|i (?:don'?t|do not) understand|i cannot (?:assist|help|comply)|i'?m unable to|sorry[, ]+i can'?t)/i;
+
+export function detectWeakAssistantPayload(payload: {
+  text?: string;
+  toolCalls?: Array<{ name?: string }>;
+}): string | null {
+  const toolCount = Array.isArray(payload.toolCalls) ? payload.toolCalls.length : 0;
+  if (toolCount > 0) return null;
+  const clean = String(payload.text || '').trim();
+  if (!clean || clean.length < 4) return 'استجابة فارغة من النموذج';
+  if (clean.length < 220 && CLIENT_WEAK_REPLY_PATTERN.test(clean)) {
+    return 'النموذج لم يفهم المطلوب بدقة أو اعتذر عن الإجابة';
+  }
+  return null;
+}
+
 /**
  * Re-orders a model chain so currently healthy models run before models in temporary cooldown,
  * while preserving the exact specialty ranking among healthy models.
@@ -381,7 +426,7 @@ function isFastLowLatencyQuery(norm: string): boolean {
   const heavyPattern =
     /(تحليل|استراتيجي|مقارن|تقرير|احصائي|تنبؤ|توقع|فحص|تشخيص|pdf|ملف|صوره|اكسل|excel|csv|جدول|دفعه|ارشف|تعديل|اضافه|نقل|حظر|ملاحظه|مصروف|ميزانيه|ربح|مكرر)/;
   if (heavyPattern.test(norm)) return false;
-  return /^(مرحبا|هلا|اهلا|السلام|صباح|مساء|شلونك|كيف حالك|شكرا|يسلمو|تمام|اوك|نعم|لا|من انت|شنو تكدر|ساعدني|مساعده)/.test(
+  return /^(مرحبا|هلا|اهلا|اهلين|هلو|مراحب|السلام|صباح|مساء|شلونك|كيف حالك|شكو ماكو|شنو الاخبار|شكرا|عفيه|بارك الله|يعطيك العافيه|يسلمو|تمام|اوك|نعم|لا|من انت|شنو تكدر|ساعدني|مساعده|باي|مع السلامه)/.test(
     norm
   );
 }
@@ -666,6 +711,8 @@ export async function executeWithSmartFallback<T>(options: {
   ) => Promise<{ value: T; usedModelId?: ApprovedCloudModelId }>;
   externalSignal?: AbortSignal;
   perModelTimeoutMs?: number;
+  attemptTimeoutMs?: (modelId: ApprovedCloudModelId, attemptIndex: number) => number;
+  isWeakResult?: (value: T) => string | null;
   onFallbackSwitch?: (info: {
     fromModelId: ApprovedCloudModelId;
     toModelId: ApprovedCloudModelId;
@@ -682,6 +729,7 @@ export async function executeWithSmartFallback<T>(options: {
   const attempts: SmartFallbackAttemptTrace[] = [];
   let quotaOrRateLimited = false;
   let lastErrorMessage = '';
+  let bestWeakOutcome: { value: T; usedModelId: ApprovedCloudModelId } | null = null;
 
   for (let i = 0; i < candidates.length; i++) {
     if (options.externalSignal?.aborted) {
@@ -699,7 +747,9 @@ export async function executeWithSmartFallback<T>(options: {
     const modelId = candidates[i];
     const spec = getAiModelSpec(modelId);
     const timeoutMs =
-      options.perModelTimeoutMs ?? AI_PROVIDER_CONFIGS[spec.provider].defaultTimeoutMs;
+      options.attemptTimeoutMs?.(modelId, i) ??
+      options.perModelTimeoutMs ??
+      AI_PROVIDER_CONFIGS[spec.provider].defaultTimeoutMs;
     const attemptController = new AbortController();
     let timedOut = false;
 
@@ -719,6 +769,30 @@ export async function executeWithSmartFallback<T>(options: {
 
       const latencyMs = Date.now() - attemptStart;
       const reportedModelId = (outcome.usedModelId || modelId) as ApprovedCloudModelId;
+
+      const weakReason = options.isWeakResult?.(outcome.value) || null;
+      if (weakReason && i + 1 < candidates.length) {
+        if (!bestWeakOutcome) {
+          bestWeakOutcome = { value: outcome.value, usedModelId: reportedModelId };
+        }
+        attempts.push({
+          modelId: reportedModelId,
+          provider: getAiModelSpec(reportedModelId).provider,
+          ok: false,
+          latencyMs,
+          errorKind: 'error',
+          errorMessage: weakReason,
+        });
+        const nextModel = candidates[i + 1];
+        options.onFallbackSwitch?.({
+          fromModelId: reportedModelId,
+          toModelId: nextModel,
+          errorKind: 'error',
+          reason: weakReason,
+        });
+        continue;
+      }
+
       markModelSuccess(reportedModelId, latencyMs);
       if (reportedModelId !== modelId) {
         markModelFailure(modelId, new Error('503 fallback used on server'), 503);
@@ -789,6 +863,19 @@ export async function executeWithSmartFallback<T>(options: {
         reason: classified.message,
       });
     }
+  }
+
+  if (bestWeakOutcome) {
+    return {
+      ok: true,
+      data: bestWeakOutcome.value,
+      usedModelId: bestWeakOutcome.usedModelId,
+      fallbackUsed: attempts.length > 1,
+      abortedByUser: false,
+      quotaOrRateLimited,
+      attempts,
+      totalLatencyMs: Date.now() - startedAt,
+    };
   }
 
   return {

@@ -1,11 +1,12 @@
 {
-  "projectId": "gen-lang-client-0791333776",
-  "appId": "1:876522347506:web:d2c6c98d6baea65385a96b",
-  "apiKey": "AIzaSyDChjSPyQLmYD197PSJ7QvmuFe8xYQI3iY",
-  "authDomain": "gen-lang-client-0791333776.firebaseapp.com",
-  "storageBucket": "gen-lang-client-0791333776.firebasestorage.app",
-  "messagingSenderId": "876522347506",
+  "projectId": "lustrous-sun-bpd8p",
+  "appId": "1:46093397437:web:b63375cee8cdce9c6c36d4",
+  "apiKey": "AIzaSyDIsl7NIAznlyve7_H0PA8DtDQ7g-nF4zE",
+  "authDomain": "lustrous-sun-bpd8p.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-32bbf23f-3e77-48c2-9460-00ee00182788",
+  "storageBucket": "lustrous-sun-bpd8p.firebasestorage.app",
+  "messagingSenderId": "46093397437",
   "measurementId": "",
-  "oAuthClientId": "876522347506-ljqr1aglcfgv36q41gtofbvib39dterc.apps.googleusercontent.com",
+  "oAuthClientId": "46093397437-i9e7k94pn291h7ab4h3k12krpaob9942.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

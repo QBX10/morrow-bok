@@ -57,7 +57,7 @@ service cloud.firestore {
         && data.keys().hasOnly(['uid', 'email', 'provider', 'role', 'createdAt', 'updatedAt'])
         && data.uid is string && data.uid == userId && isValidId(data.uid)
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
-        && data.provider in ['google', 'username', 'phone']
+        && data.provider in ['google', 'github', 'username']
         && data.role in ['manager', 'viewer']
         && data.createdAt is timestamp
         && data.updatedAt == request.time;

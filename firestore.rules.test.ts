@@ -78,7 +78,11 @@ function evaluateDirtyDozenWrite(params: {
     if (!allowed.every((k) => keys.includes(k)) || !keys.every((k) => allowed.includes(k))) {
       return 'PERMISSION_DENIED';
     }
-    if (payload.uid !== userId || !['manager', 'viewer'].includes(String(payload.role))) {
+    if (
+      payload.uid !== userId ||
+      !['google', 'github', 'username'].includes(String(payload.provider)) ||
+      !['manager', 'viewer'].includes(String(payload.role))
+    ) {
       return 'PERMISSION_DENIED';
     }
     if (payload.updatedAt !== 'REQUEST_TIME') return 'PERMISSION_DENIED';
@@ -374,6 +378,68 @@ test('Dirty Dozen adversarial payloads return PERMISSION_DENIED', () => {
       auth: { uid: 'userA', email: 'a@example.com', email_verified: true },
       op: 'create',
       payload: {},
+    }),
+    'PERMISSION_DENIED'
+  );
+});
+
+test('UserPrivateInfo allows github provider and rejects invalid provider', () => {
+  assert.ok(rulesSource.includes("'github'"));
+  assert.deepEqual(
+    blueprint.entities.UserPrivateInfo.properties.provider.enum,
+    ['google', 'github', 'username']
+  );
+  assert.equal(
+    evaluateDirtyDozenWrite({
+      pathPattern: '/users/{userId}/private/{docId}',
+      userId: 'gh_12345',
+      docId: 'info',
+      auth: { uid: 'gh_12345', email: 'gh@example.com', email_verified: true },
+      op: 'create',
+      payload: {
+        uid: 'gh_12345',
+        email: 'gh@example.com',
+        provider: 'github',
+        role: 'manager',
+        createdAt: 'REQUEST_TIME',
+        updatedAt: 'REQUEST_TIME',
+      },
+    }),
+    'ALLOW'
+  );
+  assert.equal(
+    evaluateDirtyDozenWrite({
+      pathPattern: '/users/{userId}/private/{docId}',
+      userId: 'gh_12345',
+      docId: 'info',
+      auth: { uid: 'gh_12345', email: 'gh@example.com', email_verified: true },
+      op: 'create',
+      payload: {
+        uid: 'gh_12345',
+        email: 'gh@example.com',
+        provider: 'phone',
+        role: 'manager',
+        createdAt: 'REQUEST_TIME',
+        updatedAt: 'REQUEST_TIME',
+      },
+    }),
+    'PERMISSION_DENIED'
+  );
+  assert.equal(
+    evaluateDirtyDozenWrite({
+      pathPattern: '/users/{userId}/private/{docId}',
+      userId: 'gh_12345',
+      docId: 'info',
+      auth: { uid: 'gh_12345', email: 'gh@example.com', email_verified: true },
+      op: 'create',
+      payload: {
+        uid: 'gh_12345',
+        email: 'gh@example.com',
+        provider: 'twitter',
+        role: 'manager',
+        createdAt: 'REQUEST_TIME',
+        updatedAt: 'REQUEST_TIME',
+      },
     }),
     'PERMISSION_DENIED'
   );

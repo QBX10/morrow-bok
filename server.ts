@@ -28,7 +28,6 @@ import {
   appendLocalAuditEvents,
   createUserRecord,
   findUserByEmail,
-  findUserByPhone,
   findUserByUid,
   findUserByUsername,
   getLocalUserPreferences,
@@ -49,7 +48,6 @@ import {
   createSqlPasswordUser,
   deleteAppearanceProfileByUid,
   findSqlUserByEmail,
-  findSqlUserByPhone,
   findSqlUserByUsername,
   getSqlUserByUid,
   getSqlUserPreferences,
@@ -87,6 +85,7 @@ import {
   type OrchestratorAttachmentPart,
 } from './src/server/aiOrchestrator.ts';
 import type {
+  AuthProviderType,
   InferredDocumentMetadata,
   QuickExtractRawRow,
 } from './src/types/agency.ts';
@@ -96,7 +95,6 @@ import type {
   AssistantResponseStyle,
   AssistantToolCall,
 } from './src/types/assistant.ts';
-import { normalizePhoneNumber } from './src/utils/agencyLogic.ts';
 import { enforceSafeArabicTerminology } from './src/utils/assistantPrivacy.ts';
 import {
   ASSISTANT_TOOL_DECLARATIONS,
@@ -117,23 +115,132 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
-const pendingPhoneOtps = new Map<
-  string,
-  { code: string; expiresAt: number; attempts: number }
->();
-
 const pendingPasswordResets = new Map<
   string,
   { uid: string; code: string; expiresAt: number; attempts: number }
 >();
 
+const GITHUB_OAUTH_STATE_FALLBACK = crypto.randomBytes(32).toString('hex');
+
+function getGithubOAuthSecret(): string {
+  return process.env.AUTH_SESSION_SECRET?.trim() || GITHUB_OAUTH_STATE_FALLBACK;
+}
+
+function signGithubOAuthState(rememberMe: boolean): string {
+  const payload = Buffer.from(
+    JSON.stringify({
+      nonce: crypto.randomBytes(12).toString('hex'),
+      exp: Date.now() + 10 * 60 * 1000,
+      rememberMe,
+    })
+  ).toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getGithubOAuthSecret())
+    .update(payload)
+    .digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyGithubOAuthState(
+  state: string
+): { valid: boolean; rememberMe: boolean } {
+  if (!state || !state.includes('.')) return { valid: false, rememberMe: true };
+  const [payload, sig] = state.split('.');
+  if (!payload || !sig) return { valid: false, rememberMe: true };
+  const expectedSig = crypto
+    .createHmac('sha256', getGithubOAuthSecret())
+    .update(payload)
+    .digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return { valid: false, rememberMe: true };
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      exp?: number;
+      rememberMe?: boolean;
+    };
+    if (!parsed.exp || Date.now() > parsed.exp) {
+      return { valid: false, rememberMe: true };
+    }
+    return { valid: true, rememberMe: parsed.rememberMe !== false };
+  } catch {
+    return { valid: false, rememberMe: true };
+  }
+}
+
+function getGithubCallbackUrl(req?: Request): string {
+  const configuredAppUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+  if (configuredAppUrl) {
+    return `${configuredAppUrl}/auth/callback`;
+  }
+  if (req) {
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
+      .split(',')[0]
+      .trim();
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000')
+      .split(',')[0]
+      .trim();
+    return `${proto}://${host}/auth/callback`;
+  }
+  return `http://localhost:${PORT}/auth/callback`;
+}
+
+function renderGithubCallbackHtml(params: {
+  ok: boolean;
+  message: {
+    type: 'GITHUB_AUTH_SUCCESS' | 'GITHUB_AUTH_ERROR';
+    payload?: { token: string; user: Record<string, unknown> };
+    error?: string;
+  };
+  title: string;
+  subtitle: string;
+}): string {
+  const safeJson = JSON.stringify(params.message).replace(/</g, '\\u003c');
+  const safeTitle = params.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSubtitle = params.subtitle.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Morrow — المصادقة عبر GitHub</title>
+  <style>
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0b0e;color:#f5f2eb;font-family:system-ui,-apple-system,sans-serif;padding:24px}
+    .card{max-width:420px;width:100%;background:#15151a;border:1px solid ${
+      params.ok ? 'rgba(212,175,55,0.45)' : 'rgba(239,68,68,0.45)'
+    };border-radius:18px;padding:24px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.65)}
+    h1{margin:0 0 8px;font-size:18px;color:${params.ok ? '#f3d06b' : '#f87171'}}
+    p{margin:0 0 18px;font-size:13px;line-height:1.6;color:#c2c0b8}
+    button{background:#d4af37;color:#111;border:0;border-radius:10px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${safeTitle}</h1>
+    <p>${safeSubtitle}</p>
+    <button type="button" onclick="window.close()">إغلاق النافذة</button>
+  </div>
+  <script>
+    (function(){
+      var data = ${safeJson};
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(data, '*');
+        }
+      } catch (e) {}
+      setTimeout(function(){ try { window.close(); } catch(e) {} }, 180);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
 const authRateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function pruneAuthTransientMaps() {
   const now = Date.now();
-  for (const [key, val] of pendingPhoneOtps.entries()) {
-    if (now > val.expiresAt) pendingPhoneOtps.delete(key);
-  }
   for (const [key, val] of pendingPasswordResets.entries()) {
     if (now > val.expiresAt) pendingPasswordResets.delete(key);
   }
@@ -176,7 +283,7 @@ async function resolveAutoIdentifierLookup(
 ) {
   const clean = rawIdentifier.trim();
   const explicit =
-    mode === 'phone' || mode === 'google' || mode === 'username' ? mode : 'auto';
+    mode === 'google' || mode === 'username' ? mode : 'auto';
   const useSql = isSqlDatabaseConfigured();
 
   if (explicit === 'google' || (explicit === 'auto' && clean.includes('@'))) {
@@ -186,52 +293,11 @@ async function resolveAutoIdentifierLookup(
       user: useSql ? await findSqlUserByEmail(email) : findUserByEmail(email),
     };
   }
-  const normalizedPhone = normalizePhoneNumber(clean);
-  if (
-    explicit === 'phone' ||
-    (explicit === 'auto' &&
-      (/^\+?\d[\d\s\-]{7,15}$/.test(clean) || /^07\d{8,10}$/.test(clean)) &&
-      /^\+\d{8,15}$/.test(normalizedPhone))
-  ) {
-    return {
-      resolvedMode: 'phone' as const,
-      user: useSql
-        ? await findSqlUserByPhone(normalizedPhone)
-        : findUserByPhone(normalizedPhone),
-    };
-  }
   const uname = clean.toLowerCase();
   return {
     resolvedMode: 'username' as const,
     user: useSql ? await findSqlUserByUsername(uname) : findUserByUsername(uname),
   };
-}
-
-async function dispatchSmsOtpIfConfigured(phone: string, code: string): Promise<boolean> {
-  const apiKey = process.env.SMS_PROVIDER_API_KEY?.trim();
-  const endpoint = process.env.SMS_PROVIDER_URL?.trim();
-  if (!apiKey || !endpoint) return false;
-  try {
-    const parsedUrl = new URL(endpoint);
-    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-      return false;
-    }
-    const resp = await fetch(parsedUrl.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        to: phone,
-        message: `رمز التحقق الخاص بك لتسجيل الدخول: ${code}`,
-      }),
-      signal: AbortSignal.timeout(6000),
-    });
-    return resp.ok;
-  } catch {
-    return false;
-  }
 }
 
 function hashPassword(password: string): string {
@@ -389,20 +455,16 @@ async function startServer() {
   app.get('/api/system/storage-status', async (_req: Request, res: Response) => {
     const cloudSqlConfigured = isSqlDatabaseConfigured();
     const cloudSqlReachable = cloudSqlConfigured ? await pingSqlDatabase() : false;
-    const smsProviderConfigured = Boolean(
-      process.env.SMS_PROVIDER_API_KEY?.trim() && process.env.SMS_PROVIDER_URL?.trim()
-    );
     const firebaseAuthConfigured = true;
     res.json({
       cloudSqlConfigured,
       cloudSqlReachable,
-      smsProviderConfigured,
       firebaseAuthConfigured,
       storageMode: cloudSqlConfigured && cloudSqlReachable ? 'cloud_sql' : 'local_fallback',
     });
   });
 
-  // --- Multi-Auth Endpoints: Gmail/Google, Username, Phone (OTP & Password) ---
+  // --- Multi-Auth Endpoints: Google, GitHub, Email & Username ---
 
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
@@ -411,17 +473,15 @@ async function startServer() {
         return;
       }
       const body = (req.body || {}) as {
-        mode?: 'google' | 'username' | 'phone';
+        mode?: 'google' | 'username';
         displayName?: string;
         email?: string;
         username?: string;
-        phone?: string;
         password?: string;
         rememberMe?: boolean;
       };
 
-      const mode =
-        body.mode === 'phone' || body.mode === 'google' ? body.mode : 'username';
+      const mode = body.mode === 'google' ? 'google' : 'username';
       const displayName = String(body.displayName || '').trim().slice(0, 80);
       const password = String(body.password || '');
       const rememberMe = body.rememberMe !== false;
@@ -474,84 +534,42 @@ async function startServer() {
         return;
       }
 
-      if (mode === 'username') {
-        const username = String(body.username || '').trim().toLowerCase();
-        if (!/^[a-zA-Z0-9_.\-]{3,32}$/.test(username)) {
-          res.status(400).json({
-            error:
-              'اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا إنجليزيًا أو أرقامًا.',
-          });
-          return;
-        }
-        const existing = useSql
-          ? await findSqlUserByUsername(username)
-          : findUserByUsername(username);
-        if (existing) {
-          res.status(409).json({ error: 'اسم المستخدم مسجل مسبقًا.' });
-          return;
-        }
-        const uid = `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-        const created = useSql
-          ? await createSqlPasswordUser({
-              uid,
-              authProvider: 'username',
-              displayName: displayName || username,
-              username,
-              passwordHash: hashPassword(password),
-            })
-          : createUserRecord({
-              uid,
-              authProvider: 'username',
-              displayName: displayName || username,
-              username,
-              passwordHash: hashPassword(password),
-            });
-        const user = {
-          uid: created.uid,
-          provider: 'username' as const,
-          displayName: created.displayName,
-          username,
-          role: 'manager' as const,
-        };
-        const token = signSessionToken(user);
-        setSessionCookie(req, res, token, rememberMe);
-        res.status(201).json({ token, user });
+      const username = String(body.username || '').trim().toLowerCase();
+      if (!/^[a-zA-Z0-9_.\-]{3,32}$/.test(username)) {
+        res.status(400).json({
+          error:
+            'اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا إنجليزيًا أو أرقامًا.',
+        });
         return;
       }
-
-      const phone = normalizePhoneNumber(body.phone || '');
-      if (!/^\+\d{8,15}$/.test(phone)) {
-        res
-          .status(400)
-          .json({ error: 'أدخل رقم هاتف صالحًا (مثال: 07701234567).' });
+      const existing = useSql
+        ? await findSqlUserByUsername(username)
+        : findUserByUsername(username);
+      if (existing) {
+        res.status(409).json({ error: 'اسم المستخدم مسجل مسبقًا.' });
         return;
       }
-      const existingPhone = useSql ? await findSqlUserByPhone(phone) : findUserByPhone(phone);
-      if (existingPhone) {
-        res.status(409).json({ error: 'رقم الهاتف مسجل مسبقًا.' });
-        return;
-      }
-      const uid = `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+      const uid = `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
       const created = useSql
         ? await createSqlPasswordUser({
             uid,
-            authProvider: 'phone',
-            displayName: displayName || phone,
-            phone,
+            authProvider: 'username',
+            displayName: displayName || username,
+            username,
             passwordHash: hashPassword(password),
           })
         : createUserRecord({
             uid,
-            authProvider: 'phone',
-            displayName: displayName || phone,
-            phone,
+            authProvider: 'username',
+            displayName: displayName || username,
+            username,
             passwordHash: hashPassword(password),
           });
       const user = {
         uid: created.uid,
-        provider: 'phone' as const,
+        provider: 'username' as const,
         displayName: created.displayName,
-        phone,
+        username,
         role: 'manager' as const,
       };
       const token = signSessionToken(user);
@@ -565,7 +583,7 @@ async function startServer() {
   app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'auto' | 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username';
         identifier?: string;
         password?: string;
         rememberMe?: boolean;
@@ -590,8 +608,6 @@ async function startServer() {
           error:
             resolvedMode === 'google'
               ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
-              : resolvedMode === 'phone'
-              ? 'رقم الهاتف أو كلمة المرور غير صحيحة.'
               : 'بيانات الدخول أو كلمة المرور غير صحيحة.',
         });
         return;
@@ -599,13 +615,17 @@ async function startServer() {
 
       const cleanEmail =
         found.email && !found.email.endsWith('.local') ? found.email : undefined;
+      const safeProvider: AuthProviderType =
+        found.authProvider === 'google' || found.authProvider === 'github'
+          ? found.authProvider
+          : 'username';
       const user = {
         uid: found.uid,
-        provider: found.authProvider as 'google' | 'username' | 'phone',
+        provider: safeProvider,
         displayName: found.displayName,
         email: cleanEmail,
         username: found.username || undefined,
-        phone: found.phone || undefined,
+        githubId: 'githubId' in found && found.githubId ? found.githubId : undefined,
         avatarUrl: found.avatarUrl || undefined,
         role: (found.role as 'manager' | 'viewer') || 'manager',
       };
@@ -626,7 +646,7 @@ async function startServer() {
           ? authHeader.slice(7).trim()
           : String(body.idToken || '').trim();
       if (!rawToken || rawToken.startsWith('sess.')) {
-        res.status(401).json({ error: 'رمز تحقق Google أو الهاتف غير صالح.' });
+        res.status(401).json({ error: 'رمز تحقق Google غير صالح.' });
         return;
       }
       const verified = await verifyAuthToken(rawToken);
@@ -641,7 +661,6 @@ async function startServer() {
         displayName: canonical.displayName,
         email: canonical.email,
         username: canonical.username,
-        phone: canonical.phone,
         avatarUrl: canonical.avatarUrl,
         role: 'manager' as const,
       };
@@ -679,13 +698,19 @@ async function startServer() {
           res.status(result.status).json({ error: result.error });
           return;
         }
+        const safeProvider: AuthProviderType =
+          result.user.authProvider === 'google' ||
+          result.user.authProvider === 'github' ||
+          result.user.authProvider === 'username'
+            ? result.user.authProvider
+            : principal.provider;
         const updatedUser = {
           uid: result.user.uid,
-          provider: (result.user.authProvider as 'google' | 'username' | 'phone') || principal.provider,
+          provider: safeProvider,
           displayName: result.user.displayName,
           email: result.user.email && !result.user.email.endsWith('.local') ? result.user.email : undefined,
           username: result.user.username || undefined,
-          phone: result.user.phone || undefined,
+          githubId: result.user.githubId || principal.githubId,
           avatarUrl: result.user.avatarUrl || undefined,
           role: (result.user.role as 'manager' | 'viewer') || 'manager',
         };
@@ -710,7 +735,6 @@ async function startServer() {
         displayName: localResult.user.displayName,
         email: localResult.user.email || undefined,
         username: localResult.user.username || undefined,
-        phone: localResult.user.phone || undefined,
         avatarUrl: localResult.user.avatarUrl || undefined,
         role: localResult.user.role,
       };
@@ -734,100 +758,10 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/phone/request-otp', async (req: Request, res: Response) => {
-    const body = (req.body || {}) as { phone?: string };
-    const phone = normalizePhoneNumber(body.phone || '');
-    if (!consumeAuthRateLimit(req, 'otp_req', 8, 5 * 60 * 1000, phone)) {
-      res.status(429).json({ error: 'طلبات متكررة لرمز التحقق، انتظر قليلاً.' });
-      return;
-    }
-    if (!/^\+\d{8,15}$/.test(phone)) {
-      res
-        .status(400)
-        .json({ error: 'أدخل رقم هاتف صحيحًا (مثال: 07701234567).' });
-      return;
-    }
-    const code = String(crypto.randomInt(100000, 999999));
-    pendingPhoneOtps.set(phone, {
-      code,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-      attempts: 0,
-    });
-    const smsDispatched = await dispatchSmsOtpIfConfigured(phone, code);
-    res.json({
-      ok: true,
-      phone,
-      smsDispatched,
-      demoCode:
-        !smsDispatched && !isProduction ? code : undefined,
-    });
-  });
-
-  app.post('/api/auth/phone/verify-otp', async (req: Request, res: Response) => {
-    try {
-      const body = (req.body || {}) as {
-        phone?: string;
-        code?: string;
-        displayName?: string;
-        rememberMe?: boolean;
-      };
-      const phone = normalizePhoneNumber(body.phone || '');
-      if (!consumeAuthRateLimit(req, 'otp_verify', 12, 5 * 60 * 1000, phone)) {
-        res.status(429).json({ error: 'تم تجاوز عدد محاولات التحقق المسموح.' });
-        return;
-      }
-      const code = String(body.code || '').trim();
-      const pending = pendingPhoneOtps.get(phone);
-
-      if (!pending || Date.now() > pending.expiresAt) {
-        pendingPhoneOtps.delete(phone);
-        res
-          .status(400)
-          .json({ error: 'انتهت صلاحية رمز التحقق، اطلب رمزًا جديدًا.' });
-        return;
-      }
-      if (pending.attempts >= 5) {
-        pendingPhoneOtps.delete(phone);
-        res.status(429).json({ error: 'تم تجاوز عدد المحاولات المسموح.' });
-        return;
-      }
-      if (pending.code !== code) {
-        pending.attempts += 1;
-        res.status(401).json({ error: 'رمز التحقق غير صحيح.' });
-        return;
-      }
-
-      pendingPhoneOtps.delete(phone);
-      const displayName = String(body.displayName || '').trim().slice(0, 80) || phone;
-      const canonical = await resolveCanonicalPrincipal({
-        uid: `phn_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        provider: 'phone',
-        displayName,
-        phone,
-      });
-
-      const user = {
-        uid: canonical.uid,
-        provider: canonical.provider,
-        displayName: canonical.displayName,
-        email: canonical.email,
-        username: canonical.username,
-        phone: canonical.phone || phone,
-        avatarUrl: canonical.avatarUrl,
-        role: 'manager' as const,
-      };
-      const token = signSessionToken(user);
-      setSessionCookie(req, res, token, body.rememberMe !== false);
-      res.json({ token, user });
-    } catch {
-      res.status(500).json({ error: 'تعذر التحقق من رمز الهاتف حالياً.' });
-    }
-  });
-
   app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'auto' | 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username';
         identifier?: string;
       };
       const rawIdentifier = String(body.identifier || '').trim();
@@ -857,17 +791,13 @@ async function startServer() {
 
       const cleanEmail =
         found.email && !found.email.endsWith('.local') ? found.email : null;
-      if (found.phone) {
-        await dispatchSmsOtpIfConfigured(found.phone, code);
-      }
       const maskedTarget =
-        cleanEmail || found.phone || found.username || found.displayName;
+        cleanEmail || found.username || found.displayName;
 
       res.json({
         ok: true,
         maskedTarget,
-        demoCode:
-          !isProduction && !process.env.SMS_PROVIDER_API_KEY ? code : undefined,
+        demoCode: !isProduction ? code : undefined,
       });
     } catch {
       res.status(500).json({ error: 'تعذر إرسال رمز الاستعادة حالياً.' });
@@ -877,7 +807,7 @@ async function startServer() {
   app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
     try {
       const body = (req.body || {}) as {
-        mode?: 'auto' | 'google' | 'username' | 'phone';
+        mode?: 'auto' | 'google' | 'username';
         identifier?: string;
         code?: string;
         newPassword?: string;
@@ -936,13 +866,17 @@ async function startServer() {
 
       const cleanEmail =
         updated.email && !updated.email.endsWith('.local') ? updated.email : undefined;
+      const safeProvider: AuthProviderType =
+        updated.authProvider === 'google' || updated.authProvider === 'github'
+          ? updated.authProvider
+          : 'username';
       const user = {
         uid: updated.uid,
-        provider: updated.authProvider as 'google' | 'username' | 'phone',
+        provider: safeProvider,
         displayName: updated.displayName,
         email: cleanEmail,
         username: updated.username || undefined,
-        phone: updated.phone || undefined,
+        githubId: 'githubId' in updated && updated.githubId ? updated.githubId : undefined,
         avatarUrl: updated.avatarUrl || undefined,
         role: (updated.role as 'manager' | 'viewer') || 'manager',
       };
@@ -951,6 +885,210 @@ async function startServer() {
       res.json({ token, user });
     } catch {
       res.status(500).json({ error: 'تعذر إعادة تعيين كلمة المرور حالياً.' });
+    }
+  });
+
+  app.get('/api/auth/github/url', (req: Request, res: Response) => {
+    const clientId = process.env.GITHUB_CLIENT_ID?.trim();
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
+    const callbackUrl = getGithubCallbackUrl(req);
+    const rememberMe = req.query.rememberMe !== '0' && req.query.rememberMe !== 'false';
+
+    if (!clientId || !clientSecret) {
+      res.status(503).json({
+        configured: false,
+        callbackUrl,
+        error:
+          'تسجيل الدخول عبر GitHub غير مفعّل بعد؛ يرجى إضافة GITHUB_CLIENT_ID و GITHUB_CLIENT_SECRET في إعدادات البيئة.',
+      });
+      return;
+    }
+
+    const state = signGithubOAuthState(rememberMe);
+    const authorizeUrl = new URL('https://github.com/login/oauth/authorize');
+    authorizeUrl.searchParams.set('client_id', clientId);
+    authorizeUrl.searchParams.set('redirect_uri', callbackUrl);
+    authorizeUrl.searchParams.set('scope', 'read:user user:email');
+    authorizeUrl.searchParams.set('state', state);
+
+    res.json({
+      configured: true,
+      url: authorizeUrl.toString(),
+      callbackUrl,
+    });
+  });
+
+  app.get(['/auth/callback', '/auth/callback/'], async (req: Request, res: Response) => {
+    const oauthError = typeof req.query.error === 'string' ? req.query.error : '';
+    const oauthErrorDesc =
+      typeof req.query.error_description === 'string' ? req.query.error_description : '';
+    const code = typeof req.query.code === 'string' ? req.query.code.trim() : '';
+    const state = typeof req.query.state === 'string' ? req.query.state.trim() : '';
+
+    if (oauthError) {
+      const msg = oauthErrorDesc || 'تم إلغاء تسجيل الدخول عبر GitHub أو رفض الصلاحية.';
+      res.status(400).send(
+        renderGithubCallbackHtml({
+          ok: false,
+          title: 'تعذر تسجيل الدخول عبر GitHub',
+          subtitle: msg,
+          message: { type: 'GITHUB_AUTH_ERROR', error: msg },
+        })
+      );
+      return;
+    }
+
+    const stateCheck = verifyGithubOAuthState(state);
+    if (!code || !stateCheck.valid) {
+      const msg = 'انتهت صلاحية جلسة التحقق أو أن رمز المصادقة غير صالح.';
+      res.status(400).send(
+        renderGithubCallbackHtml({
+          ok: false,
+          title: 'رمز تحقق غير صالح',
+          subtitle: msg,
+          message: { type: 'GITHUB_AUTH_ERROR', error: msg },
+        })
+      );
+      return;
+    }
+
+    const clientId = process.env.GITHUB_CLIENT_ID?.trim();
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
+    if (!clientId || !clientSecret) {
+      const msg = 'إعدادات GitHub OAuth غير مكتملة على الخادم.';
+      res.status(503).send(
+        renderGithubCallbackHtml({
+          ok: false,
+          title: 'GitHub OAuth غير مفعّل',
+          subtitle: msg,
+          message: { type: 'GITHUB_AUTH_ERROR', error: msg },
+        })
+      );
+      return;
+    }
+
+    try {
+      const callbackUrl = getGithubCallbackUrl(req);
+      const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Morrow-App',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          redirect_uri: callbackUrl,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const tokenData = (await tokenRes.json()) as {
+        access_token?: string;
+        error?: string;
+        error_description?: string;
+      };
+      if (!tokenRes.ok || !tokenData.access_token) {
+        throw new Error(
+          tokenData.error_description || tokenData.error || 'تعذر الحصول على رمز الوصول من GitHub.'
+        );
+      }
+
+      const ghHeaders = {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Morrow-App',
+      };
+
+      const userRes = await fetch('https://api.github.com/user', {
+        headers: ghHeaders,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!userRes.ok) {
+        throw new Error('تعذر جلب بيانات حساب GitHub.');
+      }
+      const ghUser = (await userRes.json()) as {
+        id: number;
+        login?: string;
+        name?: string | null;
+        email?: string | null;
+        avatar_url?: string | null;
+      };
+
+      let verifiedEmail: string | undefined =
+        ghUser.email && ghUser.email.includes('@') ? ghUser.email.toLowerCase() : undefined;
+      try {
+        const emailsRes = await fetch('https://api.github.com/user/emails', {
+          headers: ghHeaders,
+          signal: AbortSignal.timeout(8000),
+        });
+        if (emailsRes.ok) {
+          const emailRows = (await emailsRes.json()) as Array<{
+            email?: string;
+            primary?: boolean;
+            verified?: boolean;
+          }>;
+          const primaryVerified = emailRows.find((e) => e.primary && e.verified && e.email);
+          const anyVerified = emailRows.find((e) => e.verified && e.email);
+          const chosen = primaryVerified?.email || anyVerified?.email;
+          if (chosen) verifiedEmail = chosen.toLowerCase();
+        }
+      } catch {
+        // user:email endpoint fallback keeps ghUser.email if available
+      }
+
+      const githubId = String(ghUser.id);
+      const loginName = ghUser.login ? String(ghUser.login).trim().toLowerCase() : undefined;
+      const displayName = String(ghUser.name || ghUser.login || 'مستخدم GitHub')
+        .trim()
+        .slice(0, 80);
+
+      const canonical = await resolveCanonicalPrincipal({
+        uid: `gh_${githubId}`,
+        provider: 'github',
+        githubId,
+        displayName,
+        email: verifiedEmail,
+        username: loginName,
+        avatarUrl: typeof ghUser.avatar_url === 'string' ? ghUser.avatar_url : undefined,
+      });
+
+      const user = {
+        uid: canonical.uid,
+        provider: canonical.provider,
+        displayName: canonical.displayName,
+        email: canonical.email,
+        username: canonical.username,
+        githubId: canonical.githubId || githubId,
+        avatarUrl: canonical.avatarUrl,
+        role: 'manager' as const,
+      };
+      const sessionToken = signSessionToken(user);
+      setSessionCookie(req, res, sessionToken, stateCheck.rememberMe);
+
+      res.status(200).send(
+        renderGithubCallbackHtml({
+          ok: true,
+          title: `مرحباً ${user.displayName}`,
+          subtitle: 'تم تسجيل الدخول عبر GitHub بنجاح، جارٍ إعادتك إلى Morrow...',
+          message: {
+            type: 'GITHUB_AUTH_SUCCESS',
+            payload: { token: sessionToken, user },
+          },
+        })
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'تعذر إكمال المصادقة عبر GitHub حالياً.';
+      res.status(500).send(
+        renderGithubCallbackHtml({
+          ok: false,
+          title: 'فشلت المصادقة عبر GitHub',
+          subtitle: msg,
+          message: { type: 'GITHUB_AUTH_ERROR', error: msg },
+        })
+      );
     }
   });
 
@@ -963,14 +1101,20 @@ async function startServer() {
           sqlUser?.email && !sqlUser.email.endsWith('.local')
             ? sqlUser.email
             : principal.email;
+        const safeProvider: AuthProviderType =
+          sqlUser?.authProvider === 'google' ||
+          sqlUser?.authProvider === 'github' ||
+          sqlUser?.authProvider === 'username'
+            ? sqlUser.authProvider
+            : principal.provider;
         res.json({
           user: {
             uid: principal.uid,
-            provider: (sqlUser?.authProvider as 'google' | 'username' | 'phone') || principal.provider,
+            provider: safeProvider,
             displayName: sqlUser?.displayName || principal.displayName,
             email: cleanEmail,
             username: sqlUser?.username || principal.username,
-            phone: sqlUser?.phone || principal.phone,
+            githubId: sqlUser?.githubId || principal.githubId,
             avatarUrl: sqlUser?.avatarUrl || principal.avatarUrl,
             role: (sqlUser?.role as 'manager' | 'viewer') || 'manager',
           },
@@ -985,7 +1129,7 @@ async function startServer() {
           displayName: dbUser?.displayName || principal.displayName,
           email: dbUser?.email || principal.email,
           username: dbUser?.username || principal.username,
-          phone: dbUser?.phone || principal.phone,
+          githubId: dbUser?.githubId || principal.githubId,
           avatarUrl: dbUser?.avatarUrl || principal.avatarUrl,
           role: dbUser?.role || 'manager',
         },
@@ -1099,14 +1243,20 @@ async function startServer() {
           displayName,
           avatarUrl,
         });
+        const safeProvider: AuthProviderType =
+          updated.authProvider === 'google' ||
+          updated.authProvider === 'github' ||
+          updated.authProvider === 'username'
+            ? updated.authProvider
+            : principal.provider;
         res.json({
           user: {
             uid: updated.uid,
-            provider: (updated.authProvider as 'google' | 'username' | 'phone') || principal.provider,
+            provider: safeProvider,
             displayName: updated.displayName,
             email: updated.email,
             username: principal.username,
-            phone: principal.phone,
+            githubId: updated.githubId || principal.githubId,
             avatarUrl: updated.avatarUrl || undefined,
             role: (updated.role as 'manager' | 'viewer') || 'manager',
           },
@@ -1128,7 +1278,6 @@ async function startServer() {
           displayName: localUpdated.displayName,
           email: localUpdated.email || undefined,
           username: localUpdated.username || undefined,
-          phone: localUpdated.phone || undefined,
           avatarUrl: localUpdated.avatarUrl || undefined,
           role: localUpdated.role,
         },
@@ -1279,7 +1428,6 @@ async function startServer() {
           authProvider: principal.provider,
           displayName: principal.displayName,
           email: principal.email ?? null,
-          phone: principal.phone ?? null,
           username: principal.username ?? null,
           avatarUrl: principal.avatarUrl ?? null,
         });
@@ -3043,6 +3191,8 @@ async function startServer() {
         systemInstruction: copilotInstruction,
         responseMimeType: 'application/json',
         responseSchema: copilotSchema,
+        timeoutMs: hasImage ? 18000 : 10500,
+        detectComprehensionFailure: true,
       });
 
       if (!orch.ok) {
@@ -3162,8 +3312,17 @@ async function startServer() {
             .join(' | ')}`
         : '';
 
+    const selectedAgencyInfo =
+      cloudContext.selectedAgencyName
+        ? `الوكالة المفتوحة حالياً: ${String(cloudContext.selectedAgencyName)} (ID:${String(cloudContext.selectedAgencyId || '')})`
+        : '';
+    const focusedRowInfo = cloudContext.focusedRowRef
+      ? `السجل المحدد على الشاشة: ${String(cloudContext.focusedRowRef)}`
+      : '';
+
     return [
       `الشاشة الحالية للمستخدم: ${String(cloudContext.activeView || 'hub')} | النمط: ${String(cloudContext.modeTier || 'expert')}`,
+      [selectedAgencyInfo, focusedRowInfo].filter(Boolean).join(' | '),
       `الحصة الحالية: ${String(lw.periodName || 'الحصة الحالية')}`,
       `الإعدادات: رسم الفرد ${Number(lw.feePerIndividualIqd || 0)} د.ع | رسم البطاقة الثابت ${Number(lw.fixedCardFeeIqd || 0)} د.ع | كغم/فرد ${Number(lw.kgPerIndividual || 0)} | وزن الكيس ${Number(lw.kgPerBag || 50)} كغم | خصم ${Number(lw.discountPercent || 0)}%`,
       `الإجمالي الكلي: ${Number(lw.totalActiveHouseholds || 0)} عائلة نشطة (من أصل ${Number(lw.totalRegisteredHouseholds || 0)}) | ${Number(lw.totalActiveIndividuals || 0)} أفراد نشطين | محجوب ${Number(lw.totalBlockedCount || 0)} | ${Number(lw.totalFullBags || 0)} كيس | إيراد ${Number(lw.totalRevenueIqd || 0)} د.ع | مصروفات ${Number(lw.totalExpensesIqd || 0)} د.ع (${Number(lw.totalExpensesCount || 0)} قيود) | صافي الربح ${Number(lw.totalProfitIqd || 0)} د.ع`,
@@ -3327,7 +3486,8 @@ ${contextText}`;
         systemInstruction,
         promptText: userContent,
         tools: ASSISTANT_TOOL_DECLARATIONS,
-        timeoutMs: 12000,
+        timeoutMs: 11500,
+        detectComprehensionFailure: true,
         collaborationMode,
         taskKey:
           body.taskKey && body.taskKey in AI_TASK_PROFILES
@@ -3459,6 +3619,8 @@ ${contextText}`;
           'أنت محلل نصوص عربية ومذكرات واتساب وجداول Excel/CSV لنظام وكالات الكمية الغذائية. استخرج كل سطر إلى عملية مهيكلة (تحديث عدد الأفراد update_individuals، حجب كامل block_full، إضافة عائلة add_person، أو ملاحظة note) مع الالتزام الصارم بكلمة «الأفراد» وأعد JSON فقط.',
         responseMimeType: 'application/json',
         responseSchema: schema,
+        timeoutMs: 13000,
+        detectComprehensionFailure: true,
       });
 
       if (!orch.ok) {

@@ -6,7 +6,7 @@
 3. **Immutable Ownership & Creation Time**: On all updates, `ownerUid`/`uid` and `createdAt` must remain strictly equal to `existing()`.
 4. **Server Temporal Integrity**: `createdAt == request.time` on create; `updatedAt == request.time` on create and update.
 5. **Strict Key Allowlists & Size Bounds**: Every `isValid*` helper enforces `keys().hasAll(...)` and `keys().hasOnly(...)` on create, `affectedKeys().hasOnly(...)` on update, and `.size()` limits on every string and document ID (`isValidId`).
-6. **No Self-Assigned Roles**: Users creating `/users/{userId}/private/info` can only set `role == 'viewer'` or `'manager'` for their own personal workspace metadata, never `'admin'` or `'superadmin'`, and cannot escalate privileges via client writes.
+6. **No Self-Assigned Roles & Valid Providers**: Users creating `/users/{userId}/private/info` can only set `role == 'viewer'` or `'manager'` for their own personal workspace metadata, never `'admin'` or `'superadmin'`, cannot escalate privileges via client writes, and `provider` must be one of `['google', 'github', 'username']`.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads
 1. **Identity Spoofing**: Creating `/users/userB/workspaces/main` while authenticated as `userA` (`ownerUid: 'userB'`). -> **DENIED**

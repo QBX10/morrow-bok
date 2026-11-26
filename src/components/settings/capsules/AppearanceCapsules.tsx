@@ -24,10 +24,10 @@ import type {
 import { resolveHierarchyNodeBadge } from '../../../utils/hierarchyRegistry';
 import {
   APP_SHAPES,
+  CURATED_APP_THEMES,
   DEFAULT_APPEARANCE_PROFILES,
   DEFAULT_THEME_PREFERENCES,
   getAppThemeById,
-  MODERN_APP_THEMES,
   resolveAppShapeId,
   resolveAutoThemeTarget,
   resolveTableThemeId,
@@ -183,7 +183,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
               </div>
               <div>
                 <div className="text-sm font-black" style={{ color: 'var(--accent-bright, var(--text-primary))' }}>
-                  ثيمات التطبيق (6 ثيمات + التلقائي) — {currentThemeObj.name}
+                  ثيمات التطبيق (10 ثيمات تشمل 4 ثيمات ثقيلة فاخرة + التلقائي) — {currentThemeObj.name}
                 </div>
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {currentThemeObj.id === 'auto'
@@ -204,7 +204,7 @@ export const AppearanceCapsules: React.FC<AppearanceCapsulesProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {MODERN_APP_THEMES.map((theme) => {
+            {CURATED_APP_THEMES.map((theme) => {
               const isSelected = currentThemeObj.id === theme.id;
               const previewTheme =
                 theme.id === 'auto' ? resolveAutoThemeTarget() : theme;

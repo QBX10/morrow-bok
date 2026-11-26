@@ -17,6 +17,7 @@ import {
   resolveCollaborativeReviewerChain,
   resolveOrderedTaskChain,
   SIX_FREE_CLOUD_MODELS,
+  type AiModelSpec,
   type AiPipelineKind,
   type AiProviderId,
   type AiTaskKey,
@@ -45,7 +46,13 @@ export interface ModelAttemptTrace {
   modelId: ApprovedCloudModelId;
   provider: AiProviderId;
   attempt: number;
-  status: 'ok' | 'rate_limited_429' | 'timeout_503' | 'missing_key' | 'error';
+  status:
+    | 'ok'
+    | 'rate_limited_429'
+    | 'timeout_503'
+    | 'weak_reply'
+    | 'missing_key'
+    | 'error';
   latencyMs: number;
   detail?: string;
 }
@@ -62,6 +69,7 @@ export interface ExecuteWithFallbackOptions {
   temperature?: number;
   timeoutMs?: number;
   maxRetriesPerModel?: number;
+  detectComprehensionFailure?: boolean;
 }
 
 export interface ExecuteWithFallbackResult {
@@ -128,6 +136,108 @@ export function createGoogleAiClient(): GoogleGenAI | null {
   });
 }
 
+interface ServerModelHealthRecord {
+  consecutiveFailures: number;
+  cooldownUntilMs: number;
+  lastErrorKind:
+    | 'rate_limited_429'
+    | 'timeout_503'
+    | 'weak_reply'
+    | 'error'
+    | null;
+  avgLatencyMs: number | null;
+  totalSuccesses: number;
+  lastSuccessAtMs: number | null;
+}
+
+const serverModelHealthMap = new Map<
+  ApprovedCloudModelId,
+  ServerModelHealthRecord
+>();
+
+function getServerHealthRecord(
+  modelId: ApprovedCloudModelId
+): ServerModelHealthRecord {
+  const existing = serverModelHealthMap.get(modelId);
+  if (existing) return existing;
+  const fresh: ServerModelHealthRecord = {
+    consecutiveFailures: 0,
+    cooldownUntilMs: 0,
+    lastErrorKind: null,
+    avgLatencyMs: null,
+    totalSuccesses: 0,
+    lastSuccessAtMs: null,
+  };
+  serverModelHealthMap.set(modelId, fresh);
+  return fresh;
+}
+
+export function markServerModelSuccess(
+  modelId: ApprovedCloudModelId,
+  latencyMs: number,
+  nowMs: number = Date.now()
+): void {
+  const rec = getServerHealthRecord(modelId);
+  rec.consecutiveFailures = 0;
+  rec.cooldownUntilMs = 0;
+  rec.lastErrorKind = null;
+  rec.totalSuccesses += 1;
+  rec.lastSuccessAtMs = nowMs;
+  rec.avgLatencyMs =
+    rec.avgLatencyMs === null
+      ? Math.round(latencyMs)
+      : Math.round(rec.avgLatencyMs * 0.65 + latencyMs * 0.35);
+}
+
+export function markServerModelFailure(
+  modelId: ApprovedCloudModelId,
+  kind: 'rate_limited_429' | 'timeout_503' | 'weak_reply' | 'error',
+  nowMs: number = Date.now()
+): void {
+  const rec = getServerHealthRecord(modelId);
+  rec.consecutiveFailures += 1;
+  rec.lastErrorKind = kind;
+  const baseCooldown =
+    kind === 'rate_limited_429'
+      ? 55_000
+      : kind === 'timeout_503'
+        ? 35_000
+        : kind === 'weak_reply'
+          ? 12_000
+          : 20_000;
+  const factor = Math.min(3, rec.consecutiveFailures);
+  rec.cooldownUntilMs = nowMs + baseCooldown * factor;
+}
+
+export function applyServerHealthOrdering(
+  chain: ApprovedCloudModelId[],
+  nowMs: number = Date.now()
+): ApprovedCloudModelId[] {
+  const unique = Array.from(new Set(chain));
+  const healthy: ApprovedCloudModelId[] = [];
+  const cooling: ApprovedCloudModelId[] = [];
+  for (const id of unique) {
+    const rec = getServerHealthRecord(id);
+    if (rec.cooldownUntilMs > nowMs) {
+      cooling.push(id);
+    } else {
+      healthy.push(id);
+    }
+  }
+  if (healthy.length === 0) {
+    return cooling.sort(
+      (a, b) =>
+        getServerHealthRecord(a).cooldownUntilMs -
+        getServerHealthRecord(b).cooldownUntilMs
+    );
+  }
+  return [...healthy, ...cooling];
+}
+
+export function resetServerModelHealth(): void {
+  serverModelHealthMap.clear();
+}
+
 function classifyProviderError(err: unknown): {
   kind: 'rate_limited_429' | 'timeout_503' | 'error';
   retryable: boolean;
@@ -146,7 +256,8 @@ function classifyProviderError(err: unknown): {
     lower.includes('429') ||
     lower.includes('rate limit') ||
     lower.includes('resource_exhausted') ||
-    lower.includes('too many requests')
+    lower.includes('too many requests') ||
+    lower.includes('quota')
   ) {
     return { kind: 'rate_limited_429', retryable: true, message: msg };
   }
@@ -173,8 +284,8 @@ function classifyProviderError(err: unknown): {
   return { kind: 'error', retryable: false, message: msg };
 }
 
-function sleepWithJitter(attempt: number, baseMs = 380): Promise<void> {
-  const jitter = Math.floor(Math.random() * 160);
+function sleepWithJitter(attempt: number, baseMs = 280): Promise<void> {
+  const jitter = Math.floor(Math.random() * 120);
   const delay = baseMs * Math.pow(2, attempt) + jitter;
   return new Promise((resolve) => setTimeout(resolve, delay));
 }
@@ -247,14 +358,59 @@ function convertToolsForOpenRouter(tools?: FunctionDeclaration[]) {
 
 function stripJsonCodeFences(raw: string): string {
   const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  if (fenced?.[1]) return fenced[1].trim();
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fenced?.[1] ? fenced[1].trim() : trimmed;
+  const firstBrace = candidate.indexOf('{');
+  const lastBrace = candidate.lastIndexOf('}');
   if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
+    return candidate.slice(firstBrace, lastBrace + 1);
   }
-  return trimmed;
+  const firstBracket = candidate.indexOf('[');
+  const lastBracket = candidate.lastIndexOf(']');
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    return candidate.slice(firstBracket, lastBracket + 1);
+  }
+  return candidate;
+}
+
+const WEAK_REFUSAL_PATTERN =
+  /(?:لم [اأ]فهم طلبك|لم [اأ]تمكن من فهم|عذر[اًا][،,]?\s*(?:لا [اأ]ستطيع|لا يمكنني)|لا [اأ]ستطيع مساعدتك|لا تتوفر لدي (?:معلومات|بيانات)|غير قادر على (?:فهم|معالجة)|بصفتي نموذج ذكاء|as an ai(?: language model)?|i (?:don'?t|do not) understand|i cannot (?:assist|help|comply)|i'?m unable to|sorry[, ]+i can'?t)/i;
+
+export function detectModelOutputWeakness(params: {
+  text: string;
+  toolCalls: AssistantToolCall[];
+  responseMimeType?: 'application/json' | 'text/plain';
+  detectComprehensionFailure?: boolean;
+}): string | null {
+  const cleanText = String(params.text || '').trim();
+  if (params.responseMimeType === 'application/json') {
+    if (!cleanText) return 'empty_json_output';
+    try {
+      const parsed = JSON.parse(cleanText);
+      if (parsed === null || typeof parsed !== 'object') {
+        return 'non_object_json_output';
+      }
+      return null;
+    } catch {
+      return 'malformed_json_output';
+    }
+  }
+
+  if (params.toolCalls.length > 0) {
+    return null;
+  }
+
+  if (!cleanText || cleanText.length < 2) {
+    return 'empty_text_output';
+  }
+
+  if (params.detectComprehensionFailure && cleanText.length < 220) {
+    if (WEAK_REFUSAL_PATTERN.test(cleanText)) {
+      return 'model_comprehension_or_refusal';
+    }
+  }
+
+  return null;
 }
 
 async function callGoogleModel(params: {
@@ -512,15 +668,30 @@ export async function executeWithFallback(
     options.preferredChain && options.preferredChain.length > 0
       ? options.preferredChain
       : AI_ROUTING_PIPELINES[options.pipeline];
-  const uniqueChain = Array.from(new Set(baseChain));
-  const maxRetries = Math.max(1, Math.min(3, options.maxRetriesPerModel ?? 2));
-  const timeoutMs = Math.max(4000, options.timeoutMs ?? 24000);
+  const uniqueChain = applyServerHealthOrdering(baseChain);
+  // Failover directly to backup models with 0ms sleep when multiple models exist;
+  // only retry the same model immediately if there's a single candidate or caller explicitly requests retries.
+  const maxRetries =
+    options.maxRetriesPerModel !== undefined
+      ? Math.max(1, Math.min(3, options.maxRetriesPerModel))
+      : uniqueChain.length > 1
+        ? 1
+        : 2;
+  const timeoutMs = Math.max(4000, options.timeoutMs ?? 18000);
 
   const keys = getServerProviderApiKeys();
   const googleClient = createGoogleAiClient();
 
   const attempts: ModelAttemptTrace[] = [];
   let hadRateLimitOrTimeout = false;
+  let bestWeakCandidate: {
+    result: { text: string; toolCalls: AssistantToolCall[] };
+    modelId: ApprovedCloudModelId;
+    provider: AiProviderId;
+    badgeLabel: string;
+    shortLabel: string;
+    idx: number;
+  } | null = null;
 
   for (let idx = 0; idx < uniqueChain.length; idx++) {
     const modelId = uniqueChain[idx];
@@ -609,12 +780,49 @@ export async function executeWithFallback(
                 timeoutMs,
               });
 
+        const weakness = detectModelOutputWeakness({
+          text: result.text,
+          toolCalls: result.toolCalls,
+          responseMimeType: options.responseMimeType,
+          detectComprehensionFailure: options.detectComprehensionFailure,
+        });
+
+        const latencyMs = Date.now() - attemptStart;
+        if (weakness) {
+          markServerModelFailure(modelId, 'weak_reply');
+          attempts.push({
+            modelId,
+            provider: spec.provider,
+            attempt: attempt + 1,
+            status: 'weak_reply',
+            latencyMs,
+            detail: `Weak or misunderstood reply (${weakness}) — switching model`,
+          });
+          if (
+            !bestWeakCandidate &&
+            options.responseMimeType !== 'application/json' &&
+            result.text.trim().length > 0
+          ) {
+            bestWeakCandidate = {
+              result,
+              modelId,
+              provider: spec.provider,
+              badgeLabel: spec.badgeLabel,
+              shortLabel: spec.shortLabel,
+              idx,
+            };
+          }
+          // Break inner retry loop to switch to the next stronger/complementary model immediately
+          break;
+        }
+
+        markServerModelSuccess(modelId, latencyMs);
         attempts.push({
           modelId,
           provider: spec.provider,
           attempt: attempt + 1,
           status: 'ok',
-          latencyMs: Date.now() - attemptStart,
+          latencyMs,
         });
 
         return {
@@ -625,7 +833,7 @@ export async function executeWithFallback(
           provider: spec.provider,
           modelLabel: spec.badgeLabel,
           shortLabel: spec.shortLabel,
-          fallbackUsed: idx > 0 || attempt > 0,
+          fallbackUsed: idx > 0 || attempt > 0 || attempts.length > 1,
           hadRateLimitOrTimeout,
           attempts,
           latencyMs: Date.now() - startedAt,
@@ -637,6 +845,9 @@ export async function executeWithFallback(
           classified.kind === 'timeout_503'
         ) {
           hadRateLimitOrTimeout = true;
+          markServerModelFailure(modelId, classified.kind);
+        } else {
+          markServerModelFailure(modelId, 'error');
         }
         attempts.push({
           modelId,
@@ -654,6 +865,22 @@ export async function executeWithFallback(
         break;
       }
     }
+  }
+
+  if (bestWeakCandidate) {
+    return {
+      ok: true,
+      text: bestWeakCandidate.result.text,
+      toolCalls: bestWeakCandidate.result.toolCalls,
+      modelId: bestWeakCandidate.modelId,
+      provider: bestWeakCandidate.provider,
+      modelLabel: bestWeakCandidate.badgeLabel,
+      shortLabel: bestWeakCandidate.shortLabel,
+      fallbackUsed: true,
+      hadRateLimitOrTimeout,
+      attempts,
+      latencyMs: Date.now() - startedAt,
+    };
   }
 
   const fallbackSpec = getAiModelSpec(uniqueChain[0]);
@@ -702,7 +929,10 @@ export async function executeCollaborativeOrchestration(
       ? options.collaborationMode
       : 'council_review';
 
-  const primary = await executeWithFallback(options);
+  const primary = await executeWithFallback({
+    ...options,
+    detectComprehensionFailure: options.detectComprehensionFailure ?? true,
+  });
   const trace: AssistantCollaborationStep[] = [
     {
       id: `collab_primary_${Date.now()}`,
@@ -739,7 +969,7 @@ export async function executeCollaborativeOrchestration(
   const shouldVerify =
     collaborationMode === 'multi_step_agent' ||
     (collaborationMode === 'council_review' &&
-      (primary.toolCalls.length > 0 || promptLen >= 28 || primary.text.length >= 90));
+      (primary.toolCalls.length > 0 || (promptLen >= 36 && primary.text.length >= 160)));
 
   if (!shouldVerify) {
     return {
@@ -819,7 +1049,7 @@ export async function executeCollaborativeOrchestration(
     responseMimeType: 'application/json',
     responseSchema: reviewSchema,
     maxRetriesPerModel: 1,
-    timeoutMs: 7500,
+    timeoutMs: 4800,
     temperature: 0.1,
   });
 
@@ -1457,47 +1687,42 @@ export function getOrchestrationStatusSnapshot() {
           ? providerStatus.openrouter
           : true;
 
-  const models = ALL_REGISTERED_CLOUD_MODELS.map((m) => ({
-    id: m.id,
-    provider: m.provider,
-    priority: m.priority,
-    powerRank: m.powerRank,
-    tier: m.tier,
-    tierLabel: m.tierLabel,
-    shortLabel: m.shortLabel,
-    badgeLabel: m.badgeLabel,
-    specialty: m.specialty,
-    envKeyName: m.envKeyName,
-    supportsVision: m.supportsVision,
-    supportsPdf: m.supportsPdf,
-    supportsAudio: m.supportsAudio,
-    supportsStructuredJson: m.supportsStructuredJson,
-    supportsToolCalling: m.supportsToolCalling,
-    supportsRealtimeWs: Boolean(m.supportsRealtimeWs),
-    recommendedTasks: m.recommendedTasks,
-    configured: isConfiguredForProvider(m.provider),
-  }));
+  const nowMs = Date.now();
+  const buildModelSnapshot = (m: AiModelSpec) => {
+    const rec =
+      m.id === MORROW_LOCAL_MODEL_ID
+        ? null
+        : getServerHealthRecord(m.id as ApprovedCloudModelId);
+    const inCooldown = Boolean(rec && rec.cooldownUntilMs > nowMs);
+    return {
+      id: m.id,
+      provider: m.provider,
+      priority: m.priority,
+      powerRank: m.powerRank,
+      tier: m.tier,
+      tierLabel: m.tierLabel,
+      shortLabel: m.shortLabel,
+      badgeLabel: m.badgeLabel,
+      specialty: m.specialty,
+      envKeyName: m.envKeyName,
+      supportsVision: m.supportsVision,
+      supportsPdf: m.supportsPdf,
+      supportsAudio: m.supportsAudio,
+      supportsStructuredJson: m.supportsStructuredJson,
+      supportsToolCalling: m.supportsToolCalling,
+      supportsRealtimeWs: Boolean(m.supportsRealtimeWs),
+      recommendedTasks: m.recommendedTasks,
+      configured: isConfiguredForProvider(m.provider),
+      healthStatus: inCooldown ? ('cooldown' as const) : ('healthy' as const),
+      avgLatencyMs: rec?.avgLatencyMs ?? null,
+      consecutiveFailures: rec?.consecutiveFailures ?? 0,
+      cooldownUntilMs: rec?.cooldownUntilMs ?? 0,
+    };
+  };
 
-  const modelsSortedStrongestFirst = ALL_MODELS_STRONGEST_TO_WEAKEST.map((m) => ({
-    id: m.id,
-    provider: m.provider,
-    priority: m.priority,
-    powerRank: m.powerRank,
-    tier: m.tier,
-    tierLabel: m.tierLabel,
-    shortLabel: m.shortLabel,
-    badgeLabel: m.badgeLabel,
-    specialty: m.specialty,
-    envKeyName: m.envKeyName,
-    supportsVision: m.supportsVision,
-    supportsPdf: m.supportsPdf,
-    supportsAudio: m.supportsAudio,
-    supportsStructuredJson: m.supportsStructuredJson,
-    supportsToolCalling: m.supportsToolCalling,
-    supportsRealtimeWs: Boolean(m.supportsRealtimeWs),
-    recommendedTasks: m.recommendedTasks,
-    configured: isConfiguredForProvider(m.provider),
-  }));
+  const models = ALL_REGISTERED_CLOUD_MODELS.map(buildModelSnapshot);
+  const modelsSortedStrongestFirst =
+    ALL_MODELS_STRONGEST_TO_WEAKEST.map(buildModelSnapshot);
 
   const anyCloudConfigured =
     providerStatus.google || providerStatus.groq || providerStatus.openrouter;

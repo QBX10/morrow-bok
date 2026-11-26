@@ -113,7 +113,7 @@ export interface TopBarConfig {
   showAuthButton?: boolean;
 }
 
-export type AuthProviderType = 'google' | 'username' | 'phone';
+export type AuthProviderType = 'google' | 'github' | 'username';
 
 export interface AuthUser {
   uid: string;
@@ -121,7 +121,7 @@ export interface AuthUser {
   displayName: string;
   email?: string;
   username?: string;
-  phone?: string;
+  githubId?: string;
   avatarUrl?: string;
   role: 'manager' | 'viewer';
 }
@@ -733,6 +733,12 @@ export type MarineAppThemeId =
   | 'pelagic-sapphire'
   | 'obsidian-gold';
 
+export type HeavyAppThemeId =
+  | 'velvet-garnet'
+  | 'espresso-bronze'
+  | 'royal-plum'
+  | 'platinum-graphite';
+
 export type AutoAppThemeId = 'auto' | 'daylight-alabaster';
 
 export type ClassicAppThemeId =
@@ -753,6 +759,7 @@ export type ModernAppThemeId =
 
 export type AppThemeId =
   | MarineAppThemeId
+  | HeavyAppThemeId
   | AutoAppThemeId
   | ClassicAppThemeId
   | ModernAppThemeId;
@@ -921,6 +928,10 @@ export type Surface2DThemeId =
   | 'holographic_cyan'
   | 'crimson_obsidian'
   | 'royal_amethyst'
+  | 'velvet_garnet'
+  | 'espresso_bronze'
+  | 'royal_plum'
+  | 'platinum_graphite'
   | 'auto_adaptive'
   | 'arctic_titanium';
 
@@ -1177,7 +1188,6 @@ export interface SyncQueueOperation {
 export interface StorageSystemStatus {
   cloudSqlConfigured: boolean;
   cloudSqlReachable: boolean;
-  smsProviderConfigured: boolean;
   firebaseAuthConfigured: boolean;
   storageMode: 'cloud_sql' | 'local_fallback';
 }

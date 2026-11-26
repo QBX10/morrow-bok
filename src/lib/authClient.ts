@@ -20,7 +20,6 @@ export interface RememberedAccountSummary {
   displayName: string;
   email?: string;
   username?: string;
-  phone?: string;
   avatarUrl?: string;
   lastUsedAt: string;
 }
@@ -75,7 +74,6 @@ export function saveRememberedAccount(user: AuthUser): void {
       displayName: user.displayName,
       email: user.email,
       username: user.username,
-      phone: user.phone,
       avatarUrl: user.avatarUrl,
       lastUsedAt: new Date().toISOString(),
     };
@@ -227,6 +225,115 @@ export async function signInWithFirebaseGoogle(options?: {
   return { token: resolvedToken, user: resolvedUser };
 }
 
+export async function signInWithGithubPopup(options?: {
+  rememberMe?: boolean;
+}): Promise<StoredSession> {
+  const rememberMe = options?.rememberMe ?? true;
+  const urlRes = await fetch(
+    `/api/auth/github/url?rememberMe=${rememberMe ? '1' : '0'}`,
+    {
+      credentials: 'include',
+      headers: { 'X-Requested-With': 'MorrowApp' },
+    }
+  );
+  const urlData = (await urlRes.json().catch(() => ({}))) as {
+    configured?: boolean;
+    url?: string;
+    callbackUrl?: string;
+    error?: string;
+  };
+  if (!urlRes.ok || !urlData.url) {
+    throw new Error(
+      urlData.error ||
+        'تسجيل الدخول عبر GitHub غير مفعّل بعد؛ يرجى ضبط بيانات تطبيق GitHub OAuth.'
+    );
+  }
+
+  return new Promise<StoredSession>((resolve, reject) => {
+    let settled = false;
+    let closePoll: ReturnType<typeof setInterval> | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (closePoll) clearInterval(closePoll);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      const originAllowed =
+        event.origin === window.location.origin ||
+        event.origin.endsWith('.run.app') ||
+        event.origin.includes('localhost');
+      if (!originAllowed) return;
+      const msg = event.data as
+        | {
+            type?: string;
+            payload?: { token?: string; user?: AuthUser };
+            error?: string;
+          }
+        | undefined;
+      if (!msg || typeof msg.type !== 'string') return;
+      if (msg.type === 'GITHUB_AUTH_SUCCESS' && msg.payload?.user && msg.payload?.token) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        saveSession(msg.payload.token, msg.payload.user, rememberMe);
+        resolve({ token: msg.payload.token, user: msg.payload.user });
+      } else if (msg.type === 'GITHUB_AUTH_ERROR') {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(msg.error || 'تعذر إتمام المصادقة عبر GitHub.'));
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+
+    const width = 540;
+    const height = 700;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+    const popup = window.open(
+      urlData.url,
+      'morrow_github_oauth',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      settled = true;
+      cleanup();
+      reject(
+        new Error(
+          'تم حظر النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.'
+        )
+      );
+      return;
+    }
+
+    closePoll = setInterval(() => {
+      if (popup.closed && !settled) {
+        settled = true;
+        cleanup();
+        reject(new Error('تم إغلاق نافذة تسجيل الدخول عبر GitHub قبل إكمال العملية.'));
+      }
+    }, 450);
+
+    timeoutHandle = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        try {
+          if (!popup.closed) popup.close();
+        } catch {
+          // ignore cross-origin window close restrictions
+        }
+        reject(new Error('انتهت مهلة المصادقة عبر GitHub. يرجى المحاولة مرة أخرى.'));
+      }
+    }, 120000);
+  });
+}
+
 export async function updateUserProfileApi(patch: {
   displayName?: string;
   avatarUrl?: string;
@@ -321,7 +428,7 @@ export async function deleteServerAppearanceProfile(id: string): Promise<void> {
 }
 
 export async function loginWithPasswordApi(params: {
-  mode: 'auto' | 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username';
   identifier: string;
   password: string;
   rememberMe?: boolean;
@@ -348,11 +455,10 @@ export async function loginWithPasswordApi(params: {
 }
 
 export async function registerWithPasswordApi(params: {
-  mode: 'google' | 'username' | 'phone';
+  mode: 'google' | 'username';
   displayName: string;
   email?: string;
   username?: string;
-  phone?: string;
   password: string;
   rememberMe?: boolean;
 }): Promise<StoredSession> {
@@ -369,7 +475,6 @@ export async function registerWithPasswordApi(params: {
       displayName: params.displayName,
       email: params.email,
       username: params.username,
-      phone: params.phone,
       password: params.password,
       rememberMe,
     }),
@@ -380,54 +485,8 @@ export async function registerWithPasswordApi(params: {
   return data;
 }
 
-export async function requestPhoneOtpApi(phone: string): Promise<{
-  ok: boolean;
-  phone: string;
-  demoCode?: string;
-}> {
-  const res = await fetch('/api/auth/phone/request-otp', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'MorrowApp',
-    },
-    body: JSON.stringify({ phone }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'تعذر إرسال رمز التحقق.');
-  return data;
-}
-
-export async function verifyPhoneOtpApi(params: {
-  phone: string;
-  code: string;
-  displayName?: string;
-  rememberMe?: boolean;
-}): Promise<StoredSession> {
-  const rememberMe = params.rememberMe ?? true;
-  const res = await fetch('/api/auth/phone/verify-otp', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'MorrowApp',
-    },
-    body: JSON.stringify({
-      phone: params.phone,
-      code: params.code,
-      displayName: params.displayName,
-      rememberMe,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'تعذر التحقق من رمز الهاتف.');
-  saveSession(data.token, data.user, rememberMe);
-  return data;
-}
-
 export async function requestPasswordResetApi(params: {
-  mode: 'auto' | 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username';
   identifier: string;
 }): Promise<{ ok: boolean; maskedTarget?: string; demoCode?: string }> {
   const res = await fetch('/api/auth/forgot-password', {
@@ -445,7 +504,7 @@ export async function requestPasswordResetApi(params: {
 }
 
 export async function confirmPasswordResetApi(params: {
-  mode: 'auto' | 'google' | 'username' | 'phone';
+  mode: 'auto' | 'google' | 'username';
   identifier: string;
   code: string;
   newPassword: string;
@@ -493,7 +552,6 @@ export async function linkUsernameApi(params: {
 export async function fetchStorageStatusApi(): Promise<{
   cloudSqlConfigured: boolean;
   cloudSqlReachable: boolean;
-  smsProviderConfigured: boolean;
   firebaseAuthConfigured: boolean;
   storageMode: 'cloud_sql' | 'local_fallback';
 }> {
@@ -505,7 +563,6 @@ export async function fetchStorageStatusApi(): Promise<{
     return {
       cloudSqlConfigured: false,
       cloudSqlReachable: false,
-      smsProviderConfigured: false,
       firebaseAuthConfigured: true,
       storageMode: 'local_fallback',
     };

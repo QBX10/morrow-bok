@@ -2868,7 +2868,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
 
               <div className="space-y-2.5">
                 <h3 className="text-xs font-black">
-                  الثيمات والمظهر العام (السبح والذهب الافتراضي + 6 ثيمات متكاملة)
+                  الثيمات والمظهر العام (السبح والذهب + 4 ثيمات ثقيلة فاخرة + التكيّف التلقائي)
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {(Object.keys(SURFACE_2D_THEMES) as Surface2DThemeId[]).map((tId) => {

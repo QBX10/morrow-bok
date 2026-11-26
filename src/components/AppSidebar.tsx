@@ -443,12 +443,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               onClick={() => navAndClose('google_workspace')}
               className={itemClass(activeView === 'google_workspace')}
               style={itemStyle(activeView === 'google_workspace')}
-              title="التقويم والمهام (Google)"
+              title="التقويم والمهام و Google Drive"
             >
               {renderActivePill(activeView === 'google_workspace')}
               <CalendarDays className="relative z-10 h-4 w-4 shrink-0 text-[var(--accent)]" />
               {!compact && (
-                <span className="relative z-10 truncate whitespace-nowrap">التقويم والمهام</span>
+                <span className="relative z-10 truncate whitespace-nowrap">التقويم والمهام و Drive</span>
               )}
             </button>
           </div>

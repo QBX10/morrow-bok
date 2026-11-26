@@ -256,6 +256,90 @@ export const SURFACE_2D_THEMES: Record<Surface2DThemeId, Surface2DThemeDefinitio
     secondaryGlowRgba: 'rgba(167, 139, 250, 0.10)',
     swatches: ['#050A18', '#0E1935', '#60A5FA'],
   },
+  velvet_garnet: {
+    id: 'velvet_garnet',
+    nameAr: 'العنابي المخملي والذهب الوردي',
+    subtitleAr: 'فخامة عنابية ثقيلة مع إضاءة وردية ذهبية دافئة',
+    isDark: true,
+    bgMain: '#090406',
+    bgSurface: '#14090D',
+    bgHeader: '#0D0508',
+    bgTableHeader: '#1F0F15',
+    accent: '#E14B6B',
+    accentBright: '#FDA4AF',
+    accentDeep: '#9F1239',
+    accentFg: '#FFFFFF',
+    secondary: '#E5B869',
+    textPrimary: '#FDF2F4',
+    textMuted: '#C49AA6',
+    borderColor: 'rgba(225, 75, 107, 0.24)',
+    glowRgba: 'rgba(225, 75, 107, 0.16)',
+    secondaryGlowRgba: 'rgba(229, 184, 105, 0.10)',
+    swatches: ['#090406', '#1F0F15', '#E14B6B'],
+  },
+  espresso_bronze: {
+    id: 'espresso_bronze',
+    nameAr: 'الإسبرسو الداكن والنحاس المعتّق',
+    subtitleAr: 'دفء نحاسي معتّق مع خشب إسبرسو داكن رصين',
+    isDark: true,
+    bgMain: '#090604',
+    bgSurface: '#140E0A',
+    bgHeader: '#0D0906',
+    bgTableHeader: '#211710',
+    accent: '#C87D4B',
+    accentBright: '#F0B98A',
+    accentDeep: '#8C4E26',
+    accentFg: '#0F0905',
+    secondary: '#D4AF37',
+    textPrimary: '#F7EFE7',
+    textMuted: '#B5A08F',
+    borderColor: 'rgba(200, 125, 75, 0.24)',
+    glowRgba: 'rgba(200, 125, 75, 0.16)',
+    secondaryGlowRgba: 'rgba(212, 175, 55, 0.10)',
+    swatches: ['#090604', '#211710', '#C87D4B'],
+  },
+  royal_plum: {
+    id: 'royal_plum',
+    nameAr: 'الأرجوان الإمبراطوري والشمبانيا',
+    subtitleAr: 'عمق أرجواني ملكي مع إضاءة جمشتية وذهبية ناعمة',
+    isDark: true,
+    bgMain: '#08050E',
+    bgSurface: '#130D20',
+    bgHeader: '#0C0815',
+    bgTableHeader: '#1D1530',
+    accent: '#B374F7',
+    accentBright: '#E9D5FF',
+    accentDeep: '#7E22CE',
+    accentFg: '#0B0514',
+    secondary: '#E8C587',
+    textPrimary: '#F6F2FF',
+    textMuted: '#A89BC2',
+    borderColor: 'rgba(179, 116, 247, 0.24)',
+    glowRgba: 'rgba(179, 116, 247, 0.16)',
+    secondaryGlowRgba: 'rgba(232, 197, 135, 0.10)',
+    swatches: ['#08050E', '#1D1530', '#B374F7'],
+  },
+  platinum_graphite: {
+    id: 'platinum_graphite',
+    nameAr: 'الجرافيت البلاتيني الثقيل',
+    subtitleAr: 'وقار معماري بلاتيني مع وضوح تنفيذي عالي التباين',
+    isDark: true,
+    bgMain: '#080A0D',
+    bgSurface: '#11161D',
+    bgHeader: '#0B0E13',
+    bgTableHeader: '#1A212B',
+    accent: '#CBD5E1',
+    accentBright: '#F8FAFC',
+    accentDeep: '#64748B',
+    accentFg: '#080A0D',
+    secondary: '#38BDF8',
+    textPrimary: '#F1F5F9',
+    textMuted: '#94A3B8',
+    borderColor: 'rgba(203, 213, 225, 0.22)',
+    glowRgba: 'rgba(203, 213, 225, 0.15)',
+    secondaryGlowRgba: 'rgba(56, 189, 248, 0.10)',
+    swatches: ['#080A0D', '#1A212B', '#CBD5E1'],
+  },
   auto_adaptive: {
     id: 'auto_adaptive',
     nameAr: 'التكيّف التلقائي (نهاري / ليلي)',
@@ -313,6 +397,14 @@ export function mapAppThemeToSurfaceTheme(appThemeId?: string | null): Surface2D
       return 'crimson_obsidian';
     case 'pelagic-sapphire':
       return 'royal_amethyst';
+    case 'velvet-garnet':
+      return 'velvet_garnet';
+    case 'espresso-bronze':
+      return 'espresso_bronze';
+    case 'royal-plum':
+      return 'royal_plum';
+    case 'platinum-graphite':
+      return 'platinum_graphite';
     case 'auto':
     case 'daylight-alabaster':
       return 'auto_adaptive';
@@ -333,6 +425,14 @@ export function mapSurfaceThemeToAppTheme(surfaceId?: Surface2DThemeId | null): 
       return 'bioluminescent-reef';
     case 'royal_amethyst':
       return 'pelagic-sapphire';
+    case 'velvet_garnet':
+      return 'velvet-garnet';
+    case 'espresso_bronze':
+      return 'espresso-bronze';
+    case 'royal_plum':
+      return 'royal-plum';
+    case 'platinum_graphite':
+      return 'platinum-graphite';
     case 'auto_adaptive':
       return 'auto';
     case 'arctic_titanium':

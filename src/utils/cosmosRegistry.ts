@@ -12,7 +12,7 @@ import type {
   HierarchyIconKey,
   HierarchyTarget,
 } from './hierarchyRegistry.ts';
-import { ALL_APP_THEMES, ARABIC_FONTS, TABLE_THEMES } from './themes.ts';
+import { ALL_APP_THEMES, ARABIC_FONTS, CURATED_APP_THEMES, TABLE_THEMES } from './themes.ts';
 
 export type CosmosNodeType = 'hub' | 'world' | 'galaxy' | 'capsule' | 'setting';
 export type CosmosRiskLevel = 'safe' | 'caution' | 'protected';
@@ -119,8 +119,8 @@ export const LEGACY_KEY_MAP: LegacyKeyMapping[] = [
   { legacyKey: 'section:relations_lists', category: 'settings_section', label: 'العلاقات والقوائم', worldId: 'world_ready_lists', nodeId: 'cap_rel_export' },
   { legacyKey: 'section:security_data', category: 'settings_section', label: 'الأمان والبيانات', worldId: 'world_security_backup', nodeId: 'cap_sec_privacy_lock', protected: true },
 
-  // Locked App Theme Identity: Obsidian & Gold
-  ...ALL_APP_THEMES.map((t) => ({
+  // Locked App Theme Identity + 4 Heavy Luxury Themes
+  ...CURATED_APP_THEMES.map((t) => ({
     legacyKey: `theme:${t.id}`,
     category: 'classic_theme' as const,
     label: t.name,
@@ -412,19 +412,20 @@ export function buildCosmosRegistry(agencies: Agency[]): CosmosNode {
               nodeType: 'capsule',
               worldId: 'world_themes',
               depth: 3,
-              title: 'ثيمات الهوية البصرية (6 ثيمات)',
-              subtitle: 'السبح والذهب · العمق الزمردي · خندق ماريانا · الشعاب المضيئة · المضيق القطبي · العمق الياقوتي',
+              title: 'ثيمات الهوية البصرية (10 ثيمات تشمل 4 ثقيلة فاخرة)',
+              subtitle: 'السبح والذهب · العنابي المخملي · الإسبرسو النحاسي · الأرجوان الإمبراطوري · البلاتينيوم · التلقائي',
               description: 'لوحات لونية هادئة ثنائية الأبعاد قابلة للتبديل الفوري عبر كامل التطبيق.',
               icon: 'palette',
               accentColor: '#10B981',
               gradient: 'linear-gradient(135deg, rgba(16,185,129,0.2), transparent)',
               accentTone: 'emerald',
-              keywords: ['الثيمات البحرية', 'العمق الزمردي', 'خندق ماريانا', 'Absolute Marine'],
+              keywords: ['الثيمات البحرية', 'العمق الزمردي', 'خندق ماريانا', 'العنابي المخملي', 'الإسبرسو النحاسي', 'الأرجوان الإمبراطوري', 'الجرافيت البلاتيني'],
               synonyms: ['ثيم التطبيق', 'اللون الرسمي'],
               tags: ['مظهر'],
               riskLevel: 'safe',
               legacyKeys: [
                 'theme:obsidian-gold',
+                ...CURATED_APP_THEMES.map((t) => `theme:${t.id}`),
                 ...ALL_APP_THEMES.map((t) => `theme:${t.id}`),
               ],
               version: 2,

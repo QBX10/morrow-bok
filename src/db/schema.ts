@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  index,
   integer,
   pgTable,
   serial,
@@ -7,21 +8,30 @@ import {
   timestamp,
 } from 'drizzle-orm/pg-core';
 
-export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  uid: text('uid').notNull().unique(),
-  email: text('email').notNull(),
-  username: text('username').unique(),
-  phone: text('phone').unique(),
-  passwordHash: text('password_hash'),
-  displayName: text('display_name').notNull().default(''),
-  avatarUrl: text('avatar_url'),
-  authProvider: text('auth_provider').notNull().default('google'),
-  role: text('role').notNull().default('manager'),
-  lastLoginAt: timestamp('last_login_at').defaultNow().notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: serial('id').primaryKey(),
+    uid: text('uid').notNull().unique(),
+    githubId: text('github_id'),
+    email: text('email').notNull(),
+    username: text('username'),
+    phone: text('phone'),
+    passwordHash: text('password_hash'),
+    displayName: text('display_name').notNull().default(''),
+    avatarUrl: text('avatar_url'),
+    authProvider: text('auth_provider').notNull().default('google'),
+    role: text('role').notNull().default('manager'),
+    lastLoginAt: timestamp('last_login_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('users_github_id_idx').on(table.githubId),
+    index('users_username_idx').on(table.username),
+    index('users_phone_idx').on(table.phone),
+  ]
+);
 
 export const workspaceSnapshots = pgTable('workspace_snapshots', {
   id: serial('id').primaryKey(),

@@ -35,8 +35,8 @@ function computeChecksum(raw: string): string {
 export async function getOrCreateUser(params: {
   uid: string;
   email: string;
+  githubId?: string | null;
   username?: string | null;
-  phone?: string | null;
   displayName?: string;
   avatarUrl?: string | null;
   authProvider?: string;
@@ -44,14 +44,14 @@ export async function getOrCreateUser(params: {
   try {
     const safeEmail = (params.email || `${params.uid}@tabrex.local`).trim().toLowerCase();
     const safeDisplay = (params.displayName || safeEmail.split('@')[0] || 'مستخدم').trim();
-    const normPhone = params.phone ? params.phone.trim() : null;
     const normUsername = params.username ? params.username.trim().toLowerCase() : null;
+    const normGithubId = params.githubId ? params.githubId.trim() : null;
 
-    // Unified lookup by uid, verified email, or normalized phone
+    // Unified lookup by uid, githubId, verified email, or username
     const existingByIdentity = await resolveExistingSqlUser({
       uid: params.uid,
+      githubId: normGithubId,
       email: safeEmail.endsWith('.local') ? null : safeEmail,
-      phone: normPhone,
       username: normUsername,
     });
 
@@ -61,7 +61,7 @@ export async function getOrCreateUser(params: {
         .set({
           displayName: existingByIdentity.displayName || safeDisplay,
           ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
-          ...(normPhone && !existingByIdentity.phone ? { phone: normPhone } : {}),
+          ...(normGithubId && !existingByIdentity.githubId ? { githubId: normGithubId } : {}),
           ...(normUsername && !existingByIdentity.username ? { username: normUsername } : {}),
           lastLoginAt: new Date(),
           updatedAt: new Date(),
@@ -75,9 +75,9 @@ export async function getOrCreateUser(params: {
       .insert(users)
       .values({
         uid: params.uid,
+        githubId: normGithubId,
         email: safeEmail,
         username: normUsername,
-        phone: normPhone,
         displayName: safeDisplay,
         avatarUrl: params.avatarUrl ?? null,
         authProvider: params.authProvider || 'google',
@@ -88,6 +88,7 @@ export async function getOrCreateUser(params: {
         set: {
           email: safeEmail,
           displayName: safeDisplay,
+          ...(normGithubId ? { githubId: normGithubId } : {}),
           ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
           lastLoginAt: new Date(),
           updatedAt: new Date(),
@@ -106,26 +107,26 @@ export async function getOrCreateUser(params: {
 
 export async function resolveExistingSqlUser(params: {
   uid?: string | null;
+  githubId?: string | null;
   email?: string | null;
-  phone?: string | null;
   username?: string | null;
 }) {
   const uid = params.uid?.trim();
+  const githubId = params.githubId?.trim();
   const email = params.email?.trim().toLowerCase();
-  const phone = params.phone?.trim();
   const username = params.username?.trim().toLowerCase();
 
   if (uid) {
     const byUid = await db.select().from(users).where(eq(users.uid, uid));
     if (byUid[0]) return byUid[0];
   }
+  if (githubId) {
+    const byGh = await db.select().from(users).where(eq(users.githubId, githubId));
+    if (byGh[0]) return byGh[0];
+  }
   if (email && !email.endsWith('.local')) {
     const byEmail = await db.select().from(users).where(eq(users.email, email));
     if (byEmail[0]) return byEmail[0];
-  }
-  if (phone) {
-    const byPhone = await db.select().from(users).where(eq(users.phone, phone));
-    if (byPhone[0]) return byPhone[0];
   }
   if (username) {
     const byUsername = await db.select().from(users).where(eq(users.username, username));
@@ -146,6 +147,13 @@ export async function getSqlUserByUid(uid: string) {
   }
 }
 
+export async function findSqlUserByGithubId(githubId: string) {
+  const norm = githubId.trim();
+  if (!norm) return null;
+  const rows = await db.select().from(users).where(eq(users.githubId, norm));
+  return rows[0] || null;
+}
+
 export async function findSqlUserByEmail(email: string) {
   const norm = email.trim().toLowerCase();
   if (!norm) return null;
@@ -160,22 +168,13 @@ export async function findSqlUserByUsername(username: string) {
   return rows[0] || null;
 }
 
-export async function findSqlUserByPhone(phone: string) {
-  const norm = phone.trim();
-  if (!norm) return null;
-  const rows = await db.select().from(users).where(eq(users.phone, norm));
-  return rows[0] || null;
-}
-
 export async function findSqlUserByAnyIdentifier(params: {
   email?: string;
   username?: string;
-  phone?: string;
 }) {
   const conditions = [];
   if (params.email) conditions.push(eq(users.email, params.email.trim().toLowerCase()));
   if (params.username) conditions.push(eq(users.username, params.username.trim().toLowerCase()));
-  if (params.phone) conditions.push(eq(users.phone, params.phone.trim()));
   if (conditions.length === 0) return null;
   const rows = await db
     .select()
@@ -186,11 +185,10 @@ export async function findSqlUserByAnyIdentifier(params: {
 
 export async function createSqlPasswordUser(params: {
   uid: string;
-  authProvider: 'google' | 'username' | 'phone';
+  authProvider: 'google' | 'github' | 'username';
   displayName: string;
   email?: string | null;
   username?: string | null;
-  phone?: string | null;
   passwordHash: string | null;
 }) {
   const safeEmail = (params.email || `${params.uid}@tabrex.local`).trim().toLowerCase();
@@ -200,7 +198,6 @@ export async function createSqlPasswordUser(params: {
       uid: params.uid,
       email: safeEmail,
       username: params.username ? params.username.trim().toLowerCase() : null,
-      phone: params.phone ? params.phone.trim() : null,
       passwordHash: params.passwordHash,
       displayName: params.displayName.trim(),
       authProvider: params.authProvider,

@@ -405,3 +405,43 @@ export async function deleteDriveBackupFile(fileId: string): Promise<void> {
     { method: 'DELETE' }
   );
 }
+
+export async function listDriveFiles(params?: {
+  query?: string;
+  onlyBackupsFolder?: boolean;
+  pageSize?: number;
+}): Promise<GoogleDriveBackupFile[]> {
+  if (params?.onlyBackupsFolder) {
+    return listDriveBackupFiles('Morrow_Drive_Backups');
+  }
+  const qParts: string[] = ['trashed = false'];
+  if (params?.query && params.query.trim()) {
+    qParts.push(`name contains '${escapeDriveQueryValue(params.query.trim())}'`);
+  }
+  const search = new URLSearchParams({
+    q: qParts.join(' and '),
+    orderBy: 'modifiedTime desc',
+    pageSize: String(Math.max(10, Math.min(50, params?.pageSize || 30))),
+    fields:
+      'files(id,name,mimeType,size,modifiedTime,webViewLink,description)',
+  });
+  const res = await workspaceFetch<{ files?: GoogleDriveBackupFile[] }>(
+    `https://www.googleapis.com/drive/v3/files?${search.toString()}`
+  );
+  return res.files || [];
+}
+
+export async function renameDriveFile(params: {
+  fileId: string;
+  name: string;
+}): Promise<GoogleDriveBackupFile> {
+  return workspaceFetch<GoogleDriveBackupFile>(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      params.fileId
+    )}?fields=id,name,mimeType,size,modifiedTime,webViewLink,description`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name: params.name.trim() }),
+    }
+  );
+}

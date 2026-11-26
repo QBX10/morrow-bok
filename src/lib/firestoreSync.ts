@@ -16,7 +16,11 @@ import {
   isFirestoreConfigured,
   OperationType,
 } from './firebase';
-import type { AppearanceProfile, ThemePreferences } from '../types/agency';
+import type {
+  AppearanceProfile,
+  AuthProviderType,
+  ThemePreferences,
+} from '../types/agency';
 
 const MAX_DISPLAY_NAME_LEN = 80;
 const MAX_EMAIL_LEN = 160;
@@ -45,7 +49,7 @@ export async function syncUserProfileToFirestore(params: {
   uid: string;
   displayName: string;
   email?: string | null;
-  provider: 'google' | 'username' | 'phone';
+  provider: AuthProviderType;
   avatarUrl?: string | null;
 }): Promise<void> {
   if (!canWriteFirestoreFor(params.uid)) return;

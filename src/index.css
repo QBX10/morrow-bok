@@ -1521,77 +1521,170 @@ html[data-color-scheme="light"] .nexus-pill-btn {
 }
 
 @keyframes truckChassisBounce {
-  0%, 100% {
+  0%, 48% {
     transform: translate3d(0, 0, 0);
   }
-  25% {
+  52% {
+    transform: translate3d(0, 1.2px, 0);
+  }
+  58% {
+    transform: translate3d(1px, -0.5px, 0);
+  }
+  68% {
     transform: translate3d(2px, -1.6px, 0);
   }
-  50% {
-    transform: translate3d(4px, 0.5px, 0);
+  78% {
+    transform: translate3d(3px, 0.4px, 0);
   }
-  75% {
-    transform: translate3d(1px, -1.2px, 0);
+  88% {
+    transform: translate3d(1.5px, -1.4px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
   }
 }
 
-@keyframes parcelLoadCycle {
-  0% {
+@keyframes truckDoorTopCycle {
+  0%, 4% {
+    transform: rotate(0deg);
+  }
+  14%, 44% {
+    transform: rotate(-76deg);
+  }
+  54%, 100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes truckDoorBottomCycle {
+  0%, 4% {
+    transform: rotate(0deg);
+  }
+  14%, 44% {
+    transform: rotate(76deg);
+  }
+  54%, 100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes truckBoxLoadA {
+  0%, 13% {
     opacity: 0;
-    transform: translate3d(-18px, -22px, 0) scale(0.86);
+    transform: translate3d(-44px, 0, 0) scale(0.82);
   }
   18% {
     opacity: 1;
-    transform: translate3d(0, -14px, 0) scale(1);
+    transform: translate3d(-32px, -2px, 0) scale(1);
   }
-  34% {
+  30%, 56% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
   }
-  78% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  92% {
-    opacity: 0.25;
-    transform: translate3d(10px, 0, 0) scale(0.95);
-  }
-  100% {
+  62%, 100% {
     opacity: 0;
-    transform: translate3d(-18px, -22px, 0) scale(0.86);
+    transform: translate3d(6px, 0, 0) scale(0.92);
+  }
+}
+
+@keyframes truckBoxLoadB {
+  0%, 19% {
+    opacity: 0;
+    transform: translate3d(-44px, 0, 0) scale(0.82);
+  }
+  24% {
+    opacity: 1;
+    transform: translate3d(-30px, -2px, 0) scale(1);
+  }
+  36%, 56% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  62%, 100% {
+    opacity: 0;
+    transform: translate3d(6px, 0, 0) scale(0.92);
+  }
+}
+
+@keyframes truckBoxLoadC {
+  0%, 25% {
+    opacity: 0;
+    transform: translate3d(-44px, 0, 0) scale(0.82);
+  }
+  30% {
+    opacity: 1;
+    transform: translate3d(-28px, -2px, 0) scale(1);
+  }
+  42%, 56% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  62%, 100% {
+    opacity: 0;
+    transform: translate3d(6px, 0, 0) scale(0.92);
+  }
+}
+
+@keyframes truckLockSeal {
+  0%, 50%, 66%, 100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  56% {
+    opacity: 1;
+    transform: scale(1.25);
   }
 }
 
 @keyframes truckWheelSpin {
-  from {
+  0%, 52% {
     transform: rotate(0deg);
   }
-  to {
-    transform: rotate(360deg);
+  100% {
+    transform: rotate(1080deg);
   }
 }
 
 @keyframes truckRoadDashes {
-  from {
+  0%, 52% {
     transform: translate3d(0, 0, 0);
+    opacity: 0.45;
   }
-  to {
-    transform: translate3d(-30px, 0, 0);
+  60% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(-120px, 0, 0);
+    opacity: 0.95;
+  }
+}
+
+@keyframes truckSkylineGrid {
+  0%, 52% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.25;
+  }
+  62% {
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(-90px, 0, 0);
+    opacity: 0.72;
   }
 }
 
 @keyframes truckWindLines {
-  0% {
-    opacity: 0.15;
-    transform: translate3d(8px, 0, 0);
+  0%, 52% {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0);
   }
-  50% {
-    opacity: 0.78;
-    transform: translate3d(-4px, 0, 0);
+  64% {
+    opacity: 0.85;
+    transform: translate3d(-2px, 0, 0);
   }
   100% {
-    opacity: 0.15;
-    transform: translate3d(-14px, 0, 0);
+    opacity: 0;
+    transform: translate3d(-22px, 0, 0);
   }
 }
 
@@ -1605,31 +1698,70 @@ html[data-color-scheme="light"] .nexus-pill-btn {
 }
 
 .truck-chassis-motion {
-  animation: truckChassisBounce 1.15s ease-in-out infinite;
+  animation: truckChassisBounce 3.8s ease-in-out infinite;
   will-change: transform;
 }
 
-.parcel-load-cycle {
+.truck-door-top {
+  transform-box: view-box;
+  transform-origin: 72px 42px;
+  animation: truckDoorTopCycle 3.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform;
+}
+
+.truck-door-bottom {
+  transform-box: view-box;
+  transform-origin: 72px 89px;
+  animation: truckDoorBottomCycle 3.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform;
+}
+
+.truck-box-a {
   transform-box: fill-box;
   transform-origin: center;
-  animation: parcelLoadCycle 3.1s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: truckBoxLoadA 3.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
   will-change: transform, opacity;
+}
+
+.truck-box-b {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: truckBoxLoadB 3.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.truck-box-c {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: truckBoxLoadC 3.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.truck-lock-seal {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: truckLockSeal 3.8s ease-out infinite;
 }
 
 .truck-wheel-spin {
   transform-box: fill-box;
   transform-origin: center;
-  animation: truckWheelSpin 0.85s linear infinite;
+  animation: truckWheelSpin 3.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
   will-change: transform;
 }
 
 .truck-road-dashes {
-  animation: truckRoadDashes 0.55s linear infinite;
-  will-change: transform;
+  animation: truckRoadDashes 3.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.truck-skyline-grid {
+  animation: truckSkylineGrid 3.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  will-change: transform, opacity;
 }
 
 .truck-wind-lines {
-  animation: truckWindLines 0.9s ease-in-out infinite;
+  animation: truckWindLines 3.8s ease-out infinite;
   will-change: transform, opacity;
 }
 
@@ -1639,9 +1771,15 @@ html[data-color-scheme="light"] .nexus-pill-btn {
 }
 
 html[data-reduce-motion="1"] .truck-chassis-motion,
-html[data-reduce-motion="1"] .parcel-load-cycle,
+html[data-reduce-motion="1"] .truck-door-top,
+html[data-reduce-motion="1"] .truck-door-bottom,
+html[data-reduce-motion="1"] .truck-box-a,
+html[data-reduce-motion="1"] .truck-box-b,
+html[data-reduce-motion="1"] .truck-box-c,
+html[data-reduce-motion="1"] .truck-lock-seal,
 html[data-reduce-motion="1"] .truck-wheel-spin,
 html[data-reduce-motion="1"] .truck-road-dashes,
+html[data-reduce-motion="1"] .truck-skyline-grid,
 html[data-reduce-motion="1"] .truck-wind-lines,
 html[data-reduce-motion="1"] .truck-progress-shimmer {
   animation: none !important;
@@ -1653,9 +1791,15 @@ html[data-reduce-motion="1"] .truck-progress-shimmer {
   .ambient-orb-drift-a,
   .ambient-orb-drift-b,
   .truck-chassis-motion,
-  .parcel-load-cycle,
+  .truck-door-top,
+  .truck-door-bottom,
+  .truck-box-a,
+  .truck-box-b,
+  .truck-box-c,
+  .truck-lock-seal,
   .truck-wheel-spin,
   .truck-road-dashes,
+  .truck-skyline-grid,
   .truck-wind-lines,
   .truck-progress-shimmer {
     animation: none !important;

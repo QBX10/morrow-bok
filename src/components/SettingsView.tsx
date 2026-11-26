@@ -117,10 +117,9 @@ import {
   type HierarchyTarget,
 } from '../utils/hierarchyRegistry';
 import {
-  ALL_APP_THEMES,
   ARABIC_FONTS,
   DEFAULT_APPEARANCE_PROFILES,
-  resolveAppThemeId,
+  getAppThemeById,
   resolveTableThemeId,
   TABLE_THEMES,
 } from '../utils/themes';
@@ -442,10 +441,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     [hierarchyTree, state.agencies]
   );
 
-  const activeThemeObj = useMemo(() => {
-    const id = resolveAppThemeId(themePrefs.appTheme);
-    return ALL_APP_THEMES.find((t) => t.id === id) || ALL_APP_THEMES[0];
-  }, [themePrefs.appTheme]);
+  const activeThemeObj = useMemo(
+    () => getAppThemeById(themePrefs.appTheme),
+    [themePrefs.appTheme]
+  );
 
   const activeTableObj = useMemo(() => {
     const id = resolveTableThemeId(themePrefs.tableTheme);

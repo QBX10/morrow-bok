@@ -3,18 +3,18 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
   signInWithPopup,
-  type ConfirmationResult,
   type User,
 } from 'firebase/auth';
 import {
   doc,
   getDocFromServer,
   getFirestore,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+setLogLevel('error');
 
 const configWithOptionalDb = firebaseConfig as typeof firebaseConfig & {
   firestoreDatabaseId?: string;
@@ -38,7 +38,19 @@ googleAuthProvider.addScope('https://www.googleapis.com/auth/calendar.events');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/tasks');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/tasks.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.activity');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.activity.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.appdata');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.apps.readonly');
 googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.install');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.meet.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.metadata');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.photos.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+googleAuthProvider.addScope('https://www.googleapis.com/auth/drive.scripts');
 
 let isSigningIn = false;
 // Strictly in-memory OAuth access token (never stored in localStorage/sessionStorage)
@@ -97,7 +109,7 @@ export function handleFirestoreError(
 }
 
 export async function testConnection(): Promise<void> {
-  if (!isFirestoreConfigured) return;
+  if (!isFirestoreConfigured || typeof window === 'undefined') return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -110,7 +122,7 @@ export async function testConnection(): Promise<void> {
   }
 }
 
-if (isFirestoreConfigured) {
+if (isFirestoreConfigured && typeof window !== 'undefined') {
   void testConnection();
 }
 
@@ -184,32 +196,5 @@ export async function getFirebaseIdToken(): Promise<string | null> {
 export async function logoutFirebase(): Promise<void> {
   cachedAccessToken = null;
   await auth.signOut();
-}
-
-export function isFirebasePhoneAuthConfigured(): boolean {
-  const cfg = firebaseConfig as { recaptchaSiteKey?: string; apiKey?: string };
-  return Boolean(cfg.apiKey && cfg.recaptchaSiteKey && cfg.recaptchaSiteKey.trim());
-}
-
-export async function startFirebasePhoneSignIn(
-  phoneE164: string,
-  containerId: string
-): Promise<ConfirmationResult> {
-  if (typeof window === 'undefined' || !isFirebasePhoneAuthConfigured()) {
-    throw new Error('FIREBASE_PHONE_FALLBACK');
-  }
-  const verifier = new RecaptchaVerifier(auth, containerId, {
-    size: 'invisible',
-  });
-  return signInWithPhoneNumber(auth, phoneE164, verifier);
-}
-
-export async function confirmFirebasePhoneSignIn(
-  confirmation: ConfirmationResult,
-  code: string
-): Promise<{ user: User; idToken: string }> {
-  const cred = await confirmation.confirm(code);
-  const idToken = await cred.user.getIdToken();
-  return { user: cred.user, idToken };
 }
 
