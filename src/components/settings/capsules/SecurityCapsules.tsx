@@ -39,6 +39,7 @@ import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 import { AiModelsArchitectureStudio } from './AiModelsArchitectureStudio';
 import { runWithSignatureLoader } from '../../../utils/delayedLoader';
+import { getRemainingRecycleDays } from '../../../utils/recycleBin';
 
 interface SecurityCapsulesProps {
   sectionNode: HierarchyNode;
@@ -56,6 +57,7 @@ interface SecurityCapsulesProps {
   assistantCacheCount?: number;
   onUpdateSecurityPrefs: (patch: Partial<SecurityPrefs>) => void;
   onRestoreRecycleBinItem: (entryId: string) => void;
+  onRestoreAllRecycleBinItems?: () => void;
   onPurgeRecycleBinItem: (entryId: string) => void;
   onClearRecycleBin: () => void;
   onImportWorkspaceJson: (rawJson: string) => void | Promise<void>;
@@ -86,6 +88,7 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
   assistantCacheCount = 0,
   onUpdateSecurityPrefs,
   onRestoreRecycleBinItem,
+  onRestoreAllRecycleBinItems,
   onPurgeRecycleBinItem,
   onClearRecycleBin,
   onImportWorkspaceJson,
@@ -549,26 +552,45 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
                 سلة الاسترجاع الآمنة ({recycleBin.length})
               </h2>
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                كل سجل يُحذف من الوكالات أو القوائم أو المصاريف يُحفظ هنا لاستعادته في أي وقت
+                يتم الاحتفاظ بكل عنصر محذوف لمدة 30 يوماً مع إمكانية الاستعادة قبل الحذف النهائي
               </p>
             </div>
           </div>
 
           {recycleBin.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                onClearRecycleBin();
-                onNotifySuccess('تم إفراغ سلة الاسترجاع.');
-              }}
-              className="min-h-[40px] rounded-xl border px-3.5 py-1.5 text-xs font-extrabold"
-              style={{
-                borderColor: 'var(--danger)',
-                color: 'var(--danger)',
-              }}
-            >
-              إفراغ السلة
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onRestoreAllRecycleBinItems && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRestoreAllRecycleBinItems();
+                    onNotifySuccess('تمت استعادة جميع العناصر من سلة المحذوفات.');
+                  }}
+                  className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-extrabold"
+                  style={{
+                    backgroundColor: 'var(--success)',
+                    color: 'var(--success-fg)',
+                  }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>استعادة الكل</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  onClearRecycleBin();
+                  onNotifySuccess('تم إفراغ سلة الاسترجاع نهائياً.');
+                }}
+                className="min-h-[40px] rounded-xl border px-3.5 py-1.5 text-xs font-extrabold"
+                style={{
+                  borderColor: 'var(--danger)',
+                  color: 'var(--danger)',
+                }}
+              >
+                إفراغ السلة
+              </button>
+            </div>
           )}
         </div>
 
@@ -587,9 +609,14 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
           <div className="space-y-2.5 text-xs">
             <AnimatePresence initial={false}>
               {recycleBin.map((entry) => {
+                const daysLeft = getRemainingRecycleDays(entry);
                 const kindLabel =
                   entry.kind === 'person'
                     ? 'مستفيد'
+                    : entry.kind === 'agency'
+                    ? 'وكالة'
+                    : entry.kind === 'note'
+                    ? 'ملاحظة'
                     : entry.kind === 'ready_list'
                     ? 'قائمة جاهزة'
                     : entry.kind === 'relation'
@@ -620,6 +647,15 @@ export const SecurityCapsules: React.FC<SecurityCapsulesProps> = ({
                         style={{ color: 'var(--text-muted)' }}
                       >
                         ({kindLabel}) · حُذف في {entry.deletedAt.slice(0, 10)}
+                      </span>
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                        style={{
+                          backgroundColor: 'var(--bg-nav-active)',
+                          color: daysLeft <= 5 ? 'var(--danger)' : 'var(--accent)',
+                        }}
+                      >
+                        متبقي {daysLeft} يوم
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">

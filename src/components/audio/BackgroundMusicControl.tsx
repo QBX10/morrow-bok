@@ -3,11 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Music, Pause, Play, RefreshCw, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import {
   getBackgroundMusicSnapshot,
-  retryBackgroundMusicPlayback,
-  setBackgroundMusicSmartMode,
-  setBackgroundMusicVolume,
   subscribeBackgroundMusic,
-  toggleBackgroundMusic,
 } from '../../utils/backgroundMusicEngine';
 import {
   TABRIX_POPOVER_VARIANTS,
@@ -15,8 +11,7 @@ import {
   TABRIX_TACTILE_SPRING,
   useTabrixReducedMotion,
 } from '../../utils/tabrixMotion';
-import { updateServerSoundSetting } from '../../utils/intelligentAmbience';
-import { playTactileFeedback } from '../../utils/tactileFeedback';
+import { audioManager } from '../../services/audio/AudioManager';
 
 interface BackgroundMusicControlProps {
   variant?: 'topbar' | 'floating';
@@ -34,7 +29,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
   );
 
   const [open, setOpen] = useState(false);
-  const lastNonZeroVolumeRef = useRef(snapshot.volume > 0.04 ? snapshot.volume : 0.27);
+  const lastNonZeroVolumeRef = useRef(snapshot.volume > 0.04 ? snapshot.volume : 0.2);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useTabrixReducedMotion();
 
@@ -88,10 +83,14 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
     : 'تعمل بهدوء في الخلفية';
 
   const handleTogglePlay = () => {
-    const nextPaused = !snapshot.userPaused;
-    playTactileFeedback(nextPaused ? 'toggle_off' : 'toggle_on');
-    toggleBackgroundMusic();
-    void updateServerSoundSetting(!nextPaused, snapshot.volume);
+    const nextMusicEnabled = snapshot.userPaused;
+    audioManager.playEvent(nextMusicEnabled ? 'toggle_on' : 'toggle_off', {
+      bypassPrefGate: true,
+    });
+    audioManager.updateSettings(
+      { musicEnabled: nextMusicEnabled },
+      { showLocalToast: false }
+    );
   };
 
   const handleToggleMute = () => {
@@ -101,9 +100,11 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
             lastNonZeroVolumeRef.current = snapshot.volume;
             return 0;
           })()
-        : lastNonZeroVolumeRef.current || 0.27;
-    setBackgroundMusicVolume(nextVol);
-    void updateServerSoundSetting(!snapshot.userPaused && nextVol > 0, nextVol);
+        : lastNonZeroVolumeRef.current || 0.2;
+    audioManager.updateSettings(
+      { musicVolume: nextVol },
+      { debounceSyncMs: 200, showLocalToast: false }
+    );
   };
 
   const isFloating = variant === 'floating';
@@ -120,7 +121,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
       <motion.button
         type="button"
         onClick={() => {
-          playTactileFeedback(open ? 'menu_close' : 'menu_open');
+          audioManager.playEvent(open ? 'menu_close' : 'menu_open');
           setOpen((prev) => !prev);
         }}
         whileHover={reducedMotion ? undefined : { scale: 1.02 }}
@@ -294,8 +295,10 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
                 onChange={(e) => {
                   const pct = Number(e.target.value);
                   const nextVol = pct / 100;
-                  setBackgroundMusicVolume(nextVol);
-                  void updateServerSoundSetting(!snapshot.userPaused, nextVol);
+                  audioManager.updateSettings(
+                    { musicVolume: nextVol },
+                    { debounceSyncMs: 320, showLocalToast: false }
+                  );
                 }}
                 aria-label="مستوى صوت موسيقى الخلفية"
                 data-testid="bg-music-volume-slider"
@@ -312,10 +315,37 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
                   checked={snapshot.smartModeEnabled}
                   onChange={(e) => {
                     const next = e.target.checked;
-                    playTactileFeedback(next ? 'toggle_on' : 'toggle_off');
-                    setBackgroundMusicSmartMode(next);
+                    audioManager.playEvent(next ? 'toggle_on' : 'toggle_off', {
+                      bypassPrefGate: true,
+                    });
+                    audioManager.updateSettings(
+                      { smartPauseEnabled: next },
+                      { showLocalToast: false }
+                    );
                   }}
                   aria-label="التوقف الذكي التلقائي للموسيقى"
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-2 cursor-pointer">
+                <span className="text-[11px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+                  إيقاف عند الخروج من التطبيق
+                </span>
+                <input
+                  type="checkbox"
+                  checked={snapshot.pauseOnExit}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    audioManager.playEvent(next ? 'toggle_on' : 'toggle_off', {
+                      bypassPrefGate: true,
+                    });
+                    audioManager.updateSettings(
+                      { pauseOnExit: next },
+                      { showLocalToast: false }
+                    );
+                  }}
+                  aria-label="إيقاف الموسيقى عند الخروج من التطبيق"
                   className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
                 />
               </label>
@@ -324,8 +354,8 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    playTactileFeedback('tap');
-                    retryBackgroundMusicPlayback();
+                    audioManager.playEvent('click', { bypassPrefGate: true });
+                    audioManager.retryMusic();
                   }}
                   className="flex w-full h-8 items-center justify-center gap-1.5 rounded-xl border text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent)]"
                   style={{
@@ -344,8 +374,7 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
               className="mt-2.5 text-[10px] leading-relaxed"
               style={{ color: 'var(--text-muted)' }}
             >
-              تتوقف تلقائياً وبنعومة عند استخدام الميكروفون أو الكاميرا أو القراءة
-              الصوتية وتعود فور الانتهاء.
+              تتوقف تلقائياً عند استخدام الميكروفون أو الكاميرا أو القراءة الصوتية أو فصل السماعة وتعود فقط بعد انتهاء كل الأسباب.
             </div>
           </motion.div>
         )}

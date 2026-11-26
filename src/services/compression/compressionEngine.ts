@@ -186,3 +186,172 @@ export function formatCompressionBadgeText(stats: CompressionStats | null): stri
   }
   return `تم الضغط والحفظ • توفير ${stats.savingsPct}%`;
 }
+
+const PRECOMPRESSED_MIME_PREFIXES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/aac',
+  'audio/ogg',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/gzip',
+  'application/x-gzip',
+  'application/x-7z-compressed',
+  'application/x-rar-compressed',
+  'application/vnd.openxmlformats-officedocument',
+];
+
+const PRECOMPRESSED_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'avif',
+  'gif',
+  'mp4',
+  'webm',
+  'mov',
+  'mp3',
+  'aac',
+  'ogg',
+  'zip',
+  'gz',
+  'tgz',
+  '7z',
+  'rar',
+  'xlsx',
+  'docx',
+  'pptx',
+  'pdf',
+]);
+
+function detectAlreadyCompressedMagic(bytes?: Uint8Array): boolean {
+  if (!bytes || bytes.length < 4) return false;
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return true;
+  // PNG: 89 50 4E 47
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return true;
+  }
+  // ZIP / XLSX / DOCX: 50 4B 03 04
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
+    return true;
+  }
+  // GZIP: 1F 8B
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) return true;
+  // MP4/MOV ftyp at offset 4
+  if (
+    bytes.length >= 8 &&
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70
+  ) {
+    return true;
+  }
+  // MP3 ID3 or WebP RIFF
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return true;
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Smart compression guard: avoids wasting CPU trying to gzip formats that are
+ * already entropy-compressed (JPEG/PNG/WEBP/MP4/ZIP/GZ/MP3).
+ */
+export function shouldSkipCompression(meta: {
+  mimeType?: string;
+  filename?: string;
+  bytes?: Uint8Array;
+}): { skip: boolean; reason: string } {
+  const mime = (meta.mimeType || '').trim().toLowerCase();
+  if (mime && PRECOMPRESSED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix))) {
+    return { skip: true, reason: `الصيغة (${mime}) مضغوطة مسبقاً` };
+  }
+  const filename = (meta.filename || '').trim().toLowerCase();
+  const dotIdx = filename.lastIndexOf('.');
+  if (dotIdx !== -1) {
+    const ext = filename.slice(dotIdx + 1);
+    if (PRECOMPRESSED_EXTENSIONS.has(ext)) {
+      return { skip: true, reason: `الامتداد (.${ext}) مضغوط مسبقاً` };
+    }
+  }
+  if (detectAlreadyCompressedMagic(meta.bytes)) {
+    return { skip: true, reason: 'رأس الملف الثنائي يشير لصيغة مضغوطة مسبقاً' };
+  }
+  return { skip: false, reason: 'صيغة قابلة للضغط الذكي' };
+}
+
+export interface SmartBinaryCompressionResult {
+  alg: 'gzip' | 'raw-skipped' | 'raw-unshrunk';
+  skippedBecauseAlreadyCompressed: boolean;
+  reason: string;
+  rawBytes: number;
+  outputBytes: number;
+  savedBytes: number;
+  bytes: Uint8Array;
+}
+
+export async function smartCompressBinary(
+  bytes: Uint8Array,
+  meta: { mimeType?: string; filename?: string } = {}
+): Promise<SmartBinaryCompressionResult> {
+  const guard = shouldSkipCompression({ ...meta, bytes });
+  const rawBytes = bytes.byteLength;
+  if (guard.skip) {
+    return {
+      alg: 'raw-skipped',
+      skippedBecauseAlreadyCompressed: true,
+      reason: guard.reason,
+      rawBytes,
+      outputBytes: rawBytes,
+      savedBytes: 0,
+      bytes,
+    };
+  }
+  const gzipped = await gzipBytes(bytes);
+  if (gzipped && gzipped.byteLength > 0 && gzipped.byteLength < rawBytes) {
+    return {
+      alg: 'gzip',
+      skippedBecauseAlreadyCompressed: false,
+      reason: 'تم تطبيق ضغط gzip بنجاح',
+      rawBytes,
+      outputBytes: gzipped.byteLength,
+      savedBytes: rawBytes - gzipped.byteLength,
+      bytes: gzipped,
+    };
+  }
+  return {
+    alg: 'raw-unshrunk',
+    skippedBecauseAlreadyCompressed: false,
+    reason: 'تم الإبقاء على النسخة الأصلية لعدم وجود جدوى ضغط إضافية',
+    rawBytes,
+    outputBytes: rawBytes,
+    savedBytes: 0,
+    bytes,
+  };
+}
+
+export async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const digest = await crypto.subtle.digest('SHA-256', copy.buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  const nodeCrypto = await import('crypto');
+  return nodeCrypto.createHash('sha256').update(bytes).digest('hex');
+}

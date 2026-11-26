@@ -75,13 +75,7 @@ import {
 } from '../lib/aiConfig.ts';
 import { DEFAULT_CALCULATION_SETTINGS, normalizeArabic } from '../utils/agencyLogic.ts';
 import type { MaskedCloudContext } from '../utils/assistantPrivacy.ts';
-import {
-  acquireMusicPauseLock,
-  releaseMusicPauseLock,
-  stopWatchingSpeechSynthesisForMusic,
-  watchSpeechSynthesisForMusic,
-} from '../utils/backgroundMusicEngine.ts';
-import { playTactileFeedback } from '../utils/tactileFeedback.ts';
+import { audioManager } from '../services/audio/AudioManager';
 import {
   buildPermissionRecoveryGuide,
   requestMicrophonePermission,
@@ -587,7 +581,6 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [attachedFile, setAttachedFile] = useState<AttachedDocumentItem | null>(null);
   const [analyzingAttachment, setAnalyzingAttachment] = useState(false);
@@ -767,19 +760,19 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   useEffect(() => {
     const active = isRecordingVoiceMsg || isNoteRecording;
     if (active) {
-      acquireMusicPauseLock('morrow-center:mic', 'mic', 80);
+      audioManager.acquirePauseLock('morrow-center:mic', 'mic', 80);
       if (!prevRecordingMusicRef.current) {
-        playTactileFeedback('record_start', { haptic: true });
+        audioManager.playEvent('record_start', { haptic: true });
       }
     } else {
       if (prevRecordingMusicRef.current) {
-        playTactileFeedback('record_stop', { haptic: true });
+        audioManager.playEvent('record_stop', { haptic: true });
       }
-      releaseMusicPauseLock('morrow-center:mic');
+      audioManager.releasePauseLock('morrow-center:mic');
     }
     prevRecordingMusicRef.current = active;
     return () => {
-      releaseMusicPauseLock('morrow-center:mic');
+      audioManager.releasePauseLock('morrow-center:mic');
     };
   }, [isRecordingVoiceMsg, isNoteRecording]);
 
@@ -793,15 +786,12 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       if (noteStreamRef.current) {
         noteStreamRef.current.getTracks().forEach((t) => t.stop());
       }
-      if (ttsAudioRef.current) {
-        ttsAudioRef.current.pause();
-        ttsAudioRef.current = null;
-      }
+      audioManager.stopExternalAudio();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
-      releaseMusicPauseLock('morrow-center:mic');
-      stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
+      audioManager.releasePauseLock('morrow-center:mic');
+      audioManager.releasePauseLock('morrow-center:tts');
       if (attachedFile?.previewUrl) {
         URL.revokeObjectURL(attachedFile.previewUrl);
       }
@@ -914,15 +904,11 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   };
 
   const stopAllReadAloud = () => {
-    if (ttsAudioRef.current) {
-      ttsAudioRef.current.pause();
-      ttsAudioRef.current = null;
-    }
+    audioManager.stopExternalAudio();
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
-    releaseMusicPauseLock('morrow-center:tts');
+    audioManager.releasePauseLock('morrow-center:tts');
     setSpeakingMsgId(null);
   };
 
@@ -935,7 +921,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     const cleanText = rawText.trim().slice(0, 900);
     if (!cleanText) return;
     setSpeakingMsgId(msgId);
-    acquireMusicPauseLock('morrow-center:tts', 'tts', 100);
+    audioManager.acquirePauseLock('morrow-center:tts', 'tts', 100);
 
     if (typeof navigator === 'undefined' || navigator.onLine !== false) {
       try {
@@ -944,55 +930,35 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanText }),
         });
-      if (res.ok) {
-        const json = (await res.json()) as { audioBase64?: string; mimeType?: string };
-        if (json.audioBase64) {
-          const audio = new Audio(
-            `data:${json.mimeType || 'audio/wav'};base64,${json.audioBase64}`
-          );
-          ttsAudioRef.current = audio;
-          audio.onended = () => {
-            releaseMusicPauseLock('morrow-center:tts');
-            setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-          };
-          audio.onerror = () => {
-            releaseMusicPauseLock('morrow-center:tts');
-            setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-          };
-          audio.onpause = () => {
-            releaseMusicPauseLock('morrow-center:tts');
-          };
-          await audio.play();
-          return;
+        if (res.ok) {
+          const json = (await res.json()) as { audioBase64?: string; mimeType?: string };
+          if (json.audioBase64) {
+            await audioManager.playExternalAudio({
+              src: `data:${json.mimeType || 'audio/wav'};base64,${json.audioBase64}`,
+              lockId: 'morrow-center:tts',
+              reason: 'tts',
+              onEnded: () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev)),
+              onError: () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev)),
+            });
+            return;
+          }
         }
-      }
       } catch {
         // Fall back cleanly to browser Arabic speech synthesis
       }
     }
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        const utter = new SpeechSynthesisUtterance(cleanText);
-        utter.lang = 'ar-IQ';
-        utter.rate = 0.98;
-        utter.onend = () => {
-          stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
-          setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-        };
-        utter.onerror = () => {
-          stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
-          setSpeakingMsgId((prev) => (prev === msgId ? null : prev));
-        };
-        watchSpeechSynthesisForMusic('morrow-center:tts');
-        window.speechSynthesis.speak(utter);
-        return;
-      } catch {
-        // ignore
-      }
-    }
-    stopWatchingSpeechSynthesisForMusic('morrow-center:tts');
-    releaseMusicPauseLock('morrow-center:tts');
+    const spoke = audioManager.speakTextWithBrowserTts({
+      text: cleanText,
+      lang: 'ar-IQ',
+      rate: 0.98,
+      lockId: 'morrow-center:tts',
+      onEnd: () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev)),
+      onError: () => setSpeakingMsgId((prev) => (prev === msgId ? null : prev)),
+    });
+    if (spoke) return;
+
+    audioManager.releasePauseLock('morrow-center:tts');
     setSpeakingMsgId(null);
   };
 

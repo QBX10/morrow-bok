@@ -10,7 +10,11 @@ import {
   doc,
   getDocFromServer,
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   setLogLevel,
+  type Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -26,9 +30,27 @@ export const isFirestoreConfigured = Boolean(
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 
-export const db = configWithOptionalDb.firestoreDatabaseId
-  ? getFirestore(app, configWithOptionalDb.firestoreDatabaseId)
-  : getFirestore(app);
+function createPersistentFirestore(): Firestore {
+  const dbId = configWithOptionalDb.firestoreDatabaseId;
+  try {
+    if (typeof window !== 'undefined') {
+      return initializeFirestore(
+        app,
+        {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        },
+        dbId
+      );
+    }
+  } catch {
+    // Fallback to getFirestore when HMR or multiple instances already initialized it
+  }
+  return dbId ? getFirestore(app, dbId) : getFirestore(app);
+}
+
+export const db: Firestore = createPersistentFirestore();
 
 export const auth = getAuth(app);
 

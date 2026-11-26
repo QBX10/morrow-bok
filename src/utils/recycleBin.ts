@@ -5,19 +5,57 @@ import type {
   RecycleBinEntry,
 } from '../types/agency.ts';
 
-const MAX_RECYCLE_BIN_ENTRIES = 60;
+const MAX_RECYCLE_BIN_ENTRIES = 120;
+export const RECYCLE_BIN_RETENTION_DAYS = 30;
+const RETENTION_MS = RECYCLE_BIN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+function parseRecycleDateMs(value?: string): number {
+  if (!value) return 0;
+  const isoCandidate = value.includes('T') ? value : value.replace(' ', 'T');
+  const ms = Date.parse(isoCandidate);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export function computeRecycleExpiryIso(deletedAtIso?: string): string {
+  const baseMs = parseRecycleDateMs(deletedAtIso) || Date.now();
+  return new Date(baseMs + RETENTION_MS).toISOString();
+}
+
+export function getRemainingRecycleDays(entry: RecycleBinEntry, nowMs = Date.now()): number {
+  const expiresMs = entry.expiresAt
+    ? parseRecycleDateMs(entry.expiresAt)
+    : (parseRecycleDateMs(entry.deletedAt) || nowMs) + RETENTION_MS;
+  const diff = expiresMs - nowMs;
+  if (diff <= 0) return 0;
+  return Math.max(1, Math.ceil(diff / (24 * 60 * 60 * 1000)));
+}
+
+export function pruneExpiredRecycleBinEntries(
+  bin: RecycleBinEntry[] | undefined,
+  nowMs = Date.now()
+): RecycleBinEntry[] {
+  const list = Array.isArray(bin) ? bin : [];
+  return list.filter((entry) => {
+    const expiresMs = entry.expiresAt
+      ? parseRecycleDateMs(entry.expiresAt)
+      : (parseRecycleDateMs(entry.deletedAt) || nowMs) + RETENTION_MS;
+    return expiresMs > nowMs;
+  });
+}
 
 export function pushRecycleBinEntry(
   bin: RecycleBinEntry[] | undefined,
-  entry: Omit<RecycleBinEntry, 'id' | 'deletedAt'>
+  entry: Omit<RecycleBinEntry, 'id' | 'deletedAt' | 'expiresAt'>
 ): RecycleBinEntry[] {
-  const list = Array.isArray(bin) ? bin : [];
+  const active = pruneExpiredRecycleBinEntries(bin);
+  const nowIso = new Date().toISOString();
   const next: RecycleBinEntry = {
     ...entry,
     id: `bin_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    deletedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    deletedAt: nowIso.slice(0, 16).replace('T', ' '),
+    expiresAt: computeRecycleExpiryIso(nowIso),
   };
-  return [next, ...list].slice(0, MAX_RECYCLE_BIN_ENTRIES);
+  return [next, ...active].slice(0, MAX_RECYCLE_BIN_ENTRIES);
 }
 
 export function restoreRecycleBinEntryFromState(
@@ -28,49 +66,109 @@ export function restoreRecycleBinEntryFromState(
   const entry = bin.find((e) => e.id === entryId);
   if (!entry) return state;
 
-  const nextBin = bin.filter((e) => e.id !== entryId);
+  let nextBin = bin.filter((e) => e.id !== entryId);
+  let nextAgencies = state.agencies;
+  const ensureAgencyAvailable = (agencyId: number) => {
+    if (nextAgencies.some((a) => a.id === agencyId)) return;
+    const binnedAgencyEntry = nextBin.find(
+      (e) => e.payload.kind === 'agency' && e.payload.agency.id === agencyId
+    );
+    if (binnedAgencyEntry && binnedAgencyEntry.payload.kind === 'agency') {
+      nextAgencies = [...nextAgencies, binnedAgencyEntry.payload.agency];
+      nextBin = nextBin.filter((e) => e.id !== binnedAgencyEntry.id);
+    }
+  };
+
   const payload = entry.payload;
 
+  if (payload.kind === 'agency') {
+    const exists = nextAgencies.some((a) => a.id === payload.agency.id);
+    return {
+      ...state,
+      agencies: exists ? nextAgencies : [...nextAgencies, payload.agency],
+      recycleBin: nextBin,
+    };
+  }
+
   if (payload.kind === 'person') {
+    ensureAgencyAvailable(payload.person.agencyId);
     const exists = state.persons.some((p) => p.id === payload.person.id);
     return {
       ...state,
+      agencies: nextAgencies,
       persons: exists ? state.persons : [...state.persons, payload.person],
       recycleBin: nextBin,
     };
   }
 
   if (payload.kind === 'expense') {
+    ensureAgencyAvailable(payload.expense.agencyId);
     const exists = state.expenses.some((ex) => ex.id === payload.expense.id);
     return {
       ...state,
+      agencies: nextAgencies,
       expenses: exists ? state.expenses : [payload.expense, ...state.expenses],
       recycleBin: nextBin,
     };
   }
 
   if (payload.kind === 'relation') {
+    ensureAgencyAvailable(payload.relation.agencyId);
     const exists = state.relations.some((r) => r.id === payload.relation.id);
     return {
       ...state,
+      agencies: nextAgencies,
       relations: exists ? state.relations : [payload.relation, ...state.relations],
       recycleBin: nextBin,
     };
   }
 
   if (payload.kind === 'ready_list') {
+    ensureAgencyAvailable(payload.list.agencyId);
     const listExists = state.readyLists.some((l) => l.id === payload.list.id);
     const existingItemIds = new Set(state.readyListItems.map((it) => it.id));
     const missingItems = payload.items.filter((it) => !existingItemIds.has(it.id));
     return {
       ...state,
+      agencies: nextAgencies,
       readyLists: listExists ? state.readyLists : [...state.readyLists, payload.list],
       readyListItems: [...state.readyListItems, ...missingItems],
       recycleBin: nextBin,
     };
   }
 
+  if (payload.kind === 'note') {
+    const notes = Array.isArray(state.workspaceNotes) ? state.workspaceNotes : [];
+    const exists = notes.some((n) => n.id === payload.note.id);
+    return {
+      ...state,
+      workspaceNotes: exists ? notes : [payload.note, ...notes],
+      recycleBin: nextBin,
+    };
+  }
+
   return { ...state, recycleBin: nextBin };
+}
+
+export function restoreAllRecycleBinEntriesFromState(
+  state: AppDatabaseState
+): AppDatabaseState {
+  const activeBin = pruneExpiredRecycleBinEntries(state.recycleBin);
+  if (activeBin.length === 0) {
+    return { ...state, recycleBin: [] };
+  }
+  // Restore agencies first so child entities re-attach cleanly
+  const ordered = [
+    ...activeBin.filter((e) => e.payload.kind === 'agency'),
+    ...activeBin.filter((e) => e.payload.kind !== 'agency'),
+  ];
+  let current: AppDatabaseState = { ...state, recycleBin: activeBin };
+  for (const item of ordered) {
+    if ((current.recycleBin || []).some((e) => e.id === item.id)) {
+      current = restoreRecycleBinEntryFromState(current, item.id);
+    }
+  }
+  return current;
 }
 
 export function moveExpertColumnInOrder(

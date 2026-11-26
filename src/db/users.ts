@@ -35,6 +35,7 @@ function computeChecksum(raw: string): string {
 export async function getOrCreateUser(params: {
   uid: string;
   email: string;
+  emailVerified?: boolean;
   githubId?: string | null;
   username?: string | null;
   displayName?: string;
@@ -47,12 +48,12 @@ export async function getOrCreateUser(params: {
     const normUsername = params.username ? params.username.trim().toLowerCase() : null;
     const normGithubId = params.githubId ? params.githubId.trim() : null;
 
-    // Unified lookup by uid, githubId, verified email, or username
+    // Unified lookup strictly by uid, githubId, or explicitly verified email (never arbitrary username)
     const existingByIdentity = await resolveExistingSqlUser({
       uid: params.uid,
       githubId: normGithubId,
-      email: safeEmail.endsWith('.local') ? null : safeEmail,
-      username: normUsername,
+      email:
+        params.emailVerified && !safeEmail.endsWith('.local') ? safeEmail : null,
     });
 
     if (existingByIdentity) {
@@ -62,7 +63,6 @@ export async function getOrCreateUser(params: {
           displayName: existingByIdentity.displayName || safeDisplay,
           ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
           ...(normGithubId && !existingByIdentity.githubId ? { githubId: normGithubId } : {}),
-          ...(normUsername && !existingByIdentity.username ? { username: normUsername } : {}),
           lastLoginAt: new Date(),
           updatedAt: new Date(),
         })
@@ -71,13 +71,16 @@ export async function getOrCreateUser(params: {
       return updated[0] || existingByIdentity;
     }
 
+    const existingUsername = normUsername ? await findSqlUserByUsername(normUsername) : null;
+    const safeUsername = existingUsername ? null : normUsername;
+
     const result = await db
       .insert(users)
       .values({
         uid: params.uid,
         githubId: normGithubId,
         email: safeEmail,
-        username: normUsername,
+        username: safeUsername,
         displayName: safeDisplay,
         avatarUrl: params.avatarUrl ?? null,
         authProvider: params.authProvider || 'google',
@@ -109,12 +112,10 @@ export async function resolveExistingSqlUser(params: {
   uid?: string | null;
   githubId?: string | null;
   email?: string | null;
-  username?: string | null;
 }) {
   const uid = params.uid?.trim();
   const githubId = params.githubId?.trim();
   const email = params.email?.trim().toLowerCase();
-  const username = params.username?.trim().toLowerCase();
 
   if (uid) {
     const byUid = await db.select().from(users).where(eq(users.uid, uid));
@@ -127,10 +128,6 @@ export async function resolveExistingSqlUser(params: {
   if (email && !email.endsWith('.local')) {
     const byEmail = await db.select().from(users).where(eq(users.email, email));
     if (byEmail[0]) return byEmail[0];
-  }
-  if (username) {
-    const byUsername = await db.select().from(users).where(eq(users.username, username));
-    if (byUsername[0]) return byUsername[0];
   }
   return null;
 }

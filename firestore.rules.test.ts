@@ -147,6 +147,32 @@ function evaluateDirtyDozenWrite(params: {
     return 'ALLOW';
   }
 
+  if (params.pathPattern === '/users/{userId}/settings/{settingId}') {
+    const req = ['channels', 'quietHours', 'masterSound', 'volumes', 'updatedByDevice', 'updatedAt'];
+    const opt = ['activeTheme', 'activeMode'];
+    const keys = Object.keys(payload);
+    if (!req.every((k) => keys.includes(k)) || !keys.every((k) => [...req, ...opt].includes(k))) {
+      return 'PERMISSION_DENIED';
+    }
+    const volumes = payload.volumes as Record<string, unknown> | undefined;
+    if (
+      !volumes ||
+      typeof volumes.music !== 'number' ||
+      volumes.music < 0 ||
+      volumes.music > 1 ||
+      typeof volumes.sfx !== 'number' ||
+      volumes.sfx < 0 ||
+      volumes.sfx > 1 ||
+      typeof payload.masterSound !== 'boolean' ||
+      typeof payload.updatedByDevice !== 'string' ||
+      payload.updatedByDevice.length < 1 ||
+      payload.updatedAt !== 'REQUEST_TIME'
+    ) {
+      return 'PERMISSION_DENIED';
+    }
+    return 'ALLOW';
+  }
+
   return 'PERMISSION_DENIED';
 }
 
@@ -444,3 +470,51 @@ test('UserPrivateInfo allows github provider and rejects invalid provider', () =
     'PERMISSION_DENIED'
   );
 });
+
+test('UserNotificationSettings allows owner valid sync and rejects cross-user or volume poisoning', () => {
+  assert.ok(rulesSource.includes('isValidNotificationSettings'));
+  assert.equal(
+    evaluateDirtyDozenWrite({
+      pathPattern: '/users/{userId}/settings/{settingId}',
+      userId: 'userA',
+      docId: 'notifications',
+      auth: { uid: 'userA', email: 'a@example.com', email_verified: true },
+      op: 'create',
+      payload: {
+        channels: {
+          security: { enabled: true, sound: true, haptic: true, push: true },
+          reminders: { enabled: true, sound: true, haptic: true, push: true },
+          sync: { enabled: true, sound: false, haptic: true, push: true },
+          news: { enabled: true, sound: false, haptic: false, push: true },
+        },
+        quietHours: { enabled: true, start: '22:00', end: '07:00' },
+        masterSound: true,
+        volumes: { music: 0.2, sfx: 0.85 },
+        activeTheme: 'quantum_glass',
+        activeMode: 'focus',
+        updatedByDevice: 'dev_123',
+        updatedAt: 'REQUEST_TIME',
+      },
+    }),
+    'ALLOW'
+  );
+  assert.equal(
+    evaluateDirtyDozenWrite({
+      pathPattern: '/users/{userId}/settings/{settingId}',
+      userId: 'userA',
+      docId: 'notifications',
+      auth: { uid: 'userA', email: 'a@example.com', email_verified: true },
+      op: 'create',
+      payload: {
+        channels: {},
+        quietHours: { enabled: false, start: '22:00', end: '07:00' },
+        masterSound: true,
+        volumes: { music: 2.5, sfx: 0.85 },
+        updatedByDevice: 'dev_123',
+        updatedAt: 'REQUEST_TIME',
+      },
+    }),
+    'PERMISSION_DENIED'
+  );
+});
+

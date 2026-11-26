@@ -26,22 +26,65 @@ import {
 } from './src/aiConfig.ts';
 import {
   appendLocalAuditEvents,
+  appendLocalSecurityAlert,
+  appendLocalShareAccessLog,
+  consumeLocalRecoveryCode,
+  createLocalShareLink,
   createUserRecord,
+  DEFAULT_ACCOUNT_QUOTA_BYTES,
+  deleteLocalPasskey,
+  exportAllLocalUserData,
+  findLocalPasskeyByCredId,
+  findLocalShareLinkByToken,
+  findMissingLocalChunkHashes,
   findUserByEmail,
   findUserByUid,
   findUserByUsername,
+  getLocalRecoveryCodesStatus,
+  getLocalUserAudioSettings,
   getLocalUserPreferences,
+  getLocalUserStorageQuota,
+  getLocalWorkspaceVersionById,
   getSoundSettings,
   getWorkspaceSnapshot,
+  isKnownDeviceForUid,
+  isLocalUserEmailAlertsEnabled,
   linkLocalUsername,
   listLocalAuditEvents,
+  listLocalPasskeys,
+  listLocalSecurityAlerts,
+  listLocalSessionsForUid,
+  listLocalShareAccessLogs,
+  listLocalShareInvites,
+  listLocalShareLinks,
+  listLocalWorkspaceVersions,
+  permanentlyDeleteLocalUser,
+  recordLocalShareLinkAccess,
+  registerLocalSession,
+  replaceLocalRecoveryCodes,
   resolveOrCreateLocalCanonicalUser,
+  revokeLocalSession,
+  revokeLocalShareInvite,
+  revokeLocalShareLink,
+  revokeOtherLocalSessions,
+  saveLocalChunkManifest,
+  saveLocalPasskey,
+  saveLocalUserAudioSettings,
   saveLocalUserPreferences,
+  saveLocalWorkspaceVersion,
   saveSoundSettings,
   saveWorkspaceSnapshot,
+  setLocalUserEmailAlertsEnabled,
   syncLocalWorkspaceWithLww,
+  touchLocalPasskeyUsage,
+  updateLocalSecurityAlertEmailDelivery,
+  updateLocalShareInviteRole,
+  updateLocalUserEmail,
   updateUserPasswordHash,
+  upsertLocalChunk,
   upsertLocalProfile,
+  upsertLocalShareInvite,
+  type StoredUserAudioNotificationSettings,
 } from './src/db/localStore.ts';
 import {
   appendSqlAuditEvents,
@@ -84,6 +127,12 @@ import {
   liveTestAiModelOrTask,
   type OrchestratorAttachmentPart,
 } from './src/server/aiOrchestrator.ts';
+import {
+  dispatchSecurityLoginEmail,
+  getEmailProviderStatus,
+  parseClientDeviceAndBrowser,
+  verifyEmailTransport,
+} from './src/services/notifications/emailNotificationService.ts';
 import type {
   AuthProviderType,
   InferredDocumentMetadata,
@@ -119,6 +168,141 @@ const pendingPasswordResets = new Map<
   string,
   { uid: string; code: string; expiresAt: number; attempts: number }
 >();
+
+const botChallenges = new Map<
+  string,
+  { prefix: string; difficulty: number; expiresAt: number }
+>();
+const failedLoginBursts = new Map<string, { count: number; resetAt: number }>();
+const reauthGrants = new Map<string, { uid: string; expiresAt: number }>();
+const passkeyChallenges = new Map<
+  string,
+  { challenge: string; uid?: string; expiresAt: number }
+>();
+const qrPairings = new Map<
+  string,
+  {
+    pairId: string;
+    code: string;
+    status: 'pending' | 'approved' | 'expired';
+    expiresAt: number;
+    token?: string;
+    user?: Record<string, unknown>;
+  }
+>();
+const shareSessionTokens = new Map<
+  string,
+  { linkId: string; ownerUid: string; role: 'viewer' | 'editor'; expiresAt: number }
+>();
+const serverErrorRingBuffer: Array<{
+  id: string;
+  method: string;
+  path: string;
+  message: string;
+  status: number;
+  timestamp: string;
+}> = [];
+let lastBackupSnapshotAt = new Date().toISOString();
+
+function recordServerError(method: string, reqPath: string, status: number, err: unknown): void {
+  const message =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unexpected server error';
+  serverErrorRingBuffer.unshift({
+    id: `err_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`,
+    method,
+    path: reqPath,
+    message: message.slice(0, 260),
+    status,
+    timestamp: new Date().toISOString(),
+  });
+  if (serverErrorRingBuffer.length > 40) {
+    serverErrorRingBuffer.length = 40;
+  }
+}
+
+function getMaskedClientIp(req: Request): string {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const raw = (xff || req.socket.remoteAddress || '0.0.0.0').replace(/^::ffff:/, '');
+  if (raw === '::1' || raw === '127.0.0.1') return '127.0.0.*';
+  const ipv4Parts = raw.split('.');
+  if (ipv4Parts.length === 4) {
+    return `${ipv4Parts[0]}.${ipv4Parts[1]}.${ipv4Parts[2]}.*`;
+  }
+  return `${raw.slice(0, 12)}…`;
+}
+
+function parseDeviceLabel(req: Request): string {
+  return parseClientDeviceAndBrowser(
+    req.headers['user-agent'],
+    req.headers['sec-ch-ua']
+  ).deviceLabel;
+}
+
+function getRpIdFromRequest(req: Request): string {
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost')
+    .split(',')[0]
+    .trim();
+  return rawHost.split(':')[0] || 'localhost';
+}
+
+function issueBotChallengePayload(difficulty = 2) {
+  const now = Date.now();
+  for (const [k, v] of botChallenges.entries()) {
+    if (now > v.expiresAt) botChallenges.delete(k);
+  }
+  const challengeId = `chk_${crypto.randomBytes(8).toString('hex')}`;
+  const prefix = crypto.randomBytes(12).toString('hex');
+  const expiresAtMs = now + 5 * 60 * 1000;
+  botChallenges.set(challengeId, { prefix, difficulty, expiresAt: expiresAtMs });
+  return {
+    challengeId,
+    prefix,
+    difficulty,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+}
+
+function verifyBotChallengeSolution(payload?: {
+  challengeId?: string;
+  nonce?: string;
+}): boolean {
+  if (!payload?.challengeId || payload.nonce === undefined) return false;
+  const entry = botChallenges.get(payload.challengeId);
+  if (!entry || Date.now() > entry.expiresAt) {
+    if (entry) botChallenges.delete(payload.challengeId);
+    return false;
+  }
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${entry.prefix}:${String(payload.nonce)}`)
+    .digest('hex');
+  const valid = digest.startsWith('0'.repeat(entry.difficulty));
+  if (valid) botChallenges.delete(payload.challengeId);
+  return valid;
+}
+
+async function checkPasswordAgainstHibp(password: string): Promise<number> {
+  try {
+    const fullHex = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
+    const prefix = fullHex.slice(0, 5);
+    const suffix = fullHex.slice(5);
+    const hibpRes = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+      headers: { 'Add-Padding': 'true', 'User-Agent': 'MorrowApp-SecurityCheck' },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!hibpRes.ok) return 0;
+    const text = await hibpRes.text();
+    for (const line of text.split(/\r?\n/)) {
+      const [rowSuffix, countStr] = line.trim().split(':');
+      if (rowSuffix?.toUpperCase() === suffix) {
+        return Number(countStr || 0);
+      }
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
 
 const GITHUB_OAUTH_STATE_FALLBACK = crypto.randomBytes(32).toString('hex');
 
@@ -442,6 +626,214 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
 
+  const userSyncSockets = new Map<
+    string,
+    Set<{ ws: WebSocket; sid?: string; deviceId: string }>
+  >();
+  const qrPairWatchers = new Map<string, Set<WebSocket>>();
+
+  const broadcastToUser = (
+    uid: string,
+    payload: Record<string, unknown>,
+    excludeWs?: WebSocket
+  ) => {
+    const sockets = userSyncSockets.get(uid);
+    if (!sockets || sockets.size === 0) return;
+    const raw = JSON.stringify(payload);
+    for (const entry of sockets) {
+      if (excludeWs && entry.ws === excludeWs) continue;
+      if (entry.ws.readyState === entry.ws.OPEN) {
+        entry.ws.send(raw);
+      }
+    }
+  };
+
+  const broadcastToSession = (
+    uid: string,
+    sid: string,
+    payload: Record<string, unknown>
+  ) => {
+    const sockets = userSyncSockets.get(uid);
+    if (!sockets || sockets.size === 0) return;
+    const raw = JSON.stringify(payload);
+    for (const entry of sockets) {
+      if (entry.sid === sid && entry.ws.readyState === entry.ws.OPEN) {
+        entry.ws.send(raw);
+      }
+    }
+  };
+
+  const broadcastToQrWatchers = (
+    pairId: string,
+    payload: Record<string, unknown>
+  ) => {
+    const watchers = qrPairWatchers.get(pairId);
+    if (!watchers || watchers.size === 0) return;
+    const raw = JSON.stringify(payload);
+    for (const ws of watchers) {
+      if (ws.readyState === ws.OPEN) {
+        ws.send(raw);
+      }
+    }
+  };
+
+  const notifyUnknownDeviceLoginAttempt = (params: {
+    req: Request;
+    uid: string;
+    displayName: string;
+    recipientEmail?: string | null;
+    loginMethod: 'password' | 'passkey' | 'google' | 'github' | 'qr' | 'recovery_code';
+    outcome: 'succeeded' | 'failed';
+  }) => {
+    const deviceInfo = parseClientDeviceAndBrowser(
+      params.req.headers['user-agent'],
+      params.req.headers['sec-ch-ua']
+    );
+    const ipMasked = getMaskedClientIp(params.req);
+    const isFailed = params.outcome === 'failed';
+    const alertKind = isFailed ? 'unrecognized_login_attempt' : 'new_device_login';
+    const alertTitle = isFailed
+      ? 'تنبيه أمني: محاولة دخول من جهاز أو متصفح غير معروف'
+      : 'تنبيه أمان: تسجيل دخول من جهاز أو متصفح جديد';
+    const alertSummary = isFailed
+      ? `تم رصد محاولة تسجيل دخول غير ناجحة إلى حسابك من «${deviceInfo.deviceLabel}» (${ipMasked}).`
+      : `تم تسجيل الدخول إلى حسابك من «${deviceInfo.deviceLabel}» (${ipMasked}) عبر ${params.loginMethod}.`;
+
+    const storedUser = findUserByUid(params.uid);
+    const rawEmail = (params.recipientEmail ?? storedUser?.email ?? '').trim();
+    const validEmail =
+      rawEmail && !rawEmail.endsWith('.local') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)
+        ? rawEmail
+        : undefined;
+
+    const alertRecord = appendLocalSecurityAlert({
+      uid: params.uid,
+      kind: alertKind,
+      title: alertTitle,
+      summary: alertSummary,
+      deviceLabel: deviceInfo.deviceLabel,
+      browserLabel: deviceInfo.browserLabel,
+      ipMasked,
+      attemptOutcome: params.outcome,
+      recipientEmail: validEmail,
+      emailDeliveryStatus: validEmail ? undefined : 'skipped_no_email',
+      emailDeliveryProvider: 'none',
+    });
+
+    broadcastToUser(params.uid, {
+      type: 'security:alert',
+      kind: alertKind,
+      title: alertTitle,
+      summary: alertSummary,
+      deviceLabel: deviceInfo.deviceLabel,
+      browserLabel: deviceInfo.browserLabel,
+      attemptOutcome: params.outcome,
+    });
+
+    if (isLocalUserEmailAlertsEnabled(params.uid)) {
+      void dispatchSecurityLoginEmail({
+        uid: params.uid,
+        recipientEmail: validEmail,
+        displayName: params.displayName,
+        loginMethod: params.loginMethod,
+        outcome: params.outcome,
+        deviceInfo,
+        ipMasked,
+      }).then((delivery) => {
+        updateLocalSecurityAlertEmailDelivery(params.uid, alertRecord.id, {
+          recipientEmail: validEmail,
+          emailDeliveryStatus: delivery.status,
+          emailDeliveryProvider: delivery.provider,
+          emailDeliveryError: delivery.error,
+          emailMessageId: delivery.messageId,
+          emailSubject: delivery.subject,
+          emailSentSimulated: false,
+        });
+      });
+    }
+  };
+
+  const issueAuthenticatedSession = (
+    req: Request,
+    res: Response,
+    principalUser: {
+      uid: string;
+      provider: AuthProviderType;
+      displayName: string;
+      email?: string;
+      emailVerified?: boolean;
+      username?: string;
+      githubId?: string;
+      avatarUrl?: string;
+      role: 'manager' | 'viewer';
+    },
+    loginMethod: 'password' | 'passkey' | 'google' | 'github' | 'qr' | 'recovery_code',
+    rememberMe = true
+  ) => {
+    const sid = `sid_${crypto.randomBytes(10).toString('hex')}`;
+    const token = signSessionToken({
+      uid: principalUser.uid,
+      sid,
+      provider: principalUser.provider,
+      displayName: principalUser.displayName,
+      email: principalUser.email,
+      emailVerified: principalUser.emailVerified,
+      username: principalUser.username,
+      githubId: principalUser.githubId,
+      avatarUrl: principalUser.avatarUrl,
+    });
+    setSessionCookie(req, res, token, rememberMe);
+
+    const deviceInfo = parseClientDeviceAndBrowser(
+      req.headers['user-agent'],
+      req.headers['sec-ch-ua']
+    );
+    const ipMasked = getMaskedClientIp(req);
+
+    const { isNewDevice } = registerLocalSession({
+      sid,
+      uid: principalUser.uid,
+      provider: principalUser.provider,
+      deviceLabel: deviceInfo.deviceLabel,
+      browserLabel: deviceInfo.browserLabel,
+      fingerprintHash: deviceInfo.fingerprintHash,
+      userAgent: deviceInfo.userAgent,
+      ipMasked,
+      loginMethod,
+    });
+
+    if (isNewDevice) {
+      notifyUnknownDeviceLoginAttempt({
+        req,
+        uid: principalUser.uid,
+        displayName: principalUser.displayName,
+        recipientEmail: principalUser.email,
+        loginMethod,
+        outcome: 'succeeded',
+      });
+    }
+
+    return { token, sid, user: principalUser };
+  };
+
+  const verifyStepUpReauth = (
+    req: Request,
+    res: Response,
+    uid: string
+  ): boolean => {
+    const rawHeader = String(req.headers['x-reauth-token'] || '').trim();
+    const entry = rawHeader ? reauthGrants.get(rawHeader) : undefined;
+    if (!entry || entry.uid !== uid || Date.now() > entry.expiresAt) {
+      if (entry) reauthGrants.delete(rawHeader);
+      res.status(403).json({
+        error: 'تتطلب هذه العملية الحساسة تأكيد هويتك أولاً.',
+        requiresReauth: true,
+      });
+      return false;
+    }
+    return true;
+  };
+
   app.get('/api/health', (_req: Request, res: Response) => {
     const status = getOrchestrationStatusSnapshot();
     res.json({
@@ -462,6 +854,113 @@ async function startServer() {
       firebaseAuthConfigured,
       storageMode: cloudSqlConfigured && cloudSqlReachable ? 'cloud_sql' : 'local_fallback',
     });
+  });
+
+  app.get('/api/system/backup-health', requireAuth, async (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const quota = getLocalUserStorageQuota(principal.uid);
+    const versions = listLocalWorkspaceVersions(principal.uid);
+    res.json({
+      ok: true,
+      lastBackupSnapshotAt,
+      activeVersionsCount: versions.length,
+      quota,
+      recentErrorsCount: serverErrorRingBuffer.length,
+      recentErrors: serverErrorRingBuffer.slice(0, 10),
+    });
+  });
+
+  app.get('/api/system/integrations-check', requireAuth, async (_req: AuthRequest, res: Response) => {
+    try {
+      const hasEnv = (name: string) => {
+        const val = String(process.env[name] || '').trim();
+        return Boolean(val && !val.startsWith('MY_'));
+      };
+      const orch = getOrchestrationStatusSnapshot();
+      const emailStatus = getEmailProviderStatus();
+      const emailVerify = await verifyEmailTransport();
+      const cloudSqlConfigured = isSqlDatabaseConfigured();
+      const cloudSqlReachable = cloudSqlConfigured ? await pingSqlDatabase() : false;
+
+      res.json({
+        envFlags: {
+          APP_URL: hasEnv('APP_URL'),
+          AUTH_SESSION_SECRET: hasEnv('AUTH_SESSION_SECRET'),
+          GEMINI_API_KEY: hasEnv('GEMINI_API_KEY'),
+          GOOGLE_API_KEY: hasEnv('GOOGLE_API_KEY'),
+          API_KEY: hasEnv('API_KEY'),
+          GROQ_API_KEY: hasEnv('GROQ_API_KEY'),
+          OPENROUTER_API_KEY: hasEnv('OPENROUTER_API_KEY'),
+          GITHUB_CLIENT_ID: hasEnv('GITHUB_CLIENT_ID'),
+          GITHUB_CLIENT_SECRET: hasEnv('GITHUB_CLIENT_SECRET'),
+          EMAIL_FROM: hasEnv('EMAIL_FROM'),
+          RESEND_API_KEY: hasEnv('RESEND_API_KEY'),
+          SMTP_HOST: hasEnv('SMTP_HOST'),
+          SMTP_PORT: hasEnv('SMTP_PORT'),
+          SMTP_SECURE: hasEnv('SMTP_SECURE'),
+          SMTP_USER: hasEnv('SMTP_USER'),
+          SMTP_PASS: hasEnv('SMTP_PASS'),
+          FIREBASE_API_KEY: hasEnv('FIREBASE_API_KEY'),
+          SQL_HOST: hasEnv('SQL_HOST'),
+          SQL_DB_NAME: hasEnv('SQL_DB_NAME'),
+          SQL_USER: hasEnv('SQL_USER'),
+          SQL_PASSWORD: hasEnv('SQL_PASSWORD'),
+          SQL_ADMIN_USER: hasEnv('SQL_ADMIN_USER'),
+          SQL_ADMIN_PASSWORD: hasEnv('SQL_ADMIN_PASSWORD'),
+        },
+        aiProviders: orch.providers,
+        emailStatus,
+        emailVerify,
+        githubOAuthConfigured: Boolean(
+          hasEnv('GITHUB_CLIENT_ID') && hasEnv('GITHUB_CLIENT_SECRET')
+        ),
+        cloudSql: {
+          configured: cloudSqlConfigured,
+          reachable: cloudSqlReachable,
+        },
+      });
+    } catch (err) {
+      recordServerError('GET', '/api/system/integrations-check', 500, err);
+      res.status(500).json({ error: 'تعذر فحص تكامل المفاتيح.' });
+    }
+  });
+
+  // --- HIBP k-Anonymity Breached Password Check & Adaptive Bot Challenge ---
+
+  app.post('/api/auth/check-password-pwned', async (req: Request, res: Response) => {
+    try {
+      const prefix = String((req.body as { prefix?: string } | undefined)?.prefix || '')
+        .trim()
+        .toUpperCase();
+      if (!/^[0-9A-F]{5}$/.test(prefix)) {
+        res.status(400).json({ error: 'بادئة الفحص يجب أن تتكون من 5 محارف ست عشرية.' });
+        return;
+      }
+      const hibpRes = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+        headers: { 'Add-Padding': 'true', 'User-Agent': 'MorrowApp-kAnonymity' },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!hibpRes.ok) {
+        res.json({ checked: true, suffixCounts: {}, offlineFallback: true });
+        return;
+      }
+      const text = await hibpRes.text();
+      const suffixCounts: Record<string, number> = {};
+      for (const line of text.split(/\r?\n/)) {
+        const [suffix, countStr] = line.trim().split(':');
+        const count = Number(countStr || 0);
+        if (suffix && count > 0) {
+          suffixCounts[suffix.toUpperCase()] = count;
+        }
+      }
+      res.json({ checked: true, suffixCounts });
+    } catch {
+      res.json({ checked: true, suffixCounts: {}, offlineFallback: true });
+    }
+  });
+
+  app.get('/api/auth/challenge', (_req: Request, res: Response) => {
+    res.json(issueBotChallengePayload(2));
   });
 
   // --- Multi-Auth Endpoints: Google, GitHub, Email & Username ---
@@ -492,6 +991,17 @@ async function startServer() {
           .status(400)
           .json({ error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.' });
         return;
+      }
+
+      if (!(body as { allowWeakPasswordOverride?: boolean }).allowWeakPasswordOverride) {
+        const breachCount = await checkPasswordAgainstHibp(password);
+        if (breachCount > 0) {
+          res.status(400).json({
+            error: `تم رصد كلمة المرور هذه ضمن ${breachCount.toLocaleString()} تسريب بيانات عالمي؛ اختر كلمة مرور أقوى.`,
+            pwnedCount: breachCount,
+          });
+          return;
+        }
       }
 
       if (mode === 'google') {
@@ -528,9 +1038,8 @@ async function startServer() {
           email,
           role: 'manager' as const,
         };
-        const token = signSessionToken(user);
-        setSessionCookie(req, res, token, rememberMe);
-        res.status(201).json({ token, user });
+        const issued = issueAuthenticatedSession(req, res, user, 'password', rememberMe);
+        res.status(201).json({ token: issued.token, user: issued.user });
         return;
       }
 
@@ -572,10 +1081,10 @@ async function startServer() {
         username,
         role: 'manager' as const,
       };
-      const token = signSessionToken(user);
-      setSessionCookie(req, res, token, rememberMe);
-      res.status(201).json({ token, user });
-    } catch {
+      const issued = issueAuthenticatedSession(req, res, user, 'password', rememberMe);
+      res.status(201).json({ token: issued.token, user: issued.user });
+    } catch (err) {
+      recordServerError('POST', '/api/auth/register', 500, err);
       res.status(500).json({ error: 'تعذر إنشاء الحساب حالياً.' });
     }
   });
@@ -587,8 +1096,22 @@ async function startServer() {
         identifier?: string;
         password?: string;
         rememberMe?: boolean;
+        botChallenge?: { challengeId?: string; nonce?: string };
       };
       const identifier = String(body.identifier || '').trim();
+      const burstKey = getClientRateKey(req, 'login_burst');
+      const now = Date.now();
+      const burst = failedLoginBursts.get(burstKey);
+      if (burst && now < burst.resetAt && burst.count >= 4) {
+        if (!verifyBotChallengeSolution(body.botChallenge)) {
+          res.status(428).json({
+            requiresChallenge: true,
+            error: 'تم رصد محاولات متكررة؛ يرجى إتمام التحقق الأمني من البوتات للمتابعة.',
+          });
+          return;
+        }
+      }
+
       if (!consumeAuthRateLimit(req, 'login', 18, 5 * 60 * 1000, identifier.toLowerCase())) {
         res.status(429).json({
           error: 'تم تجاوز الحد المسموح من محاولات الدخول. يرجى الانتظار دقائق.',
@@ -604,6 +1127,34 @@ async function startServer() {
       );
 
       if (!found || !verifyPassword(password, found.passwordHash ?? null)) {
+        const cur = failedLoginBursts.get(burstKey);
+        if (!cur || now >= cur.resetAt) {
+          failedLoginBursts.set(burstKey, { count: 1, resetAt: now + 5 * 60 * 1000 });
+        } else {
+          cur.count += 1;
+        }
+        if (found) {
+          const deviceInfo = parseClientDeviceAndBrowser(
+            req.headers['user-agent'],
+            req.headers['sec-ch-ua']
+          );
+          const { isKnownDevice } = isKnownDeviceForUid(
+            found.uid,
+            deviceInfo.deviceLabel,
+            deviceInfo.userAgent,
+            deviceInfo.fingerprintHash
+          );
+          if (!isKnownDevice) {
+            notifyUnknownDeviceLoginAttempt({
+              req,
+              uid: found.uid,
+              displayName: found.displayName,
+              recipientEmail: found.email,
+              loginMethod: 'password',
+              outcome: 'failed',
+            });
+          }
+        }
         res.status(401).json({
           error:
             resolvedMode === 'google'
@@ -613,6 +1164,7 @@ async function startServer() {
         return;
       }
 
+      failedLoginBursts.delete(burstKey);
       const cleanEmail =
         found.email && !found.email.endsWith('.local') ? found.email : undefined;
       const safeProvider: AuthProviderType =
@@ -629,10 +1181,10 @@ async function startServer() {
         avatarUrl: found.avatarUrl || undefined,
         role: (found.role as 'manager' | 'viewer') || 'manager',
       };
-      const token = signSessionToken(user);
-      setSessionCookie(req, res, token, rememberMe);
-      res.json({ token, user });
-    } catch {
+      const issued = issueAuthenticatedSession(req, res, user, 'password', rememberMe);
+      res.json({ token: issued.token, user: issued.user });
+    } catch (err) {
+      recordServerError('POST', '/api/auth/login', 500, err);
       res.status(500).json({ error: 'تعذر تسجيل الدخول حالياً.' });
     }
   });
@@ -660,13 +1212,19 @@ async function startServer() {
         provider: canonical.provider,
         displayName: canonical.displayName,
         email: canonical.email,
+        emailVerified: canonical.emailVerified,
         username: canonical.username,
         avatarUrl: canonical.avatarUrl,
         role: 'manager' as const,
       };
-      const sessionToken = signSessionToken(user);
-      setSessionCookie(req, res, sessionToken, body.rememberMe !== false);
-      res.json({ token: sessionToken, user });
+      const issued = issueAuthenticatedSession(
+        req,
+        res,
+        user,
+        'google',
+        body.rememberMe !== false
+      );
+      res.json({ token: issued.token, user: issued.user });
     } catch {
       res.status(401).json({ error: 'تعذر تثبيت الجلسة السحابية.' });
     }
@@ -746,7 +1304,23 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/logout', (req: Request, res: Response) => {
+  app.post('/api/auth/logout', async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cookies = parseCookieHeader(req.headers.cookie);
+      const token =
+        authHeader && authHeader.startsWith('Bearer ')
+          ? authHeader.slice(7).trim()
+          : cookies[SESSION_COOKIE_NAME] || '';
+      if (token) {
+        const verified = await verifyAuthToken(token);
+        if (verified?.principal.sid) {
+          revokeLocalSession(verified.principal.uid, verified.principal.sid);
+        }
+      }
+    } catch {
+      // ignore cookie cleanup errors
+    }
     clearSessionCookie(req, res);
     res.json({ ok: true });
   });
@@ -880,9 +1454,14 @@ async function startServer() {
         avatarUrl: updated.avatarUrl || undefined,
         role: (updated.role as 'manager' | 'viewer') || 'manager',
       };
-      const token = signSessionToken(user);
-      setSessionCookie(req, res, token, body.rememberMe !== false);
-      res.json({ token, user });
+      const issued = issueAuthenticatedSession(
+        req,
+        res,
+        user,
+        'password',
+        body.rememberMe !== false
+      );
+      res.json({ token: issued.token, user: issued.user });
     } catch {
       res.status(500).json({ error: 'تعذر إعادة تعيين كلمة المرور حالياً.' });
     }
@@ -1050,6 +1629,7 @@ async function startServer() {
         githubId,
         displayName,
         email: verifiedEmail,
+        emailVerified: Boolean(verifiedEmail),
         username: loginName,
         avatarUrl: typeof ghUser.avatar_url === 'string' ? ghUser.avatar_url : undefined,
       });
@@ -1059,13 +1639,19 @@ async function startServer() {
         provider: canonical.provider,
         displayName: canonical.displayName,
         email: canonical.email,
+        emailVerified: canonical.emailVerified,
         username: canonical.username,
         githubId: canonical.githubId || githubId,
         avatarUrl: canonical.avatarUrl,
         role: 'manager' as const,
       };
-      const sessionToken = signSessionToken(user);
-      setSessionCookie(req, res, sessionToken, stateCheck.rememberMe);
+      const issued = issueAuthenticatedSession(
+        req,
+        res,
+        user,
+        'github',
+        stateCheck.rememberMe
+      );
 
       res.status(200).send(
         renderGithubCallbackHtml({
@@ -1074,7 +1660,7 @@ async function startServer() {
           subtitle: 'تم تسجيل الدخول عبر GitHub بنجاح، جارٍ إعادتك إلى Morrow...',
           message: {
             type: 'GITHUB_AUTH_SUCCESS',
-            payload: { token: sessionToken, user },
+            payload: { token: issued.token, user: issued.user },
           },
         })
       );
@@ -1140,6 +1726,674 @@ async function startServer() {
     }
   });
 
+  // --- Sessions, Remote Logout, Security Alerts, Step-Up Reauth & Email Change ---
+
+  app.get('/api/auth/sessions', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const sessions = listLocalSessionsForUid(principal.uid).map((s) => ({
+      ...s,
+      isCurrent: Boolean(principal.sid && s.sid === principal.sid),
+    }));
+    res.json({ sessions });
+  });
+
+  app.delete('/api/auth/sessions/:sid', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const targetSid = String(req.params.sid || '').trim();
+    if (!targetSid) {
+      res.status(400).json({ error: 'معرف الجلسة غير صالح.' });
+      return;
+    }
+    const revoked = revokeLocalSession(principal.uid, targetSid);
+    if (!revoked) {
+      res.status(404).json({ error: 'لم يتم العثور على الجلسة المطلوبة.' });
+      return;
+    }
+    appendLocalSecurityAlert({
+      uid: principal.uid,
+      kind: 'session_revoked',
+      title: 'إنهاء جلسة عن بُعد',
+      summary: `تم تسجيل خروج الجلسة (${targetSid.slice(0, 12)}…) عن بُعد بنجاح.`,
+    });
+    broadcastToSession(principal.uid, targetSid, {
+      type: 'session:revoked',
+      sid: targetSid,
+      reason: 'تم تسجيل الخروج عن بُعد من جهاز آخر.',
+    });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/sessions/revoke-others', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const revokedIds = revokeOtherLocalSessions(principal.uid, principal.sid);
+    for (const sid of revokedIds) {
+      broadcastToSession(principal.uid, sid, {
+        type: 'session:revoked',
+        sid,
+        reason: 'تم تسجيل الخروج من جميع الأجهزة الأخرى.',
+      });
+    }
+    if (revokedIds.length > 0) {
+      appendLocalSecurityAlert({
+        uid: principal.uid,
+        kind: 'session_revoked',
+        title: 'إنهاء الجلسات الأخرى',
+        summary: `تم إنهاء ${revokedIds.length} جلسة نشطة على الأجهزة الأخرى.`,
+      });
+    }
+    res.json({ ok: true, revokedCount: revokedIds.length });
+  });
+
+  app.get('/api/auth/security-alerts', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    res.json({
+      alerts: listLocalSecurityAlerts(principal.uid, 30),
+      emailAlertsEnabled: isLocalUserEmailAlertsEnabled(principal.uid),
+      emailNotificationConfig: getEmailProviderStatus(),
+    });
+  });
+
+  app.patch('/api/auth/security-alerts/preferences', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const enabled = (req.body as { emailAlertsEnabled?: boolean } | undefined)?.emailAlertsEnabled;
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'يرجى تحديد حالة تفعيل تنبيهات البريد.' });
+      return;
+    }
+    setLocalUserEmailAlertsEnabled(principal.uid, enabled);
+    res.json({ emailAlertsEnabled: enabled });
+  });
+
+  app.post('/api/auth/security-alerts/test-email', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const localUser = findUserByUid(principal.uid);
+      const targetEmail = (principal.email || localUser?.email || '').trim();
+      const deviceInfo = parseClientDeviceAndBrowser(
+        req.headers['user-agent'],
+        req.headers['sec-ch-ua']
+      );
+      const ipMasked = getMaskedClientIp(req);
+      const delivery = await dispatchSecurityLoginEmail({
+        uid: principal.uid,
+        recipientEmail: targetEmail,
+        displayName: principal.displayName,
+        loginMethod: 'password',
+        outcome: 'succeeded',
+        deviceInfo,
+        ipMasked,
+        isTest: true,
+        bypassCooldown: true,
+      });
+
+      const alert = appendLocalSecurityAlert({
+        uid: principal.uid,
+        kind: 'new_device_login',
+        title: 'اختبار خدمة إشعارات البريد الإلكتروني',
+        summary: `اختبار إرسال تنبيه أمني لمتصفح «${deviceInfo.browserLabel}» (${deviceInfo.osName}).`,
+        deviceLabel: deviceInfo.deviceLabel,
+        browserLabel: deviceInfo.browserLabel,
+        ipMasked,
+        attemptOutcome: 'succeeded',
+        recipientEmail: targetEmail || undefined,
+        emailDeliveryStatus: delivery.status,
+        emailDeliveryProvider: delivery.provider,
+        emailDeliveryError: delivery.error,
+        emailMessageId: delivery.messageId,
+        emailSubject: delivery.subject,
+        emailSentSimulated: false,
+      });
+
+      res.json({
+        status: delivery.status,
+        provider: delivery.provider,
+        messageId: delivery.messageId,
+        error: delivery.error,
+        alert,
+      });
+    } catch (err) {
+      recordServerError('POST', '/api/auth/security-alerts/test-email', 500, err);
+      res.status(500).json({ error: 'تعذر تنفيذ اختبار إرسال البريد حالياً.' });
+    }
+  });
+
+  app.post('/api/auth/reauthenticate', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const body = (req.body || {}) as { password?: string };
+      const localUser = findUserByUid(principal.uid);
+      const sqlUser = isSqlDatabaseConfigured() ? await getSqlUserByUid(principal.uid) : null;
+      const storedHash = sqlUser?.passwordHash ?? localUser?.passwordHash ?? null;
+
+      if (storedHash) {
+        const pwd = String(body.password || '');
+        if (!verifyPassword(pwd, storedHash)) {
+          res.status(401).json({ error: 'كلمة المرور غير صحيحة لإتمام التحقق.' });
+          return;
+        }
+      }
+
+      const now = Date.now();
+      for (const [k, v] of reauthGrants.entries()) {
+        if (now > v.expiresAt) reauthGrants.delete(k);
+      }
+      const reauthToken = `reauth_${crypto.randomBytes(18).toString('hex')}`;
+      const expiresAtMs = now + 5 * 60 * 1000;
+      reauthGrants.set(reauthToken, { uid: principal.uid, expiresAt: expiresAtMs });
+      appendLocalSecurityAlert({
+        uid: principal.uid,
+        kind: 'reauth_verified',
+        title: 'تأكيد الهوية قبل عملية حساسة',
+        summary: 'تم منح صلاحية تحقق مؤقتة لمدة 5 دقائق للعمليات الحساسة.',
+      });
+      res.json({
+        reauthToken,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        expiresInSeconds: 300,
+      });
+    } catch (err) {
+      recordServerError('POST', '/api/auth/reauthenticate', 500, err);
+      res.status(500).json({ error: 'تعذر التحقق من الهوية حالياً.' });
+    }
+  });
+
+  app.post('/api/auth/change-email', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      if (!verifyStepUpReauth(req, res, principal.uid)) return;
+      const newEmail = String((req.body as { newEmail?: string } | undefined)?.newEmail || '')
+        .trim()
+        .toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح.' });
+        return;
+      }
+
+      const result = updateLocalUserEmail({ uid: principal.uid, newEmail });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      if (isSqlDatabaseConfigured()) {
+        await updateSqlUserProfile({
+          uid: principal.uid,
+          email: newEmail,
+          displayName: result.user.displayName,
+        });
+      }
+
+      const user = {
+        uid: result.user.uid,
+        provider: result.user.authProvider,
+        displayName: result.user.displayName,
+        email: result.user.email || newEmail,
+        emailVerified: true,
+        username: result.user.username || undefined,
+        githubId: result.user.githubId || undefined,
+        avatarUrl: result.user.avatarUrl || undefined,
+        role: result.user.role,
+      };
+      const token = signSessionToken({ ...user, sid: principal.sid });
+      setSessionCookie(req, res, token, true);
+      res.json({ token, user });
+    } catch (err) {
+      recordServerError('POST', '/api/auth/change-email', 500, err);
+      res.status(500).json({ error: 'تعذر تحديث البريد الإلكتروني.' });
+    }
+  });
+
+  // --- Passkeys (WebAuthn / FIDO2) ---
+
+  app.get('/api/auth/passkeys', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const passkeys = listLocalPasskeys(principal.uid).map((p) => ({
+      id: p.id,
+      credentialId: p.credentialId,
+      label: p.label,
+      transports: p.transports,
+      deviceType: p.deviceType,
+      createdAt: p.createdAt,
+      lastUsedAt: p.lastUsedAt,
+    }));
+    res.json({ passkeys });
+  });
+
+  app.post('/api/auth/passkeys/register/options', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    const challengeId = `pkc_${crypto.randomBytes(8).toString('hex')}`;
+    passkeyChallenges.set(challengeId, {
+      challenge,
+      uid: principal.uid,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+    const existing = listLocalPasskeys(principal.uid);
+    const rpId = getRpIdFromRequest(req);
+    res.json({
+      challengeId,
+      options: {
+        challenge,
+        rp: { name: 'Morrow Workspace', id: rpId },
+        user: {
+          id: Buffer.from(principal.uid, 'utf8').toString('base64url'),
+          name: principal.email || principal.username || principal.uid,
+          displayName: principal.displayName,
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        timeout: 60000,
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'preferred',
+        },
+        excludeCredentials: existing.map((c) => ({
+          id: c.credentialId,
+          type: 'public-key',
+        })),
+      },
+    });
+  });
+
+  app.post('/api/auth/passkeys/register/verify', requireAuth, (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const body = (req.body || {}) as {
+        challengeId?: string;
+        label?: string;
+        credential?: {
+          id?: string;
+          rawId?: string;
+          transports?: string[];
+          authenticatorAttachment?: string;
+          response?: {
+            clientDataJSON?: string;
+            attestationObject?: string;
+            publicKeySpki?: string;
+          };
+        };
+      };
+      const entry = body.challengeId ? passkeyChallenges.get(body.challengeId) : undefined;
+      if (!entry || entry.uid !== principal.uid || Date.now() > entry.expiresAt) {
+        res.status(400).json({ error: 'انتهت صلاحية تحدي تسجيل مفتاح المرور.' });
+        return;
+      }
+      passkeyChallenges.delete(body.challengeId!);
+
+      const cred = body.credential;
+      const clientDataB64 = cred?.response?.clientDataJSON;
+      if (!cred?.id || !clientDataB64) {
+        res.status(400).json({ error: 'بيانات مفتاح المرور غير مكتملة.' });
+        return;
+      }
+      const clientData = JSON.parse(
+        Buffer.from(clientDataB64, 'base64url').toString('utf8')
+      ) as { type?: string; challenge?: string };
+      if (clientData.type !== 'webauthn.create' || clientData.challenge !== entry.challenge) {
+        res.status(400).json({ error: 'فشل تطابق تحدي WebAuthn.' });
+        return;
+      }
+
+      const label =
+        String(body.label || '').trim().slice(0, 60) || parseDeviceLabel(req);
+      const saved = saveLocalPasskey({
+        uid: principal.uid,
+        credentialId: cred.id,
+        publicKeySpki: cred.response?.publicKeySpki || '',
+        counter: 0,
+        label,
+        transports: Array.isArray(cred.transports) ? cred.transports : [],
+        deviceType: cred.authenticatorAttachment || 'platform',
+      });
+
+      appendLocalSecurityAlert({
+        uid: principal.uid,
+        kind: 'passkey_added',
+        title: 'إضافة مفتاح مرور (Passkey)',
+        summary: `تم تفعيل مفتاح مرور جديد على هذا الحساب: «${saved.label}».`,
+        deviceLabel: saved.label,
+      });
+
+      res.status(201).json({
+        ok: true,
+        credentialId: saved.credentialId,
+        label: saved.label,
+      });
+    } catch {
+      res.status(400).json({ error: 'تعذر توثيق مفتاح المرور الجديد.' });
+    }
+  });
+
+  app.delete('/api/auth/passkeys/:id', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    if (!verifyStepUpReauth(req, res, principal.uid)) return;
+    const id = String(req.params.id || '').trim();
+    if (!id || !deleteLocalPasskey(principal.uid, id)) {
+      res.status(404).json({ error: 'مفتاح المرور غير موجود.' });
+      return;
+    }
+    appendLocalSecurityAlert({
+      uid: principal.uid,
+      kind: 'passkey_removed',
+      title: 'حذف مفتاح مرور (Passkey)',
+      summary: 'تمت إزالة أحد مفاتيح المرور المسجلة من حسابك.',
+    });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/passkeys/login/options', async (req: Request, res: Response) => {
+    const identifier = String((req.body as { identifier?: string } | undefined)?.identifier || '').trim();
+    let allowCredentials: Array<{ id: string }> | undefined;
+    if (identifier) {
+      const { user } = await resolveAutoIdentifierLookup('auto', identifier);
+      if (user) {
+        allowCredentials = listLocalPasskeys(user.uid).map((p) => ({ id: p.credentialId }));
+      }
+    }
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    const challengeId = `pkl_${crypto.randomBytes(8).toString('hex')}`;
+    passkeyChallenges.set(challengeId, {
+      challenge,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+    res.json({
+      challengeId,
+      options: {
+        challenge,
+        rpId: getRpIdFromRequest(req),
+        timeout: 60000,
+        allowCredentials,
+      },
+    });
+  });
+
+  app.post('/api/auth/passkeys/login/verify', (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        challengeId?: string;
+        rememberMe?: boolean;
+        assertion?: {
+          id?: string;
+          rawId?: string;
+          response?: {
+            clientDataJSON?: string;
+            authenticatorData?: string;
+            signature?: string;
+          };
+        };
+      };
+      const entry = body.challengeId ? passkeyChallenges.get(body.challengeId) : undefined;
+      if (!entry || Date.now() > entry.expiresAt) {
+        res.status(400).json({ error: 'انتهت صلاحية تحدي Passkey.' });
+        return;
+      }
+      passkeyChallenges.delete(body.challengeId!);
+
+      const assertion = body.assertion;
+      const clientDataB64 = assertion?.response?.clientDataJSON;
+      const authDataB64 = assertion?.response?.authenticatorData;
+      const signatureB64 = assertion?.response?.signature;
+      if (!assertion?.id || !clientDataB64 || !authDataB64 || !signatureB64) {
+        res.status(400).json({ error: 'استجابة Passkey غير مكتملة.' });
+        return;
+      }
+
+      const clientDataBuf = Buffer.from(clientDataB64, 'base64url');
+      const clientData = JSON.parse(clientDataBuf.toString('utf8')) as {
+        type?: string;
+        challenge?: string;
+      };
+      if (clientData.type !== 'webauthn.get' || clientData.challenge !== entry.challenge) {
+        res.status(401).json({ error: 'فشل التحقق من تحدي Passkey.' });
+        return;
+      }
+
+      const stored = findLocalPasskeyByCredId(assertion.id);
+      if (!stored) {
+        res.status(404).json({ error: 'مفتاح المرور غير مسجل في هذا الخادم.' });
+        return;
+      }
+
+      const authDataBuf = Buffer.from(authDataB64, 'base64url');
+      const signatureBuf = Buffer.from(signatureB64, 'base64url');
+      if (stored.publicKeySpki) {
+        const spkiDer = Buffer.from(stored.publicKeySpki, 'base64url');
+        const clientDataHash = crypto.createHash('sha256').update(clientDataBuf).digest();
+        const signedData = Buffer.concat([authDataBuf, clientDataHash]);
+        const verifiedSig = crypto.verify(
+          'sha256',
+          signedData,
+          crypto.createPublicKey({ key: spkiDer, format: 'der', type: 'spki' }),
+          signatureBuf
+        );
+        if (!verifiedSig) {
+          res.status(401).json({ error: 'توقيع مفتاح المرور غير صالح.' });
+          return;
+        }
+      }
+
+      const signCount =
+        authDataBuf.length >= 37 ? authDataBuf.readUInt32BE(33) : stored.counter + 1;
+      touchLocalPasskeyUsage(stored.credentialId, signCount);
+
+      const userRec = findUserByUid(stored.uid);
+      if (!userRec) {
+        res.status(404).json({ error: 'لم يتم العثور على الحساب المرتبط.' });
+        return;
+      }
+      const cleanEmail =
+        userRec.email && !userRec.email.endsWith('.local') ? userRec.email : undefined;
+      const user = {
+        uid: userRec.uid,
+        provider: userRec.authProvider,
+        displayName: userRec.displayName,
+        email: cleanEmail,
+        username: userRec.username || undefined,
+        githubId: userRec.githubId || undefined,
+        avatarUrl: userRec.avatarUrl || undefined,
+        role: userRec.role,
+      };
+      const issued = issueAuthenticatedSession(
+        req,
+        res,
+        user,
+        'passkey',
+        body.rememberMe !== false
+      );
+      res.json({ token: issued.token, user: issued.user });
+    } catch {
+      res.status(401).json({ error: 'فشل توثيق الدخول عبر Passkey.' });
+    }
+  });
+
+  // --- Single-Use Recovery Codes ---
+
+  app.get('/api/auth/recovery-codes/status', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    res.json(getLocalRecoveryCodesStatus(principal.uid));
+  });
+
+  app.post('/api/auth/recovery-codes/generate', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    if (!verifyStepUpReauth(req, res, principal.uid)) return;
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const genSegment = () =>
+      Array.from({ length: 4 }, () => alphabet[crypto.randomInt(0, alphabet.length)]).join('');
+    const codes = Array.from({ length: 8 }, () => `${genSegment()}-${genSegment()}-${genSegment()}`);
+    const status = replaceLocalRecoveryCodes(principal.uid, codes);
+    appendLocalSecurityAlert({
+      uid: principal.uid,
+      kind: 'recovery_codes_rotated',
+      title: 'توليد رموز استرجاع جديدة',
+      summary: 'تم استبدال رموز الاسترجاع بمجموعة جديدة من 8 رموز لمرة واحدة.',
+    });
+    res.json({ codes, status });
+  });
+
+  app.post('/api/auth/login-recovery-code', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        identifier?: string;
+        recoveryCode?: string;
+        rememberMe?: boolean;
+      };
+      const identifier = String(body.identifier || '').trim();
+      const recoveryCode = String(body.recoveryCode || '').trim();
+      if (!identifier || !recoveryCode) {
+        res.status(400).json({ error: 'يرجى إدخال معرف الحساب ورمز الاسترجاع.' });
+        return;
+      }
+      if (!consumeAuthRateLimit(req, 'recovery_login', 10, 10 * 60 * 1000, identifier.toLowerCase())) {
+        res.status(429).json({ error: 'محاولات متكررة كثيرة، يرجى الانتظار.' });
+        return;
+      }
+      const { user: found } = await resolveAutoIdentifierLookup('auto', identifier);
+      if (!found || !consumeLocalRecoveryCode(found.uid, recoveryCode)) {
+        res.status(401).json({ error: 'رمز الاسترجاع غير صحيح أو تم استخدامه مسبقاً.' });
+        return;
+      }
+
+      const cleanEmail =
+        found.email && !found.email.endsWith('.local') ? found.email : undefined;
+      const safeProvider: AuthProviderType =
+        found.authProvider === 'google' || found.authProvider === 'github'
+          ? found.authProvider
+          : 'username';
+      const user = {
+        uid: found.uid,
+        provider: safeProvider,
+        displayName: found.displayName,
+        email: cleanEmail,
+        username: found.username || undefined,
+        githubId: 'githubId' in found && found.githubId ? found.githubId : undefined,
+        avatarUrl: found.avatarUrl || undefined,
+        role: (found.role as 'manager' | 'viewer') || 'manager',
+      };
+      appendLocalSecurityAlert({
+        uid: found.uid,
+        kind: 'recovery_code_used',
+        title: 'استخدام رمز استرجاع أحادي',
+        summary: 'تم تسجيل الدخول باستخدام أحد رموز الاسترجاع الاحتياطية وتم استهلاكه.',
+        deviceLabel: parseDeviceLabel(req),
+        ipMasked: getMaskedClientIp(req),
+      });
+      const issued = issueAuthenticatedSession(
+        req,
+        res,
+        user,
+        'recovery_code',
+        body.rememberMe !== false
+      );
+      res.json({ token: issued.token, user: issued.user });
+    } catch {
+      res.status(500).json({ error: 'تعذر الدخول برمز الاسترجاع.' });
+    }
+  });
+
+  // --- QR Cross-Device Pairing ---
+
+  app.post('/api/auth/qr/init', (_req: Request, res: Response) => {
+    const now = Date.now();
+    for (const [k, v] of qrPairings.entries()) {
+      if (now > v.expiresAt) qrPairings.delete(k);
+    }
+    const pairId = `qr_${crypto.randomBytes(10).toString('hex')}`;
+    const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const expiresAtMs = now + 3 * 60 * 1000;
+    qrPairings.set(pairId, {
+      pairId,
+      code,
+      status: 'pending',
+      expiresAt: expiresAtMs,
+    });
+    res.json({
+      pairId,
+      code,
+      shortCode: code,
+      qrPayload: `morrow-pair://${pairId}/${code}`,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    });
+  });
+
+  app.get('/api/auth/qr/status/:pairId', (req: Request, res: Response) => {
+    const pairId = String(req.params.pairId || '').trim();
+    const entry = qrPairings.get(pairId);
+    if (!entry || Date.now() > entry.expiresAt) {
+      if (entry) qrPairings.delete(pairId);
+      res.json({ status: 'expired' });
+      return;
+    }
+    if (entry.status === 'approved' && entry.token && entry.user) {
+      qrPairings.delete(pairId);
+      res.json({ status: 'approved', token: entry.token, user: entry.user });
+      return;
+    }
+    res.json({ status: 'pending' });
+  });
+
+  app.post('/api/auth/qr/approve', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const codeOrPairId = String(
+      (req.body as { codeOrPairId?: string } | undefined)?.codeOrPairId || ''
+    ).trim();
+    if (!codeOrPairId) {
+      res.status(400).json({ error: 'يرجى إدخال رمز الاقتران أو مسح رمز QR.' });
+      return;
+    }
+    const cleanCode = codeOrPairId
+      .replace(/^morrow-pair:\/\//i, '')
+      .split('/')
+      .pop()!
+      .trim()
+      .toUpperCase();
+
+    const matched = Array.from(qrPairings.values()).find(
+      (q) =>
+        Date.now() <= q.expiresAt &&
+        q.status === 'pending' &&
+        (q.pairId === codeOrPairId || q.code === cleanCode || codeOrPairId.includes(q.pairId))
+    );
+    if (!matched) {
+      res.status(404).json({ error: 'رمز الاقتران منتهي الصلاحية أو غير صالح.' });
+      return;
+    }
+
+    const user = {
+      uid: principal.uid,
+      provider: principal.provider,
+      displayName: principal.displayName,
+      email: principal.email,
+      emailVerified: principal.emailVerified,
+      username: principal.username,
+      githubId: principal.githubId,
+      avatarUrl: principal.avatarUrl,
+      role: 'manager' as const,
+    };
+    const sid = `sid_${crypto.randomBytes(10).toString('hex')}`;
+    const token = signSessionToken({ ...user, sid });
+    registerLocalSession({
+      sid,
+      uid: user.uid,
+      provider: user.provider,
+      deviceLabel: 'جهاز مقترن بـ QR',
+      userAgent: 'QR Paired Session',
+      ipMasked: getMaskedClientIp(req),
+      loginMethod: 'qr',
+    });
+
+    matched.status = 'approved';
+    matched.token = token;
+    matched.user = user;
+    broadcastToQrWatchers(matched.pairId, {
+      type: 'qr:approved',
+      pairId: matched.pairId,
+      token,
+      user,
+    });
+    res.json({ ok: true });
+  });
+
   function getIntelligentAmbience(hourValue?: number) {
     const hour =
       typeof hourValue === 'number' && Number.isFinite(hourValue)
@@ -1189,6 +2443,29 @@ async function startServer() {
     });
   });
 
+  const ALLOWED_SOUND_PACKS = new Set([
+    'rumi_warm',
+    'crystal_glass',
+    'studio_crisp',
+    'minimal_soft',
+  ]);
+  const ALLOWED_NOTIFICATION_TONES = new Set([
+    'chime_duet',
+    'bell_crystal',
+    'harp_pluck',
+    'soft_pulse',
+    'silent',
+  ]);
+  const normalizeServerHHMM = (raw: unknown, fallback: string): string => {
+    if (typeof raw !== 'string') return fallback;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(raw.trim());
+    if (!m) return fallback;
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return fallback;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  };
+
   app.post('/api/settings/sound', requireAuth, (req: AuthRequest, res: Response) => {
     const body = (req.body || {}) as {
       sound_enabled?: unknown;
@@ -1212,6 +2489,145 @@ async function startServer() {
       status: 'ok',
       sound_enabled: saved.soundEnabled,
       volume: saved.volume,
+    });
+  });
+
+  app.get('/api/settings/audio-notifications', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const existing = getLocalUserAudioSettings(principal.uid);
+    res.json({
+      exists: Boolean(existing),
+      settings: existing,
+    });
+  });
+
+  app.put('/api/settings/audio-notifications', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const body = (req.body || {}) as {
+      settings?: Record<string, unknown>;
+      deviceId?: unknown;
+    };
+    if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+      res.status(400).json({ error: 'بيانات إعدادات الصوت والإشعارات غير صالحة.' });
+      return;
+    }
+
+    const prev = getLocalUserAudioSettings(principal.uid);
+    const s = body.settings;
+    const rawChannels =
+      s.channels && typeof s.channels === 'object' && !Array.isArray(s.channels)
+        ? (s.channels as Record<string, unknown>)
+        : {};
+    const deviceInfo = parseClientDeviceAndBrowser(
+      req.headers['user-agent'],
+      req.headers['sec-ch-ua']
+    );
+    const deviceId =
+      typeof body.deviceId === 'string' && body.deviceId.trim()
+        ? body.deviceId.trim().slice(0, 120)
+        : 'unknown';
+
+    const sanitized: StoredUserAudioNotificationSettings = {
+      masterSoundEnabled:
+        typeof s.masterSoundEnabled === 'boolean'
+          ? s.masterSoundEnabled
+          : prev?.masterSoundEnabled ?? true,
+      musicEnabled:
+        typeof s.musicEnabled === 'boolean'
+          ? s.musicEnabled
+          : prev?.musicEnabled ?? true,
+      musicVolume:
+        typeof s.musicVolume === 'number' && Number.isFinite(s.musicVolume)
+          ? Math.max(0, Math.min(1, s.musicVolume))
+          : prev?.musicVolume ?? 0.2,
+      smartPauseEnabled:
+        typeof s.smartPauseEnabled === 'boolean'
+          ? s.smartPauseEnabled
+          : prev?.smartPauseEnabled ?? true,
+      pauseOnExit:
+        typeof s.pauseOnExit === 'boolean'
+          ? s.pauseOnExit
+          : prev?.pauseOnExit ?? true,
+      effectsVolume:
+        typeof s.effectsVolume === 'number' && Number.isFinite(s.effectsVolume)
+          ? Math.max(0, Math.min(1, s.effectsVolume))
+          : prev?.effectsVolume ?? 0.85,
+      soundPack:
+        typeof s.soundPack === 'string' && ALLOWED_SOUND_PACKS.has(s.soundPack)
+          ? (s.soundPack as StoredUserAudioNotificationSettings['soundPack'])
+          : prev?.soundPack ?? 'rumi_warm',
+      notificationTone:
+        typeof s.notificationTone === 'string' &&
+        ALLOWED_NOTIFICATION_TONES.has(s.notificationTone)
+          ? (s.notificationTone as StoredUserAudioNotificationSettings['notificationTone'])
+          : prev?.notificationTone ?? 'chime_duet',
+      successErrorEnabled:
+        typeof s.successErrorEnabled === 'boolean'
+          ? s.successErrorEnabled
+          : prev?.successErrorEnabled ?? true,
+      motionSoundsEnabled:
+        typeof s.motionSoundsEnabled === 'boolean'
+          ? s.motionSoundsEnabled
+          : prev?.motionSoundsEnabled ?? true,
+      notificationSoundEnabled:
+        typeof s.notificationSoundEnabled === 'boolean'
+          ? s.notificationSoundEnabled
+          : prev?.notificationSoundEnabled ?? true,
+      notificationsMasterEnabled:
+        typeof s.notificationsMasterEnabled === 'boolean'
+          ? s.notificationsMasterEnabled
+          : prev?.notificationsMasterEnabled ?? true,
+      channels: {
+        security: true,
+        reminders:
+          typeof rawChannels.reminders === 'boolean'
+            ? rawChannels.reminders
+            : prev?.channels.reminders ?? true,
+        sync:
+          typeof rawChannels.sync === 'boolean'
+            ? rawChannels.sync
+            : prev?.channels.sync ?? true,
+        whats_new:
+          typeof rawChannels.whats_new === 'boolean'
+            ? rawChannels.whats_new
+            : prev?.channels.whats_new ?? true,
+      },
+      quietHoursEnabled:
+        typeof s.quietHoursEnabled === 'boolean'
+          ? s.quietHoursEnabled
+          : prev?.quietHoursEnabled ?? false,
+      quietHoursStart: normalizeServerHHMM(
+        s.quietHoursStart,
+        prev?.quietHoursStart ?? '22:00'
+      ),
+      quietHoursEnd: normalizeServerHHMM(
+        s.quietHoursEnd,
+        prev?.quietHoursEnd ?? '07:00'
+      ),
+      updatedAt: new Date().toISOString(),
+      updatedByDeviceId: deviceId,
+      updatedByDeviceLabel: deviceInfo.deviceLabel,
+    };
+
+    const saved = saveLocalUserAudioSettings(principal.uid, sanitized);
+    saveSoundSettings({
+      soundEnabled: saved.musicEnabled,
+      volume: saved.musicVolume,
+    });
+
+    broadcastToUser(principal.uid, {
+      type: 'settings:audio_updated',
+      uid: principal.uid,
+      deviceId,
+      deviceLabel: deviceInfo.deviceLabel,
+      settings: saved,
+      updatedAt: saved.updatedAt,
+    });
+
+    res.json({
+      status: 'ok',
+      settings: saved,
+      deviceLabel: deviceInfo.deviceLabel,
     });
   });
 
@@ -1406,6 +2822,25 @@ async function startServer() {
             JSON.stringify(body.snapshot.smartPreferences)
           );
         }
+        if (!outcome.conflictResolved) {
+          lastBackupSnapshotAt = new Date().toISOString();
+          saveLocalWorkspaceVersion({
+            uid: principal.uid,
+            label: 'مزامنة سحابية تلقائية',
+            source: 'auto_sync',
+            deviceId,
+            snapshotJson,
+            recordCount: body.snapshot.persons.length,
+            agencyCount: body.snapshot.agencies.length,
+          });
+          broadcastToUser(principal.uid, {
+            type: 'workspace:updated',
+            uid: principal.uid,
+            deviceId,
+            updatedAt: outcome.snapshot.clientUpdatedAt || outcome.snapshot.updatedAt,
+            version: outcome.snapshot.version,
+          });
+        }
         res.json({
           ok: true,
           conflictResolved: outcome.conflictResolved,
@@ -1447,6 +2882,25 @@ async function startServer() {
           JSON.stringify(body.snapshot.smartPreferences)
         );
       }
+      if (!outcome.conflictResolved) {
+        lastBackupSnapshotAt = new Date().toISOString();
+        saveLocalWorkspaceVersion({
+          uid: principal.uid,
+          label: 'مزامنة سحابية تلقائية',
+          source: 'auto_sync',
+          deviceId,
+          snapshotJson,
+          recordCount: body.snapshot.persons.length,
+          agencyCount: body.snapshot.agencies.length,
+        });
+        broadcastToUser(principal.uid, {
+          type: 'workspace:updated',
+          uid: principal.uid,
+          deviceId,
+          updatedAt: outcome.snapshot.clientUpdatedAt || outcome.snapshot.updatedAt,
+          version: outcome.snapshot.version,
+        });
+      }
       res.json({
         ok: true,
         conflictResolved: outcome.conflictResolved,
@@ -1460,8 +2914,442 @@ async function startServer() {
         storageMode: 'local_fallback',
       });
     } catch (err) {
+      recordServerError('PUT', '/api/workspace', 500, err);
       console.error('Failed to save workspace snapshot:', err);
       res.status(500).json({ error: 'تعذر حفظ نسخة مساحة العمل.' });
+    }
+  });
+
+  // --- Content-Addressed Chunk Deduplication, Storage Quota & 30-Day Version History ---
+
+  app.post('/api/sync/chunks/check', requireAuth, (req: AuthRequest, res: Response) => {
+    const body = (req.body || {}) as { hashes?: unknown };
+    const hashes = Array.isArray(body.hashes)
+      ? body.hashes
+          .filter((h): h is string => typeof h === 'string' && /^[a-f0-9]{16,128}$/i.test(h))
+          .slice(0, 500)
+      : [];
+    const missingHashes = findMissingLocalChunkHashes(hashes);
+    res.json({ missingHashes });
+  });
+
+  app.put('/api/sync/chunks/:hash', requireAuth, (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const hash = String(req.params.hash || '').trim().toLowerCase();
+      if (!/^[a-f0-9]{32,128}$/.test(hash)) {
+        res.status(400).json({ error: 'معرف القطعة غير صالح.' });
+        return;
+      }
+      const body = (req.body || {}) as { base64Data?: string; sizeBytes?: number };
+      const base64Data = String(body.base64Data || '');
+      const rawBuf = Buffer.from(base64Data, 'base64');
+      const actualHash = crypto.createHash('sha256').update(rawBuf).digest('hex');
+      if (actualHash !== hash) {
+        res.status(400).json({ error: 'بصمة SHA-256 للقطعة لا تطابق المعرف المطلوب.' });
+        return;
+      }
+      const saved = upsertLocalChunk({
+        uid: principal.uid,
+        hash,
+        sizeBytes: rawBuf.byteLength,
+        base64Data,
+      });
+      res.json({ ok: true, hash: saved.hash, sizeBytes: saved.sizeBytes });
+    } catch {
+      res.status(500).json({ error: 'تعذر حفظ قطعة المزامنة.' });
+    }
+  });
+
+  app.post('/api/sync/manifest', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const body = (req.body || {}) as {
+      manifestId?: string;
+      alg?: string;
+      rawBytes?: number;
+      compressedBytes?: number;
+      chunkHashes?: string[];
+      label?: string;
+    };
+    const quotaBefore = getLocalUserStorageQuota(principal.uid);
+    if (quotaBefore.usedBytes + Number(body.compressedBytes || 0) > DEFAULT_ACCOUNT_QUOTA_BYTES * 1.15) {
+      res.status(413).json({ error: 'تم تجاوز حصة التخزين المخصصة للحساب (50 MB).' });
+      return;
+    }
+    const manifestId = String(body.manifestId || '').trim();
+    if (!manifestId || !Array.isArray(body.chunkHashes)) {
+      res.status(400).json({ error: 'بيانات فهرس القطع غير مكتملة.' });
+      return;
+    }
+    saveLocalChunkManifest({
+      manifestId,
+      uid: principal.uid,
+      alg: String(body.alg || 'gzip'),
+      rawBytes: Math.max(0, Number(body.rawBytes || 0)),
+      compressedBytes: Math.max(0, Number(body.compressedBytes || 0)),
+      chunkHashes: body.chunkHashes.slice(0, 1000),
+      label: String(body.label || 'مزامنة مقطّعة'),
+    });
+    const quota = getLocalUserStorageQuota(principal.uid);
+    lastBackupSnapshotAt = new Date().toISOString();
+    res.json({ ok: true, quota });
+  });
+
+  app.get('/api/workspace/quota', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    res.json(getLocalUserStorageQuota(principal.uid));
+  });
+
+  app.get('/api/workspace/versions', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const versions = listLocalWorkspaceVersions(principal.uid).map(
+      ({ snapshotJson: _omitted, ...meta }) => meta
+    );
+    res.json({ versions });
+  });
+
+  app.post('/api/workspace/versions/:versionId/restore', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      const versionId = String(req.params.versionId || '').trim();
+      const found = getLocalWorkspaceVersionById(principal.uid, versionId);
+      if (!found) {
+        res.status(404).json({ error: 'الإصدار غير موجود أو تجاوز مدة الاحتفاظ (30 يوماً).' });
+        return;
+      }
+      const parsed = JSON.parse(found.snapshotJson);
+      if (isSqlDatabaseConfigured()) {
+        await saveWorkspaceByUid({
+          uid: principal.uid,
+          email: principal.email || `${principal.uid}@tabrex.local`,
+          displayName: principal.displayName,
+          authProvider: principal.provider,
+          snapshotJson: found.snapshotJson,
+          recordCount: found.recordCount,
+          agencyCount: found.agencyCount,
+          clientUpdatedAt: new Date().toISOString(),
+          deviceId: 'version_restore',
+        });
+      } else {
+        const userRec = findUserByUid(principal.uid);
+        if (userRec) {
+          saveWorkspaceSnapshot({
+            userId: userRec.id,
+            snapshotJson: found.snapshotJson,
+            recordCount: found.recordCount,
+            agencyCount: found.agencyCount,
+            clientUpdatedAt: new Date().toISOString(),
+            deviceId: 'version_restore',
+          });
+        }
+      }
+      broadcastToUser(principal.uid, {
+        type: 'workspace:updated',
+        uid: principal.uid,
+        deviceId: 'version_restore',
+        updatedAt: new Date().toISOString(),
+        version: found.versionNumber,
+      });
+      res.json({ ok: true, snapshot: parsed });
+    } catch {
+      res.status(500).json({ error: 'تعذر استرجاع هذا الإصدار.' });
+    }
+  });
+
+  // --- Data Sharing (Server-Enforced RBAC Links, Email Invites, Access Logs) ---
+
+  app.get('/api/shares', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const links = listLocalShareLinks(principal.uid).map((l) => ({
+      id: l.id,
+      ownerUid: l.ownerUid,
+      token: l.token,
+      label: l.label,
+      role: l.role,
+      hasPassword: Boolean(l.passwordHash),
+      expiresAt: l.expiresAt ?? null,
+      revokedAt: l.revokedAt ?? null,
+      createdAt: l.createdAt,
+      accessCount: l.accessCount,
+      lastAccessedAt: l.lastAccessedAt ?? null,
+    }));
+    const invites = listLocalShareInvites(principal.uid);
+    const accessLogs = listLocalShareAccessLogs(principal.uid, 50);
+    res.json({ links, invites, accessLogs });
+  });
+
+  app.post('/api/shares/links', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const body = (req.body || {}) as {
+      label?: string;
+      role?: 'viewer' | 'editor';
+      expiresInHours?: number | null;
+      password?: string;
+    };
+    const label = String(body.label || 'رابط مشاركة مساحة العمل').trim().slice(0, 80);
+    const role = body.role === 'editor' ? 'editor' : 'viewer';
+    const expiresAt =
+      typeof body.expiresInHours === 'number' && body.expiresInHours > 0
+        ? new Date(Date.now() + body.expiresInHours * 60 * 60 * 1000).toISOString()
+        : null;
+    const passwordHash =
+      typeof body.password === 'string' && body.password.trim().length > 0
+        ? hashPassword(body.password.trim())
+        : null;
+
+    const created = createLocalShareLink({
+      ownerUid: principal.uid,
+      label,
+      role,
+      passwordHash,
+      expiresAt,
+    });
+    res.status(201).json({
+      link: {
+        id: created.id,
+        ownerUid: created.ownerUid,
+        token: created.token,
+        label: created.label,
+        role: created.role,
+        hasPassword: Boolean(created.passwordHash),
+        expiresAt: created.expiresAt ?? null,
+        revokedAt: created.revokedAt ?? null,
+        createdAt: created.createdAt,
+        accessCount: created.accessCount,
+        lastAccessedAt: created.lastAccessedAt ?? null,
+      },
+    });
+  });
+
+  app.delete('/api/shares/links/:id', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const id = String(req.params.id || '').trim();
+    if (!id || !revokeLocalShareLink(principal.uid, id)) {
+      res.status(404).json({ error: 'رابط المشاركة غير موجود.' });
+      return;
+    }
+    appendLocalShareAccessLog({
+      ownerUid: principal.uid,
+      actorLabel: principal.displayName,
+      actorUid: principal.uid,
+      via: 'owner',
+      role: 'owner',
+      action: 'revoke_link',
+      reason: `إلغاء رابط المشاركة فوراً (${id})`,
+      ipMasked: getMaskedClientIp(req),
+    });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/shares/invites', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const body = (req.body || {}) as { email?: string; role?: 'owner' | 'editor' | 'viewer' };
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صحيح للدعوة.' });
+      return;
+    }
+    const role =
+      body.role === 'owner' || body.role === 'editor' ? body.role : 'viewer';
+    const invite = upsertLocalShareInvite({ ownerUid: principal.uid, email, role });
+    appendLocalShareAccessLog({
+      ownerUid: principal.uid,
+      actorLabel: email,
+      via: 'invite',
+      role,
+      action: 'invite_member',
+      reason: `دعوة عضو بصلاحية ${role}`,
+      ipMasked: getMaskedClientIp(req),
+    });
+    res.status(201).json({ invite });
+  });
+
+  app.patch('/api/shares/invites/:id', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const id = String(req.params.id || '').trim();
+    const rawRole = (req.body as { role?: string } | undefined)?.role;
+    const role =
+      rawRole === 'owner' || rawRole === 'editor' ? rawRole : 'viewer';
+    if (!updateLocalShareInviteRole(principal.uid, id, role)) {
+      res.status(404).json({ error: 'الدعوة غير موجودة.' });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/shares/invites/:id', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const id = String(req.params.id || '').trim();
+    if (!revokeLocalShareInvite(principal.uid, id)) {
+      res.status(404).json({ error: 'الدعوة غير موجودة.' });
+      return;
+    }
+    appendLocalShareAccessLog({
+      ownerUid: principal.uid,
+      actorLabel: principal.displayName,
+      actorUid: principal.uid,
+      via: 'owner',
+      role: 'owner',
+      action: 'revoke_invite',
+      reason: `إلغاء صلاحية عضو فوراً (${id})`,
+      ipMasked: getMaskedClientIp(req),
+    });
+    res.json({ ok: true });
+  });
+
+  const resolveValidatedShareLink = (
+    token: string,
+    password: string | undefined,
+    res: Response
+  ) => {
+    const link = findLocalShareLinkByToken(token);
+    if (!link) {
+      res.status(404).json({ error: 'رابط المشاركة غير موجود.' });
+      return null;
+    }
+    if (link.revokedAt) {
+      res.status(403).json({ error: 'تم إلغاء رابط المشاركة من المالك.' });
+      return null;
+    }
+    if (link.expiresAt && Date.now() > Date.parse(link.expiresAt)) {
+      res.status(410).json({ error: 'انتهت صلاحية رابط المشاركة.' });
+      return null;
+    }
+    if (link.passwordHash && !verifyPassword(String(password || ''), link.passwordHash)) {
+      res.status(401).json({
+        error: 'كلمة مرور رابط المشاركة غير صحيحة.',
+        requiresPassword: true,
+      });
+      return null;
+    }
+    return link;
+  };
+
+  app.post('/api/shares/access/:token', (req: Request, res: Response) => {
+    const token = String(req.params.token || '').trim();
+    const password = (req.body as { password?: string } | undefined)?.password;
+    const link = resolveValidatedShareLink(token, password, res);
+    if (!link) return;
+
+    recordLocalShareLinkAccess(link.id);
+    const owner = findUserByUid(link.ownerUid);
+    const snap = owner ? getWorkspaceSnapshot(owner.id) : null;
+    let parsedSnap: Record<string, unknown> = {};
+    if (snap?.snapshotJson) {
+      try {
+        parsedSnap = JSON.parse(snap.snapshotJson) as Record<string, unknown>;
+      } catch {
+        parsedSnap = {};
+      }
+    }
+    const shareGrantToken = `shg_${crypto.randomBytes(14).toString('hex')}`;
+    shareSessionTokens.set(shareGrantToken, {
+      linkId: link.id,
+      ownerUid: link.ownerUid,
+      role: link.role,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    });
+    appendLocalShareAccessLog({
+      ownerUid: link.ownerUid,
+      actorLabel: `زائر عبر الرابط (${link.label})`,
+      via: 'link',
+      role: link.role,
+      action: 'view_shared_workspace',
+      reason: `الوصول إلى الرابط «${link.label}»`,
+      ipMasked: getMaskedClientIp(req),
+    });
+    res.json({
+      role: link.role,
+      label: link.label,
+      ownerName: owner?.displayName || 'مالك المساحة',
+      shareGrantToken,
+      snapshotSummary: {
+        agenciesCount: Array.isArray(parsedSnap.agencies) ? parsedSnap.agencies.length : 0,
+        personsCount: Array.isArray(parsedSnap.persons) ? parsedSnap.persons.length : 0,
+        notesCount: Array.isArray(parsedSnap.workspaceNotes)
+          ? parsedSnap.workspaceNotes.length
+          : 0,
+        updatedAt: snap?.updatedAt,
+      },
+    });
+  });
+
+  app.put('/api/shares/workspace/:token', (req: Request, res: Response) => {
+    const token = String(req.params.token || '').trim();
+    const password = (req.body as { password?: string } | undefined)?.password;
+    const link = resolveValidatedShareLink(token, password, res);
+    if (!link) return;
+
+    if (link.role !== 'editor') {
+      appendLocalShareAccessLog({
+        ownerUid: link.ownerUid,
+        actorLabel: `محاولة تعديل عبر (${link.label})`,
+        via: 'link',
+        role: link.role,
+        action: 'denied_write_attempt',
+        reason: 'رفض محاولة تعديل على رابط بصلاحية عرض فقط (viewer)',
+        ipMasked: getMaskedClientIp(req),
+      });
+      res.status(403).json({
+        error: 'هذا الرابط مخصص للعرض فقط (Viewer)؛ الخادم يرفض التعديل.',
+      });
+      return;
+    }
+
+    appendLocalShareAccessLog({
+      ownerUid: link.ownerUid,
+      actorLabel: `محرر عبر (${link.label})`,
+      via: 'link',
+      role: 'editor',
+      action: 'editor_write_authorized',
+      reason: 'تم التحقق من صلاحية المحرر على الخادم.',
+      ipMasked: getMaskedClientIp(req),
+    });
+    res.json({ ok: true, role: link.role });
+  });
+
+  // --- GDPR Export & Permanent Account Deletion ---
+
+  app.get('/api/account/gdpr-export', requireAuth, (req: AuthRequest, res: Response) => {
+    const principal = req.principal!;
+    const bundle = exportAllLocalUserData(principal.uid);
+    res.json(bundle);
+  });
+
+  app.post('/api/account/delete-permanently', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const principal = req.principal!;
+      if (!verifyStepUpReauth(req, res, principal.uid)) return;
+      const confirmDelete = String(
+        (req.body as { confirmDelete?: string } | undefined)?.confirmDelete || ''
+      ).trim();
+      if (confirmDelete !== 'DELETE') {
+        res.status(400).json({ error: 'يرجى كتابة DELETE لتأكيد الحذف النهائي.' });
+        return;
+      }
+
+      broadcastToUser(principal.uid, {
+        type: 'session:revoked',
+        sid: principal.sid || '*',
+        reason: 'تم حذف الحساب نهائياً.',
+      });
+      const userSockets = userSyncSockets.get(principal.uid);
+      if (userSockets) {
+        for (const s of userSockets) {
+          try {
+            s.ws.close();
+          } catch {
+            // ignore
+          }
+        }
+        userSyncSockets.delete(principal.uid);
+      }
+      permanentlyDeleteLocalUser(principal.uid);
+      clearSessionCookie(req, res);
+      res.json({ ok: true, deletedUid: principal.uid });
+    } catch (err) {
+      recordServerError('POST', '/api/account/delete-permanently', 500, err);
+      res.status(500).json({ error: 'تعذر إتمام حذف الحساب نهائياً.' });
     }
   });
 
@@ -4045,10 +5933,86 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
   }
 
   const morrowLiveWss = new WebSocketServer({ noServer: true });
+  const syncWss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', async (request, socket, head) => {
     try {
       const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+
+      if (url.pathname === '/api/sync/ws') {
+        const pairId = url.searchParams.get('pairId') || '';
+        const deviceId = (url.searchParams.get('deviceId') || 'web').slice(0, 64);
+
+        if (pairId) {
+          syncWss.handleUpgrade(request, socket, head, (ws) => {
+            let watchers = qrPairWatchers.get(pairId);
+            if (!watchers) {
+              watchers = new Set();
+              qrPairWatchers.set(pairId, watchers);
+            }
+            watchers.add(ws);
+            const existingPair = qrPairings.get(pairId);
+            if (existingPair?.status === 'approved' && existingPair.token && existingPair.user) {
+              ws.send(
+                JSON.stringify({
+                  type: 'qr:approved',
+                  pairId,
+                  token: existingPair.token,
+                  user: existingPair.user,
+                })
+              );
+              qrPairings.delete(pairId);
+            }
+            ws.on('close', () => {
+              watchers?.delete(ws);
+              if (watchers && watchers.size === 0) qrPairWatchers.delete(pairId);
+            });
+          });
+          return;
+        }
+
+        const queryToken = url.searchParams.get('token') || '';
+        const cookies = parseCookieHeader(request.headers.cookie);
+        const token = queryToken || cookies[SESSION_COOKIE_NAME] || '';
+        const verified = token ? await verifyAuthToken(token) : null;
+        if (!verified) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        syncWss.handleUpgrade(request, socket, head, (ws) => {
+          const uid = verified.principal.uid;
+          const sid = verified.principal.sid;
+          let set = userSyncSockets.get(uid);
+          if (!set) {
+            set = new Set();
+            userSyncSockets.set(uid, set);
+          }
+          const conn = { ws, sid, deviceId };
+          set.add(conn);
+
+          ws.send(JSON.stringify({ type: 'connected', uid, sid }));
+          broadcastToUser(uid, {
+            type: 'presence:update',
+            activeDevices: set.size,
+          });
+
+          ws.on('close', () => {
+            set?.delete(conn);
+            if (set && set.size === 0) {
+              userSyncSockets.delete(uid);
+            } else if (set) {
+              broadcastToUser(uid, {
+                type: 'presence:update',
+                activeDevices: set.size,
+              });
+            }
+          });
+        });
+        return;
+      }
+
       if (url.pathname !== '/api/morrow/live') {
         return;
       }

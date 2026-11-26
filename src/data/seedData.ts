@@ -269,6 +269,14 @@ export const DEFAULT_SECURITY_PREFS: SecurityPrefs = {
   privacyLocked: false,
   offlineCacheEnabled: true,
   allowCloudBeneficiaryNames: false,
+  pushAlertsEnabled: true,
+  selectiveSync: {
+    syncRecords: true,
+    syncAttachments: true,
+    syncArchives: true,
+    syncNotes: true,
+    syncSettings: true,
+  },
   secondaryCloud: {
     provider: 'mega',
     accountEmail: '',

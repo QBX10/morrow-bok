@@ -225,6 +225,7 @@ interface SettingsViewProps {
   onUpdateGeneralPrefs: (patch: Partial<GeneralAppPrefs>) => void;
   onUpdateSecurityPrefs: (patch: Partial<SecurityPrefs>) => void;
   onRestoreRecycleBinItem: (entryId: string) => void;
+  onRestoreAllRecycleBinItems?: () => void;
   onPurgeRecycleBinItem: (entryId: string) => void;
   onClearRecycleBin: () => void;
   onImportWorkspaceJson: (rawJson: string) => void;
@@ -346,6 +347,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateGeneralPrefs,
   onUpdateSecurityPrefs,
   onRestoreRecycleBinItem,
+  onRestoreAllRecycleBinItems,
   onPurgeRecycleBinItem,
   onClearRecycleBin,
   onImportWorkspaceJson,
@@ -1911,6 +1913,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             assistantCacheCount={assistantCacheCount}
             onUpdateSecurityPrefs={onUpdateSecurityPrefs}
             onRestoreRecycleBinItem={onRestoreRecycleBinItem}
+            onRestoreAllRecycleBinItems={onRestoreAllRecycleBinItems}
             onPurgeRecycleBinItem={onPurgeRecycleBinItem}
             onClearRecycleBin={onClearRecycleBin}
             onImportWorkspaceJson={onImportWorkspaceJson}

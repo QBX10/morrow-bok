@@ -1,7 +1,12 @@
 import crypto from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import type { DecodedIdToken } from 'firebase-admin/auth';
-import { resolveOrCreateLocalCanonicalUser } from '../db/localStore.ts';
+import {
+  isLocalSessionRevoked,
+  isLocalUserDeletedAt,
+  resolveOrCreateLocalCanonicalUser,
+  touchLocalSession,
+} from '../db/localStore.ts';
 import { getOrCreateUser, isSqlDatabaseConfigured } from '../db/users.ts';
 import { adminAuth } from '../lib/firebase-admin.ts';
 import type { AuthProviderType } from '../types/agency.ts';
@@ -15,9 +20,11 @@ const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 export interface AuthenticatedPrincipal {
   uid: string;
+  sid?: string;
   provider: AuthProviderType;
   displayName: string;
   email?: string;
+  emailVerified?: boolean;
   username?: string;
   githubId?: string;
   avatarUrl?: string;
@@ -95,8 +102,10 @@ export function clearSessionCookie(req: Request, res: Response): void {
 }
 
 export function signSessionToken(payload: AuthenticatedPrincipal): string {
-  const exp = Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
-  const body = Buffer.from(JSON.stringify({ ...payload, exp })).toString(
+  const sid = payload.sid || `sid_${crypto.randomBytes(10).toString('hex')}`;
+  const iat = Date.now();
+  const exp = iat + SESSION_MAX_AGE_SECONDS * 1000;
+  const body = Buffer.from(JSON.stringify({ ...payload, sid, iat, exp })).toString(
     'base64url'
   );
   const sig = crypto
@@ -130,8 +139,20 @@ export function verifySessionToken(
   try {
     const parsed = JSON.parse(
       Buffer.from(body, 'base64url').toString('utf8')
-    ) as AuthenticatedPrincipal & { exp?: number };
+    ) as AuthenticatedPrincipal & { exp?: number; iat?: number };
     if (!parsed.uid || (parsed.exp && Date.now() > parsed.exp)) {
+      return null;
+    }
+    const tokenIssuedAt =
+      typeof parsed.iat === 'number'
+        ? parsed.iat
+        : typeof parsed.exp === 'number'
+          ? parsed.exp - SESSION_MAX_AGE_SECONDS * 1000
+          : undefined;
+    if (isLocalUserDeletedAt(parsed.uid, tokenIssuedAt)) {
+      return null;
+    }
+    if (parsed.sid && isLocalSessionRevoked(parsed.sid)) {
       return null;
     }
     const rawProvider = String(parsed.provider || 'username');
@@ -139,9 +160,11 @@ export function verifySessionToken(
       rawProvider === 'google' || rawProvider === 'github' ? rawProvider : 'username';
     return {
       uid: parsed.uid,
+      sid: parsed.sid,
       provider: safeProvider,
       displayName: parsed.displayName,
       email: parsed.email,
+      emailVerified: parsed.emailVerified,
       username: parsed.username,
       avatarUrl: parsed.avatarUrl,
     };
@@ -164,6 +187,15 @@ export async function verifyAuthToken(token: string): Promise<{
 
   try {
     const decodedToken = await adminAuth.verifyIdToken(trimmed);
+    const firebaseIssuedAtMs =
+      typeof decodedToken.iat === 'number'
+        ? decodedToken.iat * 1000
+        : typeof decodedToken.auth_time === 'number'
+          ? decodedToken.auth_time * 1000
+          : undefined;
+    if (isLocalUserDeletedAt(decodedToken.uid, firebaseIssuedAtMs)) {
+      return null;
+    }
     const provider: AuthProviderType = 'google';
     const email = decodedToken.email
       ? decodedToken.email.toLowerCase()
@@ -183,6 +215,7 @@ export async function verifyAuthToken(token: string): Promise<{
         provider,
         displayName,
         email,
+        emailVerified: Boolean(decodedToken.email_verified),
         avatarUrl,
       },
       decodedFirebaseToken: decodedToken,
@@ -205,6 +238,7 @@ export async function resolveCanonicalPrincipal(
         uid: principal.uid,
         githubId: principal.githubId ?? null,
         email: principal.email || `${principal.uid}@tabrex.local`,
+        emailVerified: principal.emailVerified,
         username: principal.username ?? null,
         displayName: principal.displayName,
         avatarUrl: principal.avatarUrl ?? null,
@@ -212,12 +246,14 @@ export async function resolveCanonicalPrincipal(
       });
       return {
         uid: canonical.uid,
+        sid: principal.sid,
         provider: normalizeProvider(canonical.authProvider, principal.provider),
         displayName: canonical.displayName || principal.displayName,
         email:
           canonical.email && !canonical.email.endsWith('.local')
             ? canonical.email
             : principal.email,
+        emailVerified: principal.emailVerified,
         username: canonical.username || principal.username,
         githubId: canonical.githubId || principal.githubId,
         avatarUrl: canonical.avatarUrl || principal.avatarUrl,
@@ -233,14 +269,17 @@ export async function resolveCanonicalPrincipal(
     authProvider: principal.provider,
     displayName: principal.displayName,
     email: principal.email ?? null,
+    emailVerified: principal.emailVerified,
     username: principal.username ?? null,
     avatarUrl: principal.avatarUrl ?? null,
   });
   return {
     uid: localCanonical.uid,
+    sid: principal.sid,
     provider: normalizeProvider(localCanonical.authProvider, principal.provider),
     displayName: localCanonical.displayName,
     email: localCanonical.email || principal.email,
+    emailVerified: principal.emailVerified,
     username: localCanonical.username || principal.username,
     githubId: localCanonical.githubId || principal.githubId,
     avatarUrl: localCanonical.avatarUrl || principal.avatarUrl,
@@ -303,10 +342,14 @@ export const requireAuth = async (
   if (!verified) {
     res.status(401).json({
       error: token.startsWith('sess.')
-        ? 'انتهت صلاحية الجلسة، يرجى إعادة تسجيل الدخول.'
+        ? 'انتهت صلاحية الجلسة أو تم إنهاؤها، يرجى إعادة تسجيل الدخول.'
         : 'تعذر التحقق من جلسة الدخول، يرجى إعادة التسجيل.',
     });
     return;
+  }
+
+  if (verified.principal.sid) {
+    touchLocalSession(verified.principal.sid);
   }
 
   req.principal = await resolveCanonicalPrincipal(verified.principal);

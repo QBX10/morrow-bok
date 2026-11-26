@@ -10,17 +10,21 @@ import {
   CheckCircle2,
   Cloud,
   CloudUpload,
+  Copy,
   Database,
   Download,
   ExternalLink,
   Eye,
   EyeOff,
   FileJson,
+  Fingerprint,
   FolderOpen,
   HardDrive,
   History,
   Info,
+  KeyRound,
   Lightbulb,
+  Link2,
   Lock,
   LogOut,
   Mail,
@@ -28,6 +32,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  QrCode,
   RefreshCw,
   RotateCcw,
   Save,
@@ -41,6 +46,8 @@ import {
   Trash2,
   Upload,
   User,
+  UserPlus,
+  Users,
   WifiOff,
 } from 'lucide-react';
 import {
@@ -51,6 +58,37 @@ import {
   signInWithGithubPopup,
   updateUserProfileApi,
 } from '../lib/authClient';
+import {
+  accessSharedLinkApi,
+  approveQrPairingApi,
+  changeAccountEmailApi,
+  createShareLinkApi,
+  deleteAccountPermanentlyApi,
+  deletePasskeyApi,
+  exportGdprDataApi,
+  fetchActiveSessionsApi,
+  fetchSecurityAlertsWithConfigApi,
+  fetchSharingOverviewApi,
+  fetchWorkspaceVersionsApi,
+  generateRecoveryCodesApi,
+  getRecoveryCodesStatusApi,
+  inviteShareMemberApi,
+  listPasskeysApi,
+  restoreWorkspaceVersionApi,
+  revokeOtherSessionsApi,
+  revokeSessionApi,
+  revokeShareInviteApi,
+  revokeShareLinkApi,
+  sendTestSecurityEmailApi,
+  updateEmailAlertsPreferenceApi,
+  updateShareMemberRoleApi,
+  verifyReauthApi,
+} from '../lib/securityClient';
+import {
+  isWebAuthnSupported,
+  registerPasskeyWithServer,
+} from '../lib/webauthnClient';
+import { getRemainingRecycleDays } from '../utils/recycleBin';
 import {
   getAccessToken,
   googleSignIn,
@@ -75,18 +113,31 @@ import {
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
 import type {
+  ActiveSessionRecord,
   AppDatabaseState,
   AuditCheckpointEvent,
   AuthUser,
   BackupCloudProvider,
+  ConflictCopyEntry,
+  PasskeyCredentialSummary,
   RecycleBinEntry,
+  RecycleBinItemKind,
+  RecoveryCodesStatus,
+  SecurityAlertItem,
   SecurityPrefs,
+  SelectiveSyncPrefs,
+  ShareAccessLogEntry,
+  ShareInviteRecord,
+  ShareLinkRecord,
+  ShareRole,
   SmartSyncCheckpoint,
+  StorageQuotaInfo,
   StorageSystemStatus,
   SyncQueueOperation,
   WorkspaceNoteCategory,
   WorkspaceNoteItem,
   WorkspaceSyncStatus,
+  WorkspaceVersionRecord,
 } from '../types/agency';
 import { normalizeArabic } from '../utils/agencyLogic';
 import {
@@ -171,6 +222,7 @@ interface AccountSecurityHubViewProps {
   ) => void;
   onDeleteNote: (noteId: string) => void;
   onRestoreRecycleBinItem: (entryId: string) => void;
+  onRestoreAllRecycleBinItems?: () => void;
   onPurgeRecycleBinItem: (entryId: string) => void;
   onClearRecycleBin: () => void;
   onImportWorkspaceJson: (rawJson: string) => void | Promise<void>;
@@ -180,7 +232,16 @@ interface AccountSecurityHubViewProps {
   onNotifyError: (msg: string) => void;
   initialTab?: AccountHubTab;
   syncStatus?: WorkspaceSyncStatus;
+  realtimeConnected?: boolean;
   storageStatus?: StorageSystemStatus | null;
+  storageQuota?: StorageQuotaInfo | null;
+  onRefreshStorageQuota?: () => Promise<StorageQuotaInfo | null>;
+  conflictCopies?: ConflictCopyEntry[];
+  onResolveConflictCopy?: (
+    copyId: string,
+    action: 'keep_current' | 'restore_copy'
+  ) => void;
+  onApplyServerSnapshot?: (rawSnapshot: unknown) => Promise<boolean>;
   syncQueue?: SyncQueueOperation[];
   isOnline?: boolean;
   auditLog?: AuditCheckpointEvent[];
@@ -233,6 +294,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   onUpdateNote,
   onDeleteNote,
   onRestoreRecycleBinItem,
+  onRestoreAllRecycleBinItems,
   onPurgeRecycleBinItem,
   onClearRecycleBin,
   onImportWorkspaceJson,
@@ -242,7 +304,13 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   onNotifyError,
   initialTab = 'overview',
   syncStatus = 'local_only',
+  realtimeConnected = false,
   storageStatus = null,
+  storageQuota = null,
+  onRefreshStorageQuota,
+  conflictCopies = [],
+  onResolveConflictCopy,
+  onApplyServerSnapshot,
   syncQueue = [],
   isOnline = true,
   auditLog = [],
@@ -334,6 +402,73 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   // Security PIN draft
   const [pinDraft, setPinDraft] = useState(securityPrefs.privacyPin || '');
 
+  // Enterprise Security, Passkeys, Recovery Codes, Sessions, Versions & Sharing State
+  const passkeySupported = useMemo(() => isWebAuthnSupported(), []);
+  const [passkeys, setPasskeys] = useState<PasskeyCredentialSummary[]>([]);
+  const [passkeyLabelDraft, setPasskeyLabelDraft] = useState('');
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+
+  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryCodesStatus>({
+    totalCount: 0,
+    remainingCount: 0,
+  });
+  const [generatedCodes, setGeneratedCodes] = useState<string[] | null>(null);
+
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionRecord[]>([]);
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityAlertItem[]>([]);
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(true);
+  const [emailProviderConfig, setEmailProviderConfig] = useState<{
+    configured: boolean;
+    provider: 'smtp' | 'resend' | 'none';
+    fromConfigured: boolean;
+    fromAddressPreview?: string;
+  }>({ configured: false, provider: 'none', fromConfigured: false });
+  const [testEmailBusy, setTestEmailBusy] = useState(false);
+  const [sessionsBusy, setSessionsBusy] = useState(false);
+  const [recycleKindFilter, setRecycleKindFilter] = useState<'all' | RecycleBinItemKind>('all');
+  const [recycleSearchQuery, setRecycleSearchQuery] = useState('');
+  const [confirmClearBin, setConfirmClearBin] = useState(false);
+
+  const [qrApproveCodeDraft, setQrApproveCodeDraft] = useState('');
+  const [qrApproveBusy, setQrApproveBusy] = useState(false);
+
+  const [newEmailDraft, setNewEmailDraft] = useState('');
+
+  const [serverVersions, setServerVersions] = useState<WorkspaceVersionRecord[]>([]);
+  const [versionsBusy, setVersionsBusy] = useState(false);
+
+  const [shareLinks, setShareLinks] = useState<ShareLinkRecord[]>([]);
+  const [shareInvites, setShareInvites] = useState<ShareInviteRecord[]>([]);
+  const [shareLogs, setShareLogs] = useState<ShareAccessLogEntry[]>([]);
+  const [shareLinkLabel, setShareLinkLabel] = useState('رابط عرض الفريق');
+  const [shareLinkRole, setShareLinkRole] = useState<'viewer' | 'editor'>('viewer');
+  const [shareLinkHours, setShareLinkHours] = useState('72');
+  const [shareLinkPass, setShareLinkPass] = useState('');
+  const [shareInviteEmail, setShareInviteEmail] = useState('');
+  const [shareInviteRole, setShareInviteRole] = useState<ShareRole>('viewer');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareTestToken, setShareTestToken] = useState('');
+  const [shareTestPass, setShareTestPass] = useState('');
+  const [shareTestPreview, setShareTestPreview] = useState<{
+    role: ShareRole;
+    label: string;
+    ownerName: string;
+    agenciesCount: number;
+    personsCount: number;
+    notesCount: number;
+  } | null>(null);
+
+  const [pendingStepUp, setPendingStepUp] = useState<
+    | { kind: 'generate_recovery' }
+    | { kind: 'delete_passkey'; credentialId: string }
+    | { kind: 'change_email'; newEmail: string }
+    | { kind: 'delete_account' }
+    | null
+  >(null);
+  const [reauthPassInput, setReauthPassInput] = useState('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
 
@@ -361,6 +496,50 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
       );
     }
   }, [securityPrefs.secondaryCloud]);
+
+  const refreshEnterpriseSecurityData = async () => {
+    if (!authUser) {
+      setPasskeys([]);
+      setRecoveryStatus({ totalCount: 0, remainingCount: 0 });
+      setActiveSessions([]);
+      setSecurityAlerts([]);
+      setServerVersions([]);
+      setShareLinks([]);
+      setShareInvites([]);
+      setShareLogs([]);
+      return;
+    }
+    try {
+      const [pk, rc, sess, alertsRes, vers, sharing] = await Promise.all([
+        listPasskeysApi(),
+        getRecoveryCodesStatusApi(),
+        fetchActiveSessionsApi(),
+        fetchSecurityAlertsWithConfigApi(),
+        fetchWorkspaceVersionsApi(),
+        fetchSharingOverviewApi(),
+      ]);
+      setPasskeys(pk);
+      setRecoveryStatus(rc);
+      setActiveSessions(sess);
+      setSecurityAlerts(alertsRes.alerts);
+      setEmailAlertsEnabled(alertsRes.emailAlertsEnabled);
+      setEmailProviderConfig(alertsRes.emailNotificationConfig);
+      setServerVersions(vers);
+      setShareLinks(sharing.links);
+      setShareInvites(sharing.invites);
+      setShareLogs(sharing.accessLogs);
+      if (onRefreshStorageQuota) {
+        void onRefreshStorageQuota();
+      }
+    } catch {
+      // ignore transient network errors
+    }
+  };
+
+  useEffect(() => {
+    void refreshEnterpriseSecurityData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.uid]);
 
   const refreshDriveFiles = async (folderName?: string) => {
     const token = await getAccessToken();
@@ -1114,10 +1293,14 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               <span style={{ color: 'var(--accent)' }}>
                 {!isOnline || syncStatus === 'pending_offline'
                   ? `معلق دون إنترنت (${syncQueue.filter((q) => q.status !== 'synced').length})`
+                  : syncStatus === 'conflict_saved'
+                  ? `تعارض محفوظ — نسختان (${conflictCopies.length})`
                   : syncStatus === 'syncing'
                   ? 'جاري المزامنة السحابية...'
                   : syncStatus === 'cloud_synced'
-                  ? 'متزامن سحابياً عبر الأجهزة'
+                  ? realtimeConnected
+                    ? 'متزامن الآن · حي (WS)'
+                    : 'متزامن سحابياً عبر الأجهزة'
                   : 'محفوظ محلياً'}
               </span>
             </span>
@@ -2090,6 +2273,606 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               )}
             </section>
           </div>
+
+          {authUser && (
+            <>
+              {/* Passkeys, Recovery Codes, Email Change & QR Cross-Device Approval */}
+              <section className="nexus-squircle p-5 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <NexusDuotoneIcon tone="gold" size="sm">
+                    <Fingerprint className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div>
+                    <h2 className="text-sm font-black">
+                      مفاتيح المرور (Passkeys) ورموز الاسترجاع وربط الأجهزة
+                    </h2>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      دخول بالبصمة/Face ID، رموز طوارئ أحادية، وموافقة سريعة على دخول QR
+                    </p>
+                  </div>
+                </div>
+
+                {/* Passkeys Section */}
+                <div
+                  className="rounded-2xl border p-3.5 space-y-2.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-black">
+                      <Fingerprint className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <span>مفاتيح المرور Passkeys ({passkeys.length})</span>
+                    </div>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      {passkeySupported ? 'WebAuthn مدعوم في متصفحك' : 'غير مدعوم بهذا المتصفح'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={passkeyLabelDraft}
+                      onChange={(e) => setPasskeyLabelDraft(e.target.value)}
+                      placeholder="اسم الجهاز (مثال: iPhone / MacBook)"
+                      className="min-w-[170px] flex-1 rounded-xl border px-3 py-1.5 text-xs"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={passkeyBusy || !passkeySupported}
+                      onClick={async () => {
+                        try {
+                          setPasskeyBusy(true);
+                          await registerPasskeyWithServer(passkeyLabelDraft.trim() || undefined);
+                          setPasskeyLabelDraft('');
+                          await refreshEnterpriseSecurityData();
+                          onNotifySuccess('تم تسجيل مفتاح المرور (Passkey) بنجاح.');
+                        } catch (err) {
+                          onNotifyError(
+                            err instanceof Error ? err.message : 'تعذر إضافة مفتاح المرور.'
+                          );
+                        } finally {
+                          setPasskeyBusy(false);
+                        }
+                      }}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3.5 py-1.5 font-extrabold disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>{passkeyBusy ? 'جاري التسجيل...' : 'إضافة Passkey'}</span>
+                    </button>
+                  </div>
+
+                  {passkeys.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {passkeys.map((pk) => (
+                        <div
+                          key={pk.id}
+                          className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-bold">{pk.label}</div>
+                            <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              أُضيف {formatDateTimeArabic(pk.createdAt)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReauthPassInput('');
+                              setPendingStepUp({ kind: 'delete_passkey', credentialId: pk.id });
+                            }}
+                            className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--danger)' }}
+                          >
+                            إزالة
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recovery Codes Section */}
+                <div
+                  className="rounded-2xl border p-3.5 space-y-2.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-black">
+                      <KeyRound className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <span>رموز الاسترجاع أحادية الاستخدام</span>
+                    </div>
+                    <span
+                      className="font-mono text-[11px] font-bold"
+                      style={{
+                        color:
+                          recoveryStatus.remainingCount > 0 ? 'var(--success)' : 'var(--warning)',
+                      }}
+                    >
+                      المتبقي: {recoveryStatus.remainingCount} / {recoveryStatus.totalCount || 8}
+                    </span>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    احفظ رموز الطوارئ في مكان آمن لاستعادة الحساب عند فقدان البريد أو الجهاز.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReauthPassInput('');
+                      setPendingStepUp({ kind: 'generate_recovery' });
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-3.5 py-1.5 font-extrabold"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    <span>توليد 8 رموز استرجاع جديدة</span>
+                  </button>
+
+                  {generatedCodes && generatedCodes.length > 0 && (
+                    <div
+                      className="rounded-xl border p-3 space-y-2"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--accent)',
+                      }}
+                    >
+                      <div className="text-[11px] font-black" style={{ color: 'var(--accent)' }}>
+                        احتفظ بهذه الرموز الآن (تُعرض مرة واحدة فقط):
+                      </div>
+                      <div dir="ltr" className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs font-black">
+                        {generatedCodes.map((code) => (
+                          <div
+                            key={code}
+                            className="rounded-lg border px-2 py-1 text-center"
+                            style={{ borderColor: 'var(--border-color)' }}
+                          >
+                            {code}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(generatedCodes.join('\n'));
+                              onNotifySuccess('تم نسخ رموز الاسترجاع إلى الحافظة.');
+                            } catch {
+                              onNotifyError('تعذر النسخ التلقائي.');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          <span>نسخ الكل</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const blob = new Blob(
+                              [
+                                `Morrow Recovery Codes (${authUser.displayName})\nGenerated: ${new Date().toISOString()}\n\n${generatedCodes.join('\n')}\n`,
+                              ],
+                              { type: 'text/plain;charset=utf-8' }
+                            );
+                            triggerBlobDownload(blob, 'morrow-recovery-codes.txt');
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                          style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>تنزيل TXT</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* QR Cross-Device Approval & Email Change */}
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 text-xs">
+                  <div
+                    className="rounded-2xl border p-3 space-y-2"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 font-black">
+                      <QrCode className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <span>تأكيد دخول جهاز جديد (QR)</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={qrApproveCodeDraft}
+                        onChange={(e) => setQrApproveCodeDraft(e.target.value.toUpperCase())}
+                        placeholder="QR8-CODE"
+                        className="w-full rounded-xl border px-3 py-1.5 font-mono text-left text-xs"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={qrApproveBusy || !qrApproveCodeDraft.trim()}
+                        onClick={async () => {
+                          try {
+                            setQrApproveBusy(true);
+                            await approveQrPairingApi(qrApproveCodeDraft.trim());
+                            setQrApproveCodeDraft('');
+                            await refreshEnterpriseSecurityData();
+                            onNotifySuccess('تمت الموافقة على دخول الجهاز الجديد فوراً.');
+                          } catch (err) {
+                            onNotifyError(
+                              err instanceof Error ? err.message : 'رمز QR غير صالح أو منتهي.'
+                            );
+                          } finally {
+                            setQrApproveBusy(false);
+                          }
+                        }}
+                        className="shrink-0 rounded-xl px-3 py-1.5 font-extrabold disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                      >
+                        موافقة
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className="rounded-2xl border p-3 space-y-2"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 font-black">
+                      <Mail className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                      <span>تغيير البريد الإلكتروني</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="email"
+                        dir="ltr"
+                        value={newEmailDraft}
+                        onChange={(e) => setNewEmailDraft(e.target.value)}
+                        placeholder={authUser.email || 'new@example.com'}
+                        className="w-full rounded-xl border px-3 py-1.5 text-left text-xs"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!newEmailDraft.trim().includes('@')}
+                        onClick={() => {
+                          setReauthPassInput('');
+                          setPendingStepUp({
+                            kind: 'change_email',
+                            newEmail: newEmailDraft.trim(),
+                          });
+                        }}
+                        className="shrink-0 rounded-xl border px-3 py-1.5 font-extrabold disabled:opacity-50"
+                        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                      >
+                        تحديث
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Active Sessions (Remote Logout) & New-Device Security Alerts */}
+              <section className="nexus-squircle p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <NexusDuotoneIcon tone="emerald" size="sm">
+                      <ShieldCheck className="h-4 w-4" />
+                    </NexusDuotoneIcon>
+                    <div>
+                      <h2 className="text-sm font-black">
+                        الجلسات النشطة والتنبيهات الأمنية ({activeSessions.length})
+                      </h2>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        إدارة الأجهزة المسجلة، تسجيل الخروج عن بُعد، وسجل التنبيهات الفوري
+                      </p>
+                    </div>
+                  </div>
+
+                  {activeSessions.length > 1 && (
+                    <button
+                      type="button"
+                      disabled={sessionsBusy}
+                      onClick={async () => {
+                        try {
+                          setSessionsBusy(true);
+                          const count = await revokeOtherSessionsApi();
+                          await refreshEnterpriseSecurityData();
+                          onNotifySuccess(
+                            `تم تسجيل الخروج عن بُعد من ${count} جلسة أخرى بنجاح.`
+                          );
+                        } catch (err) {
+                          onNotifyError(
+                            err instanceof Error ? err.message : 'تعذر إنهاء الجلسات الأخرى.'
+                          );
+                        } finally {
+                          setSessionsBusy(false);
+                        }
+                      }}
+                      className="rounded-xl border px-3 py-1.5 text-[11px] font-extrabold"
+                      style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                    >
+                      إنهاء كل الجلسات الأخرى
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-[210px] space-y-1.5 overflow-y-auto text-xs">
+                  {activeSessions.length === 0 ? (
+                    <div
+                      className="rounded-xl border p-4 text-center text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      لا توجد جلسات أخرى نشطة حالياً.
+                    </div>
+                  ) : (
+                    activeSessions.map((sess) => (
+                      <div
+                        key={sess.sid}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: sess.isCurrent ? 'var(--accent)' : 'var(--border-color)',
+                        }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 font-bold">
+                            <span className="truncate">{sess.deviceLabel}</span>
+                            {sess.isCurrent && (
+                              <span
+                                className="rounded px-1.5 py-0.5 text-[10px] font-black"
+                                style={{
+                                  backgroundColor: 'var(--bg-nav-active)',
+                                  color: 'var(--accent)',
+                                }}
+                              >
+                                هذا الجهاز
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            آخر نشاط: {formatDateTimeArabic(sess.lastActiveAt)}
+                          </div>
+                        </div>
+                        {!sess.isCurrent && (
+                          <button
+                            type="button"
+                            disabled={sessionsBusy}
+                            onClick={async () => {
+                              try {
+                                setSessionsBusy(true);
+                                await revokeSessionApi(sess.sid);
+                                await refreshEnterpriseSecurityData();
+                                onNotifySuccess('تم إنهاء الجلسة عن بُعد وإبطال رمزها فوراً.');
+                              } catch (err) {
+                                onNotifyError(
+                                  err instanceof Error ? err.message : 'تعذر إنهاء الجلسة.'
+                                );
+                              } finally {
+                                setSessionsBusy(false);
+                              }
+                            }}
+                            className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--danger)' }}
+                          >
+                            خروج عن بُعد
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Email Security Notifications & Alerts Feed */}
+                <div
+                  className="border-t pt-3 space-y-2.5 text-xs"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-black">
+                    <span className="flex items-center gap-1.5">
+                      <Bell className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                      <span>إشعارات البريد وتنبيهات الأجهزة غير المعروفة ({securityAlerts.length})</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={testEmailBusy}
+                        onClick={async () => {
+                          try {
+                            setTestEmailBusy(true);
+                            const res = await sendTestSecurityEmailApi();
+                            if (res.status === 'sent') {
+                              onNotifySuccess(`تم إرسال بريد التنبيه التجريبي بنجاح (${res.provider}).`);
+                            } else if (res.status === 'not_configured') {
+                              onNotifyError('سُجّل التنبيه محلياً؛ أضف SMTP_HOST أو RESEND_API_KEY في أسرار الخادم لتفعيل الإرسال الفعلي.');
+                            } else if (res.status === 'skipped_no_email') {
+                              onNotifyError('أضف بريدك الإلكتروني في إعدادات الحساب أولاً لاستلام التنبيهات.');
+                            } else {
+                              onNotifyError(res.error || 'تعذر إرسال رسالة الاختبار.');
+                            }
+                            await refreshEnterpriseSecurityData();
+                          } catch (err) {
+                            onNotifyError(err instanceof Error ? err.message : 'فشل اختبار الإرسال.');
+                          } finally {
+                            setTestEmailBusy(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--accent)' }}
+                      >
+                        <Mail className="h-3 w-3" />
+                        <span>{testEmailBusy ? 'جارٍ الإرسال…' : 'بريد تجريبي'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void refreshEnterpriseSecurityData()}
+                        className="text-[11px] font-bold"
+                        style={{ color: 'var(--accent)' }}
+                      >
+                        تحديث
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Email Notification Transport & Preference Bar */}
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px]"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    <div className="space-y-0.5">
+                      <div className="font-bold">
+                        {emailProviderConfig.configured
+                          ? `خادم البريد نشط (${emailProviderConfig.provider.toUpperCase()}${emailProviderConfig.fromAddressPreview ? ` · ${emailProviderConfig.fromAddressPreview}` : ''})`
+                          : 'إرسال البريد الفعلي بانتظار ضبط متغيرات SMTP أو RESEND_API_KEY'}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)' }}>
+                        يُرسل تنبيه فوري عند أي محاولة دخول ناجحة أو فاشلة من متصفح أو جهاز جديد
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const next = !emailAlertsEnabled;
+                        try {
+                          await updateEmailAlertsPreferenceApi(next);
+                          setEmailAlertsEnabled(next);
+                          onNotifySuccess(
+                            next
+                              ? 'تم تفعيل تنبيهات البريد للدخول من أجهزة غير معروفة.'
+                              : 'تم إيقاف إشعارات البريد الفورية مؤقتاً.'
+                          );
+                        } catch (err) {
+                          onNotifyError(err instanceof Error ? err.message : 'تعذر التحديث.');
+                        }
+                      }}
+                      className="rounded-lg px-2.5 py-1 text-[11px] font-extrabold"
+                      style={{
+                        backgroundColor: emailAlertsEnabled
+                          ? 'var(--success)'
+                          : 'var(--bg-nav-active)',
+                        color: emailAlertsEnabled ? 'var(--success-fg)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {emailAlertsEnabled ? 'تنبيهات البريد مفعّلة' : 'تنبيهات البريد متوقفة'}
+                    </button>
+                  </div>
+
+                  <div className="max-h-[210px] space-y-1.5 overflow-y-auto">
+                    {securityAlerts.length === 0 ? (
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        لم تُسجّل أي تنبيهات أمنية بعد.
+                      </div>
+                    ) : (
+                      securityAlerts.slice(0, 15).map((alert) => {
+                        const emailBadgeText =
+                          alert.emailDeliveryStatus === 'sent'
+                            ? `أُرسل بالبريد (${(alert.emailDeliveryProvider || 'smtp').toUpperCase()})`
+                            : alert.emailDeliveryStatus === 'failed'
+                              ? 'فشل الإرسال البريدي'
+                              : alert.emailDeliveryStatus === 'skipped_no_email'
+                                ? 'الحساب بلا بريد'
+                                : alert.emailDeliveryStatus === 'throttled'
+                                  ? 'مؤجّل لمنع التكرار'
+                                  : alert.emailDeliveryStatus === 'not_configured'
+                                    ? 'SMTP غير مضبوط'
+                                    : null;
+                        return (
+                          <div
+                            key={alert.id}
+                            className="rounded-xl border px-3 py-2 space-y-1"
+                            style={{
+                              backgroundColor: 'var(--bg-main)',
+                              borderColor:
+                                alert.attemptOutcome === 'failed'
+                                  ? 'var(--danger)'
+                                  : 'var(--border-color)',
+                            }}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <span className="font-bold">{alert.title}</span>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {alert.attemptOutcome && (
+                                  <span
+                                    className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                    style={{
+                                      backgroundColor: 'var(--bg-nav-active)',
+                                      color:
+                                        alert.attemptOutcome === 'failed'
+                                          ? 'var(--danger)'
+                                          : 'var(--success)',
+                                    }}
+                                  >
+                                    {alert.attemptOutcome === 'failed' ? 'محاولة فاشلة' : 'دخول ناجح'}
+                                  </span>
+                                )}
+                                {emailBadgeText && (
+                                  <span
+                                    className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                    style={{
+                                      backgroundColor: 'var(--bg-nav-active)',
+                                      color:
+                                        alert.emailDeliveryStatus === 'sent'
+                                          ? 'var(--success)'
+                                          : alert.emailDeliveryStatus === 'failed'
+                                            ? 'var(--danger)'
+                                            : 'var(--accent)',
+                                    }}
+                                  >
+                                    {emailBadgeText}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              {alert.summary}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              <span>{formatDateTimeArabic(alert.createdAt)}</span>
+                              {alert.browserLabel && <span>· {alert.browserLabel}</span>}
+                              {alert.ipMasked && <span dir="ltr">· {alert.ipMasked}</span>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
         </div>
       )}
 
@@ -2309,6 +3092,725 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
               </div>
             </section>
           </div>
+
+          {/* 50MB Storage Quota + Chunk Deduplication + Selective Sync + Real-Time Push */}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <section className="nexus-squircle p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <NexusDuotoneIcon tone="emerald" size="sm">
+                    <HardDrive className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div>
+                    <h2 className="text-sm font-black">حصة التخزين ومنع تكرار القطع (Chunk Dedup)</h2>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      تقسيم البيانات لقطع 32 ك.ب بـ SHA-256 ورفع الجزء المتغير فقط
+                    </p>
+                  </div>
+                </div>
+                {authUser && onRefreshStorageQuota && (
+                  <button
+                    type="button"
+                    onClick={() => void onRefreshStorageQuota()}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border"
+                    style={{ borderColor: 'var(--border-color)' }}
+                    title="تحديث الحصة"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {storageQuota ? (
+                <div
+                  className="rounded-2xl border p-3.5 space-y-2 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span>
+                      المستخدم: {(storageQuota.usedBytes / (1024 * 1024)).toFixed(2)} MB من{' '}
+                      {(storageQuota.quotaBytes / (1024 * 1024)).toFixed(0)} MB
+                    </span>
+                    <span className="font-mono" style={{ color: 'var(--accent)' }}>
+                      {Math.min(
+                        100,
+                        Math.round(
+                          (storageQuota.usedBytes / Math.max(1, storageQuota.quotaBytes)) * 100
+                        )
+                      )}
+                      %
+                    </span>
+                  </div>
+                  <div
+                    className="h-2.5 w-full overflow-hidden rounded-full"
+                    style={{ backgroundColor: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            2,
+                            Math.round(
+                              (storageQuota.usedBytes / Math.max(1, storageQuota.quotaBytes)) *
+                                100
+                            )
+                          )
+                        )}%`,
+                        backgroundColor: 'var(--accent)',
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <span>عدد القطع المخزنة: {storageQuota.chunkCount}</span>
+                    <span style={{ color: 'var(--success)' }}>
+                      وفّر التكرار الذكي: {Math.round(storageQuota.dedupSavedBytes / 1024)} KB
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="rounded-2xl border p-4 text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  سجّل الدخول لعرض حصة التخزين السحابي وحجم القطع الممنوعة التكرار.
+                </div>
+              )}
+
+              {/* Selective Sync Toggles & Browser Push Notifications */}
+              <div className="space-y-2 text-xs">
+                <div className="font-black">المزامنة الانتقائية حسب نوع البيانات:</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      ['syncRecords', 'الوكالات والمستفيدون والمالية'],
+                      ['syncAttachments', 'الصور والمستندات المرفقة'],
+                      ['syncArchives', 'الأرشيف الشهري'],
+                      ['syncNotes', 'الملاحظات والأفكار'],
+                      ['syncSettings', 'الإعدادات والمظهر'],
+                    ] as Array<[keyof SelectiveSyncPrefs, string]>
+                  ).map(([key, label]) => {
+                    const current = securityPrefs.selectiveSync || {
+                      syncRecords: true,
+                      syncAttachments: true,
+                      syncArchives: true,
+                      syncNotes: true,
+                      syncSettings: true,
+                    };
+                    return (
+                      <label
+                        key={key}
+                        className="flex min-h-[38px] cursor-pointer items-center justify-between gap-2 rounded-xl border px-3 py-1.5 font-bold"
+                        style={{
+                          backgroundColor: 'var(--bg-main)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      >
+                        <span className="truncate">{label}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(current[key])}
+                          onChange={(e) =>
+                            onUpdateSecurityPrefs({
+                              selectiveSync: {
+                                ...current,
+                                [key]: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <label
+                  className="flex min-h-[42px] cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2 font-bold"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Bell className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                    <span>تفعيل إشعارات Push الفورية للتعديلات الأمنية والمزامنة</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityPrefs.pushAlertsEnabled)}
+                    onChange={async (e) => {
+                      const nextVal = e.target.checked;
+                      if (
+                        nextVal &&
+                        typeof window !== 'undefined' &&
+                        'Notification' in window &&
+                        Notification.permission === 'default'
+                      ) {
+                        try {
+                          await Notification.requestPermission();
+                        } catch {
+                          // ignore denied or restricted browser notification dialog
+                        }
+                      }
+                      onUpdateSecurityPrefs({ pushAlertsEnabled: nextVal });
+                    }}
+                  />
+                </label>
+              </div>
+            </section>
+
+            {/* Dual-Copy Conflict Resolver ("نسختان") & 30-Day Server Version History */}
+            <section className="nexus-squircle p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <NexusDuotoneIcon tone="gold" size="sm">
+                    <History className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div>
+                    <h2 className="text-sm font-black">
+                      سجل الإصدارات (30 يوماً) وحل التعارضات ({serverVersions.length})
+                    </h2>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      دمج CRDT للنصوص والملاحظات، وحفظ نسختين عند التعارض، واستعادة إصدارات السيرفر
+                    </p>
+                  </div>
+                </div>
+                {authUser && (
+                  <button
+                    type="button"
+                    disabled={versionsBusy}
+                    onClick={async () => {
+                      setVersionsBusy(true);
+                      try {
+                        const list = await fetchWorkspaceVersionsApi();
+                        setServerVersions(list);
+                      } finally {
+                        setVersionsBusy(false);
+                      }
+                    }}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border"
+                    style={{ borderColor: 'var(--border-color)' }}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${versionsBusy ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+              </div>
+
+              {/* Preserved Dual-Copy Conflict Resolution Box */}
+              {conflictCopies.length > 0 && (
+                <div
+                  className="rounded-2xl border p-3.5 space-y-2 text-xs"
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, var(--warning) 10%, var(--bg-main))',
+                    borderColor: 'var(--warning)',
+                  }}
+                >
+                  <div className="font-black" style={{ color: 'var(--warning)' }}>
+                    تعارضات محفوظة على هيئة نسختين ({conflictCopies.length})
+                  </div>
+                  {conflictCopies.map((copy) => (
+                    <div
+                      key={copy.id}
+                      className="rounded-xl border p-2.5 space-y-2"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <div className="font-bold">
+                        {copy.entityLabel} — {copy.reason}
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        جهاز {copy.localDeviceId} ↔ {copy.remoteDeviceId} ·{' '}
+                        {formatDateTimeArabic(copy.createdAt)}
+                      </div>
+                      {onResolveConflictCopy && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onResolveConflictCopy(copy.id, 'keep_current')}
+                            className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                            style={{ borderColor: 'var(--border-color)' }}
+                          >
+                            إبقاء النسخة الحالية
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onResolveConflictCopy(copy.id, 'restore_copy')}
+                            className="rounded-lg px-2.5 py-1 text-[11px] font-extrabold"
+                            style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                          >
+                            استعادة النسخة المحفوظة
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Server 30-Day Version History List */}
+              {!authUser ? (
+                <div
+                  className="rounded-2xl border p-5 text-center text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  سجّل الدخول لعرض سجل إصدارات الخادم خلال آخر 30 يوماً.
+                </div>
+              ) : serverVersions.length === 0 ? (
+                <div
+                  className="rounded-2xl border p-5 text-center text-xs"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  لا توجد إصدارات سحابية محفوظة بعد؛ تُنشأ تلقائياً مع كل مزامنة.
+                </div>
+              ) : (
+                <div className="max-h-[245px] space-y-2 overflow-y-auto text-xs">
+                  {serverVersions.slice(0, 20).map((ver) => (
+                    <div
+                      key={ver.versionId}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-bold">
+                          #{ver.versionNumber} · {ver.label} ({ver.recordCount} سجل / {ver.agencyCount} وكالة)
+                        </div>
+                        <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          {formatDateTimeArabic(ver.createdAt)} · الجهاز: {ver.deviceId} ·{' '}
+                          {Math.max(1, Math.round(ver.sizeBytes / 1024))} KB
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={versionsBusy}
+                        onClick={async () => {
+                          try {
+                            setVersionsBusy(true);
+                            const res = await restoreWorkspaceVersionApi(ver.versionId);
+                            if (onApplyServerSnapshot && res.snapshot) {
+                              await onApplyServerSnapshot(res.snapshot);
+                            }
+                            onNotifySuccess('تمت استعادة الإصدار المختار من السحابة بنجاح.');
+                          } catch (err) {
+                            onNotifyError(
+                              err instanceof Error ? err.message : 'تعذر استرجاع الإصدار.'
+                            );
+                          } finally {
+                            setVersionsBusy(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-extrabold"
+                        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        <span>استرجاع</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Server-Enforced Sharing Links, Member Invites (RBAC) & Access Audit Log */}
+          {authUser && (
+            <section className="nexus-squircle p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <NexusDuotoneIcon tone="ai" size="sm">
+                    <Users className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div>
+                    <h2 className="text-sm font-black">
+                      المشاركة الآمنة والصلاحيات على الخادم (RBAC)
+                    </h2>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      روابط بصلاحية عرض/تعديل وتاريخ انتهاء وكلمة مرور، دعوات مالك/محرر/مشاهد، وإلغاء فوري
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 text-xs">
+                {/* Create Share Link */}
+                <div
+                  className="rounded-2xl border p-4 space-y-2.5"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 font-black">
+                    <Link2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span>إنشاء رابط مشاركة محمي</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={shareLinkLabel}
+                      onChange={(e) => setShareLinkLabel(e.target.value)}
+                      placeholder="وصف الرابط"
+                      className="rounded-xl border px-3 py-1.5"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <select
+                      value={shareLinkRole}
+                      onChange={(e) =>
+                        setShareLinkRole(e.target.value as 'viewer' | 'editor')
+                      }
+                      className="rounded-xl border px-3 py-1.5 font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <option value="viewer">مشاهد فقط (Viewer)</option>
+                      <option value="editor">محرر (Editor)</option>
+                    </select>
+                    <input
+                      type="number"
+                      dir="ltr"
+                      min={1}
+                      max={720}
+                      value={shareLinkHours}
+                      onChange={(e) => setShareLinkHours(e.target.value)}
+                      placeholder="الانتهاء بالساعات (72)"
+                      className="rounded-xl border px-3 py-1.5 text-left"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <input
+                      type="password"
+                      dir="ltr"
+                      value={shareLinkPass}
+                      onChange={(e) => setShareLinkPass(e.target.value)}
+                      placeholder="كلمة مرور اختيارية"
+                      className="rounded-xl border px-3 py-1.5 text-left"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={shareBusy}
+                    onClick={async () => {
+                      try {
+                        setShareBusy(true);
+                        await createShareLinkApi({
+                          label: shareLinkLabel.trim() || 'رابط مشاركة',
+                          role: shareLinkRole,
+                          expiresInHours: Number(shareLinkHours) || 72,
+                          password: shareLinkPass.trim() || undefined,
+                        });
+                        setShareLinkPass('');
+                        await refreshEnterpriseSecurityData();
+                        onNotifySuccess('تم إنشاء رابط المشاركة وتأمين صلاحياته على الخادم.');
+                      } catch (err) {
+                        onNotifyError(
+                          err instanceof Error ? err.message : 'تعذر إنشاء الرابط.'
+                        );
+                      } finally {
+                        setShareBusy(false);
+                      }
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-4 py-1.5 font-extrabold"
+                    style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>توليد رابط مشاركة</span>
+                  </button>
+
+                  {shareLinks.length > 0 && (
+                    <div className="space-y-1.5 pt-2 max-h-[160px] overflow-y-auto">
+                      {shareLinks.map((lnk) => (
+                        <div
+                          key={lnk.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: lnk.revokedAt ? 'var(--danger)' : 'var(--border-color)',
+                            opacity: lnk.revokedAt ? 0.6 : 1,
+                          }}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold truncate">
+                              {lnk.label} · ({lnk.role === 'editor' ? 'محرر' : 'مشاهد'})
+                            </div>
+                            <div dir="ltr" className="font-mono text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
+                              {lnk.token} {lnk.hasPassword ? '🔒' : ''}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {!lnk.revokedAt && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setShareTestToken(lnk.token);
+                                    try {
+                                      await navigator.clipboard.writeText(lnk.token);
+                                      onNotifySuccess('تم نسخ رمز الرابط وتجهيزه للاختبار.');
+                                    } catch {
+                                      onNotifySuccess('تم تحديد رمز الرابط للاختبار.');
+                                    }
+                                  }}
+                                  className="rounded-lg border px-2 py-1 text-[10px] font-bold"
+                                  style={{ borderColor: 'var(--border-color)' }}
+                                >
+                                  نسخ / فحص
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await revokeShareLinkApi(lnk.id);
+                                    await refreshEnterpriseSecurityData();
+                                    onNotifySuccess('تم إلغاء رابط المشاركة فوراً.');
+                                  }}
+                                  className="rounded-lg border px-2 py-1 text-[10px] font-bold"
+                                  style={{ borderColor: 'var(--border-color)', color: 'var(--danger)' }}
+                                >
+                                  إلغاء فوري
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Email Member Invites & Audit Log */}
+                <div
+                  className="rounded-2xl border p-4 space-y-2.5"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 font-black">
+                    <UserPlus className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                    <span>دعوة مستخدمين بالبريد وإدارة الأدوار</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="email"
+                      dir="ltr"
+                      value={shareInviteEmail}
+                      onChange={(e) => setShareInviteEmail(e.target.value)}
+                      placeholder="colleague@company.com"
+                      className="min-w-[160px] flex-1 rounded-xl border px-3 py-1.5 text-left"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                    <select
+                      value={shareInviteRole}
+                      onChange={(e) => setShareInviteRole(e.target.value as ShareRole)}
+                      className="rounded-xl border px-2.5 py-1.5 font-bold"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      <option value="viewer">مشاهد</option>
+                      <option value="editor">محرر</option>
+                      <option value="owner">مالك مشارك</option>
+                    </select>
+                    <button
+                      type="button"
+                      disabled={shareBusy || !shareInviteEmail.includes('@')}
+                      onClick={async () => {
+                        try {
+                          setShareBusy(true);
+                          await inviteShareMemberApi({
+                            email: shareInviteEmail.trim(),
+                            role: shareInviteRole,
+                          });
+                          setShareInviteEmail('');
+                          await refreshEnterpriseSecurityData();
+                          onNotifySuccess('تمت دعوة العضو وتثبيت صلاحيته على الخادم.');
+                        } catch (err) {
+                          onNotifyError(
+                            err instanceof Error ? err.message : 'تعذر إرسال الدعوة.'
+                          );
+                        } finally {
+                          setShareBusy(false);
+                        }
+                      }}
+                      className="rounded-xl px-3.5 py-1.5 font-extrabold disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}
+                    >
+                      دعوة
+                    </button>
+                  </div>
+
+                  {shareInvites.length > 0 && (
+                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
+                      {shareInvites.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-1.5"
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            borderColor: 'var(--border-color)',
+                          }}
+                        >
+                          <span dir="ltr" className="font-bold truncate">
+                            {inv.email}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={inv.role}
+                              onChange={async (e) => {
+                                await updateShareMemberRoleApi(
+                                  inv.id,
+                                  e.target.value as ShareRole
+                                );
+                                await refreshEnterpriseSecurityData();
+                                onNotifySuccess('تم تحديث الدور بنجاح.');
+                              }}
+                              className="rounded-lg border px-2 py-0.5 text-[11px] font-bold"
+                              style={{
+                                backgroundColor: 'var(--bg-main)',
+                                borderColor: 'var(--border-color)',
+                              }}
+                            >
+                              <option value="viewer">مشاهد</option>
+                              <option value="editor">محرر</option>
+                              <option value="owner">مالك</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await revokeShareInviteApi(inv.id);
+                                await refreshEnterpriseSecurityData();
+                                onNotifySuccess('تم إلغاء صلاحية العضو فوراً.');
+                              }}
+                              className="rounded-lg border px-2 py-0.5 text-[10px] font-bold"
+                              style={{ borderColor: 'var(--border-color)', color: 'var(--danger)' }}
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Quick Share Access Verifier + Audit Log */}
+                  <div className="border-t pt-2 space-y-1.5" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="font-bold">فحص رابط مشاركة & سجل الوصول ({shareLogs.length}):</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={shareTestToken}
+                        onChange={(e) => setShareTestToken(e.target.value)}
+                        placeholder="رمز الرابط..."
+                        className="flex-1 min-w-[110px] rounded-lg border px-2.5 py-1 text-left"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <input
+                        type="password"
+                        dir="ltr"
+                        value={shareTestPass}
+                        onChange={(e) => setShareTestPass(e.target.value)}
+                        placeholder="كلمة المرور إن وجدت"
+                        className="w-28 rounded-lg border px-2.5 py-1 text-left"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--border-color)',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!shareTestToken.trim()}
+                        onClick={async () => {
+                          try {
+                            const preview = await accessSharedLinkApi({
+                              token: shareTestToken.trim(),
+                              password: shareTestPass || undefined,
+                            });
+                            setShareTestPreview({
+                              role: preview.role,
+                              label: preview.label,
+                              ownerName: preview.ownerName,
+                              ...preview.snapshotSummary,
+                            });
+                            await refreshEnterpriseSecurityData();
+                          } catch (err) {
+                            setShareTestPreview(null);
+                            onNotifyError(
+                              err instanceof Error ? err.message : 'تم رفض الوصول من الخادم.'
+                            );
+                          }
+                        }}
+                        className="rounded-lg border px-2.5 py-1 font-bold"
+                        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                      >
+                        اختبار الوصول
+                      </button>
+                    </div>
+                    {shareTestPreview && (
+                      <div
+                        className="rounded-lg border px-2.5 py-1.5 text-[11px]"
+                        style={{
+                          backgroundColor: 'var(--bg-surface)',
+                          borderColor: 'var(--success)',
+                        }}
+                      >
+                        مصرح ({shareTestPreview.role}) · {shareTestPreview.ownerName} —{' '}
+                        {shareTestPreview.agenciesCount} وكالة / {shareTestPreview.personsCount}{' '}
+                        مستفيد
+                      </div>
+                    )}
+                    {shareLogs.length > 0 && (
+                      <div className="max-h-[95px] space-y-1 overflow-y-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {shareLogs.slice(0, 8).map((log) => (
+                          <div key={log.id} className="truncate">
+                            • {log.actorLabel} — {log.action} ({log.role}) ·{' '}
+                            {formatDateTimeArabic(log.timestamp)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Sync Checkpoint History */}
           <section className="nexus-squircle p-5 space-y-3">
@@ -2742,7 +4244,7 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
             </div>
           </section>
 
-          {/* Safe Recycle Bin */}
+          {/* Safe Recycle Bin (30-Day Retention) */}
           <section className="nexus-squircle p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -2751,28 +4253,119 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 </NexusDuotoneIcon>
                 <div>
                   <h2 className="text-sm font-black">
-                    سلة الاسترجاع الآمنة ({recycleBin.length})
+                    سلة المحذوفات الآمنة — احتفاظ 30 يوماً ({recycleBin.length})
                   </h2>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    استعادة أي مستفيد أو قائمة أو مصروف حُذف مسبقاً بنقرة واحدة
+                    تُحفظ العناصر المحذوفة لمدة 30 يوماً مع خيار الاستعادة الكاملة قبل الحذف النهائي التلقائي
                   </p>
                 </div>
               </div>
 
               {recycleBin.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClearRecycleBin();
-                    onNotifySuccess('تم إفراغ سلة الاسترجاع.');
-                  }}
-                  className="rounded-xl border px-3 py-1.5 text-xs font-extrabold"
-                  style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                >
-                  إفراغ السلة
-                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {onRestoreAllRecycleBinItems && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRestoreAllRecycleBinItems();
+                        setConfirmClearBin(false);
+                        onNotifySuccess('تمت استعادة جميع العناصر من سلة المحذوفات.');
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-extrabold"
+                      style={{ backgroundColor: 'var(--success)', color: 'var(--success-fg)' }}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>استعادة الكل</span>
+                    </button>
+                  )}
+                  {confirmClearBin ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClearRecycleBin();
+                          setConfirmClearBin(false);
+                          onNotifySuccess('تم إفراغ سلة المحذوفات نهائياً.');
+                        }}
+                        className="rounded-xl px-3 py-1.5 text-xs font-extrabold"
+                        style={{ backgroundColor: 'var(--danger)', color: '#ffffff' }}
+                      >
+                        تأكيد الإفراغ النهائي
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearBin(false)}
+                        className="rounded-xl border px-2.5 py-1.5 text-xs font-bold"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearBin(true)}
+                      className="rounded-xl border px-3 py-1.5 text-xs font-extrabold"
+                      style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                    >
+                      إفراغ السلة
+                    </button>
+                  )}
+                </div>
               )}
             </div>
+
+            {recycleBin.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="relative min-w-[180px] flex-1">
+                  <Search
+                    className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                    style={{ color: 'var(--text-muted)' }}
+                  />
+                  <input
+                    type="text"
+                    value={recycleSearchQuery}
+                    onChange={(e) => setRecycleSearchQuery(e.target.value)}
+                    placeholder="ابحث داخل سلة المحذوفات…"
+                    className="w-full rounded-xl border py-1.5 pl-3 pr-8 text-xs outline-none"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {(
+                    [
+                      ['all', 'الكل'],
+                      ['person', 'مستفيدون'],
+                      ['agency', 'وكالات'],
+                      ['ready_list', 'قوائم'],
+                      ['expense', 'مصاريف'],
+                      ['relation', 'علاقات'],
+                      ['note', 'ملاحظات'],
+                    ] as const
+                  ).map(([kindId, label]) => (
+                    <button
+                      key={kindId}
+                      type="button"
+                      onClick={() => setRecycleKindFilter(kindId)}
+                      className="rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                      style={{
+                        borderColor:
+                          recycleKindFilter === kindId ? 'var(--accent)' : 'var(--border-color)',
+                        backgroundColor:
+                          recycleKindFilter === kindId ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                        color:
+                          recycleKindFilter === kindId ? 'var(--accent)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {recycleBin.length === 0 ? (
               <div
@@ -2783,58 +4376,169 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                   color: 'var(--text-muted)',
                 }}
               >
-                سلة الاسترجاع فارغة حالياً.
+                سلة المحذوفات فارغة حالياً. أي سجل أو وكالة أو ملاحظة يتم حذفها ستُحفظ هنا لمدة 30 يوماً قبل الحذف النهائي.
               </div>
             ) : (
               <div className="max-h-[340px] space-y-2 overflow-y-auto text-xs">
-                {recycleBin.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3"
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-extrabold">{entry.label}</div>
-                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        حُذف في {entry.deletedAt.slice(0, 10)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onRestoreRecycleBinItem(entry.id);
-                          onNotifySuccess(`تمت استعادة: ${entry.label}`);
-                        }}
-                        className="inline-flex min-h-[34px] items-center gap-1 rounded-xl px-3 py-1 font-extrabold"
+                {recycleBin
+                  .filter((entry) => {
+                    if (recycleKindFilter !== 'all' && entry.kind !== recycleKindFilter) {
+                      return false;
+                    }
+                    const q = recycleSearchQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return entry.label.toLowerCase().includes(q);
+                  })
+                  .map((entry) => {
+                    const daysLeft = getRemainingRecycleDays(entry);
+                    const kindLabel =
+                      entry.kind === 'person'
+                        ? 'مستفيد'
+                        : entry.kind === 'agency'
+                          ? 'وكالة'
+                          : entry.kind === 'note'
+                            ? 'ملاحظة'
+                            : entry.kind === 'ready_list'
+                              ? 'قائمة جاهزة'
+                              : entry.kind === 'relation'
+                                ? 'علاقة'
+                                : 'مصروف';
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3"
                         style={{
-                          backgroundColor: 'var(--success)',
-                          color: 'var(--success-fg)',
-                        }}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        <span>استعادة</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onPurgeRecycleBinItem(entry.id)}
-                        className="min-h-[34px] rounded-xl border px-2.5 py-1 font-bold"
-                        style={{
+                          backgroundColor: 'var(--bg-main)',
                           borderColor: 'var(--border-color)',
-                          color: 'var(--danger)',
                         }}
                       >
-                        حذف نهائي
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate font-extrabold">{entry.label}</span>
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                              style={{
+                                backgroundColor: 'var(--bg-nav-active)',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
+                              {kindLabel}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            <span>حُذف في {entry.deletedAt.slice(0, 10)}</span>
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                              style={{
+                                backgroundColor: 'var(--bg-nav-active)',
+                                color: daysLeft <= 5 ? 'var(--danger)' : 'var(--accent)',
+                              }}
+                            >
+                              متبقي {daysLeft} يوم للاستعادة
+                            </span>
+                            {entry.expiresAt && (
+                              <span>· الحذف التلقائي {entry.expiresAt.slice(0, 10)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRestoreRecycleBinItem(entry.id);
+                              onNotifySuccess(`تمت استعادة: ${entry.label}`);
+                            }}
+                            className="inline-flex min-h-[34px] items-center gap-1 rounded-xl px-3 py-1 font-extrabold"
+                            style={{
+                              backgroundColor: 'var(--success)',
+                              color: 'var(--success-fg)',
+                            }}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>استعادة</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onPurgeRecycleBinItem(entry.id);
+                              onNotifySuccess(`تم الحذف النهائي للعنصر: ${entry.label}`);
+                            }}
+                            className="min-h-[34px] rounded-xl border px-2.5 py-1 font-bold"
+                            style={{
+                              borderColor: 'var(--border-color)',
+                              color: 'var(--danger)',
+                            }}
+                          >
+                            حذف نهائي
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </section>
+
+          {/* GDPR Data Portability Export & Permanent Account Deletion */}
+          {authUser && (
+            <section className="nexus-squircle p-5 space-y-3.5 lg:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <NexusDuotoneIcon tone="crimson" size="sm">
+                    <ShieldAlert className="h-4 w-4" />
+                  </NexusDuotoneIcon>
+                  <div>
+                    <h2 className="text-sm font-black">الخصوصية وتصدير GDPR وحذف الحساب نهائياً</h2>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      نزّل نسخة شاملة بكل بياناتك المخزنة في الخادم، أو احذف الحساب وجميع بياناته نهائياً بعد تأكيد الهوية
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const gdpr = await exportGdprDataApi();
+                        const blob = new Blob([gdpr.jsonText], {
+                          type: 'application/json;charset=utf-8',
+                        });
+                        triggerBlobDownload(
+                          blob,
+                          `morrow-gdpr-export-${gdpr.exportedAt.slice(0, 10)}.json`
+                        );
+                        onNotifySuccess('تم تنزيل حزمة تصدير GDPR الشاملة بنجاح.');
+                      } catch (err) {
+                        onNotifyError(
+                          err instanceof Error ? err.message : 'تعذر تصدير حزمة GDPR.'
+                        );
+                      }
+                    }}
+                    className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-4 py-2 font-extrabold"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>تصدير كل بياناتك (GDPR JSON)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReauthPassInput('');
+                      setDeleteConfirmText('');
+                      setPendingStepUp({ kind: 'delete_account' });
+                    }}
+                    className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-4 py-2 font-extrabold"
+                    style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>حذف الحساب نهائياً</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Smart Audit & Recovery Log */}
           <section className="nexus-squircle p-5 space-y-4 lg:col-span-2">
@@ -3026,6 +4730,151 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
                 {pendingDriveConfirm.kind === 'delete'
                   ? 'نعم، احذف الملف نهائياً'
                   : 'نعم، حدّث النسخة الآن'}
+              </button>
+            </div>
+          </div>
+        </FullScreenPushPage>
+      )}
+
+      {/* Step-Up Re-Authentication Modal for Sensitive Operations */}
+      {pendingStepUp && (
+        <FullScreenPushPage
+          open={Boolean(pendingStepUp)}
+          onClose={() => setPendingStepUp(null)}
+          title="تأكيد الهوية للعملية الحساسة"
+          subtitle="مطلوب إعادة التحقق قبل تنفيذ التغيير"
+          maxWidthClass="max-w-md"
+        >
+          <div dir="rtl" className="space-y-4 p-5 text-xs">
+            <div
+              className="rounded-2xl border p-3.5 leading-relaxed"
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                borderColor:
+                  pendingStepUp.kind === 'delete_account'
+                    ? 'var(--danger)'
+                    : 'var(--accent)',
+              }}
+            >
+              {pendingStepUp.kind === 'delete_account'
+                ? 'سيتم حذف حسابك وجميع مساحات العمل والنسخ والروابط والجلسات نهائياً دون إمكانية التراجع.'
+                : pendingStepUp.kind === 'change_email'
+                ? `سيتم تحديث بريد حسابك الإلكتروني إلى (${pendingStepUp.newEmail}).`
+                : pendingStepUp.kind === 'delete_passkey'
+                ? 'سيتم إزالة مفتاح المرور المختار ولن يعد صالحاً لتسجيل الدخول.'
+                : 'سيتم توليد 8 رموز استرجاع جديدة وإبطال أي رموز سابقة.'}
+            </div>
+
+            <div>
+              <label className="mb-1 block font-bold">
+                كلمة المرور الحالية (اتركه فارغاً لحسابات Google/GitHub بدون كلمة مرور)
+              </label>
+              <input
+                type="password"
+                dir="ltr"
+                value={reauthPassInput}
+                onChange={(e) => setReauthPassInput(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-xl border px-3 py-2 text-left text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              />
+            </div>
+
+            {pendingStepUp.kind === 'delete_account' && (
+              <div>
+                <label className="mb-1 block font-bold" style={{ color: 'var(--danger)' }}>
+                  اكتب كلمة DELETE للتأكيد النهائي
+                </label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full rounded-xl border px-3 py-2 text-left font-mono text-sm font-black"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--danger)',
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingStepUp(null)}
+                className="min-h-[40px] rounded-xl border px-4 py-2 font-bold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={
+                  stepUpBusy ||
+                  (pendingStepUp.kind === 'delete_account' &&
+                    deleteConfirmText.trim().toUpperCase() !== 'DELETE')
+                }
+                onClick={async () => {
+                  try {
+                    setStepUpBusy(true);
+                    const grant = await verifyReauthApi({
+                      password: reauthPassInput || undefined,
+                    });
+                    if (pendingStepUp.kind === 'generate_recovery') {
+                      const res = await generateRecoveryCodesApi(grant.reauthToken);
+                      setGeneratedCodes(res.codes);
+                      setRecoveryStatus(res.status);
+                      onNotifySuccess('تم توليد رموز الاسترجاع الجديدة بنجاح.');
+                    } else if (pendingStepUp.kind === 'delete_passkey') {
+                      await deletePasskeyApi(
+                        pendingStepUp.credentialId,
+                        grant.reauthToken
+                      );
+                      await refreshEnterpriseSecurityData();
+                      onNotifySuccess('تمت إزالة مفتاح المرور بنجاح.');
+                    } else if (pendingStepUp.kind === 'change_email') {
+                      const session = await changeAccountEmailApi({
+                        newEmail: pendingStepUp.newEmail,
+                        reauthToken: grant.reauthToken,
+                      });
+                      setNewEmailDraft('');
+                      onAuthenticated(session.user);
+                      await refreshEnterpriseSecurityData();
+                      onNotifySuccess('تم تغيير البريد الإلكتروني بنجاح.');
+                    } else if (pendingStepUp.kind === 'delete_account') {
+                      await deleteAccountPermanentlyApi(grant.reauthToken);
+                      setPendingStepUp(null);
+                      onNotifySuccess('تم حذف الحساب نهائياً وتنظيف كافة البيانات.');
+                      onLoggedOut();
+                      return;
+                    }
+                    setPendingStepUp(null);
+                  } catch (err) {
+                    onNotifyError(
+                      err instanceof Error ? err.message : 'فشل التحقق من الهوية.'
+                    );
+                  } finally {
+                    setStepUpBusy(false);
+                  }
+                }}
+                className="min-h-[40px] rounded-xl px-4 py-2 font-extrabold disabled:opacity-50"
+                style={{
+                  backgroundColor:
+                    pendingStepUp.kind === 'delete_account'
+                      ? 'var(--danger)'
+                      : 'var(--accent)',
+                  color:
+                    pendingStepUp.kind === 'delete_account'
+                      ? '#FFFFFF'
+                      : 'var(--accent-fg)',
+                }}
+              >
+                {stepUpBusy ? 'جارٍ التحقق...' : 'تأكيد وتنفيذ'}
               </button>
             </div>
           </div>

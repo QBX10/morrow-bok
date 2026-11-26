@@ -9,6 +9,7 @@ import {
   DEFAULT_WORKSPACE_COSMOS,
 } from '../data/seedData';
 import { emitAppToast } from './useToastQueue';
+import { audioManager } from '../services/audio/AudioManager';
 import {
   deleteServerAppearanceProfile,
   fetchStorageStatusApi,
@@ -23,13 +24,26 @@ import {
   saveAppearanceProfileToFirestore,
   syncWorkspaceSummaryToFirestore,
 } from '../lib/firestoreSync';
+import {
+  createServerChunkTransport,
+  fetchStorageQuotaApi,
+} from '../lib/securityClient';
 import type { CompressionStats } from '../services/compression/compressionEngine';
+import {
+  buildContentAddressedChunks,
+  uploadChunkedWithDedupAndResume,
+} from '../services/storage/chunkSyncEngine';
+import { mergeWorkspacesCrdt, tickHlc } from '../services/storage/crdtEngine';
 import {
   appendAuditCheckpointEvents,
   createAuditCheckpointEvent,
   createMemoryVaultExport,
   parseMemoryVaultImport,
 } from '../services/storage/memoryVault';
+import {
+  createRealtimeSyncSocket,
+  triggerBrowserSecurityNotification,
+} from '../services/storage/realtimeSyncClient';
 import {
   enqueueSyncOperation,
   getOrCreateDeviceId,
@@ -80,6 +94,7 @@ import type {
   SecurityPrefs,
   SmartPreferencesMemory,
   SmartSyncCheckpoint,
+  StorageQuotaInfo,
   StorageSystemStatus,
   Surface2DPrefs,
   Surface2DThemeId,
@@ -107,7 +122,9 @@ import {
   findExistingMatchInAgency,
 } from '../utils/quickExtractEngine';
 import {
+  pruneExpiredRecycleBinEntries,
   pushRecycleBinEntry,
+  restoreAllRecycleBinEntriesFromState,
   restoreRecycleBinEntryFromState,
 } from '../utils/recycleBin';
 import {
@@ -390,10 +407,16 @@ function normalizeLoadedWorkspaceState(
       },
     },
     auditLog: Array.isArray(parsed.auditLog) ? parsed.auditLog : [],
-    recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
+    recycleBin: pruneExpiredRecycleBinEntries(
+      Array.isArray(parsed.recycleBin) ? parsed.recycleBin : []
+    ),
     workspaceNotes: Array.isArray(parsed.workspaceNotes)
       ? parsed.workspaceNotes
       : [],
+    conflictCopies: Array.isArray(parsed.conflictCopies)
+      ? parsed.conflictCopies
+      : [],
+    hlcTimestamp: typeof parsed.hlcTimestamp === 'string' ? parsed.hlcTimestamp : undefined,
     activePeriod: resolvePeriodMeta(
       parsed.activePeriod,
       cleanBase.activePeriod?.fullDate
@@ -408,7 +431,31 @@ function normalizeLoadedWorkspaceState(
   };
 }
 
-export function useAgencyStore(activeUid: string | null = null) {
+function buildSelectiveCloudSnapshot(state: AppDatabaseState): AppDatabaseState {
+  const sel = state.securityPrefs?.selectiveSync;
+  if (!sel) return state;
+  return {
+    ...state,
+    ...(sel.syncRecords === false
+      ? { agencies: [], persons: [], expenses: [], readyLists: [], readyListItems: [], relations: [] }
+      : {}),
+    ...(sel.syncArchives === false ? { monthlyArchives: [] } : {}),
+    ...(sel.syncNotes === false ? { workspaceNotes: [] } : {}),
+    ...(sel.syncAttachments === false
+      ? {
+          ucrsSessions: (state.ucrsSessions || []).map((s) => ({
+            ...s,
+            sources: s.sources.map((src) => ({ ...src, previewDataUrl: undefined })),
+          })),
+        }
+      : {}),
+  };
+}
+
+export function useAgencyStore(
+  activeUid: string | null = null,
+  options?: { onRemoteSessionRevoked?: (reason?: string) => void }
+) {
   const [state, setState] = useState<AppDatabaseState>(() =>
     getCleanTenantInitialState(activeUid)
   );
@@ -419,11 +466,15 @@ export function useAgencyStore(activeUid: string | null = null) {
     useState<CompressionStats | null>(null);
   const [syncStatus, setSyncStatus] = useState<WorkspaceSyncStatus>('local_only');
   const [storageStatus, setStorageStatus] = useState<StorageSystemStatus | null>(null);
+  const [storageQuota, setStorageQuota] = useState<StorageQuotaInfo | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = useState<boolean>(false);
   const [syncQueue, setSyncQueue] = useState<SyncQueueOperation[]>([]);
   const [isOnline, setIsOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine !== false : true
   );
   const [lastConflictNotice, setLastConflictNotice] = useState<string | null>(null);
+  const onRemoteSessionRevokedRef = useRef(options?.onRemoteSessionRevoked);
+  onRemoteSessionRevokedRef.current = options?.onRemoteSessionRevoked;
 
   const loadedUidRef = useRef<string | null>(null);
   const latestStateRef = useRef<AppDatabaseState>(state);
@@ -528,6 +579,12 @@ export function useAgencyStore(activeUid: string | null = null) {
           })
           .catch(() => {});
 
+        void fetchStorageQuotaApi()
+          .then((q) => {
+            if (!cancelled && q) setStorageQuota(q);
+          })
+          .catch(() => {});
+
         const localLoaded = await loadTenantWorkspace(activeUid);
         if (cancelled) return;
 
@@ -566,14 +623,22 @@ export function useAgencyStore(activeUid: string | null = null) {
                 hasPendingLocalOps: pendingOps.length > 0,
               });
 
-              if (lww.winner === 'remote') {
-                let hydrated = lww.state;
+              if (lww.winner === 'remote' || lww.conflictDetected) {
+                let hydrated = normalizedRemote;
+                let conflictSaved = false;
                 if (lww.conflictDetected) {
-                  setLastConflictNotice(lww.summary);
+                  const crdt = mergeWorkspacesCrdt({
+                    localState: workingState,
+                    remoteState: normalizedRemote,
+                    deviceId: getOrCreateDeviceId(),
+                  });
+                  hydrated = crdt.mergedState;
+                  conflictSaved = crdt.conflictCopies.length > 0;
+                  setLastConflictNotice(crdt.summary);
                   const conflictAudit = createAuditCheckpointEvent({
                     actionType: 'conflict_lww',
-                    title: 'حل تعارض المزامنة (الأحدث زمنياً)',
-                    summary: lww.summary,
+                    title: 'حل تعارض المزامنة عبر CRDT',
+                    summary: crdt.summary,
                     conflictResolved: true,
                     restorableState: workingState,
                   });
@@ -590,14 +655,14 @@ export function useAgencyStore(activeUid: string | null = null) {
                 setState(hydrated);
                 setCompressionStats(hydratedStats);
                 setStorageReady(true);
-                setSyncStatus('cloud_synced');
+                setSyncStatus(conflictSaved ? 'conflict_saved' : 'cloud_synced');
                 return;
               }
 
               if (lww.winner === 'local') {
                 // Local has newer changes or offline pending edits -> push up to unify cloud
                 const pushRes = await pushWorkspaceLwwApi({
-                  snapshot: workingState,
+                  snapshot: buildSelectiveCloudSnapshot(workingState),
                   clientUpdatedAt: workingState.updatedAt || new Date().toISOString(),
                   deviceId: getOrCreateDeviceId(),
                 });
@@ -885,6 +950,8 @@ export function useAgencyStore(activeUid: string | null = null) {
         setFuture([]);
         return {
           ...mutated,
+          recycleBin: pruneExpiredRecycleBinEntries(mutated.recycleBin || []),
+          hlcTimestamp: tickHlc(prev.hlcTimestamp, deviceId),
           updatedAt: nowIso,
           deviceId,
           auditLog: appendAuditCheckpointEvents(mutated.auditLog, auditEv),
@@ -1713,14 +1780,28 @@ export function useAgencyStore(activeUid: string | null = null) {
   );
 
   const deleteWorkspaceNote = useCallback((noteId: string) => {
-    setState((prev) => ({
-      ...prev,
-      workspaceNotes: (prev.workspaceNotes || []).filter((n) => n.id !== noteId),
-    }));
+    setState((prev) => {
+      const target = (prev.workspaceNotes || []).find((n) => n.id === noteId);
+      return {
+        ...prev,
+        workspaceNotes: (prev.workspaceNotes || []).filter((n) => n.id !== noteId),
+        recycleBin: target
+          ? pushRecycleBinEntry(prev.recycleBin, {
+              kind: 'note',
+              label: target.title || 'ملاحظة مساحة العمل',
+              payload: { kind: 'note', note: target },
+            })
+          : prev.recycleBin,
+      };
+    });
   }, []);
 
   const restoreRecycleBinItem = useCallback((entryId: string) => {
     setState((prev) => restoreRecycleBinEntryFromState(prev, entryId));
+  }, []);
+
+  const restoreAllRecycleBinItems = useCallback(() => {
+    setState((prev) => restoreAllRecycleBinEntriesFromState(prev));
   }, []);
 
   const purgeRecycleBinItem = useCallback((entryId: string) => {
@@ -3112,6 +3193,11 @@ export function useAgencyStore(activeUid: string | null = null) {
             payload: { kind: 'relation', relation: rel },
           });
         }
+        nextBin = pushRecycleBinEntry(nextBin, {
+          kind: 'agency',
+          label: targetAgency.name,
+          payload: { kind: 'agency', agency: targetAgency },
+        });
         return {
           ...prev,
           agencies: prev.agencies.filter((a) => a.id !== agencyId),
@@ -3153,35 +3239,45 @@ export function useAgencyStore(activeUid: string | null = null) {
         const currentSnapshot = latestStateRef.current;
         const deviceId = currentSnapshot.deviceId || getOrCreateDeviceId();
         const clientUpdatedAt = currentSnapshot.updatedAt || new Date().toISOString();
+        const selectiveSnapshot = buildSelectiveCloudSnapshot(currentSnapshot);
 
         const data = await pushWorkspaceLwwApi({
-          snapshot: currentSnapshot,
+          snapshot: selectiveSnapshot,
           clientUpdatedAt,
           deviceId,
           force: options?.force,
         });
 
+        let finalSyncStatus: WorkspaceSyncStatus = 'cloud_synced';
         if (data.conflictResolved && data.winner === 'server' && data.snapshot) {
           const remoteNormalized = normalizeLoadedWorkspaceState(
             data.snapshot as Partial<AppDatabaseState>,
             activeUid
           );
+          const crdt = mergeWorkspacesCrdt({
+            localState: currentSnapshot,
+            remoteState: remoteNormalized,
+            deviceId,
+          });
           const conflictAudit = createAuditCheckpointEvent({
             actionType: 'conflict_lww',
-            title: 'مزامنة تعارض LWW',
-            summary: 'تم اعتماد نسخة الخادم الأحدث وتحديث هذا الجهاز دون فقدان السجل السابق.',
+            title: 'دمج تعارض المزامنة عبر CRDT',
+            summary: crdt.summary,
             conflictResolved: true,
             restorableState: currentSnapshot,
           });
           const hydrated: AppDatabaseState = {
-            ...remoteNormalized,
+            ...crdt.mergedState,
             lastSyncedAt: new Date().toISOString(),
-            auditLog: appendAuditCheckpointEvents(remoteNormalized.auditLog, conflictAudit),
+            auditLog: appendAuditCheckpointEvents(crdt.mergedState.auditLog, conflictAudit),
           };
           lastCloudSyncedUpdatedAtRef.current = hydrated.updatedAt || '';
           suppressNextAutoQueueRef.current = true;
           setState(hydrated);
-          setLastConflictNotice('تم حل تعارض زمني تلقائياً واعتماد النسخة الأحدث من السحابة.');
+          setLastConflictNotice(crdt.summary);
+          if (crdt.conflictCopies.length > 0) {
+            finalSyncStatus = 'conflict_saved';
+          }
         } else {
           lastCloudSyncedUpdatedAtRef.current = clientUpdatedAt;
           const syncedAt = new Date().toISOString();
@@ -3191,6 +3287,27 @@ export function useAgencyStore(activeUid: string | null = null) {
             lastSyncedAt: syncedAt,
           }));
         }
+
+        // Background content-addressed chunk dedup & storage quota refresh
+        void (async () => {
+          try {
+            const payloadJson = JSON.stringify(selectiveSnapshot);
+            const built = await buildContentAddressedChunks(payloadJson, {
+              mimeType: 'application/json',
+              filename: 'workspace.json',
+            });
+            const chunkRes = await uploadChunkedWithDedupAndResume(
+              built,
+              createServerChunkTransport(),
+              { label: currentSnapshot.activePeriod?.quotaName || 'مزامنة سحابية' }
+            );
+            if (chunkRes.quota) {
+              setStorageQuota(chunkRes.quota);
+            }
+          } catch {
+            // Chunk telemetry upload is non-blocking if offline
+          }
+        })();
 
         const queue = loadSyncQueue(activeUid);
         const pendingOps = queue.filter((q) => q.status === 'pending' || q.status === 'failed');
@@ -3227,7 +3344,7 @@ export function useAgencyStore(activeUid: string | null = null) {
         }
 
         setSyncQueue(pruneSyncedQueueOperations(activeUid, 12));
-        setSyncStatus('cloud_synced');
+        setSyncStatus(finalSyncStatus);
         autoRetryCountRef.current = 0;
 
         if (hadOfflineOrErrorPendingRef.current) {
@@ -3359,6 +3476,153 @@ export function useAgencyStore(activeUid: string | null = null) {
       }
     );
   }, [activeUid]);
+
+  const applyServerRestoredSnapshot = useCallback(
+    async (rawSnapshot: unknown): Promise<boolean> => {
+      if (!rawSnapshot || typeof rawSnapshot !== 'object') return false;
+      const normalized = normalizeLoadedWorkspaceState(
+        rawSnapshot as Partial<AppDatabaseState>,
+        activeUid ?? null
+      );
+      lastCloudSyncedUpdatedAtRef.current = normalized.updatedAt || '';
+      suppressNextAutoQueueRef.current = true;
+      setState(normalized);
+      if (activeUid) {
+        await saveTenantWorkspace(activeUid, normalized);
+      }
+      setPast([]);
+      setFuture([]);
+      setSyncStatus('cloud_synced');
+      return true;
+    },
+    [activeUid]
+  );
+
+  const resolveConflictCopy = useCallback(
+    (copyId: string, action: 'keep_current' | 'restore_copy') => {
+      setState((prev) => {
+        const copies = prev.conflictCopies || [];
+        const target = copies.find((c) => c.id === copyId);
+        if (!target) return prev;
+        let nextState = {
+          ...prev,
+          conflictCopies: copies.map((c) =>
+            c.id === copyId ? { ...c, resolved: true } : c
+          ),
+        };
+        if (action === 'restore_copy' && target.localSnapshotJson) {
+          try {
+            const parsed = JSON.parse(target.localSnapshotJson);
+            if (target.entityKind === 'person' && parsed && typeof parsed.id === 'number') {
+              nextState = {
+                ...nextState,
+                persons: nextState.persons.map((p) =>
+                  p.id === parsed.id ? { ...p, ...parsed } : p
+                ),
+                updatedAt: new Date().toISOString(),
+              };
+            } else if (target.entityKind === 'note' && parsed && typeof parsed.id === 'string') {
+              nextState = {
+                ...nextState,
+                workspaceNotes: (nextState.workspaceNotes || []).map((n) =>
+                  n.id === parsed.id ? { ...n, ...parsed } : n
+                ),
+                updatedAt: new Date().toISOString(),
+              };
+            }
+          } catch {
+            // ignore malformed snapshot
+          }
+        }
+        return nextState;
+      });
+    },
+    []
+  );
+
+  const refreshStorageQuota = useCallback(async () => {
+    const q = await fetchStorageQuotaApi().catch(() => null);
+    if (q) setStorageQuota(q);
+    return q;
+  }, []);
+
+  // Real-Time WebSocket Sync + Push Alerts + Remote Session Revocation Listener
+  useEffect(() => {
+    if (!activeUid || !isOnline) {
+      setRealtimeConnected(false);
+      return;
+    }
+    const localDeviceId = getOrCreateDeviceId();
+    void audioManager.fetchAndHydrateFromServer();
+    const disconnect = createRealtimeSyncSocket({
+      onStatusChange: (connected) => setRealtimeConnected(connected),
+      onEvent: (ev) => {
+        if (ev.type === 'session:revoked') {
+          emitAppToast({
+            title: 'تم إنهاء الجلسة عن بُعد',
+            description: ev.reason || 'تم تسجيل الخروج من جهاز آخر.',
+            tone: 'warning',
+            channel: 'security',
+            sfxEvent: 'warn',
+          });
+          onRemoteSessionRevokedRef.current?.(ev.reason);
+          return;
+        }
+        if (ev.type === 'security:alert') {
+          emitAppToast({
+            title: ev.title,
+            description: ev.summary,
+            tone: 'warning',
+            channel: 'security',
+            sfxEvent: 'warn',
+          });
+          if (latestStateRef.current.securityPrefs?.pushAlertsEnabled !== false) {
+            void triggerBrowserSecurityNotification(ev.title, ev.summary);
+          }
+          return;
+        }
+        if (ev.type === 'settings:audio_updated' && ev.deviceId !== localDeviceId) {
+          audioManager.applyRemoteSettings(ev.settings, ev.deviceLabel);
+          return;
+        }
+        if (ev.type === 'workspace:updated' && ev.deviceId !== localDeviceId) {
+          void (async () => {
+            try {
+              const remoteRes = await fetchWorkspaceSnapshotApi();
+              if (!remoteRes?.exists || !remoteRes.snapshot) return;
+              const remoteNorm = normalizeLoadedWorkspaceState(
+                remoteRes.snapshot as Partial<AppDatabaseState>,
+                activeUid
+              );
+              const crdt = mergeWorkspacesCrdt({
+                localState: latestStateRef.current,
+                remoteState: remoteNorm,
+                deviceId: localDeviceId,
+              });
+              lastCloudSyncedUpdatedAtRef.current = crdt.mergedState.updatedAt || '';
+              suppressNextAutoQueueRef.current = true;
+              setState(crdt.mergedState);
+              await saveTenantWorkspace(activeUid, crdt.mergedState);
+              setSyncStatus(crdt.conflictCopies.length > 0 ? 'conflict_saved' : 'cloud_synced');
+              emitAppToast({
+                title: 'تمت مزامنة تحديث فوري من جهاز آخر',
+                description:
+                  crdt.conflictCopies.length > 0
+                    ? crdt.summary
+                    : 'تم تحديث السجلات مباشرة عبر قناة WebSocket الحية.',
+                tone: crdt.conflictCopies.length > 0 ? 'warning' : 'success',
+                channel: 'sync',
+                sfxEvent: 'sync_complete',
+              });
+            } catch {
+              // ignore transient pull errors
+            }
+          })();
+        }
+      },
+    });
+    return () => disconnect();
+  }, [activeUid, isOnline]);
 
   // --- Monthly Archives & Active Period Management ---
   const activePeriod = resolvePeriodMeta(state.activePeriod);
@@ -3688,6 +3952,7 @@ export function useAgencyStore(activeUid: string | null = null) {
     updateWorkspaceNote,
     deleteWorkspaceNote,
     restoreRecycleBinItem,
+    restoreAllRecycleBinItems,
     purgeRecycleBinItem,
     clearRecycleBin,
     importWorkspaceJson,
@@ -3740,6 +4005,12 @@ export function useAgencyStore(activeUid: string | null = null) {
     auditLog: state.auditLog || [],
     syncStatus,
     storageStatus,
+    storageQuota,
+    refreshStorageQuota,
+    realtimeConnected,
+    conflictCopies: state.conflictCopies || [],
+    resolveConflictCopy,
+    applyServerRestoredSnapshot,
     syncQueue,
     isOnline,
     lastConflictNotice,

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { MotionConfig } from 'motion/react';
+import { MotionConfig } from 'framer-motion';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initPwaServiceWorker } from './lib/pwaInstall';

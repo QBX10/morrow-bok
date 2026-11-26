@@ -689,7 +689,10 @@ export function getServerProviderApiKeys(): {
     return !t || t === placeholder ? '' : t;
   };
   return {
-    geminiApiKey: clean(process.env.GEMINI_API_KEY, 'MY_GEMINI_API_KEY'),
+    geminiApiKey:
+      clean(process.env.GEMINI_API_KEY, 'MY_GEMINI_API_KEY') ||
+      clean(process.env.GOOGLE_API_KEY, 'MY_GEMINI_API_KEY') ||
+      clean(process.env.API_KEY, 'MY_GEMINI_API_KEY'),
     groqApiKey: clean(process.env.GROQ_API_KEY, 'MY_GROQ_API_KEY'),
     openRouterApiKey: clean(process.env.OPENROUTER_API_KEY, 'MY_OPENROUTER_API_KEY'),
   };

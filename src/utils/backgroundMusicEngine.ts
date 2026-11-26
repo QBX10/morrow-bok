@@ -5,6 +5,7 @@ export type MusicPauseReason =
   | 'camera'
   | 'tts'
   | 'media'
+  | 'headset_disconnected'
   | 'alert'
   | 'tab_hidden';
 
@@ -18,6 +19,7 @@ export type BackgroundMusicPlaybackStatus =
 export interface BackgroundMusicSnapshot {
   userPaused: boolean;
   smartModeEnabled: boolean;
+  pauseOnExit: boolean;
   volume: number;
   isPlaying: boolean;
   awaitingGesture: boolean;
@@ -27,15 +29,17 @@ export interface BackgroundMusicSnapshot {
   status: BackgroundMusicPlaybackStatus;
   hasError: boolean;
   usingSynthFallback: boolean;
+  gaplessLoopActive: boolean;
 }
 
 const STORAGE_KEY = 'morrow_bg_music_prefs_v1';
 const PRIMARY_SRC = '/assets/aistudio/bg-music_85f08a71.mp3';
 const FALLBACK_SRC = '/app-ambient.mp3';
-const DEFAULT_VOLUME = 0.27;
+const DEFAULT_VOLUME = 0.20;
 
 export const SMART_AUDIO_REASON_PRIORITY: readonly MusicPauseReason[] = [
   'call',
+  'headset_disconnected',
   'live',
   'mic',
   'camera',
@@ -47,6 +51,7 @@ export const SMART_AUDIO_REASON_PRIORITY: readonly MusicPauseReason[] = [
 
 export const SMART_AUDIO_REASON_LABELS: Record<MusicPauseReason, string> = {
   call: 'صوت التطبيق متوقف مؤقتاً أثناء إجراء اتصال',
+  headset_disconnected: 'تم فصل السماعة — أُوقفت الموسيقى تلقائياً',
   live: 'صوت التطبيق متوقف مؤقتاً أثناء الجلسة الصوتية المباشرة',
   mic: 'صوت التطبيق متوقف مؤقتاً أثناء التسجيل الصوتي أو استخدام الميكروفون',
   camera: 'صوت التطبيق متوقف مؤقتاً أثناء فتح الكاميرا',
@@ -84,6 +89,7 @@ export function shouldSmartMusicPlay(params: {
 interface PersistedPrefs {
   userPaused: boolean;
   smartModeEnabled: boolean;
+  pauseOnExit: boolean;
   volume: number;
   volumeV2Migrated?: boolean;
   smartAudioV3Migrated?: boolean;
@@ -99,6 +105,7 @@ function loadPrefs(): { prefs: PersistedPrefs; hasSavedPrefs: boolean } {
   const defaultPrefs: PersistedPrefs = {
     userPaused: false,
     smartModeEnabled: true,
+    pauseOnExit: true,
     volume: DEFAULT_VOLUME,
     volumeV2Migrated: true,
     smartAudioV3Migrated: true,
@@ -122,13 +129,16 @@ function loadPrefs(): { prefs: PersistedPrefs; hasSavedPrefs: boolean } {
       typeof parsed.smartModeEnabled === 'boolean'
         ? parsed.smartModeEnabled
         : true;
+    const pauseOnExit =
+      typeof parsed.pauseOnExit === 'boolean'
+        ? parsed.pauseOnExit
+        : true;
     let v2Migrated = Boolean(parsed.volumeV2Migrated);
     if (!v2Migrated && typeof parsed.volume === 'number') {
       volume = clamp01(Math.round(volume * 0.8 * 100) / 100);
       v2Migrated = true;
     }
 
-    // Migrate cleanly to UI-less System Ambient Smart Mode
     let v3Migrated = Boolean(parsed.smartAudioV3Migrated);
     let v4Migrated = Boolean(parsed.rumiAmbientV4Migrated);
     if (!v3Migrated || !v4Migrated) {
@@ -141,6 +151,7 @@ function loadPrefs(): { prefs: PersistedPrefs; hasSavedPrefs: boolean } {
       savePrefs({
         userPaused,
         smartModeEnabled: true,
+        pauseOnExit,
         volume,
         volumeV2Migrated: true,
         smartAudioV3Migrated: true,
@@ -152,6 +163,7 @@ function loadPrefs(): { prefs: PersistedPrefs; hasSavedPrefs: boolean } {
       prefs: {
         userPaused,
         smartModeEnabled,
+        pauseOnExit,
         volume,
         volumeV2Migrated: v2Migrated || true,
         smartAudioV3Migrated: v3Migrated,
@@ -188,12 +200,19 @@ class BackgroundMusicController {
   private isPlaying = false;
   private hasError = false;
   private usingSynthFallback = false;
+  private gaplessLoopActive = false;
   private startingPlayback = false;
   private osInterruptedPause = false;
+  private lastKnownAudioOutputsCount: number | null = null;
 
   private synthCtx: AudioContext | null = null;
   private synthGain: GainNode | null = null;
   private synthOscs: OscillatorNode[] = [];
+  private decodedMusicBuffer: AudioBuffer | null = null;
+  private bufferFetchPromise: Promise<AudioBuffer | null> | null = null;
+  private bufferSourceNode: AudioBufferSourceNode | null = null;
+  private bufferGainNode: GainNode | null = null;
+  private bufferCompressorNode: DynamicsCompressorNode | null = null;
 
   private currentGain = 0;
   private duckFactor = 1;
@@ -251,6 +270,7 @@ class BackgroundMusicController {
     return {
       userPaused: this.prefs.userPaused,
       smartModeEnabled: this.prefs.smartModeEnabled,
+      pauseOnExit: this.prefs.pauseOnExit,
       volume: this.prefs.volume,
       isPlaying: this.isPlaying,
       awaitingGesture: this.awaitingGesture,
@@ -262,6 +282,7 @@ class BackgroundMusicController {
       status,
       hasError: this.hasError,
       usingSynthFallback: this.usingSynthFallback,
+      gaplessLoopActive: this.gaplessLoopActive,
     };
   }
 
@@ -271,6 +292,7 @@ class BackgroundMusicController {
     if (
       prev.userPaused === next.userPaused &&
       prev.smartModeEnabled === next.smartModeEnabled &&
+      prev.pauseOnExit === next.pauseOnExit &&
       Math.abs(prev.volume - next.volume) < 0.001 &&
       prev.isPlaying === next.isPlaying &&
       prev.awaitingGesture === next.awaitingGesture &&
@@ -278,7 +300,8 @@ class BackgroundMusicController {
       prev.activeLockCount === next.activeLockCount &&
       prev.status === next.status &&
       prev.hasError === next.hasError &&
-      prev.usingSynthFallback === next.usingSynthFallback
+      prev.usingSynthFallback === next.usingSynthFallback &&
+      prev.gaplessLoopActive === next.gaplessLoopActive
     ) {
       return;
     }
@@ -456,6 +479,151 @@ class BackgroundMusicController {
     this.usingSynthFallback = false;
   }
 
+  private ensureMusicAudioContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctx) return null;
+    if (!this.synthCtx || this.synthCtx.state === 'closed') {
+      this.synthCtx = new Ctx();
+      this.bufferCompressorNode = null;
+      this.bufferGainNode = null;
+    }
+    return this.synthCtx;
+  }
+
+  private async ensureDecodedMusicBuffer(): Promise<AudioBuffer | null> {
+    if (this.decodedMusicBuffer) return this.decodedMusicBuffer;
+    if (this.bufferFetchPromise) return this.bufferFetchPromise;
+    const ctx = this.ensureMusicAudioContext();
+    if (!ctx || typeof fetch !== 'function') return null;
+
+    this.bufferFetchPromise = (async () => {
+      for (const src of [PRIMARY_SRC, FALLBACK_SRC]) {
+        try {
+          const resp = await fetch(src);
+          if (!resp.ok) continue;
+          const raw = await resp.arrayBuffer();
+          const decoded = await ctx.decodeAudioData(raw.slice(0));
+          this.decodedMusicBuffer = decoded;
+          return decoded;
+        } catch {
+          // try next bundled source
+        }
+      }
+      return null;
+    })();
+
+    return this.bufferFetchPromise;
+  }
+
+  private stopGaplessBufferLoop(): void {
+    if (this.bufferSourceNode) {
+      try {
+        this.bufferSourceNode.stop();
+        this.bufferSourceNode.disconnect();
+      } catch {
+        // ignore stop errors
+      }
+      this.bufferSourceNode = null;
+    }
+    this.gaplessLoopActive = false;
+  }
+
+  private updateGaplessBufferVolume(target: number): void {
+    if (!this.gaplessLoopActive || !this.bufferGainNode || !this.synthCtx) return;
+    try {
+      // Calibrate -23 LUFS headroom factor (0.72 ceiling) so background warmth stays unobtrusive
+      const normalized = clamp01(target) * 0.72;
+      this.bufferGainNode.gain.setTargetAtTime(
+        Math.max(0.0001, normalized),
+        this.synthCtx.currentTime,
+        0.09
+      );
+    } catch {
+      // ignore gain update errors
+    }
+  }
+
+  private async tryStartGaplessBufferLoop(fadeMs: number): Promise<boolean> {
+    if (typeof window === 'undefined' || !this.canPlayRightNow()) return false;
+    const ctx = this.ensureMusicAudioContext();
+    if (!ctx) return false;
+    try {
+      if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+        await ctx.resume();
+      }
+      const buffer = await this.ensureDecodedMusicBuffer();
+      if (!buffer || !this.canPlayRightNow()) return false;
+
+      if (!this.bufferCompressorNode || this.bufferCompressorNode.context !== ctx) {
+        // -23 LUFS loudness-leveling dynamics stage
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-24, ctx.currentTime);
+        comp.knee.setValueAtTime(14, ctx.currentTime);
+        comp.ratio.setValueAtTime(4, ctx.currentTime);
+        comp.attack.setValueAtTime(0.01, ctx.currentTime);
+        comp.release.setValueAtTime(0.25, ctx.currentTime);
+        comp.connect(ctx.destination);
+        this.bufferCompressorNode = comp;
+      }
+
+      if (!this.bufferGainNode || this.bufferGainNode.context !== ctx) {
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.connect(this.bufferCompressorNode);
+        this.bufferGainNode = gain;
+      }
+
+      if (this.gaplessLoopActive && this.bufferSourceNode) {
+        this.rampVolume(this.getTargetActiveVolume(), fadeMs);
+        this.isPlaying = true;
+        this.awaitingGesture = false;
+        this.hasError = false;
+        this.emitIfChanged();
+        return true;
+      }
+
+      // Pause HTMLAudioElement if switching to sample-accurate Web Audio gapless buffer
+      if (this.audio && !this.audio.paused) {
+        this.internalPauseGuard = true;
+        try {
+          this.audio.pause();
+        } catch {
+          this.internalPauseGuard = false;
+        }
+      }
+
+      this.stopSynthFallback();
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      // Trim 45ms encoder padding on MP3 decode edges for zero-click gapless loop
+      const safeEnd = Math.max(0.5, buffer.duration - 0.045);
+      source.loopStart = Math.min(0.03, safeEnd * 0.1);
+      source.loopEnd = safeEnd;
+      source.connect(this.bufferGainNode);
+      source.start(0);
+
+      this.bufferSourceNode = source;
+      this.gaplessLoopActive = true;
+      this.gestureUnlocked = true;
+      this.awaitingGesture = false;
+      this.osInterruptedPause = false;
+      this.isPlaying = true;
+      this.hasError = false;
+      this.currentGain = 0;
+      this.rampVolume(this.getTargetActiveVolume(), fadeMs);
+      this.emitIfChanged();
+      return true;
+    } catch {
+      this.stopGaplessBufferLoop();
+      return false;
+    }
+  }
+
   private setAudioVolumeSafe(audio: HTMLAudioElement, value: number): void {
     try {
       audio.volume = clamp01(value);
@@ -484,19 +652,14 @@ class BackgroundMusicController {
     onDone?: () => void
   ): void {
     const audio = this.audio;
-    if (!audio) {
-      this.currentGain = clamp01(targetGain);
-      onDone?.();
-      return;
-    }
-
     this.cancelFade();
     const startGain = this.currentGain;
     const endGain = clamp01(targetGain);
 
     if (durationMs <= 14 || Math.abs(endGain - startGain) < 0.002) {
       this.currentGain = endGain;
-      this.setAudioVolumeSafe(audio, endGain);
+      if (audio) this.setAudioVolumeSafe(audio, endGain);
+      this.updateGaplessBufferVolume(endGain);
       this.updateSynthFallbackVolume(endGain);
       onDone?.();
       return;
@@ -509,7 +672,8 @@ class BackgroundMusicController {
       const eased = 1 - Math.pow(1 - t, 3);
       const next = startGain + (endGain - startGain) * eased;
       this.currentGain = next;
-      this.setAudioVolumeSafe(audio, next);
+      if (audio) this.setAudioVolumeSafe(audio, next);
+      this.updateGaplessBufferVolume(next);
       this.updateSynthFallbackVolume(next);
 
       if (t < 1) {
@@ -517,7 +681,8 @@ class BackgroundMusicController {
       } else {
         this.fadeRafId = null;
         this.currentGain = endGain;
-        this.setAudioVolumeSafe(audio, endGain);
+        if (audio) this.setAudioVolumeSafe(audio, endGain);
+        this.updateGaplessBufferVolume(endGain);
         this.updateSynthFallbackVolume(endGain);
         onDone?.();
       }
@@ -541,11 +706,6 @@ class BackgroundMusicController {
   }
 
   private async startOrResumePlayback(isAutoResume = false): Promise<void> {
-    const audio = this.ensureAudioElement();
-    if (!audio) {
-      this.emitIfChanged();
-      return;
-    }
     if (!this.canPlayRightNow()) {
       this.emitIfChanged();
       return;
@@ -553,14 +713,28 @@ class BackgroundMusicController {
 
     this.clearPauseSafetyTimer();
     const target = this.getTargetActiveVolume();
+    const fadeInMs = isAutoResume ? 1100 : 1300;
 
     if (this.hasError) {
       await this.startSynthFallback();
       return;
     }
 
+    if (this.gestureUnlocked) {
+      const startedGapless = await this.tryStartGaplessBufferLoop(fadeInMs);
+      if (startedGapless) {
+        return;
+      }
+    }
+
+    const audio = this.ensureAudioElement();
+    if (!audio) {
+      this.emitIfChanged();
+      return;
+    }
+
     if (!audio.paused) {
-      this.rampVolume(target, isAutoResume ? 420 : 280);
+      this.rampVolume(target, fadeInMs);
       this.emitIfChanged();
       return;
     }
@@ -582,8 +756,10 @@ class BackgroundMusicController {
       this.osInterruptedPause = false;
       this.isPlaying = true;
       this.hasError = false;
-      this.rampVolume(target, isAutoResume ? 520 : 380);
+      this.rampVolume(target, fadeInMs);
       this.emitIfChanged();
+      // Upgrade seamlessly to gapless Web Audio buffer once decoded in background
+      void this.ensureDecodedMusicBuffer();
     } catch (err) {
       const name = err instanceof DOMException ? err.name : '';
       if (name === 'NotAllowedError' || !this.gestureUnlocked) {
@@ -601,32 +777,41 @@ class BackgroundMusicController {
 
   private pauseAudioImmediately(): void {
     this.stopSynthFallback();
+    this.stopGaplessBufferLoop();
     const audio = this.audio;
-    if (!audio) return;
     this.cancelFade();
     this.clearPauseSafetyTimer();
     this.currentGain = 0;
-    this.setAudioVolumeSafe(audio, 0);
-    if (!audio.paused) {
-      this.internalPauseGuard = true;
-      try {
-        audio.pause();
-      } catch {
-        this.internalPauseGuard = false;
+    if (audio) {
+      this.setAudioVolumeSafe(audio, 0);
+      if (!audio.paused) {
+        this.internalPauseGuard = true;
+        try {
+          audio.pause();
+        } catch {
+          this.internalPauseGuard = false;
+        }
       }
     }
     this.isPlaying = false;
     this.emitIfChanged();
   }
 
-  private fadeOutAndPause(fadeMs = 180): void {
+  private fadeOutAndPause(fadeMs = 950): void {
     const audio = this.audio;
-    if (!audio) return;
     const hiddenNow =
       typeof document !== 'undefined' &&
       (document.hidden || document.visibilityState === 'hidden');
 
-    if (audio.paused || fadeMs <= 20 || hiddenNow) {
+    if (
+      (!audio || audio.paused) &&
+      !this.gaplessLoopActive &&
+      !this.usingSynthFallback
+    ) {
+      this.pauseAudioImmediately();
+      return;
+    }
+    if (fadeMs <= 20 || hiddenNow) {
       this.pauseAudioImmediately();
       return;
     }
@@ -634,20 +819,10 @@ class BackgroundMusicController {
     const finalizePause = () => {
       this.clearPauseSafetyTimer();
       if (!this.canPlayRightNow()) {
-        this.internalPauseGuard = true;
-        try {
-          audio.pause();
-        } catch {
-          this.internalPauseGuard = false;
-        }
-        this.currentGain = 0;
-        this.setAudioVolumeSafe(audio, 0);
-        this.isPlaying = false;
-        this.emitIfChanged();
+        this.pauseAudioImmediately();
       }
     };
 
-    // Safety timer guarantees pause finishes even if background throttling pauses rAF
     this.clearPauseSafetyTimer();
     if (typeof window !== 'undefined') {
       this.pauseSafetyTimerId = window.setTimeout(finalizePause, fadeMs + 60);
@@ -656,17 +831,16 @@ class BackgroundMusicController {
     this.rampVolume(0, fadeMs, finalizePause);
   }
 
-  private syncPlaybackState(fadeOutMs = 180, isAutoResume = false): void {
+  private syncPlaybackState(fadeOutMs = 950, isAutoResume = false): void {
     if (!this.canPlayRightNow()) {
       this.fadeOutAndPause(fadeOutMs);
       this.emitIfChanged();
       return;
     }
 
+    this.emitIfChanged();
     if (this.gestureUnlocked) {
       void this.startOrResumePlayback(isAutoResume);
-    } else {
-      this.emitIfChanged();
     }
   }
 
@@ -678,7 +852,11 @@ class BackgroundMusicController {
 
     if (!this.initialized) {
       this.initialized = true;
-      if (typeof document !== 'undefined' && document.hidden) {
+      if (
+        this.prefs.pauseOnExit &&
+        typeof document !== 'undefined' &&
+        document.hidden
+      ) {
         this.pauseLocks.set('env:visibility', 'tab_hidden');
       }
       if (this.canPlayRightNow()) {
@@ -720,7 +898,9 @@ class BackgroundMusicController {
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (document.hidden || document.visibilityState === 'hidden') {
-          this.acquireLock('env:visibility', 'tab_hidden', 0);
+          if (this.prefs.pauseOnExit) {
+            this.acquireLock('env:visibility', 'tab_hidden', 350);
+          }
         } else {
           this.releaseLock('env:visibility');
           this.releaseLock('env:pagehide');
@@ -736,7 +916,9 @@ class BackgroundMusicController {
       });
 
       document.addEventListener('freeze', () => {
-        this.acquireLock('env:freeze', 'tab_hidden', 0);
+        if (this.prefs.pauseOnExit) {
+          this.acquireLock('env:freeze', 'tab_hidden', 0);
+        }
       });
       document.addEventListener('resume', () => {
         this.releaseLock('env:freeze');
@@ -752,7 +934,6 @@ class BackgroundMusicController {
         if (!(target instanceof HTMLMediaElement)) return;
         if (target === this.audio) return;
         const hasCameraStream = Boolean(target.srcObject);
-        // Ignore silent ambient background videos unless carrying a live camera stream
         if (target instanceof HTMLVideoElement && target.muted && !hasCameraStream) {
           return;
         }
@@ -786,7 +967,9 @@ class BackgroundMusicController {
     }
 
     window.addEventListener('pagehide', () => {
-      this.acquireLock('env:pagehide', 'tab_hidden', 0);
+      if (this.prefs.pauseOnExit) {
+        this.acquireLock('env:pagehide', 'tab_hidden', 0);
+      }
     });
     window.addEventListener('pageshow', () => {
       this.releaseLock('env:pagehide');
@@ -800,13 +983,14 @@ class BackgroundMusicController {
 
     // Window focus loss detection (handles switching apps/windows without triggering on internal clicks)
     window.addEventListener('blur', () => {
+      if (!this.prefs.pauseOnExit) return;
       if (this.blurDebounceTimerId !== null) {
         window.clearTimeout(this.blurDebounceTimerId);
       }
       this.blurDebounceTimerId = window.setTimeout(() => {
         this.blurDebounceTimerId = null;
-        if (typeof document !== 'undefined' && !document.hasFocus()) {
-          this.acquireLock('env:window-focus', 'tab_hidden', 90);
+        if (this.prefs.pauseOnExit && typeof document !== 'undefined' && !document.hasFocus()) {
+          this.acquireLock('env:window-focus', 'tab_hidden', 400);
         }
       }, 150);
     });
@@ -842,9 +1026,34 @@ class BackgroundMusicController {
     // 7) Automatic Text-to-Speech (speechSynthesis) monitor
     this.installSpeechSynthesisMonitor();
 
+    // 8) Audio output / headset disconnect immediate pause monitor
     try {
+      const enumerateAudioOutputs = async () => {
+        const devices = await navigator.mediaDevices?.enumerateDevices?.();
+        if (!Array.isArray(devices)) return null;
+        return devices.filter((d) => d.kind === 'audiooutput').length;
+      };
+      void enumerateAudioOutputs().then((cnt) => {
+        if (typeof cnt === 'number') this.lastKnownAudioOutputsCount = cnt;
+      });
       navigator.mediaDevices?.addEventListener?.('devicechange', () => {
         this.sweepEndedStreams();
+        void enumerateAudioOutputs().then((nextCount) => {
+          if (typeof nextCount !== 'number') return;
+          if (
+            this.lastKnownAudioOutputsCount !== null &&
+            nextCount < this.lastKnownAudioOutputsCount &&
+            this.isPlaying
+          ) {
+            this.acquireLock('env:headset-disconnected', 'headset_disconnected', 0);
+          } else if (
+            this.lastKnownAudioOutputsCount !== null &&
+            nextCount > this.lastKnownAudioOutputsCount
+          ) {
+            this.releaseLock('env:headset-disconnected');
+          }
+          this.lastKnownAudioOutputsCount = nextCount;
+        });
       });
     } catch {
       // ignore unsupported devicechange
@@ -1359,6 +1568,87 @@ class BackgroundMusicController {
     this.syncPlaybackState(180, enabled);
   }
 
+  public setPauseOnExit(enabled: boolean): void {
+    const next = Boolean(enabled);
+    if (this.prefs.pauseOnExit === next) return;
+    this.prefs = {
+      ...this.prefs,
+      pauseOnExit: next,
+      smartAudioV3Migrated: true,
+    };
+    savePrefs(this.prefs);
+    if (!next) {
+      this.pauseLocks.delete('env:visibility');
+      this.pauseLocks.delete('env:window-focus');
+      this.pauseLocks.delete('env:freeze');
+      this.pauseLocks.delete('env:pagehide');
+      if (this.getEffectivePauseLockCount() === 0) {
+        this.syncPlaybackState(180, true);
+        return;
+      }
+    } else if (
+      typeof document !== 'undefined' &&
+      (document.hidden || document.visibilityState === 'hidden')
+    ) {
+      this.acquireLock('env:visibility', 'tab_hidden', 350);
+      return;
+    }
+    this.emitIfChanged();
+  }
+
+  public applySyncedSettings(patch: {
+    userPaused?: boolean;
+    smartModeEnabled?: boolean;
+    pauseOnExit?: boolean;
+    volume?: number;
+  }): void {
+    const nextVolume =
+      typeof patch.volume === 'number' && Number.isFinite(patch.volume)
+        ? clamp01(patch.volume)
+        : this.prefs.volume;
+    const nextUserPaused =
+      typeof patch.userPaused === 'boolean'
+        ? patch.userPaused
+        : this.prefs.userPaused;
+    const nextSmartMode =
+      typeof patch.smartModeEnabled === 'boolean'
+        ? patch.smartModeEnabled
+        : this.prefs.smartModeEnabled;
+    const nextPauseOnExit =
+      typeof patch.pauseOnExit === 'boolean'
+        ? patch.pauseOnExit
+        : this.prefs.pauseOnExit;
+
+    this.hasSavedPrefs = true;
+    this.prefs = {
+      ...this.prefs,
+      volume: nextVolume,
+      userPaused: nextUserPaused,
+      smartModeEnabled: nextSmartMode,
+      pauseOnExit: nextPauseOnExit,
+      volumeV2Migrated: true,
+      smartAudioV3Migrated: true,
+      rumiAmbientV4Migrated: true,
+    };
+    savePrefs(this.prefs);
+
+    if (!nextPauseOnExit) {
+      this.pauseLocks.delete('env:visibility');
+      this.pauseLocks.delete('env:window-focus');
+      this.pauseLocks.delete('env:freeze');
+      this.pauseLocks.delete('env:pagehide');
+    }
+
+    if (!this.canPlayRightNow()) {
+      this.fadeOutAndPause(200);
+    } else if (this.isPlaying) {
+      this.rampVolume(this.getTargetActiveVolume(), 140);
+    } else if (this.gestureUnlocked) {
+      void this.startOrResumePlayback(true);
+    }
+    this.emitIfChanged();
+  }
+
   public watchSpeechSynthesis(lockId = 'speech-synthesis:global'): void {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     this.acquireLock(lockId, 'tts', 100);
@@ -1388,7 +1678,7 @@ class BackgroundMusicController {
     this.releaseLock(lockId);
   }
 
-  public duckTemporarily(factor = 0.56, holdMs = 170): void {
+  public duckTemporarily(factor = 0.4, holdMs = 380): void {
     if (typeof window === 'undefined') return;
     if (!this.canPlayRightNow() || !this.isPlaying) {
       return;
@@ -1448,7 +1738,9 @@ class BackgroundMusicController {
   public retryPlayback(): void {
     this.gestureUnlocked = true;
     this.awaitingGesture = false;
+    this.pauseLocks.delete('env:headset-disconnected');
     this.stopSynthFallback();
+    this.stopGaplessBufferLoop();
     this.hasError = false;
     this.usedFallbackSrc = false;
     const audio = this.ensureAudioElement();
@@ -1480,6 +1772,7 @@ class BackgroundMusicController {
     if (paused) {
       this.syncPlaybackState(220, false);
     } else {
+      this.pauseLocks.delete('env:headset-disconnected');
       if (this.prefs.volume <= 0.01) {
         this.prefs = { ...this.prefs, volume: DEFAULT_VOLUME };
         savePrefs(this.prefs);
@@ -1529,7 +1822,7 @@ class BackgroundMusicController {
       this.prefs = {
         ...this.prefs,
         volume: clamped,
-        userPaused: soundEnabled === false ? false : this.prefs.userPaused,
+        userPaused: soundEnabled === false ? true : this.prefs.userPaused,
         volumeV2Migrated: true,
         smartAudioV3Migrated: true,
       };
@@ -1565,6 +1858,19 @@ export function setBackgroundMusicPaused(paused: boolean): void {
 
 export function setBackgroundMusicSmartMode(enabled: boolean): void {
   engine.setSmartModeEnabled(enabled);
+}
+
+export function setBackgroundMusicPauseOnExit(enabled: boolean): void {
+  engine.setPauseOnExit(enabled);
+}
+
+export function applySyncedBackgroundMusicSettings(patch: {
+  userPaused?: boolean;
+  smartModeEnabled?: boolean;
+  pauseOnExit?: boolean;
+  volume?: number;
+}): void {
+  engine.applySyncedSettings(patch);
 }
 
 export function setBackgroundMusicVolume(volume: number): void {

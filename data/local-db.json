@@ -219,7 +219,102 @@
       "passwordHash": "df4c833702d2cd7186c9f0b537414d21:bf7a6e567615a967441a0a290e24e0ee123109060886640cfac876f5107b0c2ebeca1dc5e744dd7e06cd5f8e67a9c866034a8fff0ade185dc8ac1f0d744e5bf4",
       "role": "manager",
       "createdAt": "2026-11-25T07:34:52.730Z"
+    },
+    {
+      "id": 20,
+      "uid": "usr_8063e629c6194f80",
+      "githubId": null,
+      "authProvider": "username",
+      "displayName": "Audio Sync Tester",
+      "email": null,
+      "username": "audiotest_1795686913237",
+      "avatarUrl": null,
+      "passwordHash": "0f175f92fe6c5e87c4e386a88ee3ed92:f70723926d7be0dd1a2b72d21a618cd15e913128dfae9cd21f561b845f8cdfdf2cad7e9074ac3ce0c014d95ff5b686bebf8d50e2506f63e4707ac3757949ef4a",
+      "role": "manager",
+      "lastLoginAt": "2026-11-26T09:55:13.492Z",
+      "createdAt": "2026-11-26T09:55:13.456Z"
     }
   ],
-  "snapshots": []
+  "snapshots": [],
+  "auditLogs": [],
+  "preferences": [],
+  "sessions": [
+    {
+      "sid": "sid_9de98eafd39d4db1621a",
+      "uid": "usr_8063e629c6194f80",
+      "provider": "username",
+      "deviceLabel": "node · عميل برمجي / مخصص",
+      "browserLabel": "node",
+      "fingerprintHash": "fd408101a8902c9daad3",
+      "userAgent": "node",
+      "ipMasked": "127.0.0.*",
+      "loginMethod": "password",
+      "createdAt": "2026-11-26T09:55:13.458Z",
+      "lastActiveAt": "2026-11-26T09:55:13.458Z",
+      "revokedAt": null
+    }
+  ],
+  "securityAlerts": [],
+  "passkeys": [],
+  "recoveryCodes": [],
+  "chunks": [],
+  "manifests": [],
+  "workspaceVersions": [],
+  "shareLinks": [],
+  "shareInvites": [],
+  "shareAccessLogs": [],
+  "revokedSessionIds": [
+    "sid_8211120ae7af2104592a",
+    "sid_1c97e52d0391e7c4acc3",
+    "sid_fb2897a8646a3d886da4",
+    "sid_51a5e39b7d5a9119827a",
+    "sid_8c981c4c7ee514b5450b",
+    "sid_42c6bc094e136dbba6a0",
+    "sid_890e2d11861be7d86358",
+    "sid_2f4c2993883cd435597d",
+    "sid_b38f096b304a03244038",
+    "sid_70035f8385fc2e24b368",
+    "sid_0656ad26ea0dbbfa094b"
+  ],
+  "deletedUidCutoffs": {
+    "b86b864ea3207d7b2d398130bacc13f7460b462178eb6f01d7e74a934cc46981": 1795679788262,
+    "7f2f60b10a6cbc6c1e4306b334a3ef2d5965b1f53ec54b2e2e083240bce79ff1": 1795681546782,
+    "fb79d85131d8d447d20a3b5556e1bbf3c05653f4809e785c512ada32246e9dc1": 1795681547521,
+    "bfe11369181b97c37811a9b880642d73a1c38e957e13cd8112d5257ee91d8b4e": 1795685594374,
+    "451ad6542790a5b1ee3a6821cee9504a01b690a0267d2e30133f896edec8a64d": 1795685703637,
+    "3865281a1d27fe0fa4d33bd6a92128c53385914823f9ef19e21d085f559a56c3": 1795685756961
+  },
+  "soundSettings": {
+    "soundEnabled": true,
+    "volume": 0.19,
+    "updatedAt": "2026-11-26T09:55:13.485Z"
+  },
+  "userAudioSettings": {
+    "usr_8063e629c6194f80": {
+      "masterSoundEnabled": true,
+      "musicEnabled": true,
+      "musicVolume": 0.19,
+      "smartPauseEnabled": true,
+      "pauseOnExit": false,
+      "effectsVolume": 0.85,
+      "soundPack": "rumi_warm",
+      "notificationTone": "chime_duet",
+      "successErrorEnabled": true,
+      "motionSoundsEnabled": true,
+      "notificationSoundEnabled": true,
+      "notificationsMasterEnabled": true,
+      "channels": {
+        "security": true,
+        "reminders": false,
+        "sync": true,
+        "whats_new": false
+      },
+      "quietHoursEnabled": true,
+      "quietHoursStart": "22:30",
+      "quietHoursEnd": "06:45",
+      "updatedAt": "2026-11-26T09:55:13.485Z",
+      "updatedByDeviceId": "device_a",
+      "updatedByDeviceLabel": "Chrome 126 · Windows"
+    }
+  }
 }

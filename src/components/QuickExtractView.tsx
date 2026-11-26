@@ -60,13 +60,7 @@ import type {
   UcrsSourceRecord,
 } from '../types/agency';
 import type { AiTaskRoutingMap } from '../types/assistant';
-import {
-  acquireMusicPauseLock,
-  releaseMusicPauseLock,
-  stopWatchingSpeechSynthesisForMusic,
-  watchSpeechSynthesisForMusic,
-} from '../utils/backgroundMusicEngine';
-import { playTactileFeedback } from '../utils/tactileFeedback';
+import { audioManager } from '../services/audio/AudioManager';
 import { normalizeArabic } from '../utils/agencyLogic';
 import type { BurstFusionSummary } from '../utils/ledgerImageProcessor';
 import {
@@ -368,7 +362,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
 
   useEffect(() => {
     if (uploadError) {
-      playTactileFeedback('error', { haptic: true });
+      audioManager.playEvent('error', { haptic: true });
     }
   }, [uploadError]);
 
@@ -376,11 +370,11 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     if (!analysis || analysis === lastAnalysisRef.current) return;
     lastAnalysisRef.current = analysis;
     if (analysis.status === 'rejected') {
-      playTactileFeedback('error', { haptic: true });
+      audioManager.playEvent('error', { haptic: true });
     } else if (analysis.status === 'needs_review') {
-      playTactileFeedback('warn', { haptic: true });
+      audioManager.playEvent('warn', { haptic: true });
     } else {
-      playTactileFeedback('success', { haptic: true });
+      audioManager.playEvent('success', { haptic: true });
     }
   }, [analysis]);
   const [activeSession, setActiveSession] = useState<UcrsSession | null>(null);
@@ -388,19 +382,14 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
     QuickExtractEvaluatedRow[] | null
   >(null);
   const lastPayloadRef = useRef<StoredSourcePayload | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      audioManager.stopExternalAudio();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
-      stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
-      releaseMusicPauseLock('quick-extract:tts');
+      audioManager.releasePauseLock('quick-extract:tts');
     };
   }, []);
 
@@ -805,36 +794,27 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
           mimeType?: string;
         };
         if (data.audioBase64) {
-          if (audioRef.current) {
-            audioRef.current.pause();
-          }
-          const audio = new Audio(
-            `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`
-          );
-          audioRef.current = audio;
-          acquireMusicPauseLock('quick-extract:tts', 'tts', 100);
-          audio.onended = () => releaseMusicPauseLock('quick-extract:tts');
-          audio.onerror = () => releaseMusicPauseLock('quick-extract:tts');
-          audio.onpause = () => releaseMusicPauseLock('quick-extract:tts');
-          await audio.play();
+          await audioManager.playExternalAudio({
+            src: `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`,
+            lockId: 'quick-extract:tts',
+            reason: 'tts',
+          });
           setTtsStatus('يتم تشغيل القراءة الصوتية الآن.');
           return;
         }
       }
     } catch {
-      releaseMusicPauseLock('quick-extract:tts');
+      audioManager.stopExternalAudio();
       // Fallback gracefully to browser SpeechSynthesis
     }
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.lang = 'ar-IQ';
-      utter.rate = 0.95;
-      utter.onend = () => stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
-      utter.onerror = () => stopWatchingSpeechSynthesisForMusic('quick-extract:tts');
-      watchSpeechSynthesisForMusic('quick-extract:tts');
-      window.speechSynthesis.speak(utter);
+    const spoke = audioManager.speakTextWithBrowserTts({
+      text: clean,
+      lang: 'ar-IQ',
+      rate: 0.95,
+      lockId: 'quick-extract:tts',
+    });
+    if (spoke) {
       setTtsStatus('يتم تشغيل القراءة الصوتية عبر المتصفح.');
     } else {
       setTtsStatus('القراءة الصوتية غير مدعومة في هذا المتصفح.');
@@ -2179,7 +2159,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         setCommitSummary(summary);
       }
     );
-    playTactileFeedback('save_complete', { haptic: true });
+    audioManager.playEvent('sync_complete', { haptic: true });
   };
 
   const resetAll = () => {

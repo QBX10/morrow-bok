@@ -282,7 +282,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   app_open: {
     id: 'app_open',
     label: 'Launch Workspace / Panel',
-    duckAmbient: { factor: 0.72, holdMs: 170 },
+    duckAmbient: { factor: 0.4, holdMs: 280 },
     layers: [
       {
         type: 'sine',
@@ -323,7 +323,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   sheet_open: {
     id: 'sheet_open',
     label: 'Full-Screen Push / Sheet Enter',
-    duckAmbient: { factor: 0.76, holdMs: 150 },
+    duckAmbient: { factor: 0.4, holdMs: 240 },
     layers: [
       {
         type: 'sine',
@@ -424,7 +424,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   success: {
     id: 'success',
     label: 'Operation Success Chime',
-    duckAmbient: { factor: 0.65, holdMs: 210 },
+    duckAmbient: { factor: 0.4, holdMs: 320 },
     layers: [
       {
         type: 'sine',
@@ -450,7 +450,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   warn: {
     id: 'warn',
     label: 'Warning Caution Pulse',
-    duckAmbient: { factor: 0.56, holdMs: 220 },
+    duckAmbient: { factor: 0.4, holdMs: 360 },
     layers: [
       {
         type: 'triangle',
@@ -476,7 +476,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   error: {
     id: 'error',
     label: 'Operation Error Alert Sound',
-    duckAmbient: { factor: 0.48, holdMs: 260 },
+    duckAmbient: { factor: 0.4, holdMs: 420 },
     layers: [
       {
         type: 'triangle',
@@ -548,7 +548,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   notify: {
     id: 'notify',
     label: 'System Notification Bell',
-    duckAmbient: { factor: 0.62, holdMs: 220 },
+    duckAmbient: { factor: 0.4, holdMs: 360 },
     layers: [
       {
         type: 'sine',
@@ -599,7 +599,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   message_receive: {
     id: 'message_receive',
     label: 'Assistant Response Arrival',
-    duckAmbient: { factor: 0.66, holdMs: 220 },
+    duckAmbient: { factor: 0.4, holdMs: 360 },
     layers: [
       {
         type: 'sine',
@@ -690,7 +690,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   save_complete: {
     id: 'save_complete',
     label: 'Save / Export / Archive Resolve',
-    duckAmbient: { factor: 0.64, holdMs: 240 },
+    duckAmbient: { factor: 0.4, holdMs: 380 },
     layers: [
       {
         type: 'sine',
@@ -766,7 +766,7 @@ export const AUDIO_PROFILES: Record<TactileSoundKind, AudioProfileAsset> = {
   auth_welcome: {
     id: 'auth_welcome',
     label: 'Workspace Entry Harmonic Bloom',
-    duckAmbient: { factor: 0.56, holdMs: 300 },
+    duckAmbient: { factor: 0.4, holdMs: 420 },
     layers: [
       {
         type: 'sine',
@@ -1069,6 +1069,162 @@ export function setGlobalAppSoundEnabled(enabled: boolean): void {
   soundMasterListeners.forEach((fn) => fn());
 }
 
+export const MAX_CONCURRENT_SFX_VOICES = 2;
+
+export const SFX_PRIORITY_AND_COOLDOWN: Record<
+  TactileSoundKind,
+  { priority: 1 | 2 | 3 | 4; cooldownMs: number }
+> = {
+  type: { priority: 1, cooldownMs: 55 },
+  cord_tick: { priority: 1, cooldownMs: 18 },
+  search_tick: { priority: 1, cooldownMs: 70 },
+  tap: { priority: 1, cooldownMs: 75 },
+  drag_snap: { priority: 1, cooldownMs: 70 },
+  menu_open: { priority: 2, cooldownMs: 90 },
+  menu_close: { priority: 2, cooldownMs: 90 },
+  nav: { priority: 2, cooldownMs: 110 },
+  transition_slide: { priority: 2, cooldownMs: 120 },
+  app_open: { priority: 2, cooldownMs: 140 },
+  app_close: { priority: 2, cooldownMs: 120 },
+  sheet_open: { priority: 2, cooldownMs: 120 },
+  sheet_close: { priority: 2, cooldownMs: 120 },
+  toggle_on: { priority: 2, cooldownMs: 75 },
+  toggle_off: { priority: 2, cooldownMs: 75 },
+  undo: { priority: 2, cooldownMs: 100 },
+  redo: { priority: 2, cooldownMs: 100 },
+  message_send: { priority: 2, cooldownMs: 120 },
+  record_start: { priority: 3, cooldownMs: 180 },
+  record_stop: { priority: 3, cooldownMs: 180 },
+  camera_shutter: { priority: 3, cooldownMs: 180 },
+  delete_item: { priority: 3, cooldownMs: 180 },
+  success: { priority: 3, cooldownMs: 160 },
+  save_complete: { priority: 3, cooldownMs: 220 },
+  message_receive: { priority: 3, cooldownMs: 200 },
+  notify: { priority: 3, cooldownMs: 220 },
+  auth_welcome: { priority: 4, cooldownMs: 450 },
+  warn: { priority: 4, cooldownMs: 260 },
+  error: { priority: 4, cooldownMs: 240 },
+};
+
+export interface ActiveSfxVoice {
+  id: number;
+  kind: TactileSoundKind;
+  priority: number;
+  endsAtMs: number;
+}
+
+const activeSfxVoices: ActiveSfxVoice[] = [];
+const lastKindPlayedMap = new Map<TactileSoundKind, number>();
+let sfxVoiceSeq = 0;
+let externalSfxGate:
+  | ((kind: TactileSoundKind, options?: { bypassPrefGate?: boolean; channel?: string }) => boolean)
+  | null = null;
+
+export function setExternalSfxGate(
+  gate:
+    | ((kind: TactileSoundKind, options?: { bypassPrefGate?: boolean; channel?: string }) => boolean)
+    | null
+): void {
+  externalSfxGate = gate;
+}
+
+export function clearSfxVoiceTracker(): void {
+  activeSfxVoices.length = 0;
+  lastKindPlayedMap.clear();
+}
+
+export function getActiveSfxVoiceCount(nowMs = Date.now()): number {
+  for (let i = activeSfxVoices.length - 1; i >= 0; i -= 1) {
+    if (activeSfxVoices[i].endsAtMs <= nowMs) {
+      activeSfxVoices.splice(i, 1);
+    }
+  }
+  return activeSfxVoices.length;
+}
+
+export function tryAcquireSfxVoice(
+  kind: TactileSoundKind,
+  durationMs: number,
+  nowMs = Date.now(),
+  bypassCooldown = false
+): boolean {
+  const meta = SFX_PRIORITY_AND_COOLDOWN[kind] ?? { priority: 1, cooldownMs: 80 };
+  const lastFired = lastKindPlayedMap.get(kind) ?? 0;
+  if (!bypassCooldown && lastFired > 0 && nowMs - lastFired < meta.cooldownMs) {
+    return false;
+  }
+
+  for (let i = activeSfxVoices.length - 1; i >= 0; i -= 1) {
+    if (activeSfxVoices[i].endsAtMs <= nowMs) {
+      activeSfxVoices.splice(i, 1);
+    }
+  }
+
+  if (activeSfxVoices.length >= MAX_CONCURRENT_SFX_VOICES) {
+    let lowestIdx = 0;
+    for (let i = 1; i < activeSfxVoices.length; i += 1) {
+      if (activeSfxVoices[i].priority < activeSfxVoices[lowestIdx].priority) {
+        lowestIdx = i;
+      }
+    }
+    if (meta.priority > activeSfxVoices[lowestIdx].priority) {
+      activeSfxVoices.splice(lowestIdx, 1);
+    } else {
+      return false;
+    }
+  }
+
+  sfxVoiceSeq += 1;
+  activeSfxVoices.push({
+    id: sfxVoiceSeq,
+    kind,
+    priority: meta.priority,
+    endsAtMs: nowMs + Math.max(40, Math.min(980, durationMs)),
+  });
+  lastKindPlayedMap.set(kind, nowMs);
+  return true;
+}
+
+export function applySyncedTactileSettings(patch: {
+  globalSoundEnabled?: boolean;
+  prefs?: Partial<AppSoundPreferences>;
+}): void {
+  if (typeof patch.globalSoundEnabled === 'boolean') {
+    const next = patch.globalSoundEnabled;
+    if (globalSoundEnabled !== next) {
+      globalSoundEnabled = next;
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(SOUND_MASTER_STORAGE_KEY, next ? '1' : '0');
+        } catch {
+          // ignore
+        }
+      }
+      soundMasterListeners.forEach((fn) => fn());
+    }
+  }
+  if (patch.prefs) {
+    const next: AppSoundPreferences = {
+      ...currentSoundPrefs,
+      ...patch.prefs,
+      effectsVolume:
+        typeof patch.prefs.effectsVolume === 'number' &&
+        Number.isFinite(patch.prefs.effectsVolume)
+          ? Math.max(0, Math.min(1, patch.prefs.effectsVolume))
+          : currentSoundPrefs.effectsVolume,
+    };
+    currentSoundPrefs = next;
+    persistSoundPrefs(next);
+    emitSoundPrefChange();
+  }
+}
+
+export function preloadSfxBus(): void {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return;
+  getMasterSoundDestination(ctx);
+}
+
 export function isGlobalAppSoundEnabled(): boolean {
   return globalSoundEnabled;
 }
@@ -1247,6 +1403,8 @@ export function playTactileFeedback(
     bypassPrefGate?: boolean;
     soundPackOverride?: AppSoundPackId;
     notificationToneOverride?: NotificationSoundId;
+    channel?: string;
+    bypassCooldown?: boolean;
   }
 ): void {
   const prefersReducedMotion =
@@ -1289,6 +1447,16 @@ export function playTactileFeedback(
     return;
   }
 
+  if (
+    externalSfxGate &&
+    !externalSfxGate(kind, {
+      bypassPrefGate: options?.bypassPrefGate,
+      channel: options?.channel,
+    })
+  ) {
+    return;
+  }
+
   if (!options?.bypassPrefGate) {
     if (currentSoundPrefs.effectsVolume <= 0.01) return;
     if (
@@ -1318,14 +1486,34 @@ export function playTactileFeedback(
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
+    const profile = AUDIO_PROFILES[kind] ?? AUDIO_PROFILES.tap;
+    const estDurationMs = Math.max(
+      45,
+      Math.round(
+        Math.max(
+          ...profile.layers.map((l) => ((l.delaySec ?? 0) + l.durationSec) * 1000)
+        )
+      )
+    );
+    const nowWallMs = Date.now();
+    if (
+      !tryAcquireSfxVoice(
+        kind,
+        estDurationMs,
+        nowWallMs,
+        Boolean(options?.bypassCooldown || options?.bypassPrefGate)
+      )
+    ) {
+      return;
+    }
+
     const nowMs =
-      typeof performance !== 'undefined' ? performance.now() : Date.now();
+      typeof performance !== 'undefined' ? performance.now() : nowWallMs;
     // Prevent harsh stacking while still allowing rapid cord ratchet ticks
     if (kind !== 'cord_tick') {
       lastSoundPlayedMs = nowMs;
     }
 
-    const profile = AUDIO_PROFILES[kind] ?? AUDIO_PROFILES.tap;
     if (profile.duckAmbient) {
       duckBackgroundMusicForUi(
         profile.duckAmbient.factor,

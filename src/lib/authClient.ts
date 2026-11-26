@@ -432,6 +432,7 @@ export async function loginWithPasswordApi(params: {
   identifier: string;
   password: string;
   rememberMe?: boolean;
+  botChallenge?: { challengeId: string; nonce: string };
 }): Promise<StoredSession> {
   const rememberMe = params.rememberMe ?? true;
   const res = await fetch('/api/auth/login', {
@@ -446,10 +447,19 @@ export async function loginWithPasswordApi(params: {
       identifier: params.identifier,
       password: params.password,
       rememberMe,
+      ...(params.botChallenge ? { botChallenge: params.botChallenge } : {}),
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'تعذر تسجيل الدخول.');
+  if (!res.ok) {
+    const err = new Error(data?.error || 'تعذر تسجيل الدخول.') as Error & {
+      requiresChallenge?: boolean;
+    };
+    if (data?.requiresChallenge) {
+      err.requiresChallenge = true;
+    }
+    throw err;
+  }
   saveSession(data.token, data.user, rememberMe);
   return data;
 }

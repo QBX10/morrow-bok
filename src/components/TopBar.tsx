@@ -98,6 +98,7 @@ interface TopBarProps {
   onGoBack?: () => void;
   onGoForward?: () => void;
   syncStatus?: WorkspaceSyncStatus;
+  realtimeConnected?: boolean;
   storageStatus?: StorageSystemStatus | null;
   pendingSyncCount?: number;
   isOnline?: boolean;
@@ -145,6 +146,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onGoBack,
   onGoForward,
   syncStatus = 'local_only',
+  realtimeConnected = false,
   storageStatus = null,
   pendingSyncCount = 0,
   isOnline = true,
@@ -903,7 +905,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             const statusMeta =
               effectiveStatus === 'syncing'
                 ? {
-                    label: 'جاري المزامنة',
+                    label: 'قيد الرفع والمزامنة',
                     color: 'var(--accent)',
                     Icon: RefreshCw,
                     spin: true,
@@ -912,10 +914,17 @@ export const TopBar: React.FC<TopBarProps> = ({
                 ? {
                     label:
                       pendingSyncCount > 0
-                        ? `معلق (${pendingSyncCount})`
-                        : 'معلق دون إنترنت',
+                        ? `بدون نت (${pendingSyncCount})`
+                        : 'بدون نت · محلي',
                     color: 'var(--warning)',
                     Icon: WifiOff,
+                    spin: false,
+                  }
+                : effectiveStatus === 'conflict_saved'
+                ? {
+                    label: 'تعارض محفوظ (نسختان)',
+                    color: 'var(--warning)',
+                    Icon: AlertTriangle,
                     spin: false,
                   }
                 : effectiveStatus === 'error'
@@ -927,7 +936,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   }
                 : effectiveStatus === 'cloud_synced'
                 ? {
-                    label: 'متزامن سحابياً',
+                    label: realtimeConnected ? 'متزامن الآن · حي' : 'متزامن سحابياً',
                     color: 'var(--success)',
                     Icon: Cloud,
                     spin: false,

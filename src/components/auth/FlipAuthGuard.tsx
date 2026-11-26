@@ -6,9 +6,15 @@ import {
   Check,
   Eye,
   EyeOff,
+  Fingerprint,
+  KeyRound,
   Lock,
   Mail,
+  QrCode,
+  RefreshCw,
   RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
   User,
   UserPlus,
   X,
@@ -16,6 +22,8 @@ import {
 import type {
   AppShapeId,
   AuthUser,
+  PwnedPasswordCheckResult,
+  QrPairingInitResponse,
   Surface2DPrefs,
   Surface2DThemeId,
 } from '../../types/agency';
@@ -26,10 +34,24 @@ import {
   registerWithPasswordApi,
   removeRememberedAccount,
   requestPasswordResetApi,
+  saveSession,
   signInWithFirebaseGoogle,
   signInWithGithubPopup,
   type RememberedAccountSummary,
 } from '../../lib/authClient';
+import {
+  authenticateWithPasskey,
+  isWebAuthnSupported,
+} from '../../lib/webauthnClient';
+import {
+  checkPasswordPwnedClient,
+  fetchBotChallengeApi,
+  initQrPairingApi,
+  loginWithRecoveryCodeApi,
+  pollQrPairingStatusApi,
+  solveBotChallengePow,
+} from '../../lib/securityClient';
+import { buildPairingQrMatrix } from '../../utils/qrMatrix';
 import { getTenantLocalFallbackKey } from '../../services/storage/tenantStorage';
 import { GeometricRavenCrest } from '../brand/VectorMotifs';
 import { Backdrop2DCanvas } from '../motion2d/Backdrop2DCanvas';
@@ -62,6 +84,7 @@ import {
   type IntelligentAmbience,
 } from '../../utils/intelligentAmbience';
 import { syncBackgroundMusicInitialContext } from '../../utils/backgroundMusicEngine';
+import { audioManager } from '../../services/audio/AudioManager';
 import { useDelayedLoading } from '../../utils/delayedLoader';
 
 interface FlipAuthGuardProps {
@@ -71,7 +94,12 @@ interface FlipAuthGuardProps {
   appShape?: AppShapeId;
 }
 
-type ConsoleActionMode = 'login' | 'register' | 'reset';
+type ConsoleActionMode =
+  | 'login'
+  | 'register'
+  | 'reset'
+  | 'qr'
+  | 'recovery_code';
 type LoginChannel = 'username' | 'email';
 type RegisterChannel = 'username' | 'email';
 
@@ -136,6 +164,17 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [resetConfirmPass, setResetConfirmPass] = useState('');
   const [showResetPass, setShowResetPass] = useState(false);
 
+  // Security Upgrades: Passkeys, HIBP Breach Check, QR Cross-Device Pairing & Recovery Code Login
+  const passkeySupported = useMemo(() => isWebAuthnSupported(), []);
+  const [regPwnedResult, setRegPwnedResult] =
+    useState<PwnedPasswordCheckResult | null>(null);
+  const [resetPwnedResult, setResetPwnedResult] =
+    useState<PwnedPasswordCheckResult | null>(null);
+  const [qrState, setQrState] = useState<QrPairingInitResponse | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [recoveryIdentifier, setRecoveryIdentifier] = useState('');
+  const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
+
   const [busy, setBusy] = useState(false);
   useDelayedLoading(busy, 'جاري التحقق وتسجيل الدخول...', {
     immediate: true,
@@ -144,9 +183,135 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
 
+  // Live HIBP k-Anonymity check on register password
+  useEffect(() => {
+    if (actionMode !== 'register' || regPassword.length < 6) {
+      setRegPwnedResult(null);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void checkPasswordPwnedClient(regPassword).then((res) => {
+        if (active) setRegPwnedResult(res);
+      });
+    }, 420);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [actionMode, regPassword]);
+
+  // Live HIBP k-Anonymity check on password reset
+  useEffect(() => {
+    if (actionMode !== 'reset' || !resetCodeSent || resetNewPass.length < 6) {
+      setResetPwnedResult(null);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void checkPasswordPwnedClient(resetNewPass).then((res) => {
+        if (active) setResetPwnedResult(res);
+      });
+    }, 420);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [actionMode, resetCodeSent, resetNewPass]);
+
+  const startQrPairingSession = useCallback(async () => {
+    setErrorMsg('');
+    setStatusNotice('');
+    setQrLoading(true);
+    try {
+      const nextQr = await initQrPairingApi();
+      setQrState(nextQr);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'تعذر تهيئة رمز الربط QR.'
+      );
+    } finally {
+      setQrLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (actionMode !== 'qr') {
+      setQrState(null);
+      return;
+    }
+    if (!qrState && !qrLoading) {
+      void startQrPairingSession();
+    }
+  }, [actionMode, qrState, qrLoading, startQrPairingSession]);
+
+  useEffect(() => {
+    if (actionMode !== 'qr' || !qrState) return;
+    let active = true;
+    let ws: WebSocket | null = null;
+
+    if (typeof WebSocket !== 'undefined') {
+      try {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(
+          `${proto}//${window.location.host}/api/sync/ws?pairId=${encodeURIComponent(
+            qrState.pairId
+          )}`
+        );
+        ws.onmessage = (ev) => {
+          if (!active) return;
+          try {
+            const parsed = JSON.parse(String(ev.data)) as {
+              type?: string;
+              token?: string;
+              user?: AuthUser;
+            };
+            if (parsed.type === 'qr:approved' && parsed.token && parsed.user) {
+              saveSession(parsed.token, parsed.user, rememberMe);
+              playTactileFeedback('success', { sound: true, haptic: true });
+              onAuthenticated(parsed.user);
+            }
+          } catch {
+            // ignore malformed frame
+          }
+        };
+      } catch {
+        // fallback to HTTP polling below
+      }
+    }
+
+    const pollTimer = window.setInterval(() => {
+      if (!active) return;
+      void pollQrPairingStatusApi(qrState.pairId).then((res) => {
+        if (!active) return;
+        if (res.status === 'approved' && res.user) {
+          playTactileFeedback('success', { sound: true, haptic: true });
+          onAuthenticated(res.user);
+        } else if (res.status === 'expired') {
+          setStatusNotice('انتهت صلاحية رمز QR. اضغط على «إنشاء رمز جديد».');
+        }
+      });
+    }, 2400);
+
+    return () => {
+      active = false;
+      window.clearInterval(pollTimer);
+      try {
+        ws?.close();
+      } catch {
+        // ignore
+      }
+    };
+  }, [actionMode, qrState, rememberMe, onAuthenticated]);
+
+  const qrMatrix = useMemo(
+    () => (qrState ? buildPairingQrMatrix(qrState.qrPayload) : null),
+    [qrState]
+  );
+
   useEffect(() => {
     if (errorMsg) {
-      playTactileFeedback('error', { sound: true, haptic: true });
+      audioManager.playEvent('login_fail', { sound: true, haptic: true });
     }
   }, [errorMsg]);
 
@@ -244,13 +409,16 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     setResetCodeSent(false);
     setResetCode('');
     setResetDemoHint('');
-    if (nextMode === 'reset') {
+    if (nextMode === 'reset' || nextMode === 'recovery_code') {
       const prefill =
         loginChannel === 'email'
           ? loginEmail.trim()
           : loginUsername.trim();
-      if (prefill && !resetIdentifier) {
+      if (nextMode === 'reset' && prefill && !resetIdentifier) {
         setResetIdentifier(prefill);
+      }
+      if (nextMode === 'recovery_code' && prefill && !recoveryIdentifier) {
+        setRecoveryIdentifier(prefill);
       }
     }
     setActionMode(nextMode);
@@ -336,6 +504,87 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
     }
   };
 
+  const executePasswordLoginWithBotProtection = async (params: {
+    mode: 'auto' | 'google' | 'username';
+    identifier: string;
+    password: string;
+  }) => {
+    try {
+      return await loginWithPasswordApi({
+        ...params,
+        rememberMe,
+      });
+    } catch (err) {
+      const challengeErr = err as Error & { requiresChallenge?: boolean };
+      if (!challengeErr.requiresChallenge) {
+        throw err;
+      }
+      setStatusNotice('يتم حل التحقق الأمني التلقائي لحماية الحساب...');
+      const challenge = await fetchBotChallengeApi();
+      const solution = await solveBotChallengePow(challenge);
+      return await loginWithPasswordApi({
+        ...params,
+        rememberMe,
+        botChallenge: solution,
+      });
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setErrorMsg('');
+    setStatusNotice('');
+    setBusy(true);
+    try {
+      const rawId = (
+        loginChannel === 'email' ? loginEmail : loginUsername
+      ).trim();
+      const session = await authenticateWithPasskey({
+        identifier: rawId || undefined,
+        rememberMe,
+      });
+      audioManager.playEvent('login_success', { sound: true, haptic: true });
+      onAuthenticated(session.user);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'تعذر إتمام تسجيل الدخول بمفتاح المرور (Passkey).'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRecoveryCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setStatusNotice('');
+    const identifier = recoveryIdentifier.trim();
+    const code = recoveryCodeInput.trim();
+    if (!identifier || !code) {
+      setErrorMsg('يرجى إدخال اسم المستخدم/البريد ورمز الاسترجاع.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const session = await loginWithRecoveryCodeApi({
+        identifier,
+        recoveryCode: code,
+        rememberMe,
+      });
+      audioManager.playEvent('login_success', { sound: true, haptic: true });
+      onAuthenticated(session.user);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'رمز الاسترجاع غير صالح أو تم استخدامه مسبقاً.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -355,11 +604,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       }
       setBusy(true);
       try {
-        const session = await loginWithPasswordApi({
+        const session = await executePasswordLoginWithBotProtection({
           mode: 'google',
           identifier: rawId,
           password: loginPassword,
-          rememberMe,
         });
         onAuthenticated(session.user);
       } catch (err) {
@@ -396,11 +644,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
       const normalizedId = rawId.includes('@')
         ? rawId
         : normalizeUsernameInput(rawId);
-      const session = await loginWithPasswordApi({
+      const session = await executePasswordLoginWithBotProtection({
         mode: rawId.includes('@') ? 'auto' : 'username',
         identifier: normalizedId,
         password: loginPassword,
-        rememberMe,
       });
       onAuthenticated(session.user);
     } catch (err) {
@@ -911,6 +1158,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                       ? 'إنشاء حساب جديد'
                       : actionMode === 'reset'
                       ? 'استعادة كلمة المرور'
+                      : actionMode === 'qr'
+                      ? 'الدخول السريع عبر QR'
+                      : actionMode === 'recovery_code'
+                      ? 'الدخول برمز الاسترجاع'
                       : 'مرحباً بك'}
                   </h1>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -918,6 +1169,10 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                       ? 'أنشئ حسابك الكامل مع حفظ مستقل لبيانات وكالاتك'
                       : actionMode === 'reset'
                       ? 'تحقق من هويتك عبر الرمز وأعد تعيين كلمة المرور بأمان'
+                      : actionMode === 'qr'
+                      ? 'أكّد الدخول من جهازك المسجّل حالياً خلال لحظات دون كتابة كلمة المرور'
+                      : actionMode === 'recovery_code'
+                      ? 'استخدم أحد رموز الطوارئ أحادية الاستخدام لاستعادة الوصول إلى حسابك'
                       : 'سجّل الدخول للمتابعة إلى حسابك'}
                   </p>
                 </div>
@@ -1373,6 +1628,56 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                           </div>
                         </div>
                       )}
+
+                      {/* Security-First Quick Entry Strip: Passkey, Cross-Device QR, Recovery Code */}
+                      <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          disabled={busy || !passkeySupported}
+                          data-testid="login-passkey-btn"
+                          onClick={() => void handlePasskeyLogin()}
+                          title={
+                            passkeySupported
+                              ? 'تسجيل الدخول بالبصمة أو Face ID أو مفتاح الجهاز (Passkey)'
+                              : 'المتصفح الحالي لا يدعم Passkeys'
+                          }
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)]/80 hover:border-[var(--accent)] px-2.5 py-2 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer disabled:opacity-45 min-h-[38px]"
+                        >
+                          <Fingerprint
+                            size={14}
+                            style={{ color: 'var(--accent-bright)' }}
+                          />
+                          <span>Passkey</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={busy}
+                          data-testid="login-qr-mode-btn"
+                          onClick={() => switchActionMode('qr')}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)]/80 hover:border-[var(--accent)] px-2.5 py-2 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer disabled:opacity-50 min-h-[38px]"
+                        >
+                          <QrCode
+                            size={14}
+                            style={{ color: 'var(--accent-bright)' }}
+                          />
+                          <span>دخول بـ QR</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={busy}
+                          data-testid="login-recovery-code-mode-btn"
+                          onClick={() => switchActionMode('recovery_code')}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)]/80 hover:border-[var(--accent)] px-2.5 py-2 text-[11px] font-bold text-[var(--text-primary)] cursor-pointer disabled:opacity-50 min-h-[38px]"
+                        >
+                          <KeyRound
+                            size={14}
+                            style={{ color: 'var(--accent-bright)' }}
+                          />
+                          <span>رمز استرجاع</span>
+                        </button>
+                      </div>
                     </motion.div>
                   )}
 
@@ -1563,6 +1868,34 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                                   )}
                                 </button>
                               </div>
+                              {regPwnedResult?.checked && (
+                                <div
+                                  className="mt-1.5 flex items-center gap-1.5 text-[11px] font-bold"
+                                  style={{
+                                    color: regPwnedResult.pwned
+                                      ? 'var(--danger)'
+                                      : 'var(--success)',
+                                  }}
+                                >
+                                  {regPwnedResult.pwned ? (
+                                    <>
+                                      <ShieldAlert size={13} />
+                                      <span>
+                                        كلمة المرور هذه ظهرت في{' '}
+                                        {regPwnedResult.count.toLocaleString('ar-IQ')}{' '}
+                                        تسريب سابق — اختر كلمة أقوى.
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ShieldCheck size={13} />
+                                      <span>
+                                        سليمة (لم تظهر في التسريبات المعروفة)
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             {renderRememberMeCheckbox()}
@@ -1813,6 +2146,32 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                               </div>
                             </div>
 
+                            {resetPwnedResult?.checked && (
+                              <div
+                                className="flex items-center gap-1.5 text-[11px] font-bold"
+                                style={{
+                                  color: resetPwnedResult.pwned
+                                    ? 'var(--danger)'
+                                    : 'var(--success)',
+                                }}
+                              >
+                                {resetPwnedResult.pwned ? (
+                                  <>
+                                    <ShieldAlert size={13} />
+                                    <span>
+                                      تحذير: كلمة المرور الجديدة مسرّبة مسبقاً (
+                                      {resetPwnedResult.count.toLocaleString('ar-IQ')} مرة)
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ShieldCheck size={13} />
+                                    <span>كلمة المرور آمنة من التسريبات المعروفة</span>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
                             {renderRememberMeCheckbox()}
                           </>
                         )}
@@ -1855,6 +2214,165 @@ export const FlipAuthGuard: React.FC<FlipAuthGuardProps> = ({
                             تغيير الحساب المستهدف
                           </button>
                         )}
+                      </form>
+                    </motion.div>
+                  )}
+
+                  {actionMode === 'qr' && (
+                    <motion.div
+                      key="auth-panel-qr"
+                      initial={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: 8, scale: 0.99 }
+                      }
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -8, scale: 0.99 }
+                      }
+                      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                      className="space-y-4"
+                    >
+                      <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--surface-well)] p-5 text-center space-y-3">
+                        {qrLoading || !qrMatrix || !qrState ? (
+                          <div className="py-10 text-xs font-bold text-[var(--text-muted)]">
+                            جاري توليد رمز الربط الفوري...
+                          </div>
+                        ) : (
+                          <>
+                            <div className="rounded-2xl bg-white p-3 shadow-md">
+                              <svg
+                                viewBox={`0 0 ${qrMatrix.size} ${qrMatrix.size}`}
+                                className="h-36 w-36"
+                                shapeRendering="crispEdges"
+                                aria-label="رمز QR لتسجيل الدخول من جهاز آخر"
+                              >
+                                {qrMatrix.modules.map((row, rIdx) =>
+                                  row.map((on, cIdx) =>
+                                    on ? (
+                                      <rect
+                                        key={`${rIdx}-${cIdx}`}
+                                        x={cIdx}
+                                        y={rIdx}
+                                        width={1}
+                                        height={1}
+                                        fill="#0B0B0D"
+                                      />
+                                    ) : null
+                                  )
+                                )}
+                              </svg>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-[11px] font-bold text-[var(--text-muted)]">
+                                كود الربط اليدوي (من تبويب الحساب في جهازك المسجّل):
+                              </div>
+                              <div
+                                dir="ltr"
+                                data-testid="qr-short-code"
+                                className="inline-block rounded-xl border border-[var(--accent)]/40 bg-[var(--bg-nav-active)] px-4 py-1.5 font-mono text-base font-black tracking-[0.22em] text-[var(--accent-bright)]"
+                              >
+                                {qrState.shortCode}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void startQrPairingSession()}
+                              className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--accent-bright)] hover:underline cursor-pointer"
+                            >
+                              <RefreshCw size={13} />
+                              <span>إنشاء رمز جديد</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {actionMode === 'recovery_code' && (
+                    <motion.div
+                      key="auth-panel-recovery-code"
+                      initial={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: 8, scale: 0.99 }
+                      }
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -8, scale: 0.99 }
+                      }
+                      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <form
+                        onSubmit={handleRecoveryCodeSubmit}
+                        className="space-y-3.5"
+                      >
+                        <div>
+                          <label
+                            htmlFor="flip-recovery-identifier"
+                            className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
+                          >
+                            اسم المستخدم أو البريد الإلكتروني
+                          </label>
+                          <input
+                            id="flip-recovery-identifier"
+                            data-testid="recovery-identifier-input"
+                            type="text"
+                            dir="ltr"
+                            value={recoveryIdentifier}
+                            onChange={(e) => setRecoveryIdentifier(e.target.value)}
+                            placeholder="username / email@example.com"
+                            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="flip-recovery-code-input"
+                            className="block text-xs font-bold text-[var(--text-primary)]/90 mb-1.5"
+                          >
+                            رمز الاسترجاع أحادي الاستخدام
+                          </label>
+                          <input
+                            id="flip-recovery-code-input"
+                            data-testid="recovery-code-input"
+                            type="text"
+                            dir="ltr"
+                            value={recoveryCodeInput}
+                            onChange={(e) =>
+                              setRecoveryCodeInput(e.target.value.toUpperCase())
+                            }
+                            placeholder="ABCD-EFGH"
+                            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface-well)] px-3.5 py-2.5 text-center font-mono text-base font-black tracking-[0.2em] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                          />
+                        </div>
+
+                        {renderRememberMeCheckbox()}
+
+                        <motion.button
+                          type="submit"
+                          disabled={busy}
+                          data-testid="recovery-code-submit-btn"
+                          whileHover={
+                            reducedMotion || busy
+                              ? undefined
+                              : { y: -2, scale: 1.01 }
+                          }
+                          whileTap={
+                            reducedMotion || busy ? undefined : { scale: 0.98 }
+                          }
+                          transition={TABRIX_TACTILE_SPRING}
+                          className="obsidian-gold-cta w-full py-3 rounded-xl text-sm font-black inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 min-h-[44px]"
+                        >
+                          <KeyRound size={15} />
+                          <span>
+                            {busy ? 'جارٍ التحقق...' : 'الدخول برمز الاسترجاع'}
+                          </span>
+                        </motion.button>
                       </form>
                     </motion.div>
                   )}

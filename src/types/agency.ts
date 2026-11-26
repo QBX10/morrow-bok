@@ -1027,6 +1027,169 @@ export interface SmartSyncCheckpoint {
   history?: SmartSyncHistoryEntry[];
 }
 
+export interface SelectiveSyncPrefs {
+  syncRecords: boolean;
+  syncAttachments: boolean;
+  syncArchives: boolean;
+  syncNotes: boolean;
+  syncSettings: boolean;
+}
+
+export interface StorageQuotaInfo {
+  usedBytes: number;
+  quotaBytes: number;
+  chunkCount: number;
+  uniqueChunkCount: number;
+  dedupSavedBytes: number;
+  usagePercent: number;
+  versionsCount: number;
+  updatedAt?: string;
+}
+
+export interface PasskeyCredentialSummary {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  transports?: string[];
+  deviceType?: string;
+}
+
+export interface ActiveSessionRecord {
+  sid: string;
+  provider: AuthProviderType;
+  deviceLabel: string;
+  userAgent: string;
+  ipMasked: string;
+  createdAt: string;
+  lastActiveAt: string;
+  isCurrent: boolean;
+  loginMethod?: 'password' | 'passkey' | 'google' | 'github' | 'qr' | 'recovery_code';
+}
+
+export interface SecurityAlertItem {
+  id: string;
+  kind:
+    | 'new_device_login'
+    | 'unrecognized_login_attempt'
+    | 'session_revoked'
+    | 'recovery_code_used'
+    | 'recovery_codes_rotated'
+    | 'passkey_added'
+    | 'passkey_removed'
+    | 'account_linked'
+    | 'reauth_verified';
+  title: string;
+  summary: string;
+  deviceLabel?: string;
+  browserLabel?: string;
+  ipMasked?: string;
+  attemptOutcome?: 'succeeded' | 'failed';
+  recipientEmail?: string;
+  emailDeliveryStatus?: 'sent' | 'failed' | 'skipped_no_email' | 'not_configured' | 'throttled';
+  emailDeliveryProvider?: 'smtp' | 'resend' | 'none';
+  emailDeliveryError?: string;
+  emailMessageId?: string;
+  emailSubject?: string;
+  emailSentSimulated?: boolean;
+  createdAt: string;
+  read?: boolean;
+}
+
+export interface RecoveryCodesStatus {
+  totalCount: number;
+  remainingCount: number;
+  generatedAt?: string;
+}
+
+export interface QrPairingInitResponse {
+  pairId: string;
+  shortCode: string;
+  qrPayload: string;
+  expiresAt: string;
+}
+
+export interface BotChallengePayload {
+  challengeId: string;
+  prefix: string;
+  difficulty: number;
+  expiresAt: string;
+}
+
+export interface ReauthGrantStatus {
+  reauthToken: string;
+  expiresAt: string;
+}
+
+export interface PwnedPasswordCheckResult {
+  checked: boolean;
+  pwned: boolean;
+  count: number;
+  offlineFallback?: boolean;
+}
+
+export type ShareRole = 'owner' | 'editor' | 'viewer';
+
+export interface ShareLinkRecord {
+  id: string;
+  token: string;
+  label: string;
+  role: 'viewer' | 'editor';
+  hasPassword: boolean;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+  accessCount: number;
+  lastAccessedAt?: string | null;
+}
+
+export interface ShareInviteRecord {
+  id: string;
+  email: string;
+  role: ShareRole;
+  status: 'pending' | 'accepted' | 'revoked';
+  createdAt: string;
+  acceptedAt?: string | null;
+}
+
+export interface ShareAccessLogEntry {
+  id: string;
+  actorLabel: string;
+  actorUid?: string;
+  via: 'link' | 'invite' | 'owner';
+  role: ShareRole;
+  action: string;
+  reason: string;
+  ipMasked?: string;
+  timestamp: string;
+}
+
+export interface WorkspaceVersionRecord {
+  versionId: string;
+  versionNumber: number;
+  label: string;
+  source: 'auto_sync' | 'manual_snapshot' | 'pre_conflict' | 'chunk_manifest';
+  deviceId: string;
+  checksum: string;
+  sizeBytes: number;
+  recordCount: number;
+  agencyCount: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface ConflictCopyEntry {
+  id: string;
+  entityKind: 'workspace' | 'person' | 'note' | 'archive';
+  entityLabel: string;
+  localDeviceId: string;
+  remoteDeviceId: string;
+  reason: string;
+  createdAt: string;
+  localSnapshotJson?: string;
+  resolved?: boolean;
+}
+
 export interface SecurityPrefs {
   privacyPin: string;
   privacyLocked: boolean;
@@ -1034,6 +1197,8 @@ export interface SecurityPrefs {
   allowCloudBeneficiaryNames?: boolean;
   autoLockMinutes?: 0 | 5 | 15 | 30;
   quickUnlockHintEnabled?: boolean;
+  selectiveSync?: SelectiveSyncPrefs;
+  pushAlertsEnabled?: boolean;
   secondaryCloud?: BackupCloudAccountPrefs;
   driveAccountMeta?: DriveDedicatedAccountMeta;
   smartSync?: SmartSyncCheckpoint;
@@ -1043,18 +1208,24 @@ export type RecycleBinItemKind =
   | 'person'
   | 'ready_list'
   | 'relation'
-  | 'expense';
+  | 'expense'
+  | 'note'
+  | 'agency';
 
 export interface RecycleBinEntry {
   id: string;
   kind: RecycleBinItemKind;
   label: string;
   deletedAt: string;
+  expiresAt?: string;
+  deletedBy?: string;
   payload:
     | { kind: 'person'; person: Person }
     | { kind: 'ready_list'; list: ReadyList; items: ReadyListItem[] }
     | { kind: 'relation'; relation: RelationEntry }
-    | { kind: 'expense'; expense: AgencyExpense };
+    | { kind: 'expense'; expense: AgencyExpense }
+    | { kind: 'note'; note: WorkspaceNoteItem }
+    | { kind: 'agency'; agency: Agency };
 }
 
 export interface MonthlyArchiveSummary {
@@ -1169,6 +1340,7 @@ export type WorkspaceSyncStatus =
   | 'syncing'
   | 'cloud_synced'
   | 'pending_offline'
+  | 'conflict_saved'
   | 'error';
 
 export type SyncQueueOpStatus = 'pending' | 'synced' | 'failed';
@@ -1247,6 +1419,7 @@ export interface AppDatabaseState {
   updatedAt?: string;
   lastSyncedAt?: string;
   deviceId?: string;
+  hlcTimestamp?: string;
   migrationSnapshot?: MigrationSnapshotRecord;
   workspaceCosmos?: WorkspaceCosmosState;
   agencies: Agency[];
@@ -1272,6 +1445,7 @@ export interface AppDatabaseState {
   securityPrefs?: SecurityPrefs;
   smartPreferences?: SmartPreferencesMemory;
   auditLog?: AuditCheckpointEvent[];
+  conflictCopies?: ConflictCopyEntry[];
   recycleBin?: RecycleBinEntry[];
   workspaceNotes?: WorkspaceNoteItem[];
   ucrsSessions?: UcrsSession[];
