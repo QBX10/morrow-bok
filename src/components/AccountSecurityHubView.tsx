@@ -998,7 +998,11 @@ export const AccountSecurityHubView: React.FC<AccountSecurityHubViewProps> = ({
   };
 
   return (
-    <div dir="rtl" className="mx-auto w-full max-w-6xl space-y-5 px-3 py-5 sm:px-6 sm:py-6">
+    <div
+      dir="rtl"
+      data-assistant-target="account-security-root"
+      className="mx-auto w-full max-w-6xl space-y-5 px-3 py-5 sm:px-6 sm:py-6"
+    >
       {/* Top Unified Header & Sync Status Summary Card */}
       <section className="nexus-squircle p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">

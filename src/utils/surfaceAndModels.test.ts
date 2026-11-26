@@ -75,7 +75,7 @@ test('surface2dConfig resolves Obsidian & Gold default, migrates legacy keys, an
 });
 
 test('surface2d theme catalog, Obsidian & Gold tokens, custom color palette, and WCAG contrast map cleanly', () => {
-  assert.equal(Object.keys(SURFACE_2D_THEMES).length, 7);
+  assert.equal(Object.keys(SURFACE_2D_THEMES).length, 11);
 
   const obsidianGold = getSurfaceThemeDef('obsidian_gold');
   assert.equal(obsidianGold.accent, '#D4AF37');

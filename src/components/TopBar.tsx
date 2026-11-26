@@ -42,6 +42,7 @@ import type {
 import { auditAgencyPersons, normalizeArabic } from '../utils/agencyLogic';
 import type { HierarchyNode, HierarchyTarget } from '../utils/hierarchyRegistry';
 import type { ModeCapabilities } from '../utils/modePermissions';
+import { PWAInstallButton } from './ui/PWAInstallButton';
 import { MotionActionButton } from './ui/TabrixMotionPrimitives';
 import {
   TABRIX_BUTTON_HOVER,
@@ -477,7 +478,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenMobileSidebar}
             aria-label="فتح القائمة"
-            className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border lg:hidden cursor-pointer"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
@@ -495,7 +496,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 disabled={!canGoBack}
                 aria-label="رجوع"
                 title="رجوع"
-                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border disabled:opacity-35 cursor-pointer disabled:cursor-default transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -509,7 +510,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 disabled={!canGoForward}
                 aria-label="تقدم"
                 title="تقدم"
-                className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border disabled:opacity-35 cursor-pointer disabled:cursor-default transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -819,7 +820,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               }}
               title="بحث سريع (/)"
               aria-label="فتح البحث السريع"
-              className="nexus-pill-btn inline-flex h-8 w-8 shrink-0 items-center justify-center border cursor-pointer"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -846,7 +847,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 whileHover={reducedMotion ? undefined : TABRIX_BUTTON_HOVER}
                 whileTap={reducedMotion ? undefined : TABRIX_BUTTON_TAP}
                 transition={TABRIX_TACTILE_SPRING}
-                className="nexus-pill-btn hidden md:inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer"
+                className="hidden md:inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -869,7 +870,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   disabled={!canUndo}
                   title="تراجع"
                   aria-label="تراجع"
-                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border disabled:opacity-35 cursor-pointer disabled:cursor-default transition-colors hover:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
@@ -883,7 +884,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   disabled={!canRedo}
                   title="إعادة"
                   aria-label="إعادة"
-                  className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border disabled:opacity-35 cursor-pointer disabled:cursor-default"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border disabled:opacity-35 cursor-pointer disabled:cursor-default transition-colors hover:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
@@ -954,7 +955,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     : ''
                 } (انقر للمزامنة الفورية)`}
                 aria-label={statusMeta.label}
-                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2 text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -987,7 +988,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setAccountMenuOpen(false);
               }}
               aria-label="تنبيهات الوكالات"
-              className="nexus-pill-btn relative inline-flex h-8 w-8 items-center justify-center border cursor-pointer"
+              className="relative inline-flex h-8 w-8 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: notifOpen ? 'var(--accent)' : 'var(--border-color)',
@@ -996,7 +997,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <Bell className="h-3.5 w-3.5" />
               {notifications.length > 0 && (
                 <span
-                  className="absolute -top-1 -right-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 font-mono-num text-[9px] font-black tabular-nums"
+                  className="absolute -top-1 -right-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-md px-1 font-mono-num text-[9px] font-black tabular-nums"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1090,7 +1091,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   setAccountMenuOpen(nextOpen);
                   setNotifOpen(false);
                 }}
-                className="nexus-pill-btn inline-flex h-8 items-center gap-1 border px-2.5 text-xs font-bold whitespace-nowrap cursor-pointer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: accountMenuOpen
@@ -1137,7 +1138,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     initial="initial"
                     animate="animate"
                     exit="exit"
-                    className="smoked-glass-elevated nexus-glass-lite absolute left-0 top-full z-50 mt-2 w-60 rounded-3xl border p-2.5 shadow-xl space-y-1.5 text-xs"
+                    className="smoked-glass-elevated nexus-glass-lite absolute left-0 top-full z-50 mt-2 w-60 rounded-2xl border p-2.5 shadow-xl space-y-1.5 text-xs"
                     style={{
                       borderColor: 'var(--border-color)',
                       transformOrigin: 'top left',
@@ -1225,6 +1226,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                       style={{ color: 'var(--accent)' }}
                     />
                   </button>
+
+                  <PWAInstallButton
+                    variant="menu"
+                    onActionDone={() => setAccountMenuOpen(false)}
+                  />
 
                   <button
                     type="button"

@@ -446,7 +446,7 @@ async function startServer() {
     const status = getOrchestrationStatusSnapshot();
     res.json({
       ok: true,
-      model: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      model: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       providers: status.providers,
       modelsCount: status.models.length,
     });
@@ -3465,18 +3465,16 @@ ${contextText}`;
       } else if (!preferredChain && mode === 'nemotron_free') {
         preferredChain = [
           AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-          AI_FREE_MODELS.GEMINI_3_8_FLASH,
-          AI_FREE_MODELS.GEMINI_3_5_FLASH,
+          AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+          AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
           AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-          AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
         ];
       } else if (!preferredChain && mode === 'openrouter_free') {
         preferredChain = [
           AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-          AI_FREE_MODELS.GEMINI_3_8_FLASH,
+          AI_FREE_MODELS.GEMINI_4_HYDROGEN,
           AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-          AI_FREE_MODELS.GEMINI_3_5_FLASH,
-          AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+          AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
         ];
       }
 
@@ -3553,7 +3551,7 @@ ${contextText}`;
     }
   });
 
-  // --- Morrow Smart Text / Data Analyzer (data_processing: gemini-3.5-flash -> nemotron -> openrouter/free) ---
+  // --- Morrow Smart Text / Data Analyzer (data_processing: gemini-4-hydrogen -> gemini-3.1-flash-lite -> nemotron -> openrouter/free) ---
 
   app.post('/api/morrow/analyze-text', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -3768,7 +3766,7 @@ ${contextText}`;
     }
   });
 
-  // --- Morrow Multimodal File / Camera Analysis (heavy_extraction: gemini-3.8-flash -> nemotron -> gemini-3.5-flash) ---
+  // --- Morrow Multimodal File / Camera Analysis (heavy_extraction: gemini-4-hydrogen -> nemotron -> gemini-3.1-flash-lite) ---
   app.post('/api/morrow/multimodal', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const body = (req.body || {}) as {
@@ -3939,38 +3937,96 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
     }
   });
 
-  const serveAppAmbientAudio = (_req: Request, res: Response) => {
-    const publicAudioPath = path.resolve(
-      __dirname,
-      'public/assets/aistudio/RUMI-music_0cb9de04.mp3'
-    );
-    const distAudioPath = path.resolve(
-      __dirname,
-      'dist/assets/aistudio/RUMI-music_0cb9de04.mp3'
-    );
-    const targetPath = fs.existsSync(publicAudioPath)
-      ? publicAudioPath
-      : distAudioPath;
+  const resolveAmbientAudioPath = (): string | null => {
+    const candidates = [
+      path.resolve(__dirname, 'public/assets/aistudio/bg-music_85f08a71.mp3'),
+      path.resolve(__dirname, 'dist/assets/aistudio/bg-music_85f08a71.mp3'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
 
-    if (!fs.existsSync(targetPath)) {
+    const dirs = [
+      path.resolve(__dirname, 'public/assets/aistudio'),
+      path.resolve(__dirname, 'dist/assets/aistudio'),
+    ];
+    for (const dir of dirs) {
+      try {
+        if (!fs.existsSync(dir)) continue;
+        const mp3 = fs
+          .readdirSync(dir)
+          .find((file) => file.toLowerCase().endsWith('.mp3'));
+        if (mp3) {
+          return path.join(dir, mp3);
+        }
+      } catch {
+        // ignore directory scan errors
+      }
+    }
+    return null;
+  };
+
+  const serveAppAmbientAudio = (_req: Request, res: Response) => {
+    const targetPath = resolveAmbientAudioPath();
+    if (!targetPath || !fs.existsSync(targetPath)) {
       res.status(404).end();
       return;
     }
 
     res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.sendFile(targetPath);
   };
 
   app.get('/app-ambient.mp3', serveAppAmbientAudio);
   app.get('/bg-music.mp3', serveAppAmbientAudio);
+  app.get('/assets/aistudio/RUMI-music_0cb9de04.mp3', serveAppAmbientAudio);
+
+  const httpServer = http.createServer(app);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
+    const hmrEnabled = process.env.DISABLE_HMR !== 'true';
     const vite = await createViteServer({
+      plugins: !hmrEnabled
+        ? [
+            {
+              name: 'morrow-disable-hmr-ws',
+              transform(code: string, id: string) {
+                if (
+                  id.includes('vite/dist/client/client.mjs') ||
+                  id.includes('vite/dist/client/bundledDevClient.mjs')
+                ) {
+                  return code
+                    .replace(
+                      'transport.connect(createHMRHandler(handleMessage));',
+                      '/* HMR WebSocket disabled (DISABLE_HMR=true) */'
+                    )
+                    .replace(
+                      'setupForwardConsoleHandler(transport, forwardConsole);',
+                      '/* forwardConsole disabled (DISABLE_HMR=true) */'
+                    )
+                    .replace(
+                      'else throw new SendBeforeConnectError("send was called before connect");',
+                      'else return;'
+                    )
+                    .replace(
+                      'else throw new SendBeforeConnectError("invoke was called before connect");',
+                      'else return undefined;'
+                    );
+                }
+                return null;
+              },
+            },
+          ]
+        : [],
       server: {
         middlewareMode: true,
-        hmr: process.env.DISABLE_HMR !== 'true',
+        hmr: hmrEnabled ? { server: httpServer } : false,
+        ws: hmrEnabled ? { server: httpServer } : false,
       },
       appType: 'spa',
     });
@@ -3988,7 +4044,6 @@ ${liveHint ? `حالة التطبيق الحالية: ${liveHint}\n` : ''}طلب
     });
   }
 
-  const httpServer = http.createServer(app);
   const morrowLiveWss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', async (request, socket, head) => {

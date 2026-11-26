@@ -28,13 +28,13 @@ export function mapModelIdToEngineSource(
   modelId?: string | null
 ): AssistantEngineSource {
   switch (modelId) {
-    case AI_FREE_MODELS.GEMINI_3_8_FLASH:
+    case AI_FREE_MODELS.GEMINI_4_HYDROGEN:
       return 'gemini_3_8_flash';
     case AI_FREE_MODELS.GEMINI_3_8_LIVE:
       return 'gemini_3_8_live';
-    case AI_FREE_MODELS.GEMINI_3_5_FLASH:
+    case AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE:
       return 'gemini_3_5_flash';
-    case AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE:
+    case AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE:
       return 'gemini_3_5_flash_lite';
     case AI_FREE_MODELS.GROQ_WHISPER_TURBO:
       return 'whisper_large_v3_turbo';
@@ -67,7 +67,7 @@ export function getEngineDisplayMeta(
 
   switch (engine) {
     case 'gemini_3_8_flash': {
-      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_8_FLASH];
+      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_4_HYDROGEN];
       return {
         engine: 'gemini_3_8_flash',
         shortLabel: spec.shortLabel,
@@ -87,7 +87,7 @@ export function getEngineDisplayMeta(
       };
     }
     case 'gemini_3_5_flash': {
-      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH];
+      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE];
       return {
         engine: 'gemini_3_5_flash',
         shortLabel: spec.shortLabel,
@@ -97,7 +97,7 @@ export function getEngineDisplayMeta(
       };
     }
     case 'gemini_3_5_flash_lite': {
-      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE];
+      const spec = AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE];
       return {
         engine: 'gemini_3_5_flash_lite',
         shortLabel: spec.shortLabel,
@@ -151,7 +151,7 @@ export function getEngineDisplayMeta(
 
 /**
  * Classifies whether a user query demands deep strategic/analytical/complex reasoning
- * (`gemini-3.8-flash` -> `nvidia/nemotron-3.5-super-vl:free` -> `gemini-3.5-flash`).
+ * (`gemini-4-hydrogen` -> `nvidia/nemotron-3.5-super-vl:free` -> `gemini-3.1-flash-lite`).
  */
 export function isDeepAnalyticalPrompt(prompt: string): boolean {
   const norm = normalizeIraqiDialect(prompt);
@@ -174,7 +174,7 @@ export function isStructuredDataPrompt(prompt: string): boolean {
 }
 
 /**
- * Classifies whether a query is a fast short command suitable for flash-lite when explicitly in economy mode.
+ * Classifies whether a query is a fast short command suitable for flash-lite.
  */
 export function isFastAssistantActionPrompt(prompt: string): boolean {
   const norm = normalizeIraqiDialect(prompt);
@@ -192,12 +192,7 @@ export interface EscalationPlan {
 }
 
 /**
- * Chief AI Architect Router — Strongest-to-Weakest Command Execution + Dedicated Backup + Final Morrow Anchor:
- * Default (`routingStrategy: 'strongest_first'`):
- *   1. Commands & assistant prompts flow strictly Strongest Cloud -> Dedicated Backup -> Descending Free Models -> Final `morrow-local`.
- *   2. `structured_excel_csv` / `heavy_pdf_vision` use their specialized task chain.
- * Optional (`routingStrategy: 'local_first_economy'`):
- *   1. Morrow Local handles deterministic commands immediately; escalates remaining prompts to the cloud pipeline.
+ * Chief AI Architect Router — Strongest-to-Weakest Command Execution + Dedicated Backup + Final Morrow Anchor.
  */
 export function planBrainEscalation(params: {
   prompt: string;
@@ -232,7 +227,7 @@ export function planBrainEscalation(params: {
 
   if (brainMode === 'gemini_3_8_flash') {
     const resolved = resolveOrderedTaskChain('command_orchestration', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      primaryModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     });
     return {
       tryLocalFirst: false,
@@ -247,7 +242,7 @@ export function planBrainEscalation(params: {
   if (brainMode === 'nemotron_free') {
     const resolved = resolveOrderedTaskChain('command_orchestration', taskRouting, {
       primaryModelId: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      backupModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      backupModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     });
     return {
       tryLocalFirst: false,
@@ -261,7 +256,7 @@ export function planBrainEscalation(params: {
 
   if (brainMode === 'gemini_3_5_flash') {
     const resolved = resolveOrderedTaskChain('structured_excel_csv', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      primaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     });
     return {
       tryLocalFirst: false,
@@ -275,7 +270,7 @@ export function planBrainEscalation(params: {
 
   if (brainMode === 'gemini_3_5_flash_lite') {
     const resolved = resolveOrderedTaskChain('fast_copilot_actions', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+      primaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       backupModelId: AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
     });
     return {
@@ -372,7 +367,7 @@ export function planBrainEscalation(params: {
   const commandResolved = resolveOrderedTaskChain('command_orchestration', taskRouting);
   return {
     tryLocalFirst: false,
-    pipeline: 'deep_assistant',
+    pipeline: deep ? 'deep_assistant' : fastTask ? 'fast_assistant' : 'deep_assistant',
     taskKey: 'command_orchestration',
     cloudChain: commandResolved.cloudChain,
     finalAnchorModel: MORROW_LOCAL_MODEL_ID,

@@ -54,7 +54,7 @@ import {
   normalizeIraqiDialect,
   redactPotentialPiiText,
 } from './assistantPrivacy';
-import { findKnowledgeEntry } from './assistantKnowledgeBase';
+import { ASSISTANT_KNOWLEDGE_BASE, findKnowledgeEntry } from './assistantKnowledgeBase';
 import {
   createInitialQuotaStats,
   DEFAULT_ASSISTANT_SETTINGS,
@@ -412,9 +412,9 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
     {
       key,
       text: 'سعر الكيس يظهر حسب إعدادات الحساب.',
-      engineUsed: 'gemini_3_5_flash',
-      engineLabel: 'Gemini 3.5 Flash',
-      modelId: 'gemini-3.5-flash',
+      engineUsed: 'gemini_3_5_flash_lite',
+      engineLabel: 'Gemini 3.1 Flash Lite',
+      modelId: 'gemini-3.1-flash-lite',
     },
     now
   );
@@ -429,8 +429,8 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
       key: 'mutating-key',
       text: 'تمت الإضافة',
       engineUsed: 'gemini_3_8_flash',
-      engineLabel: 'Gemini 3.8 Flash',
-      modelId: 'gemini-3.8-flash',
+      engineLabel: 'Gemini 4 Hydrogen',
+      modelId: 'gemini-4-hydrogen',
       toolCalls: [{ name: 'add_person', args: { name: 'علي' } }],
     },
     now
@@ -440,7 +440,7 @@ test('assistantCache caches safe responses with TTL expiry and rejects mutating 
 
 test('aiConfig and assistantQuota register 6 free models, sanitize legacy models, and format CSV/Markdown', () => {
   assert.equal(SIX_FREE_CLOUD_MODELS.length, 6);
-  assert.ok(ALL_REGISTERED_CLOUD_MODELS.some((m) => m.id === 'gemini-3.8-flash'));
+  assert.ok(ALL_REGISTERED_CLOUD_MODELS.some((m) => m.id === 'gemini-4-hydrogen'));
   assert.ok(ALL_REGISTERED_CLOUD_MODELS.some((m) => m.id === 'gemini-3.8-live'));
   const googleCount = SIX_FREE_CLOUD_MODELS.filter((m) => m.provider === 'google').length;
   const externalCount = SIX_FREE_CLOUD_MODELS.filter((m) => m.provider !== 'google').length;
@@ -451,14 +451,14 @@ test('aiConfig and assistantQuota register 6 free models, sanitize legacy models
   assert.equal(sanitizeAssistantModelId('gemini-1.5-pro'), PRIMARY_FREE_GEMINI_MODEL);
   assert.equal(sanitizeAssistantModelId('gemini-2.5-flash'), PRIMARY_FREE_GEMINI_MODEL);
   assert.equal(sanitizeAssistantModelId('gemini-2.5-pro'), PRIMARY_FREE_GEMINI_MODEL);
-  assert.equal(sanitizeAssistantModelId('gemini-3.1-flash-lite'), PRIMARY_FREE_GEMINI_MODEL);
-  assert.equal(sanitizeAssistantModelId('gemini-4-hydrogen'), PRIMARY_FREE_GEMINI_MODEL);
-  assert.equal(sanitizeAssistantModelId('gemini-3.5-transcribe'), PRIMARY_FREE_GEMINI_MODEL);
+  assert.equal(sanitizeAssistantModelId('gemini-3.8-flash'), AI_FREE_MODELS.GEMINI_4_HYDROGEN);
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash'), AI_FREE_MODELS.GEMINI_4_HYDROGEN);
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash-lite'), AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE);
 
-  assert.equal(sanitizeAssistantModelId('gemini-3.8-flash'), AI_FREE_MODELS.GEMINI_3_8_FLASH);
+  assert.equal(sanitizeAssistantModelId('gemini-4-hydrogen'), AI_FREE_MODELS.GEMINI_4_HYDROGEN);
   assert.equal(sanitizeAssistantModelId('gemini-3.8-live'), AI_FREE_MODELS.GEMINI_3_8_LIVE);
-  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash'), AI_FREE_MODELS.GEMINI_3_5_FLASH);
-  assert.equal(sanitizeAssistantModelId('gemini-3.5-flash-lite'), AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE);
+  assert.equal(sanitizeAssistantModelId('gemini-3.1-flash-lite'), AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE);
+  assert.equal(sanitizeAssistantModelId('gemini-3.5-transcribe'), AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE);
   assert.equal(sanitizeAssistantModelId('whisper-large-v3-turbo'), AI_FREE_MODELS.GROQ_WHISPER_TURBO);
   assert.equal(sanitizeAssistantModelId('nvidia/nemotron-3.5-super-vl:free'), AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL);
   assert.equal(sanitizeAssistantModelId('openrouter/free'), AI_FREE_MODELS.OPENROUTER_FREE_AUTO);
@@ -517,26 +517,26 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
   const whisperMeta = getEngineDisplayMeta('whisper_large_v3_turbo');
 
   assert.equal(localMeta.modelId, 'morrow-local');
-  assert.equal(heavyMeta.modelId, 'gemini-3.8-flash');
-  assert.equal(balancedMeta.modelId, 'gemini-3.5-flash');
-  assert.equal(liteMeta.modelId, 'gemini-3.5-flash-lite');
+  assert.equal(heavyMeta.modelId, 'gemini-4-hydrogen');
+  assert.equal(balancedMeta.modelId, 'gemini-3.1-flash-lite');
+  assert.equal(liteMeta.modelId, 'gemini-3.1-flash-lite');
   assert.equal(nemotronMeta.modelId, 'nvidia/nemotron-3.5-super-vl:free');
   assert.equal(orMeta.modelId, 'openrouter/free');
   assert.equal(whisperMeta.modelId, 'whisper-large-v3-turbo');
 
   assert.equal(AI_ROUTING_PIPELINES.audio[0], 'whisper-large-v3-turbo');
   assert.deepEqual(AI_ROUTING_PIPELINES.heavy_extraction.slice(0, 3), [
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
     'nvidia/nemotron-3.5-super-vl:free',
-    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
   ]);
   assert.deepEqual(AI_ROUTING_PIPELINES.data_processing.slice(0, 3), [
-    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
     'nvidia/nemotron-3.5-super-vl:free',
-    'openrouter/free',
+    'gemini-4-hydrogen',
   ]);
   assert.deepEqual(AI_ROUTING_PIPELINES.fast_assistant.slice(0, 2), [
-    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
     'openrouter/free',
   ]);
 
@@ -550,11 +550,11 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
   assert.equal(strongestDefaultPlan.tryLocalFirst, false);
   assert.equal(strongestDefaultPlan.taskKey, 'command_orchestration');
   assert.equal(strongestDefaultPlan.finalAnchorModel, MORROW_LOCAL_MODEL_ID);
-  assert.equal(strongestDefaultPlan.cloudChain[0], 'gemini-3.8-flash');
+  assert.equal(strongestDefaultPlan.cloudChain[0], 'gemini-4-hydrogen');
   assert.deepEqual(strongestDefaultPlan.cloudChain.slice(0, 3), [
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
     'nvidia/nemotron-3.5-super-vl:free',
-    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
   ]);
 
   const strongestFastPrompt = planBrainEscalation({
@@ -563,7 +563,7 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
     localHandled: false,
     offlineOnly: false,
   });
-  assert.equal(strongestFastPrompt.cloudChain[0], 'gemini-3.8-flash');
+  assert.equal(strongestFastPrompt.cloudChain[0], 'gemini-4-hydrogen');
   assert.equal(strongestFastPrompt.finalAnchorModel, 'morrow-local');
 
   // Custom per-task primary & backup routing override
@@ -572,14 +572,14 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
     taskRouting: {
       ...DEFAULT_TASK_ROUTING,
       command_orchestration: {
-        primaryModelId: 'gemini-3.5-flash',
+        primaryModelId: 'gemini-3.1-flash-lite',
         backupModelId: 'openrouter/free',
         finalLocalFallback: true,
       },
     },
   });
   const customChain = resolveOrderedTaskChain('command_orchestration', customNormalized.taskRouting);
-  assert.equal(customChain.cloudChain[0], 'gemini-3.5-flash');
+  assert.equal(customChain.cloudChain[0], 'gemini-3.1-flash-lite');
   assert.equal(customChain.cloudChain[1], 'openrouter/free');
   assert.equal(customChain.finalAnchorModel, 'morrow-local');
 
@@ -591,7 +591,7 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
     routingStrategy: customNormalized.routingStrategy,
     taskRouting: customNormalized.taskRouting,
   });
-  assert.equal(customPlan.cloudChain[0], 'gemini-3.5-flash');
+  assert.equal(customPlan.cloudChain[0], 'gemini-3.1-flash-lite');
   assert.equal(customPlan.cloudChain[1], 'openrouter/free');
 
   // Explicit Economy Mode ('local_first_economy'): local handles zero-latency deterministic commands first
@@ -613,7 +613,7 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
     routingStrategy: 'local_first_economy',
   });
   assert.equal(economyFastEscalation.pipeline, 'fast_assistant');
-  assert.deepEqual(economyFastEscalation.cloudChain.slice(0, 2), ['gemini-3.5-flash-lite', 'openrouter/free']);
+  assert.deepEqual(economyFastEscalation.cloudChain.slice(0, 2), ['gemini-3.1-flash-lite', 'openrouter/free']);
 
   const excelEscalation = planBrainEscalation({
     prompt: 'نظم جدول excel لبيانات الوكالات',
@@ -624,9 +624,9 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
   assert.equal(excelEscalation.pipeline, 'data_processing');
   assert.equal(excelEscalation.taskKey, 'structured_excel_csv');
   assert.deepEqual(excelEscalation.cloudChain.slice(0, 3), [
-    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
     'nvidia/nemotron-3.5-super-vl:free',
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
   ]);
 
   assert.equal(isDeepAnalyticalPrompt('اعطنا تحليل عميق وتقييم أداء الوكالات وتوصيات استراتيجية'), true);
@@ -638,9 +638,9 @@ test('priority-ordered AI router preserves Morrow Local and escalates across the
   });
   assert.equal(deepEscalation.pipeline, 'deep_assistant');
   assert.deepEqual(deepEscalation.cloudChain.slice(0, 3), [
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
     'nvidia/nemotron-3.5-super-vl:free',
-    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
   ]);
 });
 
@@ -852,10 +852,10 @@ test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks 
   const coreIds = CORE_SIX_SPECIALIZED_MODELS.map((m) => m.id);
   assert.equal(coreIds.length, 6);
   assert.deepEqual(coreIds, [
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
     'gemini-3.8-live',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-transcribe',
     'whisper-large-v3-turbo',
     'nvidia/nemotron-3.5-super-vl:free',
   ]);
@@ -884,7 +884,7 @@ test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks 
     brainMode: 'auto',
   });
   assert.equal(pdfRouting.specialty, 'heavy_pdf_vision');
-  assert.equal(pdfRouting.primaryModelId, 'gemini-3.8-flash');
+  assert.equal(pdfRouting.primaryModelId, 'gemini-4-hydrogen');
   assert.equal(pdfRouting.backupModelId, 'nvidia/nemotron-3.5-super-vl:free');
 
   const sheetRouting = classifyPromptSpecialtyAndPriority({
@@ -893,7 +893,7 @@ test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks 
     brainMode: 'auto',
   });
   assert.equal(sheetRouting.specialty, 'structured_excel_csv');
-  assert.equal(sheetRouting.primaryModelId, 'gemini-3.5-flash');
+  assert.equal(sheetRouting.primaryModelId, 'gemini-3.1-flash-lite');
 
   const fastGreeting = classifyPromptSpecialtyAndPriority({
     prompt: 'مرحبا',
@@ -901,7 +901,7 @@ test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks 
     brainMode: 'auto',
   });
   assert.equal(fastGreeting.specialty, 'fast_copilot_actions');
-  assert.equal(fastGreeting.primaryModelId, 'gemini-3.5-flash-lite');
+  assert.equal(fastGreeting.primaryModelId, 'gemini-3.1-flash-lite');
 
   const deepOrchestration = classifyPromptSpecialtyAndPriority({
     prompt: 'اعطنا تحليل استراتيجي شامل لأداء جميع الوكالات والمقارنة المالية',
@@ -909,7 +909,7 @@ test('src/lib/aiConfig defines the 6 core specialized models + safety fallbacks 
     brainMode: 'auto',
   });
   assert.equal(deepOrchestration.specialty, 'command_orchestration');
-  assert.equal(deepOrchestration.primaryModelId, 'gemini-3.8-flash');
+  assert.equal(deepOrchestration.primaryModelId, 'gemini-4-hydrogen');
 });
 
 test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-breaker cooldowns, and stops on user abort', async () => {
@@ -918,15 +918,15 @@ test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-bre
   const switches: string[] = [];
   const res = await executeWithSmartFallback({
     priorityModels: [
-      'gemini-3.8-flash',
+      'gemini-4-hydrogen',
       'nvidia/nemotron-3.5-super-vl:free',
-      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
     ],
     onFallbackSwitch: ({ fromModelId, toModelId }) => {
       switches.push(`${fromModelId}->${toModelId}`);
     },
     executor: async (modelId) => {
-      if (modelId === 'gemini-3.8-flash') {
+      if (modelId === 'gemini-4-hydrogen') {
         throw new Error('503 Service Unavailable - high demand');
       }
       if (modelId === 'nvidia/nemotron-3.5-super-vl:free') {
@@ -937,36 +937,36 @@ test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-bre
   });
 
   assert.equal(res.ok, true);
-  assert.equal(res.data, 'ok:gemini-3.5-flash');
-  assert.equal(res.usedModelId, 'gemini-3.5-flash');
+  assert.equal(res.data, 'ok:gemini-3.1-flash-lite');
+  assert.equal(res.usedModelId, 'gemini-3.1-flash-lite');
   assert.equal(res.fallbackUsed, true);
   assert.equal(res.quotaOrRateLimited, true);
   assert.equal(res.attempts.length, 3);
   assert.deepEqual(switches, [
-    'gemini-3.8-flash->nvidia/nemotron-3.5-super-vl:free',
-    'nvidia/nemotron-3.5-super-vl:free->gemini-3.5-flash',
+    'gemini-4-hydrogen->nvidia/nemotron-3.5-super-vl:free',
+    'nvidia/nemotron-3.5-super-vl:free->gemini-3.1-flash-lite',
   ]);
 
   // Circuit-breaker puts failed models in cooldown so healthy model is prioritized first
-  assert.equal(getModelHealthSnapshot('gemini-3.8-flash').status, 'cooldown');
+  assert.equal(getModelHealthSnapshot('gemini-4-hydrogen').status, 'cooldown');
   assert.equal(getModelHealthSnapshot('nvidia/nemotron-3.5-super-vl:free').status, 'cooldown');
-  assert.equal(getModelHealthSnapshot('gemini-3.5-flash').status, 'healthy');
+  assert.equal(getModelHealthSnapshot('gemini-3.1-flash-lite').status, 'healthy');
 
   const nextDecision = classifyPromptSpecialtyAndPriority({
     prompt: 'حلل أداء الوكالات وتوزيع الحصص بالتفصيل',
     brainMode: 'auto',
   });
-  assert.equal(nextDecision.healthyPriorityOrder[0], 'gemini-3.5-flash');
+  assert.equal(nextDecision.healthyPriorityOrder[0], 'gemini-3.1-flash-lite');
 
   // Recover primary model health via markModelSuccess
-  markModelSuccess('gemini-3.8-flash', 280);
-  assert.equal(getModelHealthSnapshot('gemini-3.8-flash').status, 'healthy');
+  markModelSuccess('gemini-4-hydrogen', 280);
+  assert.equal(getModelHealthSnapshot('gemini-4-hydrogen').status, 'healthy');
 
   // External abort stops immediately without invoking backup models
   const controller = new AbortController();
   const attemptedOnAbort: string[] = [];
   const abortRes = await executeWithSmartFallback({
-    priorityModels: ['gemini-3.8-flash', 'gemini-3.5-flash'],
+    priorityModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'],
     externalSignal: controller.signal,
     executor: async (modelId, signal) => {
       attemptedOnAbort.push(modelId);
@@ -979,7 +979,7 @@ test('executeWithSmartFallback fails over cleanly on 503/429, honors circuit-bre
   });
   assert.equal(abortRes.ok, false);
   assert.equal(abortRes.abortedByUser, true);
-  assert.deepEqual(attemptedOnAbort, ['gemini-3.8-flash']);
+  assert.deepEqual(attemptedOnAbort, ['gemini-4-hydrogen']);
 
   resetModelHealthRegistry();
 });
@@ -1038,17 +1038,17 @@ test('normalizeAssistantSettings preserves collaborationMode and resolveCollabor
     'council_review'
   );
 
-  const reviewFor38 = resolveCollaborativeReviewerChain('gemini-3.8-flash', 'command_orchestration');
-  assert.ok(reviewFor38.length >= 2);
-  assert.equal(reviewFor38.includes('gemini-3.8-flash'), false);
-  assert.equal(reviewFor38[0], 'nvidia/nemotron-3.5-super-vl:free');
+  const reviewForHydrogen = resolveCollaborativeReviewerChain('gemini-4-hydrogen', 'command_orchestration');
+  assert.ok(reviewForHydrogen.length >= 2);
+  assert.equal(reviewForHydrogen.includes('gemini-4-hydrogen'), false);
+  assert.equal(reviewForHydrogen[0], 'nvidia/nemotron-3.5-super-vl:free');
 
   const reviewForNemotron = resolveCollaborativeReviewerChain(
     'nvidia/nemotron-3.5-super-vl:free',
     'heavy_pdf_vision'
   );
   assert.equal(reviewForNemotron.includes('nvidia/nemotron-3.5-super-vl:free'), false);
-  assert.equal(reviewForNemotron[0], 'gemini-3.8-flash');
+  assert.equal(reviewForNemotron[0], 'gemini-4-hydrogen');
 });
 
 test('offline brain and executor handle forecast, macro execution (zero-trust drafts), and workspace canvas summoning', () => {
@@ -1409,19 +1409,19 @@ test('server AI orchestrator detects comprehension failures and orders healthy m
 
   // Server health ordering pushes cooled-down/weak model behind healthy backup
   const baseChain = [
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
   ];
-  markServerModelFailure(AI_FREE_MODELS.GEMINI_3_8_FLASH, 'weak_reply', 1000);
+  markServerModelFailure(AI_FREE_MODELS.GEMINI_4_HYDROGEN, 'weak_reply', 1000);
   const reordered = applyServerHealthOrdering(baseChain, 1500);
   assert.equal(reordered[0], AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL);
-  assert.equal(reordered[reordered.length - 1], AI_FREE_MODELS.GEMINI_3_8_FLASH);
+  assert.equal(reordered[reordered.length - 1], AI_FREE_MODELS.GEMINI_4_HYDROGEN);
 
   // Recovering resets cooldown immediately
-  markServerModelSuccess(AI_FREE_MODELS.GEMINI_3_8_FLASH, 420, 2000);
+  markServerModelSuccess(AI_FREE_MODELS.GEMINI_4_HYDROGEN, 420, 2000);
   const recovered = applyServerHealthOrdering(baseChain, 2100);
-  assert.equal(recovered[0], AI_FREE_MODELS.GEMINI_3_8_FLASH);
+  assert.equal(recovered[0], AI_FREE_MODELS.GEMINI_4_HYDROGEN);
   resetServerModelHealth();
 });
 
@@ -1431,12 +1431,12 @@ test('executeWithSmartFallback switches immediately on weak HTTP-200 replies and
 
   const result = await executeWithSmartFallback<{ text: string }>({
     priorityModels: [
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     ],
     executor: async (modelId) => {
       calls.push(modelId);
-      if (modelId === AI_FREE_MODELS.GEMINI_3_8_FLASH) {
+      if (modelId === AI_FREE_MODELS.GEMINI_4_HYDROGEN) {
         return {
           value: { text: 'لم أفهم طلبك، أعتذر لا أستطيع المساعدة في ذلك.' },
           usedModelId: modelId,
@@ -1458,7 +1458,7 @@ test('executeWithSmartFallback switches immediately on weak HTTP-200 replies and
   // When every model produces a weak reply, bestWeakOutcome still resolves safely instead of failing hard
   const allWeak = await executeWithSmartFallback<{ text: string }>({
     priorityModels: [
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
     ],
     executor: async (modelId) => ({
@@ -1479,4 +1479,42 @@ test('zeroTrustExtract module imports cleanly in Node without browser dependenci
   });
   assert.equal(cell.status, 'verified');
 });
+
+test('executeWithSmartFallback fails over immediately on HTTP 404/400 without stalling and KB DOM targets stay valid', async () => {
+  resetModelHealthRegistry();
+  const attempted: string[] = [];
+  const res404 = await executeWithSmartFallback({
+    priorityModels: [
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+    ],
+    executor: async (modelId) => {
+      attempted.push(modelId);
+      if (modelId === AI_FREE_MODELS.GEMINI_4_HYDROGEN) {
+        const err = new Error('404 NOT_FOUND: model unsupported') as Error & { status?: number };
+        err.status = 404;
+        throw err;
+      }
+      return { value: `recovered:${modelId}`, usedModelId: modelId };
+    },
+  });
+
+  assert.equal(res404.ok, true);
+  assert.equal(res404.data, `recovered:${AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE}`);
+  assert.deepEqual(attempted, [
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+  ]);
+  assert.equal(getModelHealthSnapshot(AI_FREE_MODELS.GEMINI_4_HYDROGEN).status, 'cooldown');
+  resetModelHealthRegistry();
+
+  assert.ok(ASSISTANT_KNOWLEDGE_BASE.length >= 16);
+  for (const entry of ASSISTANT_KNOWLEDGE_BASE) {
+    assert.ok(entry.domTargetId.trim().length > 0, `missing domTargetId for ${entry.id}`);
+    assert.ok(entry.targetView.trim().length > 0, `missing targetView for ${entry.id}`);
+  }
+  const offlineKb = findKnowledgeEntry('شلون يشتغل التطبيق بدون نت أوفلاين؟');
+  assert.equal(offlineKb?.id, 'offline_and_pwa_sync');
+});
+
 

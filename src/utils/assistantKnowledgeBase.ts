@@ -188,6 +188,25 @@ export const ASSISTANT_KNOWLEDGE_BASE: KnowledgeGuideEntry[] = [
     targetView: 'account_security',
     domTargetId: 'account-security-root',
   },
+  {
+    id: 'offline_and_pwa_sync',
+    title: 'العمل بدون إنترنت (أوفلاين) والمزامنة التلقائية',
+    keywords: [
+      'اوفلاين',
+      'أوفلاين',
+      'بدون نت',
+      'بدون انترنت',
+      'انقطاع النت',
+      'تثبيت التطبيق',
+      'pwa',
+      'المزامنة التلقائية',
+    ],
+    whatItIs: 'نظام حفظ ومزامنة فوري يعمل أونلاين وأوفلاين مع إمكانية تثبيت التطبيق على جهازك والعمل بسرعة محلية كاملة.',
+    benefit: 'تستمر جميع عملياتك والجداول والملاحظات بدون أي توقف عند انقطاع الإنترنت، وبمجرد عودته يرفع التطبيق كل التعديلات وينفذ الطلبات المؤجلة تلقائياً.',
+    howToUse: 'اعمل بشكل طبيعي في أي شاشة، أو افتح «الحساب والأمان» لمتابعة طابور المزامنة أو اضغط «تثبيت التطبيق» من قائمة الحساب.',
+    targetView: 'account_security',
+    domTargetId: 'account-security-root',
+  },
 ];
 
 export function findKnowledgeEntry(query: string): KnowledgeGuideEntry | null {

@@ -817,11 +817,15 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
   );
 
   const renderAgenciesSection = () => (
-    <section key="agencies" className="space-y-4">
+    <section
+      key="agencies"
+      data-assistant-target="hub-agencies-grid"
+      className="space-y-4"
+    >
       <div className="nexus-squircle flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[220px]">
           <div
-            className="flex items-center gap-2 rounded-full border px-3.5 h-10 flex-1 max-w-xs"
+            className="flex items-center gap-2 rounded-xl border px-3 h-10 flex-1 max-w-xs transition-colors focus-within:border-[var(--accent)]"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -840,7 +844,13 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div
+            className="inline-flex flex-wrap items-center gap-1 rounded-xl border p-1"
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
             {(
               [
                 ['all', `الكل (${agencyRows.length})`],
@@ -864,17 +874,16 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                   key={tabId}
                   type="button"
                   onClick={() => setFilterTab(tabId)}
-                  className="nexus-pill-btn relative min-h-[36px] border px-3.5 py-1 text-xs font-bold whitespace-nowrap"
+                  className="relative h-8 rounded-lg px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   style={{
-                    backgroundColor: isSelected ? 'transparent' : 'var(--bg-main)',
-                    borderColor: isSelected ? 'transparent' : 'var(--border-color)',
+                    backgroundColor: isSelected ? 'var(--bg-surface)' : 'transparent',
                     color: isSelected ? 'var(--accent)' : 'var(--text-muted)',
                   }}
                 >
                   {isSelected && (
                     <TabrixPillIndicator
                       layoutId="agencies-filter-pill"
-                      className="rounded-full"
+                      className="rounded-lg"
                     />
                   )}
                   <span className="relative z-10">{label}</span>
@@ -884,12 +893,12 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as AgencySortKey)}
             aria-label="ترتيب الوكالات"
-            className="min-h-[38px] rounded-full border px-3.5 py-1.5 text-xs font-bold"
+            className="h-10 rounded-xl border px-3 text-xs font-bold cursor-pointer"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -1142,7 +1151,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             }
                             title={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
                             aria-label={agency.isLocked ? 'فتح الوكالة' : 'قفل الوكالة'}
-                            className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
                             style={{
                               backgroundColor: 'var(--bg-main)',
                               borderColor: 'var(--border-color)',
@@ -1166,7 +1175,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                             }}
                             title="تعديل الوكالة"
                             aria-label="تعديل الوكالة"
-                            className="nexus-pill-btn inline-flex h-8 w-8 items-center justify-center border"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
                             style={{
                               backgroundColor: 'var(--bg-main)',
                               borderColor: 'var(--border-color)',
@@ -1179,21 +1188,24 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       )}
                     </div>
 
-                    {/* Card Metrics 2x2 */}
-                    <div className="grid grid-cols-2 gap-2.5 py-4">
-                      <div className="metric-well p-3">
+                    {/* Card Metrics 2x2 Flat Hairline Grid */}
+                    <div
+                      className="grid grid-cols-2 gap-x-4 gap-y-3 py-4 border-b"
+                      style={{ borderColor: 'var(--border-color)' }}
+                    >
+                      <div className="space-y-0.5">
                         <div
                           className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           العائلات النشطة
                         </div>
-                        <div className="mt-1 text-base font-black tabular-nums">
+                        <div className="text-base font-black tabular-nums">
                           {metrics.activeHouseholds.toLocaleString('en-US')}
                         </div>
                       </div>
 
-                      <div className="metric-well p-3">
+                      <div className="space-y-0.5">
                         <div
                           className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
@@ -1201,27 +1213,27 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           الأفراد
                         </div>
                         <div
-                          className="mt-1 text-base font-black tabular-nums"
+                          className="text-base font-black tabular-nums"
                           style={{ color: 'var(--accent)' }}
                         >
                           {metrics.activeIndividuals.toLocaleString('en-US')}
                         </div>
                       </div>
 
-                      <div className="metric-well p-3">
+                      <div className="space-y-0.5 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
                         <div
                           className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           الأكياس المطلوبة
                         </div>
-                        <div className="mt-1 text-sm font-black tabular-nums">
+                        <div className="text-sm font-black tabular-nums">
                           {metrics.fullBags.toLocaleString('en-US')} كيس
                           {metrics.remainderKg > 0 && ` + ${metrics.remainderKg}ك`}
                         </div>
                       </div>
 
-                      <div className="metric-well p-3">
+                      <div className="space-y-0.5 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
                         <div
                           className="text-[11px] font-medium"
                           style={{ color: 'var(--text-muted)' }}
@@ -1229,7 +1241,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                           صافي الربح
                         </div>
                         <div
-                          className="mt-1 text-sm font-black tabular-nums"
+                          className="text-sm font-black tabular-nums"
                           style={{
                             color:
                               metrics.profit >= 0
@@ -1242,8 +1254,8 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Share & Audit Footer with Glowing Amber Gold Progress Bar */}
-                    <div className="space-y-3">
+                    {/* Share & Audit Footer */}
+                    <div className="space-y-3 pt-3.5">
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
                           <span
@@ -1277,14 +1289,14 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenAgencyRoster(agency.id)}
-                        className="nexus-pill-btn inline-flex min-h-[42px] w-full items-center justify-center gap-2 border px-4 py-2 text-xs font-extrabold whitespace-nowrap hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)]"
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border px-4 text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)]"
                         style={{
                           backgroundColor: 'var(--bg-main)',
                           borderColor: 'var(--border-color)',
                           color: 'var(--text-primary)',
                         }}
                       >
-                        <Table2 className="h-4 w-4" />
+                        <Table2 className="h-4 w-4 shrink-0" />
                         <span>عرض جدول الوكالة</span>
                       </button>
                     </div>
@@ -1608,7 +1620,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
           </div>
 
           <div
-            className="inline-flex rounded-full border p-1 text-[11px] font-bold"
+            className="inline-flex rounded-xl border p-1 text-[11px] font-bold"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -1626,7 +1638,7 @@ export const AgenciesHubView: React.FC<AgenciesHubViewProps> = ({
                 key={key}
                 type="button"
                 onClick={() => setComparisonMetric(key)}
-                className="nexus-pill-btn px-3 py-1 whitespace-nowrap"
+                className="rounded-lg px-3 py-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                 style={{
                   backgroundColor:
                     comparisonMetric === key ? 'var(--bg-surface)' : 'transparent',

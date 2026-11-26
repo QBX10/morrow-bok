@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Music, Pause, Play, Volume2, VolumeX } from 'lucide-react';
+import { Music, Pause, Play, RefreshCw, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import {
   getBackgroundMusicSnapshot,
+  retryBackgroundMusicPlayback,
+  setBackgroundMusicSmartMode,
   setBackgroundMusicVolume,
   subscribeBackgroundMusic,
   toggleBackgroundMusic,
@@ -71,7 +73,9 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
   const isAutoPaused = !snapshot.userPaused && Boolean(snapshot.pauseReason);
   const volumePercent = Math.round(snapshot.volume * 100);
 
-  const statusText = snapshot.hasError
+  const statusText = snapshot.usingSynthFallback
+    ? 'نغمة هادئة احتياطية (بدون اتصال)'
+    : snapshot.hasError
     ? 'تعذر تحميل المسار الصوتي'
     : snapshot.userPaused
     ? 'متوقفة يدوياً'
@@ -129,8 +133,8 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
         data-testid="bg-music-trigger"
         className={
           isFloating
-            ? 'smoked-glass-elevated nexus-pill-btn inline-flex h-10 items-center gap-2 border px-3.5 text-xs font-bold shadow-xl cursor-pointer'
-            : 'nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-bold whitespace-nowrap cursor-pointer'
+            ? 'smoked-glass-elevated inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-bold shadow-lg whitespace-nowrap shrink-0 cursor-pointer'
+            : 'inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer'
         }
         style={{
           backgroundColor: open ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
@@ -145,28 +149,16 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
             className="inline-flex h-3.5 items-end gap-[2px] px-0.5"
           >
             <span
-              className={`w-[2.5px] rounded-full ${
-                reducedMotion ? 'h-2.5' : 'animate-pulse h-3'
-              }`}
-              style={{ backgroundColor: 'var(--accent)' }}
+              className={`w-[2.5px] h-3 rounded-sm ${reducedMotion ? '' : 'morrow-eq-bar'}`}
+              style={{ backgroundColor: 'var(--accent)', animationDelay: '0ms' }}
             />
             <span
-              className={`w-[2.5px] rounded-full ${
-                reducedMotion ? 'h-3' : 'animate-pulse h-2'
-              }`}
-              style={{
-                backgroundColor: 'var(--accent)',
-                animationDelay: '180ms',
-              }}
+              className={`w-[2.5px] h-2 rounded-sm ${reducedMotion ? '' : 'morrow-eq-bar'}`}
+              style={{ backgroundColor: 'var(--accent)', animationDelay: '180ms' }}
             />
             <span
-              className={`w-[2.5px] rounded-full ${
-                reducedMotion ? 'h-2' : 'animate-pulse h-3.5'
-              }`}
-              style={{
-                backgroundColor: 'var(--accent)',
-                animationDelay: '340ms',
-              }}
+              className={`w-[2.5px] h-3.5 rounded-sm ${reducedMotion ? '' : 'morrow-eq-bar'}`}
+              style={{ backgroundColor: 'var(--accent)', animationDelay: '340ms' }}
             />
           </span>
         ) : snapshot.userPaused || snapshot.volume <= 0.005 ? (
@@ -266,18 +258,12 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
               </button>
             </div>
 
-            <div
-              className="mt-3 rounded-xl border px-3 py-2.5"
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                borderColor: 'var(--border-color)',
-              }}
-            >
-              <div className="mb-1.5 flex items-center justify-between text-[11px]">
+            <div className="mt-3 pt-2.5 border-t space-y-2.5" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="flex items-center justify-between text-[11px]">
                 <button
                   type="button"
                   onClick={handleToggleMute}
-                  className="inline-flex items-center gap-1.5 font-bold hover:opacity-80 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 font-bold hover:opacity-80 cursor-pointer whitespace-nowrap"
                   style={{ color: 'var(--text-secondary)' }}
                   aria-label={snapshot.volume > 0 ? 'كتم الصوت' : 'إعادة الصوت'}
                 >
@@ -315,6 +301,43 @@ export const BackgroundMusicControl: React.FC<BackgroundMusicControlProps> = ({
                 data-testid="bg-music-volume-slider"
                 className="h-1.5 w-full cursor-pointer accent-[var(--accent)]"
               />
+
+              <label className="flex items-center justify-between gap-2 pt-1 cursor-pointer">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+                  <Sparkles className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                  <span>التوقف الذكي التلقائي</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={snapshot.smartModeEnabled}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    playTactileFeedback(next ? 'toggle_on' : 'toggle_off');
+                    setBackgroundMusicSmartMode(next);
+                  }}
+                  aria-label="التوقف الذكي التلقائي للموسيقى"
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                />
+              </label>
+
+              {(snapshot.hasError || snapshot.awaitingGesture || snapshot.usingSynthFallback) && !snapshot.userPaused && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTactileFeedback('tap');
+                    retryBackgroundMusicPlayback();
+                  }}
+                  className="flex w-full h-8 items-center justify-center gap-1.5 rounded-xl border text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent)]"
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>{snapshot.awaitingGesture ? 'تنشيط الصوت الآن' : 'إعادة تحميل المسار الأصلي'}</span>
+                </button>
+              )}
             </div>
 
             <div

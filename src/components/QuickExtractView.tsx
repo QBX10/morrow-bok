@@ -2293,10 +2293,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenAiModelsStudio}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
-                style={{ borderColor: 'var(--border-color)' }}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
               >
-                <Cpu className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                <Cpu className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
                 <span>معمارية النماذج</span>
               </button>
             )}
@@ -2304,10 +2307,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               <button
                 type="button"
                 onClick={() => setReportsModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
-                style={{ borderColor: 'var(--border-color)' }}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
               >
-                <BarChart3 className="h-3.5 w-3.5" />
+                <BarChart3 className="h-3.5 w-3.5 shrink-0" />
                 <span>التقارير والإحصاء</span>
               </button>
             )}
@@ -2315,10 +2321,13 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               <button
                 type="button"
                 onClick={resetAll}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
-                style={{ borderColor: 'var(--border-color)' }}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                 <span>بدء عملية جديدة</span>
               </button>
             )}
@@ -2326,49 +2335,89 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
         </div>
 
         {/* 3-Stage Stepper Strip */}
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {(() => {
+            const stage1Active = analysis === null || analysis.status === 'rejected';
+            const stage1Done = !stage1Active;
+            return (
+              <div
+                className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs transition-colors"
+                style={{
+                  backgroundColor: stage1Active ? 'var(--bg-nav-active)' : 'var(--bg-main)',
+                  borderColor: stage1Active
+                    ? 'var(--accent)'
+                    : stage1Done
+                    ? 'color-mix(in srgb, var(--success) 45%, var(--border-color))'
+                    : 'var(--border-color)',
+                  color: stage1Active ? 'var(--accent)' : 'var(--text-primary)',
+                }}
+              >
+                <span
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-black tabular-nums"
+                  style={{
+                    backgroundColor: stage1Done
+                      ? 'var(--success-bg)'
+                      : stage1Active
+                      ? 'var(--accent)'
+                      : 'var(--bg-surface)',
+                    color: stage1Done
+                      ? 'var(--success)'
+                      : stage1Active
+                      ? 'var(--accent-fg)'
+                      : 'var(--text-muted)',
+                  }}
+                >
+                  {stage1Done ? <CheckCircle2 className="h-3.5 w-3.5" /> : '01'}
+                </span>
+                <span className="font-bold leading-snug">
+                  الاستيعاب الشامل وفهم المحتوى وخطة القراءة
+                </span>
+              </div>
+            );
+          })()}
+
           <div
-            className="rounded-lg border px-3 py-2 text-xs font-bold"
+            className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs transition-colors"
             style={{
-              backgroundColor:
-                analysis === null || analysis.status === 'rejected'
-                  ? 'var(--bg-nav-active)'
-                  : 'var(--bg-main)',
-              borderColor:
-                analysis === null || analysis.status === 'rejected'
-                  ? 'var(--accent)'
-                  : 'var(--border-color)',
-            }}
-          >
-            01. الاستيعاب الشامل وفهم المحتوى وخطة القراءة
-          </div>
-          <div
-            className="rounded-lg border px-3 py-2 text-xs font-bold"
-            style={{
-              backgroundColor: stage2Active
-                ? 'var(--danger-bg)'
-                : 'var(--bg-main)',
-              borderColor: stage2Active
-                ? 'var(--danger)'
-                : 'var(--border-color)',
+              backgroundColor: stage2Active ? 'var(--danger-bg)' : 'var(--bg-main)',
+              borderColor: stage2Active ? 'var(--danger)' : 'var(--border-color)',
               color: stage2Active ? 'var(--danger)' : 'var(--text-primary)',
             }}
           >
-            02. كشف الشك باللون الأحمر والتغطية والدمج التدريجي
+            <span
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-black tabular-nums"
+              style={{
+                backgroundColor: stage2Active ? 'var(--danger)' : 'var(--bg-surface)',
+                color: stage2Active ? '#fff' : 'var(--text-muted)',
+              }}
+            >
+              {stage2Active ? <ShieldAlert className="h-3.5 w-3.5" /> : '02'}
+            </span>
+            <span className="font-bold leading-snug">
+              كشف الشك باللون الأحمر والتغطية والدمج التدريجي
+            </span>
           </div>
+
           <div
-            className="rounded-lg border px-3 py-2 text-xs font-bold"
+            className="flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs transition-colors"
             style={{
-              backgroundColor: stage3Active
-                ? 'var(--success-bg)'
-                : 'var(--bg-main)',
-              borderColor: stage3Active
-                ? 'var(--success)'
-                : 'var(--border-color)',
+              backgroundColor: stage3Active ? 'var(--success-bg)' : 'var(--bg-main)',
+              borderColor: stage3Active ? 'var(--success)' : 'var(--border-color)',
               color: stage3Active ? 'var(--success)' : 'var(--text-muted)',
             }}
           >
-            03. التحضير والفلترة النهائية والتوجيه والترحيل
+            <span
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-black tabular-nums"
+              style={{
+                backgroundColor: stage3Active ? 'var(--success)' : 'var(--bg-surface)',
+                color: stage3Active ? '#fff' : 'var(--text-muted)',
+              }}
+            >
+              {stage3Active ? <CheckCircle2 className="h-3.5 w-3.5" /> : '03'}
+            </span>
+            <span className="font-bold leading-snug">
+              التحضير والفلترة النهائية والتوجيه والترحيل
+            </span>
           </div>
         </div>
 
@@ -2386,7 +2435,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('pdf');
               setUploadError('');
             }}
-            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-xs font-bold whitespace-nowrap"
             style={{
               color:
                 captureMode === 'pdf'
@@ -2400,7 +2449,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 className="rounded-lg"
               />
             )}
-            <FileText className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <FileText className="relative z-10 h-4 w-4 shrink-0" />
             <span className="relative z-10">ملفات PDF</span>
           </button>
 
@@ -2410,7 +2459,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('camera_burst');
               setUploadError('');
             }}
-            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-xs font-bold whitespace-nowrap"
             style={{
               color:
                 captureMode === 'camera_burst'
@@ -2424,7 +2473,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 className="rounded-lg"
               />
             )}
-            <Camera className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <Camera className="relative z-10 h-4 w-4 shrink-0" />
             <span className="relative z-10">كاميرا الدفتر اليدوي (Burst)</span>
           </button>
 
@@ -2434,7 +2483,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
               setCaptureMode('universal_files');
               setUploadError('');
             }}
-            className="relative overflow-hidden inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-start text-[11px] font-bold sm:px-4 sm:py-2 sm:text-xs"
+            className="relative overflow-hidden inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-start text-xs font-bold whitespace-nowrap"
             style={{
               color:
                 captureMode === 'universal_files'
@@ -2448,7 +2497,7 @@ export const QuickExtractView: React.FC<QuickExtractViewProps> = ({
                 className="rounded-lg"
               />
             )}
-            <Layers className="relative z-10 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <Layers className="relative z-10 h-4 w-4 shrink-0" />
             <span className="relative z-10">استيعاب شامل (صور / Word / Excel / نص)</span>
           </button>
         </div>

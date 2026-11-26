@@ -304,7 +304,7 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
             type="button"
             onClick={handleToggleOpen}
             aria-expanded={isOpen}
-            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-all duration-150"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border px-4 text-xs font-semibold whitespace-nowrap transition-all duration-150"
             style={{
               backgroundColor: isOpen ? 'var(--bg-nav-active)' : 'var(--accent)',
               borderColor: 'var(--accent)',
@@ -387,29 +387,29 @@ export const SmartExtractionLab: React.FC<SmartExtractionLabProps> = ({
                       color: 'var(--text-muted)',
                     }}
                   >
-                    <th className="px-3 py-2.5 font-semibold">#</th>
-                    <th className="px-3 py-2.5 font-semibold">
+                    <th className="px-3 py-2.5 font-semibold whitespace-nowrap">#</th>
+                    <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
                       اسم المستفيد (قاعدة 99%)
                     </th>
-                    <th className="px-3 py-2.5 font-semibold">
+                    <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
                       الأفراد (الكلية)
                     </th>
                     {columnVisibility.showEligible && (
-                      <th className="px-3 py-2.5 font-semibold">المستحقة</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">المستحقة</th>
                     )}
                     {columnVisibility.showDecrease && (
-                      <th className="px-3 py-2.5 font-semibold">نزول/محجوب</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">نزول/محجوب</th>
                     )}
                     {columnVisibility.showAddDel && (
-                      <th className="px-3 py-2.5 font-semibold">إضافة / حذف</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">إضافة / حذف</th>
                     )}
                     {columnVisibility.showDate && (
-                      <th className="px-3 py-2.5 font-semibold">التاريخ</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">التاريخ</th>
                     )}
                     {columnVisibility.showNotes && (
-                      <th className="px-3 py-2.5 font-semibold">ملاحظات</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">ملاحظات</th>
                     )}
-                    <th className="px-3 py-2.5 font-semibold">إجراءات التحقق</th>
+                    <th className="px-3 py-2.5 font-semibold whitespace-nowrap">إجراءات التحقق</th>
                   </tr>
                 </thead>
                 <tbody>

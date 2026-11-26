@@ -1,5 +1,6 @@
 import {
   GoogleGenAI,
+  ThinkingLevel,
   Type,
   type FunctionDeclaration,
 } from '@google/genai';
@@ -191,20 +192,22 @@ export function markServerModelSuccess(
 
 export function markServerModelFailure(
   modelId: ApprovedCloudModelId,
-  kind: 'rate_limited_429' | 'timeout_503' | 'weak_reply' | 'error',
+  kind: 'rate_limited_429' | 'timeout_503' | 'weak_reply' | 'not_found_404' | 'error',
   nowMs: number = Date.now()
 ): void {
   const rec = getServerHealthRecord(modelId);
   rec.consecutiveFailures += 1;
-  rec.lastErrorKind = kind;
+  rec.lastErrorKind = kind === 'not_found_404' ? 'error' : kind;
   const baseCooldown =
-    kind === 'rate_limited_429'
-      ? 55_000
-      : kind === 'timeout_503'
-        ? 35_000
-        : kind === 'weak_reply'
-          ? 12_000
-          : 20_000;
+    kind === 'not_found_404'
+      ? 120_000
+      : kind === 'rate_limited_429'
+        ? 55_000
+        : kind === 'timeout_503'
+          ? 35_000
+          : kind === 'weak_reply'
+            ? 12_000
+            : 25_000;
   const factor = Math.min(3, rec.consecutiveFailures);
   rec.cooldownUntilMs = nowMs + baseCooldown * factor;
 }
@@ -239,7 +242,7 @@ export function resetServerModelHealth(): void {
 }
 
 function classifyProviderError(err: unknown): {
-  kind: 'rate_limited_429' | 'timeout_503' | 'error';
+  kind: 'rate_limited_429' | 'timeout_503' | 'not_found_404' | 'error';
   retryable: boolean;
   message: string;
 } {
@@ -260,6 +263,16 @@ function classifyProviderError(err: unknown): {
     lower.includes('quota')
   ) {
     return { kind: 'rate_limited_429', retryable: true, message: msg };
+  }
+
+  if (
+    status === 404 ||
+    lower.includes('404') ||
+    lower.includes('not_found') ||
+    lower.includes('not found') ||
+    lower.includes('unsupported')
+  ) {
+    return { kind: 'not_found_404', retryable: false, message: msg };
   }
 
   if (
@@ -463,8 +476,15 @@ async function callGoogleModel(params: {
   if (Array.isArray(options.tools) && options.tools.length > 0) {
     config.tools = [{ functionDeclarations: options.tools }];
   }
-  if (typeof options.temperature === 'number') {
+  const isGemini4 = modelId.startsWith('gemini-4');
+  if (!isGemini4 && typeof options.temperature === 'number') {
     config.temperature = options.temperature;
+  }
+  if (
+    options.pipeline === 'fast_assistant' &&
+    (isGemini4 || modelId.startsWith('gemini-3.1'))
+  ) {
+    config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
   }
 
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -847,13 +867,13 @@ export async function executeWithFallback(
           hadRateLimitOrTimeout = true;
           markServerModelFailure(modelId, classified.kind);
         } else {
-          markServerModelFailure(modelId, 'error');
+          markServerModelFailure(modelId, classified.kind);
         }
         attempts.push({
           modelId,
           provider: spec.provider,
           attempt: attempt + 1,
-          status: classified.kind,
+          status: classified.kind === 'not_found_404' ? 'error' : classified.kind,
           latencyMs: Date.now() - attemptStart,
           detail: classified.message.slice(0, 220),
         });
@@ -966,10 +986,12 @@ export async function executeCollaborativeOrchestration(
   }
 
   const promptLen = (options.originalUserPrompt || options.promptText || '').trim().length;
+  const isFast = options.pipeline === 'fast_assistant';
   const shouldVerify =
-    collaborationMode === 'multi_step_agent' ||
-    (collaborationMode === 'council_review' &&
-      (primary.toolCalls.length > 0 || (promptLen >= 36 && primary.text.length >= 160)));
+    !isFast &&
+    (collaborationMode === 'multi_step_agent' ||
+      (collaborationMode === 'council_review' &&
+        (primary.toolCalls.length > 0 || (promptLen >= 36 && primary.text.length >= 160))));
 
   if (!shouldVerify) {
     return {
@@ -1146,8 +1168,8 @@ function extensionForAudioMime(mimeType: string): string {
 
 /**
  * Audio Pipeline:
- * 1. whisper-large-v3-turbo (Groq API)
- * 2. Fallback to gemini-3.8-flash -> gemini-3.5-flash (Google AI Studio)
+ * 1. gemini-3.5-transcribe / whisper-large-v3-turbo (Groq API)
+ * 2. Fallback to gemini-4-hydrogen -> gemini-3.1-flash-lite (Google AI Studio)
  */
 export async function executeAudioTranscriptionWithFallback(
   options: ExecuteAudioTranscriptionOptions
@@ -1254,7 +1276,7 @@ export async function executeAudioTranscriptionWithFallback(
             modelId,
             provider: 'groq',
             attempt: attempt + 1,
-            status: classified.kind,
+            status: classified.kind === 'not_found_404' ? 'error' : classified.kind,
             latencyMs: Date.now() - attemptStart,
             detail: classified.message.slice(0, 220),
           });
@@ -1344,7 +1366,7 @@ export async function executeAudioTranscriptionWithFallback(
             modelId,
             provider: 'google',
             attempt: attempt + 1,
-            status: classified.kind,
+            status: classified.kind === 'not_found_404' ? 'error' : classified.kind,
             latencyMs: Date.now() - attemptStart,
             detail: classified.message.slice(0, 220),
           });
@@ -1429,7 +1451,7 @@ export async function liveTestAiModelOrTask(params: {
 
   const targetModelId: ApprovedCloudModelId = resolvedTask
     ? resolvedTask.primaryModelId
-    : (getAiModelSpec(cleanModel || AI_FREE_MODELS.GEMINI_3_8_FLASH)
+    : (getAiModelSpec(cleanModel || AI_FREE_MODELS.GEMINI_4_HYDROGEN)
         .id as ApprovedCloudModelId);
 
   const probeChain: ApprovedCloudModelId[] = resolvedTask
@@ -1521,11 +1543,12 @@ export async function liveTestAiModelOrTask(params: {
       (id) => id !== AI_FREE_MODELS.GROQ_WHISPER_TURBO
     );
     const fallbackPing = await executeWithFallback({
-      pipeline: 'audio',
+      pipeline: 'deep_assistant',
       preferredChain:
-        googleBackupChain.length > 0
+        googleBackupChain.length > 0 &&
+        !googleBackupChain.includes(AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE)
           ? googleBackupChain
-          : [AI_FREE_MODELS.GEMINI_3_8_FLASH, AI_FREE_MODELS.GEMINI_3_5_FLASH],
+          : [AI_FREE_MODELS.GEMINI_4_HYDROGEN, AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE],
       promptText: 'أجب بكلمتين فقط: جاهز للصوت.',
       maxRetriesPerModel: 1,
       timeoutMs: 10000,
@@ -1575,8 +1598,8 @@ export async function liveTestAiModelOrTask(params: {
     const backupPing = await executeWithFallback({
       pipeline: 'deep_assistant',
       preferredChain: [
-        AI_FREE_MODELS.GEMINI_3_8_FLASH,
-        AI_FREE_MODELS.GEMINI_3_5_FLASH,
+        AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+        AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
         AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
       ],
       promptText: 'أجب بعبارة قصيرة: قناة الاحتياط للجلسة المباشرة جاهزة.',
@@ -1736,15 +1759,15 @@ export function getOrchestrationStatusSnapshot() {
       powerRank: AI_MODEL_REGISTRY[MORROW_LOCAL_MODEL_ID].powerRank,
       configured: true,
     },
-    defaultModel: AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    balancedModel: AI_FREE_MODELS.GEMINI_3_5_FLASH,
-    fastModel: AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+    defaultModel: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    balancedModel: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    fastModel: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     audioModel: AI_FREE_MODELS.GROQ_WHISPER_TURBO,
     reasoningFallbackModel: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     autoRouterFallbackModel: AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
     fallbackModel: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     liveModel: AI_FREE_MODELS.GEMINI_3_8_LIVE,
-    multimodalModel: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    multimodalModel: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     modelsCount: models.length,
     totalModelsWithLocalCount: modelsSortedStrongestFirst.length,
     orchestrationCoreCount: SIX_FREE_CLOUD_MODELS.length,

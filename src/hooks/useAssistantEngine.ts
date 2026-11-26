@@ -80,6 +80,7 @@ import {
 import { buildBeforeAfterDiff, validateToolCall } from '../utils/assistantTools.ts';
 import {
   getEngineDisplayMeta,
+  isDeepAnalyticalPrompt,
   mapModelIdToEngineSource,
 } from '../utils/morrowRouter.ts';
 import { autoLinkQuickNoteToPerson } from '../utils/quickNotesMatcher.ts';
@@ -293,7 +294,7 @@ export function useAssistantEngine(params: {
       engineUsed: 'morrow_local',
       engineLabel: localMeta.badgeLabel,
       modelId: localMeta.modelId,
-      text: 'أهلاً بك في مساعد Morrow الذكي. يتم توجيه كل مهمة تلقائياً وفق تخصص النماذج الستة وأولويتها (3.8 Flash للمهام الثقيلة والرؤية · 3.8 Live للمباشر · 3.5 Flash للبيانات · 3.5 Lite للاستجابة الفورية · Groq Whisper للصوت · Nemotron للاستنتاج المستقل) مع التحويل الذكي التلقائي وبقاء Morrow المحلي كمرجع صامد.',
+      text: 'أهلاً بك في مساعد Morrow الذكي. يتم توجيه كل مهمة تلقائياً وفق تخصص النماذج الستة وأولويتها (Gemini 4 Hydrogen للمهام الثقيلة والرؤية · Gemini 3.8 Live للمباشر · Gemini 3.1 Flash Lite للاستجابة الفورية والبيانات · Gemini 3.5 Transcribe للصوت · Groq Whisper للصوت فائق السرعة · Nemotron 3.5 VL للاستنتاج المستقل) مع التحويل الذكي التلقائي وبقاء Morrow المحلي كمرجع صامد.',
       choices: [
         {
           id: 'welcome_check_health',
@@ -547,6 +548,8 @@ export function useAssistantEngine(params: {
   }, []);
 
   const wasCloudReadyRef = useRef<boolean>(browserOnline && cloudConfigured);
+  const [autoReplayTrigger, setAutoReplayTrigger] = useState(0);
+
   useEffect(() => {
     let lastCheckedAt = 0;
     const checkStatus = async (forceCheck = false) => {
@@ -587,9 +590,10 @@ export function useAssistantEngine(params: {
           if (pendingCount > 0) {
             emitAppToast({
               title: 'عاد الاتصال بالسحابة الذكية',
-              description: `لديك ${pendingCount} طلب مؤجل من وضع الأوفلاين جاهز للتنفيذ الآن في المساعد.`,
+              description: `جاري المزامنة والتنفيذ التلقائي لـ ${pendingCount} طلب مؤجل من وضع الأوفلاين...`,
               tone: 'info',
             });
+            setAutoReplayTrigger((n) => n + 1);
           }
         }
         wasCloudReadyRef.current = cloudOk;
@@ -610,11 +614,18 @@ export function useAssistantEngine(params: {
         void checkStatus(false);
       }
     };
+    const reconnectProbeTimer = window.setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine !== false && !wasCloudReadyRef.current) {
+        void checkStatus(true);
+      }
+    }, 20_000);
+
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
     return () => {
+      window.clearInterval(reconnectProbeTimer);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('focus', onFocusOrVisible);
@@ -679,6 +690,12 @@ export function useAssistantEngine(params: {
       title: string;
       description: string;
     }) => {
+      setIsOpen(false);
+      if (opts.view === 'morrow_center') {
+        setActiveCommandCenterTab(
+          opts.targetId === 'morrow-memory-panel' ? 'memory' : 'chat'
+        );
+      }
       runtime.navigate(opts.view, opts.settingsSection);
       setSpotlight({
         targetId: opts.targetId,
@@ -690,18 +707,9 @@ export function useAssistantEngine(params: {
       if (spotlightTimerRef.current) {
         window.clearTimeout(spotlightTimerRef.current);
       }
-      window.setTimeout(() => {
-        const el = document.querySelector(
-          `[data-assistant-target="${opts.targetId}"]`
-        );
-        if (el instanceof HTMLElement) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 120);
-
       spotlightTimerRef.current = window.setTimeout(() => {
         setSpotlight(null);
-      }, 6500);
+      }, 9500);
     },
     [runtime]
   );
@@ -1580,13 +1588,13 @@ export function useAssistantEngine(params: {
         return;
       }
 
-      // Economy mode OR deterministic instant UI stealth actions run immediately locally without cloud latency
+      // Auto Mode intelligence: Economy commands OR high-confidence deterministic local actions execute in <5ms locally without network latency
       if (
-        (brainMode === 'auto' && specialtyDecision.bypassCloudSuggested) ||
-        (brainMode === 'auto' &&
-          localProbe.handled &&
-          localProbe.stealthAutoExecute &&
-          localProbe.confidence >= 0.92)
+        brainMode === 'auto' &&
+        (specialtyDecision.bypassCloudSuggested ||
+          (localProbe.handled &&
+            (localProbe.stealthAutoExecute ||
+              (localProbe.confidence >= 0.9 && !isDeepAnalyticalPrompt(cleanPrompt)))))
       ) {
         presentOfflineOutcome(localProbe, cleanPrompt, undefined, options);
         return;
@@ -1777,7 +1785,6 @@ export function useAssistantEngine(params: {
 
             const parsedData = (await res.json().catch(() => ({}))) as ChatApiPayload;
 
-            // Mirror server attempt health telemetry into client circuit-breaker registry
             if (Array.isArray(parsedData.attempts)) {
               for (const att of parsedData.attempts) {
                 const attId = att.modelId as ApprovedCloudModelId | undefined;
@@ -1788,7 +1795,25 @@ export function useAssistantEngine(params: {
                   markModelFailure(attId, new Error(att.detail || '429 rate limit'), 429);
                 } else if (att.status === 'timeout_503') {
                   markModelFailure(attId, new Error(att.detail || '503 service unavailable'), 503);
+                } else if (att.status === 'error') {
+                  markModelFailure(attId, new Error(att.detail || 'error'), 400);
                 }
+              }
+              // If the server already exhausted every model in remainingChain, short-circuit to Morrow Local immediately
+              const triedIds = new Set(parsedData.attempts.map((a) => a.modelId).filter(Boolean));
+              if (!res.ok && remainingChain.every((id) => triedIds.has(id))) {
+                return {
+                  value: {
+                    ...parsedData,
+                    ok: false,
+                    fallbackToOffline: true,
+                    reason:
+                      parsedData?.reason ||
+                      parsedData?.error ||
+                      'استنفد الخادم جميع النماذج المتاحة — تحوّلنا فوراً لمحرك Morrow المحلي.',
+                  },
+                  usedModelId: candidateModelId,
+                };
               }
             }
 
@@ -1806,7 +1831,11 @@ export function useAssistantEngine(params: {
             }
 
             if (!res.ok) {
-              throw new Error(parsedData?.error || `HTTP ${res.status}`);
+              const httpErr = new Error(parsedData?.error || `HTTP ${res.status}`) as Error & {
+                status?: number;
+              };
+              httpErr.status = res.status;
+              throw httpErr;
             }
 
             return {
@@ -2283,11 +2312,11 @@ export function useAssistantEngine(params: {
       brainMode === 'local'
         ? 'Morrow المحلي'
         : brainMode === 'gemini_3_8_flash'
-          ? 'Gemini 3.8 Flash'
+          ? 'Gemini 4 Hydrogen'
           : brainMode === 'gemini_3_5_flash'
-            ? 'Gemini 3.5 Flash'
+            ? 'Gemini 3.1 Flash Lite'
             : brainMode === 'gemini_3_5_flash_lite'
-              ? 'Gemini 3.5 Flash Lite'
+              ? 'Gemini 3.1 Flash Lite'
               : brainMode === 'nemotron_free'
                 ? 'Nemotron 3.5 Super VL'
                 : brainMode === 'openrouter_free'
@@ -2685,6 +2714,23 @@ export function useAssistantEngine(params: {
     },
     [removeQueuedTask, sendMessage]
   );
+
+  // Automatically execute queued offline tasks sequentially once cloud connectivity returns
+  useEffect(() => {
+    if (autoReplayTrigger === 0) return;
+    if (connectivity !== 'online' || isThinking) return;
+    if (queuedTasks.length === 0) {
+      setAutoReplayTrigger(0);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const oldestTask = queuedTasks[queuedTasks.length - 1];
+      if (!oldestTask) return;
+      removeQueuedTask(oldestTask.id);
+      void sendMessage(oldestTask.prompt, { bypassCache: true });
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [autoReplayTrigger, connectivity, isThinking, queuedTasks, removeQueuedTask, sendMessage]);
 
   const togglePinMessage = useCallback((messageId: string) => {
     setMessages((prev) =>

@@ -130,7 +130,7 @@ export function applyAppShapeToDocument(shapeId?: string | null): AppShapeDefini
 }
 
 export interface AppThemeDefinition {
-  id: MarineAppThemeId | AutoAppThemeId;
+  id: MarineAppThemeId | HeavyAppThemeId | AutoAppThemeId;
   name: string;
   englishName: string;
   description: string;

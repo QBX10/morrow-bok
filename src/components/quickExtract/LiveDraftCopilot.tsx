@@ -201,6 +201,9 @@ export const LiveDraftCopilot: React.FC<LiveDraftCopilotProps> = ({
     setLoading(true);
 
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('offline_fast_path');
+      }
       const resp = await authFetch('/api/quick-extract/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

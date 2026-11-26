@@ -110,10 +110,10 @@ export const NodeCard: React.FC<NodeCardProps> = ({
 
         {preview && (
           <div
-            className="rounded-xl border px-3 py-2 text-[11px]"
+            className="border-t pt-2.5 text-[11px]"
             style={{
-              backgroundColor: 'color-mix(in srgb, var(--bg-main) 82%, transparent)',
-              borderColor: 'color-mix(in srgb, var(--border-color) 75%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--border-color) 70%, transparent)',
+              color: 'var(--text-muted)',
             }}
           >
             {preview}

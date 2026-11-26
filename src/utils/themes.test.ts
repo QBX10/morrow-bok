@@ -23,7 +23,7 @@ test('exposes 5 core themes (incl. Obsidian & Gold), Auto theme, 5 geometric app
   assert.equal(APP_THEMES.length, 5);
   assert.equal(MODERN_APP_THEMES.length, 6);
   assert.equal(ALL_APP_THEMES.length, 6);
-  assert.equal(APP_THEME_CAPSULES.length, 2);
+  assert.equal(APP_THEME_CAPSULES.length, 3);
   assert.equal(APP_THEMES[0].id, 'obsidian-gold');
   assert.equal(APP_THEMES[1].id, 'abyssal-emerald');
   assert.equal(MODERN_APP_THEMES[5].id, 'auto');
@@ -63,7 +63,7 @@ test('resolves core themes, Obsidian & Gold default, Auto Adaptive, and App Shap
   assert.equal(resolveAppThemeId('auto'), 'auto');
 
   assert.equal(resolveAppThemeId('arctic-fjord'), 'midnight-trench');
-  assert.equal(resolveAppThemeId('desert-mirage'), 'obsidian-gold');
+  assert.equal(resolveAppThemeId('desert-mirage'), 'espresso-bronze');
   assert.equal(resolveAppThemeId('midnight-slate'), 'pelagic-sapphire');
   assert.equal(resolveAppThemeId('charcoal-emerald'), 'bioluminescent-reef');
   assert.equal(resolveAppThemeId('nordic-dusk'), 'pelagic-sapphire');
@@ -72,7 +72,7 @@ test('resolves core themes, Obsidian & Gold default, Auto Adaptive, and App Shap
   assert.equal(getAppThemeById('abyssal-emerald').isDark, true);
   assert.equal(getAppThemeById('obsidian-gold').vars['--accent'], '#D4AF37');
   assert.equal(getAppThemeById('obsidian-gold').vars['--bg-main'], '#070708');
-  assert.equal(getAppThemeById('desert-mirage').id, 'obsidian-gold');
+  assert.equal(getAppThemeById('desert-mirage').id, 'espresso-bronze');
 
   assert.equal(resolveAutoThemeTarget({ prefersLight: true, hour: 22 }).id, 'daylight-alabaster');
   assert.equal(resolveAutoThemeTarget({ prefersLight: false, hour: 11 }).id, 'daylight-alabaster');

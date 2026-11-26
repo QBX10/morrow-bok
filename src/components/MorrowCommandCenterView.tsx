@@ -305,25 +305,25 @@ const BRAIN_BUTTONS: BrainOptionItem[] = [
   },
   {
     id: 'gemini_3_8_flash',
-    label: 'Gemini 3.8 Flash',
-    shortLabel: '3.8 Flash',
-    modelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    label: 'Gemini 4 Hydrogen',
+    shortLabel: '4 Hydrogen',
+    modelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     desc: 'الأقوى للمهام الثقيلة، PDF المعقد، الفهم البصري والاستنتاج.',
     icon: <Sparkles className="h-4 w-4" />,
   },
   {
     id: 'gemini_3_5_flash',
-    label: 'Gemini 3.5 Flash',
-    shortLabel: '3.5 Flash',
-    modelId: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    label: 'Gemini 3.1 Flash Lite',
+    shortLabel: '3.1 Lite (توازن)',
+    modelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     desc: 'متوازن للبيانات المنظمة (Excel/CSV) والأوامر متعددة الخطوات.',
     icon: <Zap className="h-4 w-4" />,
   },
   {
     id: 'gemini_3_5_flash_lite',
-    label: 'Gemini 3.5 Flash Lite',
-    shortLabel: '3.5 Lite',
-    modelId: AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+    label: 'Gemini 3.1 Flash Lite',
+    shortLabel: '3.1 Lite',
+    modelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     desc: 'استجابة فورية للأوامر السريعة والردود اليومية.',
     icon: <Zap className="h-4 w-4" />,
   },
@@ -706,6 +706,11 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
   useEffect(() => {
     if (activeTab === 'approvals' || activeTab === 'memory' || activeTab === 'quick_notes') {
       setActivePage(activeTab);
+    } else if (
+      activeTab === 'chat' &&
+      (activePage === 'approvals' || activePage === 'memory' || activePage === 'quick_notes')
+    ) {
+      setActivePage('chat');
     }
   }, [activeTab]);
 
@@ -932,12 +937,13 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     setSpeakingMsgId(msgId);
     acquireMusicPauseLock('morrow-center:tts', 'tts', 100);
 
-    try {
-      const res = await authFetch('/api/ucrs/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cleanText }),
-      });
+    if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+      try {
+        const res = await authFetch('/api/ucrs/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanText }),
+        });
       if (res.ok) {
         const json = (await res.json()) as { audioBase64?: string; mimeType?: string };
         if (json.audioBase64) {
@@ -960,8 +966,9 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
           return;
         }
       }
-    } catch {
-      // Fall back cleanly to browser Arabic speech synthesis
+      } catch {
+        // Fall back cleanly to browser Arabic speech synthesis
+      }
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -1083,40 +1090,46 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     let voiceModelId: string | undefined;
     let voiceModelLabel: string | undefined;
 
-    setTranscribingVoice(true);
-    try {
-      const audioBase64 = await blobToBase64(audioBlob);
-      const res = await authFetch('/api/morrow/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audioBase64,
-          mimeType: mime,
-          targetMode: activeTargetMode,
-          agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
-          taskRouting,
-        }),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        transcript?: string;
-        modelId?: string;
-        modelLabel?: string;
-        error?: string;
-      };
-      if (res.ok && json.ok && json.transcript) {
-        finalTranscript = json.transcript.trim();
-        voiceModelId = json.modelId;
-        voiceModelLabel = json.modelLabel;
-      } else if (!finalTranscript && json.error) {
-        setVoiceError(json.error);
-      }
-    } catch {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       if (!finalTranscript) {
-        setVoiceError('تعذر تفريغ التسجيل الصوتي عبر الخادم حالياً.');
+        setVoiceError('تطبيقك أوفلاين حالياً — الإملاء الصوتي السحابي يتطلب اتصالاً، أو استخدم الكتابة الفورية.');
       }
-    } finally {
-      setTranscribingVoice(false);
+    } else {
+      setTranscribingVoice(true);
+      try {
+        const audioBase64 = await blobToBase64(audioBlob);
+        const res = await authFetch('/api/morrow/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64,
+            mimeType: mime,
+            targetMode: activeTargetMode,
+            agencies: agencies.map((a) => ({ id: a.id, name: a.name })),
+            taskRouting,
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          transcript?: string;
+          modelId?: string;
+          modelLabel?: string;
+          error?: string;
+        };
+        if (res.ok && json.ok && json.transcript) {
+          finalTranscript = json.transcript.trim();
+          voiceModelId = json.modelId;
+          voiceModelLabel = json.modelLabel;
+        } else if (!finalTranscript && json.error) {
+          setVoiceError(json.error);
+        }
+      } catch {
+        if (!finalTranscript) {
+          setVoiceError('تعذر تفريغ التسجيل الصوتي عبر الخادم حالياً.');
+        }
+      } finally {
+        setTranscribingVoice(false);
+      }
     }
 
     if (activeTargetMode === 'quick_note') {
@@ -1352,7 +1365,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
       let transcript = noteLiveTranscriptRef.current.trim();
       noteLiveTranscriptRef.current = '';
 
-      if (audioBlob.size >= 400) {
+      if (audioBlob.size >= 400 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
         setTranscribingNoteVoice(true);
         try {
           const audioBase64 = await blobToBase64(audioBlob);
@@ -1568,6 +1581,25 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         return;
       }
 
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setMultimodalFeed((prev) => [
+          ...prev.slice(-15),
+          {
+            id: `file_${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            kind: isAudio ? 'voice_note' : 'file_analysis',
+            title: target.name,
+            body: isAudio
+              ? 'الملف الصوتي محفوظ — التفريغ الصوتي السحابي سيعمل تلقائياً عند توفر الإنترنت.'
+              : 'أنت الآن في وضع الأوفلاين — يمكنك فتح هذا الملف مباشرة عبر «السحب الذكي المحلي (UCRS)» بدون إنترنت.',
+            file: target.file,
+            previewUrl: target.previewUrl,
+            looksLikeRosterTable: !isAudio,
+          },
+        ]);
+        return;
+      }
+
       const res = await authFetch('/api/morrow/multimodal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1743,6 +1775,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
     <div
       dir="rtl"
       data-testid="morrow-command-center"
+      data-assistant-target="morrow-command-center-root"
       onDragOver={(e) => {
         if (!isMainConversationView) return;
         if (e.dataTransfer?.types?.includes('Files')) {
@@ -1847,7 +1880,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               onClick={() => setAppDrawerOpen(true)}
               aria-label="قائمة أقسام التطبيق الرئيسية"
               title="قائمة التطبيق"
-              className="nexus-pill-btn inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 sm:px-3 text-xs font-bold"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
@@ -1859,7 +1892,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             </button>
           </div>
 
-          {/* Center: Active Model / Assistant Selector Pill */}
+          {/* Center: Active Model / Assistant Selector */}
           <div className="flex items-center justify-center min-w-0">
             <motion.button
               type="button"
@@ -1871,7 +1904,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               whileHover={reducedMotion ? undefined : { scale: 1.02 }}
               whileTap={reducedMotion ? undefined : { scale: 0.96 }}
               transition={TABRIX_TACTILE_SPRING}
-              className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-3.5 text-xs font-bold min-w-0"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold min-w-0 whitespace-nowrap cursor-pointer transition-colors"
               style={{
                 backgroundColor: modelMenuOpen
                   ? 'var(--bg-nav-active)'
@@ -1909,7 +1942,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                 onClick={onClearMessages}
                 aria-label="بدء محادثة جديدة"
                 title="محادثة جديدة"
-                className="nexus-pill-btn inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs font-bold whitespace-nowrap"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -1927,7 +1960,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
               onClick={() => setSideDrawerOpen(true)}
               aria-label="قائمة أدوات ونماذج Morrow"
               title="قائمة Morrow والنماذج"
-              className="nexus-pill-btn inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 sm:px-3 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor:
                   sideFeatureBadgeCount > 0 ? 'var(--bg-nav-active)' : 'var(--bg-surface)',
@@ -2150,15 +2183,15 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
                   </MotionSurfaceCard>
                 </div>
 
-                {/* Subtle Dynamic Suggestion Chips if present */}
+                {/* Subtle Dynamic Suggestion Prompts if present */}
                 {smartSuggestions.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
                     {smartSuggestions.slice(0, 2).map((sug) => (
                       <button
                         key={sug.id}
                         type="button"
                         onClick={() => submitChatPrompt(sug.prompt)}
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-semibold transition-colors hover:border-[var(--accent)] hover:text-slate-100 cursor-pointer"
+                        className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-[11px] font-bold transition-colors hover:border-[var(--accent)] hover:text-slate-100 cursor-pointer whitespace-nowrap"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         {sug.label}
@@ -2700,7 +2733,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
             )}
             </AnimatePresence>
 
-            <div className="morrow-composer-pill rounded-[28px] border px-2.5 py-2 sm:px-3 sm:py-2.5 space-y-2">
+            <div className="morrow-composer-pill rounded-2xl border px-3 py-2.5 sm:px-3.5 sm:py-3 space-y-2">
               {/* Pending Attached Document / Photo / Audio Preview */}
               <AnimatePresence initial={false}>
               {attachedFile && (
@@ -3371,6 +3404,7 @@ export const MorrowCommandCenterView: React.FC<MorrowCommandCenterViewProps> = (
         <main
           aria-label="قواعد الذاكرة الدائمة"
           data-testid="morrow-memory-panel"
+          data-assistant-target="morrow-memory-panel"
           className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
         >
           <MorrowSubPageHeader

@@ -11,10 +11,10 @@ export type AiPipelineKind =
 export const MORROW_LOCAL_MODEL_ID = 'morrow-local' as const;
 
 export const AI_FREE_MODELS = {
-  // 1. Google AI Studio Models (Free Tier / $0)
-  GEMINI_3_8_FLASH: 'gemini-3.8-flash',
-  GEMINI_3_5_FLASH: 'gemini-3.5-flash',
-  GEMINI_3_5_FLASH_LITE: 'gemini-3.5-flash-lite',
+  // 1. Google AI Studio Models (Official Free Tier / $0)
+  GEMINI_4_HYDROGEN: 'gemini-4-hydrogen',
+  GEMINI_3_1_FLASH_LITE: 'gemini-3.1-flash-lite',
+  GEMINI_3_5_TRANSCRIBE: 'gemini-3.5-transcribe',
   GEMINI_3_8_LIVE: 'gemini-3.8-live',
 
   // 2. External Independent Providers (Free Tier / $0)
@@ -75,8 +75,8 @@ export interface AiModelSpec {
 }
 
 export const AI_MODEL_REGISTRY: Record<AnyAiModelId, AiModelSpec> = {
-  [AI_FREE_MODELS.GEMINI_3_8_FLASH]: {
-    id: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+  [AI_FREE_MODELS.GEMINI_4_HYDROGEN]: {
+    id: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     provider: 'google',
     envKeyName: AI_PROVIDER_ENV_KEYS.google,
     priority: 1,
@@ -89,11 +89,11 @@ export const AI_MODEL_REGISTRY: Record<AnyAiModelId, AiModelSpec> = {
     supportsAudio: true,
     supportsStructuredJson: true,
     supportsToolCalling: true,
-    shortLabel: '3.8 Flash',
-    badgeLabel: 'Gemini 3.8 Flash · المهام الثقيلة والرؤية',
+    shortLabel: '4 Hydrogen',
+    badgeLabel: 'Gemini 4 Hydrogen · المهام الثقيلة والرؤية',
     specialty:
-      'تحليل ملفات PDF المعقدة، الجداول المتداخلة، الفهم البصري العميق (Vision)، وقيادة الأوامر المعقدة مع إخراج JSON منظم.',
-    recommendedTasks: ['command_orchestration', 'heavy_pdf_vision'],
+      'النموذج الرائد مجانياً لتحليل ملفات PDF المعقدة، الجداول المتداخلة، الفهم البصري العميق (Vision)، وقيادة الأوامر المعقدة مع إخراج JSON منظم.',
+    recommendedTasks: ['command_orchestration', 'heavy_pdf_vision', 'structured_excel_csv'],
   },
   [AI_FREE_MODELS.GEMINI_3_8_LIVE]: {
     id: AI_FREE_MODELS.GEMINI_3_8_LIVE,
@@ -158,25 +158,45 @@ export const AI_MODEL_REGISTRY: Record<AnyAiModelId, AiModelSpec> = {
     recommendedTasks: ['heavy_pdf_vision', 'command_orchestration', 'structured_excel_csv'],
     endpointUrl: 'https://openrouter.ai/api/v1/chat/completions',
   },
-  [AI_FREE_MODELS.GEMINI_3_5_FLASH]: {
-    id: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+  [AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE]: {
+    id: AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
+    provider: 'google',
+    envKeyName: AI_PROVIDER_ENV_KEYS.google,
+    priority: 2,
+    powerRank: 88,
+    tier: 'tier_2_balanced',
+    tierLabel: 'المستوى 2 · التفريغ الصوتي الاحتياطي (Google)',
+    isFree: true,
+    supportsVision: false,
+    supportsPdf: false,
+    supportsAudio: true,
+    supportsStructuredJson: false,
+    supportsToolCalling: false,
+    shortLabel: '3.5 Transcribe',
+    badgeLabel: 'Gemini 3.5 Transcribe · تفريغ صوتي دقيق',
+    specialty:
+      'تحويل التسجيلات الصوتية والرسائل الصوتية العربية والعراقية إلى نصوص دقيقة كمسار احتياطي موثوق مع Groq Whisper.',
+    recommendedTasks: ['audio_transcription'],
+  },
+  [AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE]: {
+    id: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     provider: 'google',
     envKeyName: AI_PROVIDER_ENV_KEYS.google,
     priority: 3,
-    powerRank: 85,
-    tier: 'tier_2_balanced',
-    tierLabel: 'المستوى 3 · المتوازن للبيانات والجداول',
+    powerRank: 84,
+    tier: 'tier_4_fast_lite',
+    tierLabel: 'المستوى 3 · فائق السرعة والجداول والأوامر اليومية',
     isFree: true,
     supportsVision: true,
     supportsPdf: true,
     supportsAudio: true,
     supportsStructuredJson: true,
     supportsToolCalling: true,
-    shortLabel: '3.5 Flash',
-    badgeLabel: 'Gemini 3.5 Flash · متوازن ومتعدد الخطوات',
+    shortLabel: '3.1 Flash Lite',
+    badgeLabel: 'Gemini 3.1 Flash Lite · استجابة فورية وبيانات',
     specialty:
-      'معالجة البيانات المنظمة (Excel/CSV)، التحليل العميق، وتنفيذ الأوامر متعددة الخطوات بسرعة ودقة عالية.',
-    recommendedTasks: ['structured_excel_csv', 'command_orchestration'],
+      'الاستجابة السريعة ذات زمن الوصول المنخفض، معالجة البيانات المنظمة (Excel/CSV)، وتصفية مسودات السحب فورياً.',
+    recommendedTasks: ['fast_copilot_actions', 'structured_excel_csv'],
   },
   [AI_FREE_MODELS.OPENROUTER_FREE_AUTO]: {
     id: AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
@@ -198,26 +218,6 @@ export const AI_MODEL_REGISTRY: Record<AnyAiModelId, AiModelSpec> = {
       'بوابة الاحتياط الذكية التي تختار تلقائياً أقوى نموذج مجاني متاح لحظة الطلب (Gemma / Qwen / Llama) لضمان الاستمرارية 100%.',
     recommendedTasks: ['fast_copilot_actions', 'structured_excel_csv'],
     endpointUrl: 'https://openrouter.ai/api/v1/chat/completions',
-  },
-  [AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE]: {
-    id: AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
-    provider: 'google',
-    envKeyName: AI_PROVIDER_ENV_KEYS.google,
-    priority: 5,
-    powerRank: 70,
-    tier: 'tier_4_fast_lite',
-    tierLabel: 'المستوى 5 · فائق السرعة للأوامر السريعة',
-    isFree: true,
-    supportsVision: true,
-    supportsPdf: false,
-    supportsAudio: false,
-    supportsStructuredJson: true,
-    supportsToolCalling: true,
-    shortLabel: '3.5 Flash Lite',
-    badgeLabel: 'Gemini 3.5 Flash Lite · استجابة فورية',
-    specialty:
-      'الردود الفورية، تصنيف الأوامر، المهام السريعة المتكررة، والاستجابة ذات زمن الوصول المنخفض.',
-    recommendedTasks: ['fast_copilot_actions'],
   },
   [MORROW_LOCAL_MODEL_ID]: {
     id: MORROW_LOCAL_MODEL_ID,
@@ -246,9 +246,9 @@ export const AI_MODEL_REGISTRY: Record<AnyAiModelId, AiModelSpec> = {
 };
 
 export const SIX_FREE_CLOUD_MODELS: AiModelSpec[] = [
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_8_FLASH],
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH],
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_4_HYDROGEN],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.GROQ_WHISPER_TURBO],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.OPENROUTER_FREE_AUTO],
@@ -284,14 +284,13 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
     subtitle:
       'قيادة الأوامر التنفيذية، التحليلات، المقارنات، واستدعاء الأدوات بترتيب صارم من الأقوى إلى الأضعف.',
     boundModules: ['AssistantWidget', 'MorrowCommandCenterView', 'CommandPaletteModal'],
-    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     defaultBackupModelId: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     eligibleModels: [
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
     ],
     pipelineKind: 'deep_assistant',
   },
@@ -301,12 +300,12 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
     subtitle:
       'استخراج الجداول اليدوية والمطبوعة وفحص الترويسات بالرؤية البصرية ومبدأ الشك 1%.',
     boundModules: ['QuickExtractView', 'SmartExtractionLab', 'MorrowMultimodal'],
-    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     defaultBackupModelId: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     eligibleModels: [
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     ],
     pipelineKind: 'heavy_extraction',
     requiresVision: true,
@@ -317,14 +316,13 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
     subtitle:
       'تحويل الجداول والمذكرات النصية وبيانات الوكالات إلى صفوف مهيكلة وإجراءات واضحة.',
     boundModules: ['DynamicWorkspaceCanvas', 'QuickExtractView (Excel/Text)'],
-    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     defaultBackupModelId: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     eligibleModels: [
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
     ],
     pipelineKind: 'data_processing',
   },
@@ -334,16 +332,15 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
     subtitle:
       'الردود الفورية داخل مسودة السحب، تصفية الأسطر المشكوكة، وتصنيف الأعمدة.',
     boundModules: ['LiveDraftCopilot', 'MetadataInferenceBanner'],
-    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    defaultBackupModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+    defaultBackupModelId: AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
     eligibleModels: [
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
-      AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+      AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     ],
-    pipelineKind: 'deep_assistant',
+    pipelineKind: 'fast_assistant',
   },
   audio_transcription: {
     key: 'audio_transcription',
@@ -352,11 +349,11 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
       'تحويل الأوامر الصوتية والملاحظات باللهجة العراقية والعربية إلى نصوص دقيقة.',
     boundModules: ['MorrowCommandCenterView (Voice/QuickNote)'],
     defaultPrimaryModelId: AI_FREE_MODELS.GROQ_WHISPER_TURBO,
-    defaultBackupModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    defaultBackupModelId: AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
     eligibleModels: [
       AI_FREE_MODELS.GROQ_WHISPER_TURBO,
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     ],
     pipelineKind: 'audio',
     requiresAudio: true,
@@ -368,11 +365,11 @@ export const AI_TASK_PROFILES: Record<AiTaskKey, AiTaskProfileSpec> = {
       'بث صوتي وكاميرا ثنائي الاتجاه في الزمن الحقيقي عبر WebSocket وتنفيذ الأدوات المباشر.',
     boundModules: ['MorrowLiveSessionModal'],
     defaultPrimaryModelId: AI_FREE_MODELS.GEMINI_3_8_LIVE,
-    defaultBackupModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    defaultBackupModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     eligibleModels: [
       AI_FREE_MODELS.GEMINI_3_8_LIVE,
-      AI_FREE_MODELS.GEMINI_3_8_FLASH,
-      AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+      AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     ],
     pipelineKind: 'audio',
     requiresAudio: true,
@@ -424,59 +421,54 @@ export const DEFAULT_TASK_ROUTING: AiTaskRoutingConfigMap = {
  * Priority-ordered smart routing pipelines (Strongest/Best -> Fallback).
  */
 export const AI_ROUTING_PIPELINES: Record<AiPipelineKind, ApprovedCloudModelId[]> = {
-  // 1. Audio Pipeline: Groq Whisper first -> Gemini multimodal audio fallback
+  // 1. Audio Pipeline: Groq Whisper first -> Gemini 3.5 Transcribe -> Gemini 4 Hydrogen
   audio: [
     AI_FREE_MODELS.GROQ_WHISPER_TURBO,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
   ],
   // 2. Heavy PDF / Vision / Complex Extraction
   heavy_extraction: [
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
   // 3. Excel / CSV / Structured Data Processing
   data_processing: [
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
   // 4. Fast Assistant Actions / Quick Daily Commands
   fast_assistant: [
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
   ],
   // 5. Balanced Assistant & Multi-step Agentic Workflows
   balanced_assistant: [
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
-  // 6. Deep Strategic / Analytical Reasoning (Strongest first -> weakest)
+  // 6. Deep Strategic / Analytical Reasoning (Strongest first -> fallback)
   deep_assistant: [
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
 };
 
 export const APPROVED_CHAT_ORCHESTRATION_MODELS: ApprovedCloudModelId[] = [
-  AI_FREE_MODELS.GEMINI_3_8_FLASH,
+  AI_FREE_MODELS.GEMINI_4_HYDROGEN,
   AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-  AI_FREE_MODELS.GEMINI_3_5_FLASH,
+  AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
   AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-  AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
 ];
 
 export const APPROVED_CLOUD_MODEL_SET = new Set<string>(
@@ -492,9 +484,9 @@ export const DEPRECATED_OR_REPLACED_MODELS = new Set<string>([
   'gemini-2.0-flash-thinking',
   'gemini-2.5-flash',
   'gemini-2.5-pro',
-  'gemini-3.1-flash-lite',
-  'gemini-4-hydrogen',
-  'gemini-3.5-transcribe',
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
 ]);
 
 export function getAiModelSpec(modelId?: string | null): AiModelSpec {
@@ -502,22 +494,28 @@ export function getAiModelSpec(modelId?: string | null): AiModelSpec {
   if (clean && clean in AI_MODEL_REGISTRY) {
     return AI_MODEL_REGISTRY[clean as AnyAiModelId];
   }
-  return AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_8_FLASH];
+  return AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_4_HYDROGEN];
 }
 
 export function sanitizeAiModelId(raw?: string | null): ApprovedCloudModelId {
   const clean = String(raw || '').trim();
-  if (!clean || DEPRECATED_OR_REPLACED_MODELS.has(clean.toLowerCase())) {
-    return AI_FREE_MODELS.GEMINI_3_8_FLASH;
+  const lower = clean.toLowerCase();
+  if (!clean) {
+    return AI_FREE_MODELS.GEMINI_4_HYDROGEN;
+  }
+  if (lower === 'gemini-3.5-flash-lite') {
+    return AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE;
+  }
+  if (DEPRECATED_OR_REPLACED_MODELS.has(lower)) {
+    return AI_FREE_MODELS.GEMINI_4_HYDROGEN;
   }
   if (APPROVED_CLOUD_MODEL_SET.has(clean)) {
     return clean as ApprovedCloudModelId;
   }
-  const lower = clean.toLowerCase();
   const matched = Object.values(AI_FREE_MODELS).find(
     (m) => m.toLowerCase() === lower
   );
-  return matched || AI_FREE_MODELS.GEMINI_3_8_FLASH;
+  return matched || AI_FREE_MODELS.GEMINI_4_HYDROGEN;
 }
 
 /**
@@ -593,7 +591,7 @@ export function resolveOrderedTaskChain(
 
 /**
  * Resolves complementary reviewer models distinct from the primary model so
- * different model families (e.g. Gemini 3.8 Flash <-> Nemotron 3.5 VL <-> Gemini 3.5 Flash)
+ * different model families (e.g. Gemini 4 Hydrogen <-> Nemotron 3.5 VL <-> Gemini 3.1 Flash Lite)
  * collaborate as Planner/Executor + Independent Verifier.
  */
 export function resolveCollaborativeReviewerChain(
@@ -602,28 +600,27 @@ export function resolveCollaborativeReviewerChain(
 ): ApprovedCloudModelId[] {
   const pool: ApprovedCloudModelId[] = [
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ];
   const preferredOrder: ApprovedCloudModelId[] =
-    primaryModelId === AI_FREE_MODELS.GEMINI_3_8_FLASH
+    primaryModelId === AI_FREE_MODELS.GEMINI_4_HYDROGEN
       ? [
           AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-          AI_FREE_MODELS.GEMINI_3_5_FLASH,
+          AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
           AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
         ]
       : primaryModelId === AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL
         ? [
-            AI_FREE_MODELS.GEMINI_3_8_FLASH,
-            AI_FREE_MODELS.GEMINI_3_5_FLASH,
-            AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+            AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+            AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+            AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
           ]
         : taskKey === 'structured_excel_csv'
           ? [
               AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-              AI_FREE_MODELS.GEMINI_3_8_FLASH,
+              AI_FREE_MODELS.GEMINI_4_HYDROGEN,
               AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
             ]
           : pool;
@@ -635,7 +632,7 @@ export function resolveCollaborativeReviewerChain(
 
 /**
  * Converts a 2D spreadsheet/table matrix into structured CSV + Markdown preview text
- * suitable for the data_processing pipeline (Gemini 3.5 Flash / Nemotron / OpenRouter).
+ * suitable for the data_processing pipeline.
  */
 export function formatMatrixAsCsvMarkdown(
   matrix: unknown[][],

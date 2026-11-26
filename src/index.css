@@ -943,12 +943,23 @@ body {
     0 8px 28px color-mix(in srgb, var(--accent) 58%, transparent);
 }
 
+@keyframes assistantSpotlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 24%, transparent),
+      0 14px 34px -10px color-mix(in srgb, var(--accent) 42%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 11px color-mix(in srgb, var(--accent) 12%, transparent),
+      0 18px 40px -8px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
 .assistant-spotlight-active {
   outline: 3px solid var(--accent) !important;
   outline-offset: 4px !important;
-  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 22%, transparent) !important;
   border-radius: var(--card-radius);
-  scroll-margin-top: 90px;
+  scroll-margin-top: 96px;
+  animation: assistantSpotlightPulse 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 .nexus-squircle {
@@ -1785,6 +1796,28 @@ html[data-reduce-motion="1"] .truck-progress-shimmer {
   animation: none !important;
 }
 
+@keyframes morrowEqBar {
+  0%, 100% {
+    transform: scaleY(0.45);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.morrow-eq-bar {
+  transform-origin: bottom center;
+  animation: morrowEqBar 0.95s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+html[data-reduce-motion="1"] .morrow-eq-bar {
+  animation: none !important;
+  transform: scaleY(0.85);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spin-orbital-cw,
   .spin-orbital-ccw,
@@ -1801,7 +1834,8 @@ html[data-reduce-motion="1"] .truck-progress-shimmer {
   .truck-road-dashes,
   .truck-skyline-grid,
   .truck-wind-lines,
-  .truck-progress-shimmer {
+  .truck-progress-shimmer,
+  .morrow-eq-bar {
     animation: none !important;
   }
 }

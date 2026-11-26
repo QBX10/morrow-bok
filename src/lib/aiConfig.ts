@@ -47,18 +47,18 @@ export type {
 
 /**
  * The 6 Core Specialized AI Models Requested for Morrow:
- * 1. Gemini 3.8 Flash      (Google)      — Complex Reasoning, Vision, Heavy PDF & Structured JSON
- * 2. Gemini 3.8 Live       (Google)      — Real-Time Voice/Camera WebSocket Live Sessions
- * 3. Gemini 3.5 Flash      (Google)      — Balanced Data Processing (Excel/CSV) & Agentic Workflows
- * 4. Gemini 3.5 Flash Lite (Google)      — Ultra-Fast Low-Latency Daily Actions & Classification
- * 5. Groq Whisper          (Groq)        — High-Speed Arabic/Iraqi Speech-to-Text Transcription
- * 6. NVIDIA Nemotron       (OpenRouter)  — Independent Document Intelligence & Deep Reasoning Backup
+ * 1. Gemini 4 Hydrogen       (Google)      — Complex Reasoning, Vision, Heavy PDF & Structured JSON
+ * 2. Gemini 3.8 Live         (Google)      — Real-Time Voice/Camera WebSocket Live Sessions
+ * 3. Gemini 3.1 Flash Lite   (Google)      — Ultra-Fast Low-Latency Daily Actions & Structured Data
+ * 4. Gemini 3.5 Transcribe   (Google)      — Dedicated Arabic/Iraqi Speech-to-Text Backup
+ * 5. Groq Whisper V3 Turbo   (Groq)        — High-Speed Arabic/Iraqi Speech-to-Text Primary
+ * 6. NVIDIA Nemotron 3.5 VL  (OpenRouter)  — Independent Document Intelligence & Deep Reasoning Backup
  */
 export const CORE_SIX_SPECIALIZED_MODELS: readonly AiModelSpec[] = [
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_8_FLASH],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_4_HYDROGEN],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_8_LIVE],
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH],
-  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE],
+  AI_MODEL_REGISTRY[AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.GROQ_WHISPER_TURBO],
   AI_MODEL_REGISTRY[AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL],
 ] as const;
@@ -134,7 +134,7 @@ export interface SpecialtyPriorityDecision {
 
 /**
  * In-memory circuit-breaker & latency state per cloud model.
- * Prevents repeatedly stalling user requests on temporarily overloaded models (429 / 503).
+ * Prevents repeatedly stalling user requests on temporarily overloaded or unavailable models.
  */
 export interface ModelHealthRecord {
   modelId: ApprovedCloudModelId;
@@ -210,6 +210,23 @@ export function classifyAiFailure(err: unknown, statusCode?: number): {
   }
 
   if (
+    code === 404 ||
+    lower.includes('404') ||
+    lower.includes('not_found') ||
+    lower.includes('not found') ||
+    lower.includes('invalid_argument') ||
+    lower.includes('unsupported')
+  ) {
+    return {
+      kind: 'error',
+      retryable: true,
+      abortedByUser: false,
+      cooldownMs: 120_000,
+      message: msg,
+    };
+  }
+
+  if (
     code === 503 ||
     code === 502 ||
     code === 504 ||
@@ -242,11 +259,12 @@ export function classifyAiFailure(err: unknown, statusCode?: number): {
     };
   }
 
+  // Always fail over cleanly to backup models on any non-user-aborted failure
   return {
     kind: 'error',
-    retryable: false,
+    retryable: true,
     abortedByUser: false,
-    cooldownMs: 0,
+    cooldownMs: 25_000,
     message: msg,
   };
 }
@@ -262,7 +280,7 @@ export function markModelFailure(
   rec.consecutiveFailures += 1;
   rec.lastErrorKind = classified.kind;
   rec.lastErrorMessage = classified.message;
-  if (classified.retryable) {
+  if (classified.retryable && !classified.abortedByUser) {
     const backoffFactor = Math.min(3, rec.consecutiveFailures);
     rec.cooldownUntilMs = nowMs + classified.cooldownMs * backoffFactor;
   }
@@ -329,7 +347,7 @@ export function syncServerHealthSnapshot(
   if (!Array.isArray(serverModels)) return;
   for (const item of serverModels) {
     if (!item?.id || item.id === MORROW_LOCAL_MODEL_ID) continue;
-    const modelId = item.id as ApprovedCloudModelId;
+    const modelId = sanitizeAiModelId(item.id);
     const rec = getOrCreateHealthRecord(modelId);
     if (typeof item.avgLatencyMs === 'number' && item.avgLatencyMs > 0) {
       rec.avgLatencyMs = item.avgLatencyMs;
@@ -385,48 +403,46 @@ export function applyHealthPriorityOrdering(
 
 const SPECIALTY_MODEL_MAP: Record<AiSpecialtyKey, ApprovedCloudModelId[]> = {
   command_orchestration: [
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
   heavy_pdf_vision: [
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
   ],
   structured_excel_csv: [
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
   ],
   fast_copilot_actions: [
-    AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
   ],
   audio_transcription: [
     AI_FREE_MODELS.GROQ_WHISPER_TURBO,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
   ],
   live_realtime_session: [
     AI_FREE_MODELS.GEMINI_3_8_LIVE,
-    AI_FREE_MODELS.GEMINI_3_8_FLASH,
-    AI_FREE_MODELS.GEMINI_3_5_FLASH,
+    AI_FREE_MODELS.GEMINI_4_HYDROGEN,
+    AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
   ],
 };
 
 function isFastLowLatencyQuery(norm: string): boolean {
-  if (!norm || norm.length > 52) return false;
+  if (!norm || norm.length > 64) return false;
   const heavyPattern =
     /(تحليل|استراتيجي|مقارن|تقرير|احصائي|تنبؤ|توقع|فحص|تشخيص|pdf|ملف|صوره|اكسل|excel|csv|جدول|دفعه|ارشف|تعديل|اضافه|نقل|حظر|ملاحظه|مصروف|ميزانيه|ربح|مكرر)/;
   if (heavyPattern.test(norm)) return false;
-  return /^(مرحبا|هلا|اهلا|اهلين|هلو|مراحب|السلام|صباح|مساء|شلونك|كيف حالك|شكو ماكو|شنو الاخبار|شكرا|عفيه|بارك الله|يعطيك العافيه|يسلمو|تمام|اوك|نعم|لا|من انت|شنو تكدر|ساعدني|مساعده|باي|مع السلامه)/.test(
+  return /^(مرحبا|هلا|اهلا|اهلين|هلو|مراحب|السلام|صباح|مساء|شلونك|كيف حالك|شكو ماكو|شنو الاخبار|شكرا|عفيه|بارك الله|يعطيك العافيه|يسلمو|تمام|اوك|نعم|لا|من انت|شنو تكدر|ساعدني|مساعده|باي|مع السلامه|وريني|شوفني|افتح|وين|شنو الوضع)/.test(
     norm
   );
 }
@@ -459,12 +475,12 @@ export function classifyPromptSpecialtyAndPriority(params: {
   // Explicit brain modes pin the user's chosen specialized model first, keeping smart fallbacks behind it
   if (brainMode === 'gemini_3_8_flash') {
     const base = resolveOrderedTaskChain('command_orchestration', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      primaryModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     }).cloudChain;
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
       specialty: 'command_orchestration',
-      specialtyTitle: 'استنتاج عميق ورؤية شاملة (مثبت على 3.8 Flash)',
+      specialtyTitle: 'استنتاج عميق ورؤية شاملة (مثبت على Gemini 4 Hydrogen)',
       pipeline: 'deep_assistant',
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
@@ -472,7 +488,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
       recommendedTimeoutMs: 14_000,
       complexity: 'deep',
-      reason: 'مُثبت يدوياً على النموذج الأقوى Gemini 3.8 Flash مع احتياطي Nemotron.',
+      reason: 'مُثبت يدوياً على النموذج الأقوى Gemini 4 Hydrogen مع احتياطي Nemotron.',
       bypassCloudSuggested: false,
     };
   }
@@ -480,7 +496,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
   if (brainMode === 'nemotron_free') {
     const base = resolveOrderedTaskChain('heavy_pdf_vision', taskRouting, {
       primaryModelId: AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
-      backupModelId: AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      backupModelId: AI_FREE_MODELS.GEMINI_4_HYDROGEN,
     }).cloudChain;
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
@@ -490,22 +506,22 @@ export function classifyPromptSpecialtyAndPriority(params: {
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
       primaryModelId: healthyOrder[0],
-      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       recommendedTimeoutMs: 16_000,
       complexity: 'deep',
-      reason: 'موجّه للنموذج المستقل Nemotron 3.5 VL عبر OpenRouter مع احتياطي Gemini 3.8.',
+      reason: 'موجّه للنموذج المستقل Nemotron 3.5 VL عبر OpenRouter مع احتياطي Gemini 4 Hydrogen.',
       bypassCloudSuggested: false,
     };
   }
 
   if (brainMode === 'gemini_3_5_flash') {
     const base = resolveOrderedTaskChain('structured_excel_csv', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH,
+      primaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
     }).cloudChain;
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
       specialty: 'structured_excel_csv',
-      specialtyTitle: 'البيانات المهيكلة وسير العمل المتعدد (3.5 Flash)',
+      specialtyTitle: 'البيانات المهيكلة وسير العمل السريع (3.1 Flash Lite)',
       pipeline: 'data_processing',
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
@@ -513,28 +529,28 @@ export function classifyPromptSpecialtyAndPriority(params: {
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
       recommendedTimeoutMs: 12_000,
       complexity: 'balanced',
-      reason: 'موجّه لنموذج Gemini 3.5 Flash المتوازن للجداول والمنطق.',
+      reason: 'موجّه لنموذج Gemini 3.1 Flash Lite للبيانات المنظمة والسرعة.',
       bypassCloudSuggested: false,
     };
   }
 
   if (brainMode === 'gemini_3_5_flash_lite') {
     const base = resolveOrderedTaskChain('fast_copilot_actions', taskRouting, {
-      primaryModelId: AI_FREE_MODELS.GEMINI_3_5_FLASH_LITE,
+      primaryModelId: AI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
       backupModelId: AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
     }).cloudChain;
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
       specialty: 'fast_copilot_actions',
-      specialtyTitle: 'استجابة فورية منخفضة الكمون (3.5 Flash Lite)',
+      specialtyTitle: 'استجابة فورية منخفضة الكمون (3.1 Flash Lite)',
       pipeline: 'fast_assistant',
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
       primaryModelId: healthyOrder[0],
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-      recommendedTimeoutMs: 9_000,
+      recommendedTimeoutMs: 8_500,
       complexity: 'fast',
-      reason: 'موجّه للنموذج الخفيف فائق السرعة 3.5 Flash Lite.',
+      reason: 'موجّه للنموذج الخفيف فائق السرعة 3.1 Flash Lite.',
       bypassCloudSuggested: false,
     };
   }
@@ -571,7 +587,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
       primaryModelId: healthyOrder[0],
-      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_4_HYDROGEN,
       recommendedTimeoutMs: 15_000,
       complexity: 'deep',
       reason: 'جلسة تفاعلية ثنائية الاتجاه — الأولوية لـ Gemini 3.8 Live.',
@@ -589,10 +605,10 @@ export function classifyPromptSpecialtyAndPriority(params: {
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
       primaryModelId: healthyOrder[0],
-      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_3_8_FLASH,
+      backupModelId: healthyOrder[1] || AI_FREE_MODELS.GEMINI_3_5_TRANSCRIBE,
       recommendedTimeoutMs: 12_000,
       complexity: 'fast',
-      reason: 'أولوية قصوى لـ Whisper V3 Turbo عبر Groq ثم Gemini الصوتي.',
+      reason: 'أولوية قصوى لـ Whisper V3 Turbo عبر Groq ثم Gemini 3.5 Transcribe.',
       bypassCloudSuggested: false,
     };
   }
@@ -613,7 +629,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
       recommendedTimeoutMs: 16_000,
       complexity: 'deep',
-      reason: 'مهمة مستندات/رؤية — Gemini 3.8 Flash أولاً يليه Nemotron 3.5 VL.',
+      reason: 'مهمة مستندات/رؤية — Gemini 4 Hydrogen أولاً يليه Nemotron 3.5 VL.',
       bypassCloudSuggested: false,
     };
   }
@@ -627,7 +643,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
       specialty: 'structured_excel_csv',
-      specialtyTitle: 'تحليل جداول منظمة وبيانات Excel/CSV (3.5 Flash)',
+      specialtyTitle: 'تحليل جداول منظمة وبيانات Excel/CSV (3.1 Flash Lite)',
       pipeline: 'data_processing',
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
@@ -635,7 +651,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
       recommendedTimeoutMs: 13_000,
       complexity: 'balanced',
-      reason: 'بيانات مهيكلة — أولوية لـ Gemini 3.5 Flash وNemotron.',
+      reason: 'بيانات مهيكلة — أولوية لـ Gemini 3.1 Flash Lite وNemotron.',
       bypassCloudSuggested: false,
     };
   }
@@ -645,15 +661,15 @@ export function classifyPromptSpecialtyAndPriority(params: {
     const healthyOrder = applyHealthPriorityOrdering(base, nowMs);
     return {
       specialty: 'fast_copilot_actions',
-      specialtyTitle: 'تحية أو أمر سريع منخفض الكمون (3.5 Flash Lite)',
+      specialtyTitle: 'تحية أو أمر سريع منخفض الكمون (3.1 Flash Lite)',
       pipeline: 'fast_assistant',
       priorityOrder: base,
       healthyPriorityOrder: healthyOrder,
       primaryModelId: healthyOrder[0],
       backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_FREE_AUTO,
-      recommendedTimeoutMs: 8_500,
+      recommendedTimeoutMs: 8_000,
       complexity: 'fast',
-      reason: 'استفسار فوري قصير — أولوية لسرعة 3.5 Flash Lite.',
+      reason: 'استفسار فوري قصير — أولوية لسرعة 3.1 Flash Lite.',
       bypassCloudSuggested: routingStrategy === 'local_first_economy' && localHandled,
     };
   }
@@ -670,7 +686,7 @@ export function classifyPromptSpecialtyAndPriority(params: {
     backupModelId: healthyOrder[1] || AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL,
     recommendedTimeoutMs: 14_000,
     complexity: norm.length >= 110 ? 'deep' : 'balanced',
-    reason: 'أمر تنفيذي أو تحليلي — الترتيب من الأقوى Gemini 3.8 Flash مع احتياطي Nemotron.',
+    reason: 'أمر تنفيذي أو تحليلي — الترتيب من الأقوى Gemini 4 Hydrogen مع احتياطي Nemotron.',
     bypassCloudSuggested: routingStrategy === 'local_first_economy' && localHandled,
   };
 }
@@ -699,7 +715,7 @@ export interface SmartFallbackExecutionResult<T> {
 /**
  * Executes a model-parameterized async task across an ordered priority list with Smart Fallback:
  * - Honors external cancellation signals immediately (never falls back if user cancelled).
- * - Automatically retries transient 429 / 503 / timeout failures on the next backup model.
+ * - Automatically fails over at 0ms on ANY failed/unavailable model (404, 429, 503, timeout, weak reply).
  * - Updates circuit-breaker health metrics so healthy models stay prioritized.
  */
 export async function executeWithSmartFallback<T>(options: {
@@ -724,7 +740,7 @@ export async function executeWithSmartFallback<T>(options: {
   const candidates =
     options.priorityModels.length > 0
       ? applyHealthPriorityOrdering(options.priorityModels)
-      : [AI_FREE_MODELS.GEMINI_3_8_FLASH, AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL];
+      : [AI_FREE_MODELS.GEMINI_4_HYDROGEN, AI_FREE_MODELS.OPENROUTER_NEMOTRON_VL];
 
   const attempts: SmartFallbackAttemptTrace[] = [];
   let quotaOrRateLimited = false;
@@ -837,7 +853,7 @@ export async function executeWithSmartFallback<T>(options: {
       if (classified.kind === '429_rate_limit') {
         quotaOrRateLimited = true;
       }
-      if (classified.retryable) {
+      if (!classified.abortedByUser) {
         markModelFailure(modelId, effectiveErr);
       }
       lastErrorMessage = classified.message;
@@ -852,7 +868,7 @@ export async function executeWithSmartFallback<T>(options: {
       });
 
       const nextModel = candidates[i + 1];
-      if (!nextModel || !classified.retryable) {
+      if (!nextModel || classified.abortedByUser) {
         break;
       }
 

@@ -478,11 +478,16 @@ export function useAgencyStore(activeUid: string | null = null) {
       }
     };
 
+    const probeTimer = window.setInterval(() => {
+      void probeConnectivity(true);
+    }, 15_000);
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocusOrVisible);
     document.addEventListener('visibilitychange', handleFocusOrVisible);
     return () => {
+      window.clearInterval(probeTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocusOrVisible);

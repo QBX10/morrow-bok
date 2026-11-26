@@ -167,6 +167,7 @@ export const DEFAULT_APP_SOUND_PREFS: AppSoundPreferences = {
 };
 
 const SOUND_PREFS_STORAGE_KEY = 'morrow_app_sound_prefs_v1';
+const SOUND_MASTER_STORAGE_KEY = 'morrow_app_sound_master_v1';
 
 /**
  * Harmonically calibrated in D Minor Acoustic (D4=293.66, F4=349.23, A4=440, C5=523.25, D5=587.33)
@@ -938,7 +939,16 @@ export function applySoundPackToLayer(
 
 let sharedAudioCtx: AudioContext | null = null;
 let masterBusNode: GainNode | null = null;
-let globalSoundEnabled = true;
+let globalSoundEnabled = (() => {
+  if (typeof window === 'undefined') return true;
+  try {
+    const raw = window.localStorage.getItem(SOUND_MASTER_STORAGE_KEY);
+    if (raw === '0' || raw === 'false') return false;
+    return true;
+  } catch {
+    return true;
+  }
+})();
 let lastSoundPlayedMs = 0;
 let lastKeyTickMs = 0;
 
@@ -1036,12 +1046,56 @@ export function resetAppSoundPrefs(): AppSoundPreferences {
   return currentSoundPrefs;
 }
 
+const soundMasterListeners = new Set<() => void>();
+
+export function subscribeGlobalAppSoundEnabled(listener: () => void): () => void {
+  soundMasterListeners.add(listener);
+  return () => {
+    soundMasterListeners.delete(listener);
+  };
+}
+
 export function setGlobalAppSoundEnabled(enabled: boolean): void {
-  globalSoundEnabled = Boolean(enabled);
+  const next = Boolean(enabled);
+  if (globalSoundEnabled === next) return;
+  globalSoundEnabled = next;
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(SOUND_MASTER_STORAGE_KEY, next ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  }
+  soundMasterListeners.forEach((fn) => fn());
 }
 
 export function isGlobalAppSoundEnabled(): boolean {
   return globalSoundEnabled;
+}
+
+export function getSoundSystemDiagnostics(): {
+  supported: boolean;
+  contextState: AudioContextState | 'unsupported';
+  sampleRate: number | null;
+  masterBusReady: boolean;
+  globalSoundEnabled: boolean;
+  prefs: AppSoundPreferences;
+} {
+  const supported =
+    typeof window !== 'undefined' &&
+    Boolean(
+      window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext
+    );
+  return {
+    supported,
+    contextState: sharedAudioCtx ? sharedAudioCtx.state : supported ? 'suspended' : 'unsupported',
+    sampleRate: sharedAudioCtx ? sharedAudioCtx.sampleRate : null,
+    masterBusReady: Boolean(masterBusNode && masterBusNode.context === sharedAudioCtx),
+    globalSoundEnabled,
+    prefs: currentSoundPrefs,
+  };
 }
 
 export function getSharedAudioContext(): AudioContext | null {
@@ -1055,6 +1109,9 @@ export function getSharedAudioContext(): AudioContext | null {
     if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
       sharedAudioCtx = new Ctx();
       masterBusNode = null;
+      sharedAudioCtx.onstatechange = () => {
+        soundMasterListeners.forEach((fn) => fn());
+      };
     }
     return sharedAudioCtx;
   } catch {
@@ -1088,8 +1145,10 @@ export async function resumeSharedAudioContext(): Promise<AudioContext | null> {
   const ctx = getSharedAudioContext();
   if (!ctx) return null;
   try {
-    if (ctx.state === 'suspended') {
+    const state = ctx.state as string;
+    if (state === 'suspended' || state === 'interrupted') {
       await ctx.resume();
+      soundMasterListeners.forEach((fn) => fn());
     }
   } catch {
     // Ignore autoplay restriction errors prior to first user gesture
@@ -1274,7 +1333,8 @@ export function playTactileFeedback(
       );
     }
 
-    if (ctx.state === 'suspended') {
+    const ctxState = ctx.state as string;
+    if (ctxState === 'suspended' || ctxState === 'interrupted') {
       void ctx
         .resume()
         .then(() => {
@@ -1541,6 +1601,10 @@ export function installGlobalAppSoundRouter(): () => void {
     capture: true,
     passive: true,
   });
+  document.addEventListener('touchstart', onPointerDown, {
+    capture: true,
+    passive: true,
+  });
   document.addEventListener('click', onClick, { passive: true });
   document.addEventListener('keydown', onKeyDown, {
     capture: true,
@@ -1549,6 +1613,7 @@ export function installGlobalAppSoundRouter(): () => void {
 
   return () => {
     document.removeEventListener('pointerdown', onPointerDown, { capture: true });
+    document.removeEventListener('touchstart', onPointerDown, { capture: true });
     document.removeEventListener('click', onClick);
     document.removeEventListener('keydown', onKeyDown, { capture: true });
   };
@@ -1599,7 +1664,8 @@ export function playLampHumAndChord(chord: number[]): void {
     });
   };
 
-  if (ctx.state === 'suspended') {
+  const ctxState = ctx.state as string;
+  if (ctxState === 'suspended' || ctxState === 'interrupted') {
     void ctx.resume().then(playGentleShimmer).catch(() => {});
   } else {
     playGentleShimmer();

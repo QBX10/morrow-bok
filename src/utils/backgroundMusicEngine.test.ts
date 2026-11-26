@@ -5,6 +5,7 @@ import {
   getBackgroundMusicSnapshot,
   releaseMusicPauseLock,
   resolveTopPauseReason,
+  retryBackgroundMusicPlayback,
   setBackgroundMusicPaused,
   setBackgroundMusicSmartMode,
   setBackgroundMusicVolume,
@@ -112,6 +113,11 @@ test('Smart Audio controller tracks concurrent app-exit, camera, voice recording
   assert.equal(snap.pauseReasonLabel, null);
   assert.equal(snap.activeLockCount, 0);
   assert.equal(snap.smartModeEnabled, true);
+
+  // Retry playback resets error state safely even in headless environment
+  retryBackgroundMusicPlayback();
+  snap = getBackgroundMusicSnapshot();
+  assert.equal(snap.hasError, false);
 });
 
 test('Unified App Sound System exposes all 29 calibrated acoustic profiles with valid harmonic layers', async () => {
@@ -166,10 +172,14 @@ test('Sound Packs, Notification Tones, and AppSoundPreferences customize and res
     AUDIO_PROFILES,
     DEFAULT_APP_SOUND_PREFS,
     getAppSoundPrefs,
+    getSoundSystemDiagnostics,
+    isGlobalAppSoundEnabled,
     NOTIFICATION_TONE_OPTIONS,
     resetAppSoundPrefs,
     resolveNotificationLayers,
+    setGlobalAppSoundEnabled,
     SOUND_PACK_OPTIONS,
+    subscribeGlobalAppSoundEnabled,
     updateAppSoundPrefs,
   } = await import('./tactileFeedback.ts');
 
@@ -201,6 +211,22 @@ test('Sound Packs, Notification Tones, and AppSoundPreferences customize and res
   assert.equal(updated.notificationTone, 'harp_pluck');
   assert.equal(updated.motionSoundsEnabled, false);
   assert.equal(getAppSoundPrefs().effectsVolume, 0.7);
+
+  let masterCalls = 0;
+  const unsubscribe = subscribeGlobalAppSoundEnabled(() => {
+    masterCalls += 1;
+  });
+  setGlobalAppSoundEnabled(false);
+  assert.equal(isGlobalAppSoundEnabled(), false);
+  assert.equal(masterCalls, 1);
+  setGlobalAppSoundEnabled(true);
+  assert.equal(isGlobalAppSoundEnabled(), true);
+  assert.equal(masterCalls, 2);
+  unsubscribe();
+
+  const diag = getSoundSystemDiagnostics();
+  assert.equal(diag.globalSoundEnabled, true);
+  assert.equal(diag.prefs.soundPack, 'studio_crisp');
 
   const reset = resetAppSoundPrefs();
   assert.deepEqual(reset, DEFAULT_APP_SOUND_PREFS);

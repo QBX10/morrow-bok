@@ -85,25 +85,25 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
                   {profile.description}
                 </p>
 
-                <div className="space-y-1.5 pt-1">
+                <div className="space-y-1.5 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <div className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
                     أوامر جاهزة للبدء الفوري:
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="space-y-1.5">
                     {profile.starterPrompts.map((prompt) => (
                       <button
                         key={prompt}
                         type="button"
                         onClick={() => onActivateAssistant(profile, prompt)}
-                        className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-bold"
+                        className="flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-right text-xs font-bold cursor-pointer transition-colors hover:border-[var(--accent-ai, #5B4FE9)]"
                         style={{
                           backgroundColor: 'var(--bg-main)',
                           borderColor: 'var(--border-color)',
                           color: 'var(--text-primary)',
                         }}
                       >
-                        <Send className="h-3 w-3 shrink-0" style={{ color: profile.accentHex }} />
-                        <span>{prompt}</span>
+                        <span className="truncate">{prompt}</span>
+                        <Send className="h-3.5 w-3.5 shrink-0" style={{ color: profile.accentHex }} />
                       </button>
                     ))}
                   </div>
@@ -116,7 +116,7 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
                   onClick={() => onActivateAssistant(profile)}
                   whileTap={reducedMotion ? undefined : { scale: 0.96 }}
                   transition={TABRIX_TACTILE_SPRING}
-                  className="nexus-pill-btn inline-flex h-10 items-center gap-1.5 px-4 text-xs font-extrabold whitespace-nowrap"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl px-4 text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer transition-opacity hover:opacity-90"
                   style={
                     isActive
                       ? {
@@ -130,7 +130,7 @@ export const MorrowAssistantsPage: React.FC<MorrowAssistantsPageProps> = ({
                         }
                   }
                 >
-                  {isActive && <Check className="h-3.5 w-3.5" />}
+                  {isActive && <Check className="h-3.5 w-3.5 shrink-0" />}
                   <span>{isActive ? 'مُفعّل حالياً — دخول للمحادثة' : 'تفعيل هذا المساعد'}</span>
                 </motion.button>
               </div>

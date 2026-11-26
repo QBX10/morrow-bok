@@ -334,14 +334,14 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             <button
               type="button"
               onClick={() => setOpenedArchiveId(null)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--accent)',
                 color: 'var(--accent)',
               }}
             >
-              <ArrowRight className="h-3.5 w-3.5" />
+              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
               <span>العودة لسجل البيانات والأرشيف</span>
             </button>
             <div>
@@ -373,13 +373,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                   () => printArchiveRecordPdf(openedArchive)
                 )
               }
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Printer className="h-3.5 w-3.5" />
+              <Printer className="h-3.5 w-3.5 shrink-0" />
               <span>معاينة وطباعة PDF</span>
             </button>
 
@@ -400,13 +400,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                     })
                 )
               }
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5 shrink-0" />
               <span>تصدير Excel</span>
             </button>
 
@@ -423,13 +423,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                   setNotice('تم تنزيل النسخة السحابية بصيغة JSON.');
                 });
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Cloud className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <Cloud className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
               <span>نسخة سحابية (JSON)</span>
             </button>
 
@@ -437,13 +437,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               type="button"
               disabled={syncingCloud}
               onClick={() => handleCloudSync(openedArchive.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-xs font-bold whitespace-nowrap disabled:opacity-50"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--accent-fg)',
               }}
             >
-              <CloudUpload className="h-3.5 w-3.5" />
+              <CloudUpload className="h-3.5 w-3.5 shrink-0" />
               <span>{syncingCloud ? 'جارٍ المزامنة...' : 'مزامنة سحابية'}</span>
             </button>
           </div>
@@ -1098,13 +1098,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             type="button"
             disabled={syncingCloud}
             onClick={() => handleCloudSync()}
-            className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)] disabled:opacity-50"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border-color)',
             }}
           >
-            <CloudUpload className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+            <CloudUpload className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
             <span>
               {syncingCloud
                 ? 'جارٍ المزامنة...'
@@ -1123,14 +1123,14 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               setArchiveCloseDraft(true);
               setArchiveModalOpen(true);
             }}
-            className="nexus-pill-btn inline-flex items-center gap-1.5 border px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors"
             style={{
               backgroundColor: 'var(--bg-nav-active)',
               borderColor: 'var(--accent)',
               color: 'var(--accent)',
             }}
           >
-            <Archive className="h-3.5 w-3.5" />
+            <Archive className="h-3.5 w-3.5 shrink-0" />
             <span>حفظ وأرشفة الشهر الحالي</span>
           </button>
 
@@ -1142,13 +1142,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
               setNextQuotaDate(nextSuggestion.fullDate);
               setRolloverOpen(true);
             }}
-            className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-95"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--accent-fg)',
             }}
           >
-            <CalendarPlus className="h-3.5 w-3.5" />
+            <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
             <span>بدء شهر / حصة جديدة</span>
           </button>
         </div>
@@ -1176,7 +1176,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
 
       {/* Search & Historical Filter Bar */}
       <div
-        className="flex flex-wrap items-center gap-3 rounded-xl border p-3.5"
+        className="flex flex-wrap items-center gap-3 rounded-2xl border p-3.5"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-color)',
@@ -1193,7 +1193,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             onChange={(e) => setArchiveSearch(e.target.value)}
             placeholder="بحث باسم الشهر، رقم الحصة، أو اسم مستفيد داخل السجلات المؤرشفة..."
             aria-label="بحث في الأرشيف الشهري"
-            className="w-full rounded-lg border py-2 pr-8 pl-3 text-xs"
+            className="h-9 w-full rounded-xl border pr-8 pl-3 text-xs"
             style={{
               backgroundColor: 'var(--bg-main)',
               borderColor: 'var(--border-color)',
@@ -1209,7 +1209,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             )
           }
           aria-label="فلترة الأرشيف حسب السنة"
-          className="rounded-lg border px-3 py-2 text-xs tabular-nums"
+          className="h-9 rounded-xl border px-3 text-xs tabular-nums"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -1231,7 +1231,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
             )
           }
           aria-label="فلترة الأرشيف حسب الشهر"
-          className="rounded-lg border px-3 py-2 text-xs"
+          className="h-9 rounded-xl border px-3 text-xs"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -1251,7 +1251,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
           onChange={(e) => setQuotaFilter(e.target.value)}
           placeholder="رقم أو اسم الحصة..."
           aria-label="فلترة حسب رقم الحصة"
-          className="w-40 rounded-lg border px-3 py-2 text-xs"
+          className="h-9 w-40 rounded-xl border px-3 text-xs"
           style={{
             backgroundColor: 'var(--bg-main)',
             borderColor: 'var(--border-color)',
@@ -1367,7 +1367,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenArchiveCard(arch)}
-                  className="nexus-pill-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-95"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
@@ -1388,13 +1388,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                         () => printArchiveRecordPdf(arch)
                       )
                     }
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap"
+                    className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border px-3 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
-                    <Printer className="h-3.5 w-3.5" />
+                    <Printer className="h-3.5 w-3.5 shrink-0" />
                     <span>PDF</span>
                   </button>
 
@@ -1409,13 +1409,13 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                         () => exportArchiveToCloudJson(arch)
                       )
                     }
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap"
+                    className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border px-3 text-xs font-semibold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
-                    <Cloud className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+                    <Cloud className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
                     <span>سحابي</span>
                   </button>
 
@@ -1424,7 +1424,7 @@ export const DataArchivesView: React.FC<DataArchivesViewProps> = ({
                       type="button"
                       onClick={() => onDeleteArchive(arch.id)}
                       aria-label={`حذف أرشيف ${arch.label}`}
-                      className="rounded-lg border p-1.5 hover:opacity-80"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border hover:opacity-80"
                       style={{
                         backgroundColor: 'var(--bg-main)',
                         borderColor: 'var(--border-color)',

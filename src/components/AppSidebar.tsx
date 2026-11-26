@@ -482,7 +482,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                   <span className="truncate whitespace-nowrap">مساعد Morrow</span>
                   <div className="flex items-center gap-1">
                     {pendingDraftsCount > 0 && (
-                      <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 font-mono-num text-[10px] font-black bg-[var(--accent)] text-[var(--accent-fg)]">
+                      <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-md px-1 font-mono-num text-[10px] font-black tabular-nums bg-[var(--accent)] text-[var(--accent-fg)]">
                         {pendingDraftsCount}
                       </span>
                     )}

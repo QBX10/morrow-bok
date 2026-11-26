@@ -172,6 +172,7 @@ export const SmartModelsWorkspaceView: React.FC<SmartModelsWorkspaceViewProps> =
     <main
       dir="rtl"
       data-testid="smart-models-workspace"
+      data-assistant-target="smart-models-root"
       className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:pb-24"
     >
       {/* 3.1 Hero 2D Analytical Core & Command Header */}

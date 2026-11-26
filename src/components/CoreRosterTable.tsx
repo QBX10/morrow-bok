@@ -1022,14 +1022,15 @@ export const CoreRosterTable: React.FC<CoreRosterTableProps> = ({
                             </select>
                           ) : row.customCategory ? (
                             <span
-                              className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
-                              style={{
-                                backgroundColor: 'var(--bg-nav-active)',
-                                borderColor: 'var(--border-color)',
-                                color: 'var(--accent)',
-                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                              style={{ color: 'var(--text-primary)' }}
                             >
-                              {row.customCategory}
+                              <span
+                                aria-hidden="true"
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: 'var(--accent)' }}
+                              />
+                              <span>{row.customCategory}</span>
                             </span>
                           ) : (
                             <span style={{ color: 'var(--text-muted)' }}>—</span>

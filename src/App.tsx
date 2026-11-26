@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Lock, Unlock } from 'lucide-react';
+import { LocateFixed, Lock, Navigation, Unlock } from 'lucide-react';
 import { AgenciesHubView } from './components/AgenciesHubView';
 import { AgencyRosterView } from './components/AgencyRosterView';
 import { FinanceWorkspaceView } from './components/FinanceWorkspaceView';
@@ -83,6 +83,7 @@ import {
 import {
   getTabrixViewDirection,
   TABRIX_MODAL_VARIANTS,
+  TABRIX_POPOVER_VARIANTS,
   TABRIX_REDUCED_VARIANTS,
   useTabrixDirection,
   useTabrixReducedMotion,
@@ -1670,6 +1671,62 @@ export default function App() {
     [generalPrefs?.surface2dPrefs]
   );
 
+  // Global resilient Spotlight DOM highlight & smooth scroll across view transitions
+  const spotlightTargetId = assistant.spotlight?.targetId || null;
+  const spotlightActivatedAt = assistant.spotlight?.activatedAt || 0;
+  useEffect(() => {
+    if (!spotlightTargetId) return;
+    let cancelled = false;
+    let activeEl: HTMLElement | null = null;
+    let attempts = 0;
+
+    const findTargetElement = () => {
+      const escaped =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(spotlightTargetId)
+          : spotlightTargetId.replace(/"/g, '\\"');
+      return document.querySelector<HTMLElement>(
+        `[data-assistant-target="${escaped}"], [data-capsule-node-id="${escaped}"]`
+      );
+    };
+
+    const applyHighlight = () => {
+      if (cancelled) return false;
+      const el = findTargetElement();
+      if (!el) return false;
+      activeEl = el;
+      el.classList.add('assistant-spotlight-active');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return true;
+    };
+
+    if (!applyHighlight()) {
+      const pollTimer = window.setInterval(() => {
+        attempts += 1;
+        if (applyHighlight() || attempts >= 26) {
+          window.clearInterval(pollTimer);
+        }
+      }, 60);
+      return () => {
+        cancelled = true;
+        window.clearInterval(pollTimer);
+        if (activeEl) activeEl.classList.remove('assistant-spotlight-active');
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      if (activeEl) activeEl.classList.remove('assistant-spotlight-active');
+    };
+  }, [
+    spotlightTargetId,
+    spotlightActivatedAt,
+    activeView,
+    settingsSection,
+    settingsScreenMode,
+    assistant.activeCommandCenterTab,
+  ]);
+
   if (!authBootChecked && !authUser) {
     return (
       <div
@@ -2502,6 +2559,87 @@ export default function App() {
               </button>
             </motion.form>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Guided Spotlight Floating Card ("المساعدة العينية — وريني") */}
+      <AnimatePresence>
+        {!isAuthGateLocked && !securityPrefs.privacyLocked && assistant.spotlight && (
+          <motion.aside
+            key={`global-spotlight-${assistant.spotlight.targetId}`}
+            role="status"
+            aria-live="polite"
+            dir="rtl"
+            variants={tabrixReducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="smoked-glass-elevated no-print fixed top-[74px] left-1/2 z-[var(--z-toast)] flex w-[min(500px,calc(100vw-1.5rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-2xl"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderColor: 'var(--accent)',
+              color: 'var(--text-primary)',
+              boxShadow: '0 0 0 2px var(--accent), 0 14px 36px rgba(0,0,0,0.34)',
+            }}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                style={{
+                  backgroundColor: 'var(--bg-nav-active)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Navigation className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-xs font-extrabold" style={{ color: 'var(--accent)' }}>
+                  {assistant.spotlight.title}
+                </div>
+                <div className="line-clamp-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {assistant.spotlight.description}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const escaped =
+                    typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+                      ? CSS.escape(assistant.spotlight!.targetId)
+                      : assistant.spotlight!.targetId.replace(/"/g, '\\"');
+                  const el = document.querySelector<HTMLElement>(
+                    `[data-assistant-target="${escaped}"], [data-capsule-node-id="${escaped}"]`
+                  );
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('assistant-spotlight-active');
+                  }
+                }}
+                title="إعادة التمرير إلى العنصر"
+                aria-label="إعادة التركيز على العنصر"
+                className="nexus-pill-btn inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                <LocateFixed className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+                <span>تركيز</span>
+              </button>
+              <button
+                type="button"
+                onClick={assistant.dismissSpotlight}
+                aria-label="إغلاق مؤشر الإرشاد"
+                className="nexus-pill-btn rounded-lg border px-2.5 py-1 text-[11px] font-bold"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent-fg)',
+                }}
+              >
+                فهمت
+              </button>
+            </div>
+          </motion.aside>
         )}
       </AnimatePresence>
 

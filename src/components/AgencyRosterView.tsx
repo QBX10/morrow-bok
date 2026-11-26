@@ -895,14 +895,14 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
                 type="button"
                 data-testid="enter-viewing-mode-btn"
                 onClick={() => setViewingModeState(true)}
-                className="nexus-pill-btn inline-flex min-h-[36px] h-9 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors"
                 style={{
                   backgroundColor: 'var(--bg-nav-active)',
                   borderColor: 'var(--accent)',
                   color: 'var(--accent)',
                 }}
               >
-                <Eye className="h-3.5 w-3.5" />
+                <Eye className="h-3.5 w-3.5 shrink-0" />
                 <span>وضع المشاهدة</span>
               </button>
 
@@ -912,13 +912,13 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
                   onClick={() =>
                     onOpenAddPerson(agencyId ?? agencies[0]?.id ?? 1)
                   }
-                  className="nexus-pill-btn inline-flex min-h-[36px] h-9 items-center gap-1 px-3.5 text-xs font-bold whitespace-nowrap"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-bold whitespace-nowrap transition-opacity hover:opacity-95"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--accent-fg)',
                   }}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
                   <span>إضافة سجل</span>
                 </button>
               )}
@@ -937,7 +937,7 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
               exit="exit"
               className="no-print flex flex-wrap items-center justify-between gap-2 text-[11px]"
             >
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 {showEditorColumn && (
                   <button
                     type="button"
@@ -945,59 +945,58 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
                       setRowEditorMode(false);
                       setExpertInlineEdit(false);
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap"
                     style={{
                       backgroundColor: 'var(--bg-nav-active)',
                       borderColor: 'var(--accent)',
                       color: 'var(--accent)',
                     }}
                   >
-                    <Edit3 className="h-3 w-3" />
+                    <Edit3 className="h-3 w-3 shrink-0" />
                     <span>وضع التحرير نشط · إغلاق</span>
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3 shrink-0" />
                   </button>
                 )}
 
-                {statusFilter !== 'all' && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
+                {hasActiveFilters && (
+                  <div
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    الحالة:{' '}
-                    {statusFilter === 'active'
-                      ? 'النشطون'
-                      : statusFilter === 'blocked'
-                      ? 'المحجوبون'
-                      : 'المؤرشفون'}
-                  </span>
-                )}
-
-                {categoryFilter !== 'all' && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    الفئة: {categoryFilter}
-                  </span>
-                )}
-
-                {sortBy !== 'default' && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  >
-                    الفرز:{' '}
-                    {sortBy === 'name_asc' ? 'أبجديًا' : 'الأكثر أفرادًا'}
-                  </span>
+                    {statusFilter !== 'all' && (
+                      <span>
+                        الحالة:{' '}
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {statusFilter === 'active'
+                            ? 'النشطون'
+                            : statusFilter === 'blocked'
+                            ? 'المحجوبون'
+                            : 'المؤرشفون'}
+                        </strong>
+                      </span>
+                    )}
+                    {statusFilter !== 'all' && categoryFilter !== 'all' && (
+                      <span aria-hidden="true">·</span>
+                    )}
+                    {categoryFilter !== 'all' && (
+                      <span>
+                        الفئة:{' '}
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {categoryFilter}
+                        </strong>
+                      </span>
+                    )}
+                    {(statusFilter !== 'all' || categoryFilter !== 'all') &&
+                      sortBy !== 'default' && <span aria-hidden="true">·</span>}
+                    {sortBy !== 'default' && (
+                      <span>
+                        الفرز:{' '}
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {sortBy === 'name_asc' ? 'أبجديًا' : 'الأكثر أفرادًا'}
+                        </strong>
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1005,14 +1004,14 @@ export const AgencyRosterView: React.FC<AgencyRosterViewProps> = ({
                 <button
                   type="button"
                   onClick={resetAllFilters}
-                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--border-color)',
                     color: 'var(--accent)',
                   }}
                 >
-                  <RotateCcw className="h-3 w-3" />
+                  <RotateCcw className="h-3 w-3 shrink-0" />
                   <span>إعادة ضبط الفلاتر</span>
                 </button>
               )}

@@ -21,6 +21,7 @@ import { ALL_QUICK_EXTRACT_FIELDS } from '../../../utils/quickExtractEngine';
 import { NodeCard } from '../NodeCard';
 import { NodeView } from '../NodeView';
 import { SoundCustomizationPanel } from '../SoundCustomizationPanel';
+import { PWAInstallButton } from '../../ui/PWAInstallButton';
 
 /* ─── GENERAL APP SETTINGS CAPSULES (Level 3 -> Level 4) ──────────────────── */
 
@@ -272,6 +273,8 @@ export const GeneralCapsules: React.FC<GeneralCapsulesProps> = ({
               <span>إلزام تسجيل الدخول عند فتح التطبيق</span>
             </label>
           </div>
+
+          <PWAInstallButton variant="card" />
         </section>
       </NodeView>
     );

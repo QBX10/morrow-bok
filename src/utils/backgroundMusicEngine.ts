@@ -26,10 +26,11 @@ export interface BackgroundMusicSnapshot {
   activeLockCount: number;
   status: BackgroundMusicPlaybackStatus;
   hasError: boolean;
+  usingSynthFallback: boolean;
 }
 
 const STORAGE_KEY = 'morrow_bg_music_prefs_v1';
-const PRIMARY_SRC = '/assets/aistudio/RUMI-music_0cb9de04.mp3';
+const PRIMARY_SRC = '/assets/aistudio/bg-music_85f08a71.mp3';
 const FALLBACK_SRC = '/app-ambient.mp3';
 const DEFAULT_VOLUME = 0.27;
 
@@ -186,8 +187,13 @@ class BackgroundMusicController {
   private awaitingGesture = false;
   private isPlaying = false;
   private hasError = false;
+  private usingSynthFallback = false;
   private startingPlayback = false;
   private osInterruptedPause = false;
+
+  private synthCtx: AudioContext | null = null;
+  private synthGain: GainNode | null = null;
+  private synthOscs: OscillatorNode[] = [];
 
   private currentGain = 0;
   private duckFactor = 1;
@@ -255,6 +261,7 @@ class BackgroundMusicController {
       activeLockCount: this.pauseLocks.size,
       status,
       hasError: this.hasError,
+      usingSynthFallback: this.usingSynthFallback,
     };
   }
 
@@ -270,7 +277,8 @@ class BackgroundMusicController {
       prev.pauseReason === next.pauseReason &&
       prev.activeLockCount === next.activeLockCount &&
       prev.status === next.status &&
-      prev.hasError === next.hasError
+      prev.hasError === next.hasError &&
+      prev.usingSynthFallback === next.usingSynthFallback
     ) {
       return;
     }
@@ -304,6 +312,7 @@ class BackgroundMusicController {
     this.setAudioVolumeSafe(audio, 0);
 
     audio.addEventListener('play', () => {
+      this.stopSynthFallback();
       this.isPlaying = true;
       this.awaitingGesture = false;
       this.osInterruptedPause = false;
@@ -312,6 +321,7 @@ class BackgroundMusicController {
     });
 
     audio.addEventListener('playing', () => {
+      this.stopSynthFallback();
       this.isPlaying = true;
       this.awaitingGesture = false;
       this.osInterruptedPause = false;
@@ -320,7 +330,9 @@ class BackgroundMusicController {
     });
 
     audio.addEventListener('pause', () => {
-      this.isPlaying = false;
+      if (!this.usingSynthFallback) {
+        this.isPlaying = false;
+      }
       if (
         !this.internalPauseGuard &&
         !this.prefs.userPaused &&
@@ -344,12 +356,104 @@ class BackgroundMusicController {
         return;
       }
       this.hasError = true;
-      this.isPlaying = false;
-      this.emitIfChanged();
+      if (this.canPlayRightNow() && this.gestureUnlocked) {
+        void this.startSynthFallback();
+      } else {
+        this.isPlaying = false;
+        this.emitIfChanged();
+      }
     });
 
     this.audio = audio;
     return audio;
+  }
+
+  private async startSynthFallback(): Promise<void> {
+    if (typeof window === 'undefined' || !this.canPlayRightNow()) return;
+    if (this.usingSynthFallback && this.synthOscs.length > 0) {
+      this.updateSynthFallbackVolume(this.getTargetActiveVolume());
+      return;
+    }
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctx) return;
+      if (!this.synthCtx || this.synthCtx.state === 'closed') {
+        this.synthCtx = new Ctx();
+      }
+      const ctx = this.synthCtx;
+      if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+        await ctx.resume();
+      }
+      const master = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(420, ctx.currentTime);
+      master.gain.setValueAtTime(0.0001, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(
+        Math.max(0.0005, this.getTargetActiveVolume() * 0.06),
+        ctx.currentTime + 0.6
+      );
+      filter.connect(master);
+      master.connect(ctx.destination);
+
+      const freqs = [146.83, 220.0, 293.66];
+      const oscs = freqs.map((freq) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.connect(filter);
+        osc.start(ctx.currentTime);
+        return osc;
+      });
+      this.synthGain = master;
+      this.synthOscs = oscs;
+      this.usingSynthFallback = true;
+      this.isPlaying = true;
+      this.awaitingGesture = false;
+      this.emitIfChanged();
+    } catch {
+      this.usingSynthFallback = false;
+      this.isPlaying = false;
+      this.emitIfChanged();
+    }
+  }
+
+  private updateSynthFallbackVolume(target: number): void {
+    if (!this.usingSynthFallback || !this.synthGain || !this.synthCtx) return;
+    try {
+      this.synthGain.gain.setTargetAtTime(
+        Math.max(0.0001, target * 0.06),
+        this.synthCtx.currentTime,
+        0.08
+      );
+    } catch {
+      // ignore synth volume update errors
+    }
+  }
+
+  private stopSynthFallback(): void {
+    if (!this.usingSynthFallback && this.synthOscs.length === 0) return;
+    for (const osc of this.synthOscs) {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {
+        // ignore osc cleanup errors
+      }
+    }
+    this.synthOscs = [];
+    if (this.synthGain) {
+      try {
+        this.synthGain.disconnect();
+      } catch {
+        // ignore gain cleanup errors
+      }
+      this.synthGain = null;
+    }
+    this.usingSynthFallback = false;
   }
 
   private setAudioVolumeSafe(audio: HTMLAudioElement, value: number): void {
@@ -393,6 +497,7 @@ class BackgroundMusicController {
     if (durationMs <= 14 || Math.abs(endGain - startGain) < 0.002) {
       this.currentGain = endGain;
       this.setAudioVolumeSafe(audio, endGain);
+      this.updateSynthFallbackVolume(endGain);
       onDone?.();
       return;
     }
@@ -405,6 +510,7 @@ class BackgroundMusicController {
       const next = startGain + (endGain - startGain) * eased;
       this.currentGain = next;
       this.setAudioVolumeSafe(audio, next);
+      this.updateSynthFallbackVolume(next);
 
       if (t < 1) {
         this.fadeRafId = window.requestAnimationFrame(step);
@@ -412,6 +518,7 @@ class BackgroundMusicController {
         this.fadeRafId = null;
         this.currentGain = endGain;
         this.setAudioVolumeSafe(audio, endGain);
+        this.updateSynthFallbackVolume(endGain);
         onDone?.();
       }
     };
@@ -447,6 +554,11 @@ class BackgroundMusicController {
     this.clearPauseSafetyTimer();
     const target = this.getTargetActiveVolume();
 
+    if (this.hasError) {
+      await this.startSynthFallback();
+      return;
+    }
+
     if (!audio.paused) {
       this.rampVolume(target, isAutoResume ? 420 : 280);
       this.emitIfChanged();
@@ -478,6 +590,9 @@ class BackgroundMusicController {
         this.awaitingGesture = true;
         this.isPlaying = false;
         this.emitIfChanged();
+      } else if (this.canPlayRightNow() && this.gestureUnlocked) {
+        this.hasError = true;
+        await this.startSynthFallback();
       }
     } finally {
       this.startingPlayback = false;
@@ -485,6 +600,7 @@ class BackgroundMusicController {
   }
 
   private pauseAudioImmediately(): void {
+    this.stopSynthFallback();
     const audio = this.audio;
     if (!audio) return;
     this.cancelFade();
@@ -733,6 +849,12 @@ class BackgroundMusicController {
     } catch {
       // ignore unsupported devicechange
     }
+
+    window.addEventListener('online', () => {
+      if (this.hasError && this.canPlayRightNow()) {
+        this.retryPlayback();
+      }
+    });
   }
 
   private installMediaDevicesMonitor(): void {
@@ -1323,6 +1445,28 @@ class BackgroundMusicController {
     }
   }
 
+  public retryPlayback(): void {
+    this.gestureUnlocked = true;
+    this.awaitingGesture = false;
+    this.stopSynthFallback();
+    this.hasError = false;
+    this.usedFallbackSrc = false;
+    const audio = this.ensureAudioElement();
+    if (audio) {
+      try {
+        audio.src = PRIMARY_SRC;
+        audio.load();
+      } catch {
+        // ignore audio reset error
+      }
+    }
+    if (this.canPlayRightNow()) {
+      void this.startOrResumePlayback(false);
+    } else {
+      this.emitIfChanged();
+    }
+  }
+
   public setManualPaused(paused: boolean): void {
     this.gestureUnlocked = true;
     this.awaitingGesture = false;
@@ -1339,6 +1483,10 @@ class BackgroundMusicController {
       if (this.prefs.volume <= 0.01) {
         this.prefs = { ...this.prefs, volume: DEFAULT_VOLUME };
         savePrefs(this.prefs);
+      }
+      if (this.hasError) {
+        this.retryPlayback();
+        return;
       }
       if (this.canPlayRightNow()) {
         void this.startOrResumePlayback(false);
@@ -1361,7 +1509,11 @@ class BackgroundMusicController {
     savePrefs(this.prefs);
 
     if (this.canPlayRightNow() && !this.isPlaying) {
-      void this.startOrResumePlayback(false);
+      if (this.hasError) {
+        this.retryPlayback();
+      } else {
+        void this.startOrResumePlayback(false);
+      }
     } else if (this.canPlayRightNow() && this.isPlaying) {
       this.rampVolume(this.getTargetActiveVolume(), 90);
     } else if (clamped <= 0.005) {
@@ -1456,4 +1608,8 @@ export function syncBackgroundMusicInitialContext(
   soundEnabled: boolean
 ): void {
   engine.syncInitialContext(volume, soundEnabled);
+}
+
+export function retryBackgroundMusicPlayback(): void {
+  engine.retryPlayback();
 }

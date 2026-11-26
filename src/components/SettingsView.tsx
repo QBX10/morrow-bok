@@ -64,7 +64,6 @@ import {
   useTabrixDirection,
   useTabrixReducedMotion,
 } from '../utils/tabrixMotion';
-import { getAppThemeById } from '../utils/themes';
 import { playTactileFeedback } from '../utils/tactileFeedback';
 import type {
   AccessibilityAndExperiencePrefs,
@@ -2557,6 +2556,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {currentScreenMode === 'hub' && (
         <main
           data-testid="settings-sections-hub"
+          data-assistant-target="settings-content-pane"
           className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Executive Settings Identity Strip */}
@@ -2605,44 +2605,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             {/* Domain Filter Tabs */}
             <div
-              className="mt-5 flex flex-wrap items-center gap-1.5 border-t pt-4"
+              className="mt-5 border-t pt-4"
               style={{ borderColor: 'var(--border-color)' }}
             >
-              {(
-                [
-                  ['all', `جميع الأقسام (${sectionSpecs.length})`],
-                  ['visual', 'المظهر والخطوط'],
-                  ['permissions', 'الواجهة والتحرير'],
-                  ['operations', 'الحاسبة والسحب والذكاء'],
-                  ['security', 'الأمان والصحة والحوكمة'],
-                ] as Array<[DomainCategory, string]>
-              ).map(([cat, label]) => {
-                const active = domainFilter === cat;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setDomainFilter(cat)}
-                    className="nexus-pill-btn relative min-h-[36px] overflow-hidden border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
-                    style={{
-                      backgroundColor: active ? 'transparent' : 'var(--bg-main)',
-                      borderColor: active ? 'var(--accent)' : 'var(--border-color)',
-                      color: active ? 'var(--accent)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="settings-domain-pill"
-                        transition={tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 rounded-full"
-                        style={{ backgroundColor: 'var(--bg-nav-active)' }}
-                      />
-                    )}
-                    <span className="relative z-10">{label}</span>
-                  </button>
-                );
-              })}
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-xl border p-1"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                {(
+                  [
+                    ['all', `جميع الأقسام (${sectionSpecs.length})`],
+                    ['visual', 'المظهر والخطوط'],
+                    ['permissions', 'الواجهة والتحرير'],
+                    ['operations', 'الحاسبة والسحب والذكاء'],
+                    ['security', 'الأمان والصحة والحوكمة'],
+                  ] as Array<[DomainCategory, string]>
+                ).map(([cat, label]) => {
+                  const active = domainFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setDomainFilter(cat)}
+                      className="relative inline-flex h-8 shrink-0 items-center overflow-hidden rounded-lg px-3 text-xs font-bold whitespace-nowrap transition-colors"
+                      style={{
+                        color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="settings-domain-pill"
+                          transition={tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-lg border"
+                          style={{
+                            backgroundColor: 'var(--bg-nav-active)',
+                            borderColor: 'color-mix(in srgb, var(--accent) 30%, var(--border-color))',
+                          }}
+                        />
+                      )}
+                      <span className="relative z-10">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </section>
 
@@ -2680,6 +2689,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <main
           key={`sec-${effectiveSectionId}`}
           data-testid={`settings-detail-${effectiveSectionId}`}
+          data-assistant-target="settings-content-pane"
           className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
         >
           {/* Section Banner */}
@@ -2702,13 +2712,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <button
               type="button"
               onClick={() => setScreenMode('hub')}
-              className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
               style={{
                 backgroundColor: 'var(--bg-main)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <ArrowRight className="h-3.5 w-3.5" />
+              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
               <span>جميع الأقسام</span>
             </button>
           </section>
@@ -2756,6 +2766,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <main
             key={`gal-${activeGalaxySpec.id}`}
             data-testid={`settings-detail-${effectiveSectionId}`}
+            data-assistant-target="settings-content-pane"
             className={`w-full flex-1 space-y-6 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
           >
             <section className="nexus-squircle flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
@@ -2780,13 +2791,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setSelectedGalaxyId(null);
                   setCapsuleId(null);
                 }}
-                className="nexus-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border px-4 py-2 text-xs font-bold whitespace-nowrap"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: 'var(--bg-main)',
                   borderColor: 'var(--border-color)',
                 }}
               >
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                 <span>العودة إلى {currentSectionSpec.title}</span>
               </button>
             </section>
@@ -2818,6 +2829,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <main
             key={`cap-${currentCapsuleId || activeGalaxySpec.subAxes[0]?.id}`}
             data-testid={`settings-detail-${effectiveSectionId}`}
+            data-assistant-target="settings-content-pane"
             className={`w-full flex-1 space-y-5 px-4 py-6 pb-16 sm:px-6 ${containerMaxWidth}`}
           >
             {/* Connected Sub-Axis Header & Quick Sibling Switcher */}
@@ -2843,13 +2855,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         setSelectedGalaxyId(activeGalaxySpec.id);
                         setCapsuleId(null);
                       }}
-                      className="nexus-pill-btn inline-flex min-h-[38px] items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                       style={{
                         backgroundColor: 'var(--bg-main)',
                         borderColor: 'var(--border-color)',
                       }}
                     >
-                      <ArrowRight className="h-3.5 w-3.5" />
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                       <span>أدوات القسم</span>
                     </button>
                   )}
@@ -2860,13 +2872,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       setSelectedGalaxyId(null);
                       setCapsuleId(null);
                     }}
-                    className="nexus-pill-btn inline-flex min-h-[38px] items-center gap-1.5 border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--border-color)',
                     }}
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
+                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                     <span>أقسام {currentSectionSpec.title}</span>
                   </button>
                 </div>
@@ -2874,46 +2886,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {activeGalaxySpec.subAxes.length > 1 && (
                 <div
-                  className="flex flex-wrap gap-1.5 border-t pt-3"
+                  className="border-t pt-3"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
-                  {activeGalaxySpec.subAxes.map((sa) => {
-                    const isActive =
-                      (currentCapsuleId || activeGalaxySpec.subAxes[0]?.id) === sa.id;
-                    return (
-                      <button
-                        key={sa.id}
-                        type="button"
-                        onClick={() => setCapsuleId(sa.id)}
-                        className="nexus-pill-btn relative inline-flex min-h-[36px] items-center gap-2 overflow-hidden border px-3.5 py-1.5 text-xs font-bold whitespace-nowrap"
-                        style={{
-                          backgroundColor: isActive ? 'transparent' : 'var(--bg-main)',
-                          borderColor: isActive
-                            ? 'var(--accent)'
-                            : 'var(--border-color)',
-                          color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
-                        }}
-                      >
-                        {isActive && (
-                          <motion.span
-                            layoutId="settings-sibling-capsule-pill"
-                            transition={
-                              tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING
-                            }
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 rounded-full"
-                            style={{ backgroundColor: 'var(--accent)' }}
-                          />
-                        )}
-                        <span className="relative z-10">{sa.title}</span>
-                        {sa.badgeText && (
-                          <span className="relative z-10 text-[10px] opacity-85 tabular-nums">
-                            · {sa.badgeText}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                  <div
+                    className="inline-flex flex-wrap items-center gap-1 rounded-xl border p-1"
+                    style={{
+                      backgroundColor: 'var(--bg-main)',
+                      borderColor: 'var(--border-color)',
+                    }}
+                  >
+                    {activeGalaxySpec.subAxes.map((sa) => {
+                      const isActive =
+                        (currentCapsuleId || activeGalaxySpec.subAxes[0]?.id) === sa.id;
+                      return (
+                        <button
+                          key={sa.id}
+                          type="button"
+                          onClick={() => setCapsuleId(sa.id)}
+                          className="relative inline-flex h-8 shrink-0 items-center gap-2 overflow-hidden rounded-lg px-3 text-xs font-bold whitespace-nowrap transition-colors"
+                          style={{
+                            color: isActive ? 'var(--accent-fg)' : 'var(--text-primary)',
+                          }}
+                        >
+                          {isActive && (
+                            <motion.span
+                              layoutId="settings-sibling-capsule-pill"
+                              transition={
+                                tabrixReducedMotion ? { duration: 0.05 } : TABRIX_SPRING
+                              }
+                              aria-hidden="true"
+                              className="pointer-events-none absolute inset-0 rounded-lg"
+                              style={{ backgroundColor: 'var(--accent)' }}
+                            />
+                          )}
+                          <span className="relative z-10">{sa.title}</span>
+                          {sa.badgeText && (
+                            <span className="relative z-10 text-[10px] opacity-85 tabular-nums">
+                              · {sa.badgeText}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </section>

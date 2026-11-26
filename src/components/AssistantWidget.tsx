@@ -150,20 +150,20 @@ const BRAIN_MODES: Array<{
   },
   {
     id: 'gemini_3_8_flash',
-    label: 'Gemini 3.8 Flash',
-    shortLabel: '3.8 Flash',
+    label: 'Gemini 4 Hydrogen',
+    shortLabel: '4 Hydrogen',
     desc: 'الأقوى للمهام الثقيلة، PDF المعقد، الفهم البصري والاستنتاج.',
   },
   {
     id: 'gemini_3_5_flash',
-    label: 'Gemini 3.5 Flash',
-    shortLabel: '3.5 Flash',
-    desc: 'متوازن للبيانات المنظمة (Excel/CSV) والأوامر متعددة الخطوات.',
+    label: 'Gemini 3.1 Flash Lite',
+    shortLabel: '3.1 Lite',
+    desc: 'متوازن وفائق السرعة للبيانات المنظمة والأوامر متعددة الخطوات.',
   },
   {
     id: 'gemini_3_5_flash_lite',
-    label: 'Gemini 3.5 Flash Lite',
-    shortLabel: '3.5 Lite',
+    label: 'Gemini 3.1 Flash Lite',
+    shortLabel: '3.1 Lite',
     desc: 'فائق السرعة للأوامر السريعة والردود اليومية.',
   },
   {
@@ -321,15 +321,6 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
     }
   }, [messages.length, isOpen, isThinking]);
 
-  useEffect(() => {
-    if (!spotlight?.targetId) return;
-    const el = document.querySelector(`[data-assistant-target="${spotlight.targetId}"]`);
-    if (el instanceof HTMLElement) {
-      el.classList.add('assistant-spotlight-active');
-      return () => el.classList.remove('assistant-spotlight-active');
-    }
-  }, [spotlight]);
-
   // Auto-grow textarea cleanly
   useEffect(() => {
     const el = textareaRef.current;
@@ -348,7 +339,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
       return {
         label: 'أونلاين',
         color: 'var(--success)',
-        title: `متصل (${assistantSettings?.preferredModelId || 'gemini-3.8-flash'})`,
+        title: `متصل (${assistantSettings?.preferredModelId || 'gemini-4-hydrogen'})`,
       };
     }
     if (connectivity === 'quota_exhausted') {
@@ -477,49 +468,6 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
 
   return (
     <>
-      {/* Guided Spotlight Floating Banner ("وريني") */}
-      <AnimatePresence>
-        {spotlight && (
-          <motion.aside
-            key={`spotlight-${spotlight.targetId}`}
-            role="status"
-            aria-live="polite"
-            variants={reducedMotion ? TABRIX_REDUCED_VARIANTS : TABRIX_POPOVER_VARIANTS}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="smoked-glass-elevated no-print fixed top-[78px] left-1/2 z-[var(--z-toast)] flex w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--accent)',
-              color: 'var(--text-primary)',
-              boxShadow: '0 0 0 2px var(--accent), 0 10px 28px rgba(0,0,0,0.24)',
-            }}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Navigation className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
-              <div className="min-w-0">
-                <div className="truncate text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                  {spotlight.title}
-                </div>
-                <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {spotlight.description}
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onDismissSpotlight}
-              aria-label="إغلاق مؤشر الإرشاد"
-              className="nexus-pill-btn rounded-lg border px-2.5 py-1 text-[11px] font-bold shrink-0"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              فهمت
-            </button>
-          </motion.aside>
-        )}
-      </AnimatePresence>
-
       {/* Full-Screen Push Panel — Morrow Assistant */}
       <FullScreenPushPage
         open={isOpen}
@@ -713,7 +661,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 onClick={toggleVoiceInput}
                 title="إملاء صوتي عربي (ar-IQ)"
                 aria-label="إملاء صوتي"
-                className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center border"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors hover:border-[var(--accent)]"
                 style={{
                   backgroundColor: isRecording ? 'var(--danger)' : 'var(--bg-surface)',
                   borderColor: isRecording ? 'var(--danger)' : 'var(--border-color)',
@@ -736,7 +684,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 }}
                 placeholder="اكتب باللهجة العراقية (مثال: خلّي رسم الفرد 250)..."
                 aria-label="اكتب أمرك للمساعد الذكي"
-                className="min-w-0 flex-1 resize-none rounded-2xl border px-3.5 py-2.5 text-xs outline-none focus:border-[var(--accent-ai)]"
+                className="min-w-0 flex-1 resize-none rounded-xl border px-3.5 py-2.5 text-xs outline-none focus:border-[var(--accent-ai)]"
                 style={{
                   backgroundColor: 'var(--bg-surface)',
                   borderColor: 'var(--border-color)',
@@ -748,7 +696,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   type="button"
                   onClick={onCancelRequest}
                   aria-label="إيقاف المعالجة"
-                  className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center border"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-opacity hover:opacity-90"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     borderColor: 'var(--danger)',
@@ -762,7 +710,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   type="submit"
                   disabled={!inputValue.trim() || isThinking}
                   aria-label="إرسال الطلب للمساعد"
-                  className="nexus-pill-btn inline-flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl disabled:opacity-40 cursor-pointer transition-opacity hover:opacity-90"
                   style={{
                     backgroundColor: 'var(--accent-ai, #5B4FE9)',
                     color: '#FFFFFF',
@@ -776,7 +724,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
         }
       >
         <div className="space-y-4">
-          {/* Quick Commands Pill Strip */}
+          {/* Quick Commands Action Strip */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             <button
               type="button"
@@ -784,49 +732,49 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 setInputValue('ابحث ');
                 textareaRef.current?.focus();
               }}
-              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent-ai, #5B4FE9)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Search className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+              <Search className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>بحث</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('صدر تقرير اكسل', { fromFloatingWidget: true })}
-              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent-ai, #5B4FE9)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--success)' }} />
               <span>تقرير</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('المكررين', { fromFloatingWidget: true })}
-              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent-ai, #5B4FE9)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <Users className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
+              <Users className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--warning)' }} />
               <span>المكررين</span>
             </button>
             <button
               type="button"
               onClick={() => onSendMessage('افحص التطبيق', { fromFloatingWidget: true })}
-              className="nexus-pill-btn inline-flex h-9 shrink-0 items-center gap-1.5 border px-3.5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold whitespace-nowrap cursor-pointer transition-colors hover:border-[var(--accent-ai, #5B4FE9)]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              <ShieldCheck className="h-3.5 w-3.5" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ai, #5B4FE9)' }} />
               <span>افحص</span>
             </button>
             <button
@@ -834,7 +782,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
               onClick={() => setLibrarySheetOpen(true)}
               aria-label="مكتبة الأوامر السريعة"
               title="المزيد من الأوامر الجاهزة"
-              className="nexus-pill-btn inline-flex h-9 w-9 shrink-0 items-center justify-center border text-xs font-extrabold"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-extrabold cursor-pointer transition-opacity hover:opacity-90"
               style={{
                 backgroundColor: 'var(--bg-nav-active)',
                 borderColor: 'var(--accent-ai, #5B4FE9)',
@@ -907,7 +855,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                 <button
                   type="button"
                   onClick={() => onRunQueuedTask(queuedTasks[0])}
-                  className="nexus-pill-btn px-3 py-1 font-bold whitespace-nowrap"
+                  className="inline-flex h-8 items-center rounded-xl px-3 font-bold whitespace-nowrap shrink-0 cursor-pointer transition-opacity hover:opacity-90"
                   style={{
                     backgroundColor: 'var(--accent-ai, #5B4FE9)',
                     color: '#FFFFFF',
@@ -966,7 +914,7 @@ export const AssistantWidget: React.FC<AssistantWidgetProps> = ({
                   <button
                     type="button"
                     onClick={onCancelRequest}
-                    className="nexus-pill-btn inline-flex items-center gap-1 border px-3 py-1 text-[11px] font-bold whitespace-nowrap"
+                    className="inline-flex h-8 items-center gap-1 rounded-xl border px-3 text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer"
                     style={{
                       backgroundColor: 'var(--bg-main)',
                       borderColor: 'var(--danger)',
